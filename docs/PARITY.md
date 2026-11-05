@@ -69,11 +69,11 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 
 | Status | Feature | Notes |
 |---|---|---|
-| ⬜ | Terminal tabs | |
+| ✅ | Terminal tabs (⌘T), output kept when you switch workspaces | 256 KB scrollback per terminal |
 | ✅ | Ports per workspace (`NEKOTRAIL_PORT` and 9 more) and workspace env vars | |
-| ⬜ | Run / stop toggle (⌘R), open localhost (⌘⇧B) | |
-| ⬜ | Setup log and rerun setup | |
-| ⬜ | Spotlight: mirror a workspace into the main checkout | Uses checkpoints |
+| ✅ | Run / stop toggle (⌘R), open localhost (⌘⇧B) | URL detected from the run output |
+| ✅ | Setup log and rerun setup | Setup runs in its own tab |
+| ⬜ | Spotlight: mirror a workspace into the main checkout | Deferred: it overwrites the main checkout, needs care |
 
 ## Round 6: sidebar, shortcuts, settings
 

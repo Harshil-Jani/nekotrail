@@ -498,3 +498,14 @@ button.good-btn:hover { background: #20d095; }
 .row-current .msg { box-shadow: inset 0 0 0 1px var(--wait); }
 .chat-flag { font-size: 11.5px; align-self: center; padding: 0 var(--s2); }
 .newchat-menu button { gap: var(--s2); }
+
+/* ---------- terminal tabs ---------- */
+.term-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.term-tabs .chat-tab > button[role="tab"] { display: inline-flex; align-items: center; gap: 6px; }
+.term-body { flex: 1; min-height: 0; }
+.term-body[hidden] { display: none; }
+.terminal-wrap { position: relative; height: 100%; }
+.terminal-idle { position: absolute; top: var(--s3); left: var(--s4); margin: 0; font-size: 12.5px; z-index: 1; }
+.term-action { align-self: center; padding: 2px var(--s2); font-size: 12px; margin-right: var(--s2); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px rgba(0, 186, 124, 0.2); }
+.terminal-wrap .terminal { height: 100%; box-sizing: border-box; }

@@ -1011,32 +1011,54 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
 // ---------- terminals ----------
 
 #[tauri::command]
-async fn pty_open(app: AppHandle, st: State<'_, AppState>, id: String, cwd: String, cols: u16, rows: u16) -> Res<()> {
-    if st.ptys.is_open(&id) {
-        return Ok(());
+async fn pty_open(app: AppHandle, st: State<'_, AppState>, id: String, cwd: String, cols: u16, rows: u16) -> Res<String> {
+    // Already running (e.g. the view was rebuilt): hand back what it printed so far.
+    if let Some(sb) = st.ptys.scrollback(&id) {
+        return Ok(sb);
     }
-    // Terminals get the repo's extra environment variables too.
+    start_pty(&app, &st, &id, &cwd, None, cols, rows)?;
+    Ok(String::new())
+}
+
+/// Run a command (run or setup script) in its own terminal, replacing any earlier run.
+/// The terminal ends when the command does; `pty-exit` reports it.
+#[tauri::command]
+async fn pty_run(app: AppHandle, st: State<'_, AppState>, id: String, cwd: String, cmd: String, cols: u16, rows: u16) -> Res<()> {
+    start_pty(&app, &st, &id, &cwd, Some(&cmd), cols, rows)
+}
+
+/// Output of a running terminal without starting one; null when it isn't running.
+#[tauri::command]
+async fn pty_attach(st: State<'_, AppState>, id: String) -> Res<Option<String>> {
+    Ok(st.ptys.scrollback(&id))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_pty(app: &AppHandle, st: &AppState, id: &str, cwd: &str, cmd: Option<&str>, cols: u16, rows: u16) -> Res<()> {
+    // Terminals get the workspace's environment (ports, repo variables).
     let env = id
         .split(':')
         .next()
         .and_then(|ws_id| st.db().workspace(ws_id).ok())
         .and_then(|w| st.db().repo(&w.repo_id).ok().map(|r| workspace_env(&r, &w)))
         .unwrap_or_default();
-    let (a1, a2, id1, id2) = (app.clone(), app, id.clone(), id.clone());
+    let (a1, a2, id1, id2) = (app.clone(), app.clone(), id.to_string(), id.to_string());
     st.ptys
         .open(
-            &id,
-            &cwd,
+            id,
+            cwd,
             &env,
+            cmd,
             cols,
             rows,
             move |data| { let _ = a1.emit("pty", json!({"id": id1, "data": data})); },
-            move || {
+            move |generation| {
                 let st = a2.state::<AppState>();
-                st.ptys.close(&id2);
+                st.ptys.close_if(&id2, generation);
                 let _ = a2.emit("pty-exit", json!({"id": id2}));
             },
         )
+        .map(|_| ())
         .map_err(e)
 }
 
@@ -1106,6 +1128,7 @@ pub fn run() {
             restore_checkpoint, workspace_files, save_attachment,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
+            pty_run, pty_attach,
             remove_queued, fork_session, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,

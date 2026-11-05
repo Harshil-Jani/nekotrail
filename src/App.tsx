@@ -4,12 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Cat, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, ZoomIn } from "lucide-react";
+import { Archive, ArchiveRestore, Cat, ExternalLink, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, ZoomIn } from "lucide-react";
 import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type GithubUser, type Repo, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
-import { Terminal } from "./components/Terminal";
+import { TerminalPanel } from "./components/Terminal";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrBar } from "./components/PrBar";
 import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
@@ -61,7 +62,26 @@ export default function App() {
   const [canImport, setCanImport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inject, setInject] = useState<{ text: string; nonce: number } | undefined>();
-  const [run, setRun] = useState<{ cmd: string; nonce: number } | undefined>();
+  // Run and setup scripts that are alive (pty ids), the terminal tab to show, and dev-server URLs.
+  const [livePtys, setLivePtys] = useState<Set<string>>(new Set());
+  const [termFocus, setTermFocus] = useState<{ tab: string; nonce: number } | undefined>();
+  const [localUrls, setLocalUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const unExit = listen<{ id: string }>("pty-exit", ({ payload }) =>
+      setLivePtys((s) => { const n = new Set(s); n.delete(payload.id); return n; }));
+    // Spot "http://localhost:3000" in run output, so ⌘⇧B can open it.
+    const unData = listen<{ id: string; data: string }>("pty", ({ payload }) => {
+      if (!payload.id.endsWith(":run")) return;
+      const m = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):\d+[^\s"'\x1b]*/.exec(payload.data.replace(/\x1b\[[0-9;]*m/g, ""));
+      if (m) setLocalUrls((u) => ({ ...u, [payload.id.split(":")[0]]: m[0].replace("0.0.0.0", "localhost") }));
+    });
+    return () => { unExit.then((f) => f()); unData.then((f) => f()); };
+  }, []);
+  const startPty = async (id: string, cwd: string, cmd: string, tabName: string) => {
+    await api.ptyRun(id, cwd, cmd);
+    setLivePtys((s) => new Set(s).add(id));
+    setTermFocus({ tab: tabName, nonce: Date.now() });
+  };
   const [notes, setNotes] = useState("");
   const [leaving, setLeaving] = useState<string | null>(null);
   const [sidebarW, setSidebarW] = useState(() => Number(localStorage.getItem("nekotrail.sidebar")) || 264);
@@ -288,7 +308,7 @@ export default function App() {
         setTimeout(() => setDiscovery(null), 7000);
       }
       const scripts = await api.workspaceScripts(w.id);
-      if (scripts.setup) setRun({ cmd: scripts.setup, nonce: Date.now() }); // runs in the workspace terminal
+      if (scripts.setup) await startPty(`${w.id}:setup`, w.path, scripts.setup, "setup"); // its own terminal tab
       setTab(scripts.setup && !prompt ? "terminal" : "chat");
     } catch (e) {
       say(`Couldn't create the workspace. ${errText(e)}`, true);
@@ -317,12 +337,29 @@ export default function App() {
     say(`Archived ${name}. Branch ${ws.branch} is kept.`);
   };
 
+  // ⌘R: start the run script, or stop it if it is running.
   const runScript = async () => {
     if (!ws) return;
+    const id = `${ws.id}:run`;
+    if (livePtys.has(id)) {
+      await api.ptyClose(id);
+      setLivePtys((s) => { const n = new Set(s); n.delete(id); return n; });
+      return;
+    }
     const s = await api.workspaceScripts(ws.id);
     if (!s.run) return setSettingsFor(ws.repo_id);
     setTab("terminal");
-    setRun({ cmd: s.run, nonce: Date.now() });
+    await startPty(id, ws.path, s.run, "run");
+  };
+  const rerunSetup = async () => {
+    if (!ws) return;
+    const s = await api.workspaceScripts(ws.id);
+    if (!s.setup) return setSettingsFor(ws.repo_id);
+    await startPty(`${ws.id}:setup`, ws.path, s.setup, "setup");
+  };
+  const openLocal = () => {
+    if (!ws) return;
+    openUrl(localUrls[ws.id] ?? "http://localhost:3000").catch((e) => say(errText(e), true));
   };
 
   const importConductor = async () => {
@@ -398,6 +435,8 @@ export default function App() {
       if (e.key === "k") { e.preventDefault(); setPalette((p) => !p); return; }
       if (e.key === ",") { e.preventDefault(); setSettingsOpen(true); return; }
       if (e.key === "o" && ws) { e.preventDefault(); openInEditor(); return; }
+      if (e.key === "r" && !e.shiftKey && ws) { e.preventDefault(); runScript(); return; }
+      if (e.key.toLowerCase() === "b" && e.shiftKey && ws) { e.preventDefault(); openLocal(); return; }
       if (e.key === "p" && !e.shiftKey && ws) { e.preventDefault(); api.workspaceFiles(ws.id).then(setQuickOpen).catch((er) => say(errText(er), true)); return; }
       if (e.key.toLowerCase() === "n" && (ws || repos[0])) { e.preventDefault(); setNewSource(e.shiftKey ? "pr" : "task"); setNewFor(ws?.repo_id ?? repos[0].id); }
       if (e.key === "j") { e.preventDefault(); nextUnread(); }
@@ -406,7 +445,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ws, repos, lit, sky, workspaces, selected]);
+  }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls]);
 
   const settingsRepo = repos.find((r) => r.id === settingsFor);
 
@@ -519,7 +558,14 @@ export default function App() {
                   </button>
                 ) : (
                   <>
-                    <button onClick={runScript} title="Run the repo's run script in the terminal"><Play size={14} />Run</button>
+                    {localUrls[ws.id] && livePtys.has(`${ws.id}:run`) && (
+                      <button className="quiet" onClick={openLocal} title="Open in the browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
+                    )}
+                    {livePtys.has(`${ws.id}:run`) ? (
+                      <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
+                    ) : (
+                      <button onClick={runScript} title="Run the repo's run script (⌘R)"><Play size={14} />Run</button>
+                    )}
                     <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value as "finder").catch((er) => say(errText(er), true))}>
                       <option value="">Open in…</option>
                       <option value="cursor">Cursor</option>
@@ -574,7 +620,7 @@ export default function App() {
                     {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} focusFile={focusFile} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
-                    <Terminal key={ws.id} ptyId={`${ws.id}:term`} cwd={ws.path} run={run} />
+                    <TerminalPanel key={ws.id} wsId={ws.id} cwd={ws.path} running={livePtys} focus={termFocus} onRun={runScript} onSetup={rerunSetup} />
                   </div>
                   <div className="pane" hidden={tab !== "notes"}>
                     <textarea

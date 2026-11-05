@@ -173,7 +173,10 @@ export const api = {
   workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),
   saveAttachment: async (id: string, file: File) =>
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
-  ptyOpen: (id: string, cwd: string, cols: number, rows: number) => invoke<void>("pty_open", { id, cwd, cols, rows }),
+  /** Start a shell, or reattach to a running one; returns what it printed so far. */
+  ptyOpen: (id: string, cwd: string, cols: number, rows: number) => invoke<string>("pty_open", { id, cwd, cols, rows }),
+  ptyRun: (id: string, cwd: string, cmd: string, cols = 120, rows = 30) => invoke<void>("pty_run", { id, cwd, cmd, cols, rows }),
+  ptyAttach: (id: string) => invoke<string | null>("pty_attach", { id }),
   ptyWrite: (id: string, data: string) => invoke<void>("pty_write", { id, data }),
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),
   ptyClose: (id: string) => invoke<void>("pty_close", { id }),
