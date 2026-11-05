@@ -90,6 +90,7 @@ mockIPC(
       case "sessions": return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: "claude", agent_session_id: null, title: "New chat", model: null, permission_mode: "acceptEdits" }];
+      case "session_events_tail": { const all = args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
       case "session_events": return args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_status":

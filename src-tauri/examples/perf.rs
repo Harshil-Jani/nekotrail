@@ -8,6 +8,7 @@ fn main() -> anyhow::Result<()> {
     let mut biggest = (String::new(), 0usize);
     for w in &ws { for sess in s.sessions(&w.id)? { let n = s.events(&sess.id)?.len(); if n > biggest.1 { biggest = (sess.id.clone(), n); } } }
     let t = Instant::now(); let ev = s.events(&biggest.0)?; println!("biggest chat: {} events loaded in {:?} ({} KB JSON)", ev.len(), t.elapsed(), serde_json::to_string(&ev)?.len() / 1024);
+    let t = Instant::now(); let (tail, total) = s.events_tail(&biggest.0, 600)?; println!("biggest chat tail: {} of {} events in {:?} ({} KB JSON)", tail.len(), total, t.elapsed(), serde_json::to_string(&tail)?.len() / 1024);
     let t = Instant::now();
     for w in &ws { let _ = nekotrail_lib::git::changes(std::path::Path::new(&w.path), &w.target_branch); }
     println!("git changes for all {} workspaces (serial): {:?}", ws.len(), t.elapsed());

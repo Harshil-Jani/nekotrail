@@ -107,25 +107,60 @@ pub fn changes(ws: &Path, target: &str) -> Result<Vec<FileChange>> {
 /// Files changed versus `base` (a commit), plus untracked files. `HEAD` gives uncommitted work only.
 pub fn changes_since(ws: &Path, base: &str) -> Result<Vec<FileChange>> {
     let mut out: Vec<FileChange> = Vec::new();
-
-    let numstat = git(ws, &["diff", "--numstat", base])?;
-    let names = git(ws, &["diff", "--name-status", base])?;
-    for (ns, st) in numstat.lines().zip(names.lines()) {
-        let mut n = ns.split('\t');
-        let add = n.next().unwrap_or("0").parse().unwrap_or(0);
-        let del = n.next().unwrap_or("0").parse().unwrap_or(0);
-        let mut s = st.split('\t');
-        let status = s.next().unwrap_or("M").chars().next().unwrap_or('M').to_string();
-        let path = s.next_back().unwrap_or_default().to_string();
-        out.push(FileChange { path, status, additions: add, deletions: del });
+    // NUL-separated output, matched by path: exact for renames, spaces and odd file names.
+    let names = git_raw(ws, &["diff", "--name-status", "-z", base])?;
+    let mut status: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut it = names.split('\0').filter(|s| !s.is_empty());
+    while let Some(code) = it.next() {
+        let kind = code.chars().next().unwrap_or('M');
+        // Renames and copies carry two paths: old, then new.
+        let path = if kind == 'R' || kind == 'C' { it.next(); it.next() } else { it.next() };
+        if let Some(p) = path {
+            status.insert(p.to_string(), kind.to_string());
+        }
+    }
+    let numstat = git_raw(ws, &["diff", "--numstat", "-z", base])?;
+    let mut parts = numstat.split('\0').peekable();
+    while let Some(entry) = parts.next() {
+        if entry.is_empty() { continue; }
+        let mut f = entry.splitn(3, '\t');
+        let add = f.next().unwrap_or("0").parse().unwrap_or(0);
+        let del = f.next().unwrap_or("0").parse().unwrap_or(0);
+        let mut path = f.next().unwrap_or("").to_string();
+        if path.is_empty() {
+            // Rename: "add\tdel\t" then old and new paths as separate fields.
+            parts.next();
+            path = parts.next().unwrap_or("").to_string();
+        }
+        let st = status.get(&path).cloned().unwrap_or_else(|| "M".into());
+        out.push(FileChange { path, status: st, additions: add, deletions: del });
     }
 
     let untracked = git(ws, &["ls-files", "--others", "--exclude-standard"])?;
     for path in untracked.lines().filter(|l| !l.is_empty()) {
-        let lines = std::fs::read_to_string(ws.join(path)).map(|s| s.lines().count() as u32).unwrap_or(0);
-        out.push(FileChange { path: path.to_string(), status: "A".into(), additions: lines, deletions: 0 });
+        out.push(FileChange { path: path.to_string(), status: "A".into(), additions: count_lines(&ws.join(path)), deletions: 0 });
     }
     Ok(out)
+}
+
+/// Lines in a new file, without reading huge ones whole (counts the first 2 MB).
+fn count_lines(p: &Path) -> u32 {
+    use std::io::Read;
+    let Ok(f) = std::fs::File::open(p) else { return 0 };
+    let mut buf = Vec::new();
+    if f.take(2 * 1024 * 1024).read_to_end(&mut buf).is_err() || buf.contains(&0) {
+        return 0; // unreadable or binary
+    }
+    buf.iter().filter(|b| **b == b'\n').count() as u32 + u32::from(!buf.is_empty() && buf.last() != Some(&b'\n'))
+}
+
+/// Like `git`, but keeps the output exactly (for `-z` formats).
+fn git_raw(dir: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git").arg("-C").arg(dir).args(args).output()?;
+    if !out.status.success() {
+        bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
 /// Unified diff of one file versus the target branch's merge base.
@@ -296,6 +331,31 @@ pub mod tests {
         git(p, &["add", "."]).unwrap();
         git(p, &["commit", "-qm", "init"]).unwrap();
         d
+    }
+
+    #[test]
+    fn changes_handle_renames_spaces_and_binary_files() {
+        let repo = init_repo();
+        let r = repo.path();
+        std::fs::write(r.join("old name.txt"), "a\nb\nc\n").unwrap();
+        std::fs::write(r.join("img.bin"), [0u8, 1, 2]).unwrap();
+        git(r, &["add", "."]).unwrap();
+        git(r, &["commit", "-qm", "files"]).unwrap();
+        let base = git(r, &["rev-parse", "HEAD"]).unwrap();
+        git(r, &["mv", "old name.txt", "new name.txt"]).unwrap();
+        std::fs::write(r.join("new name.txt"), "a\nb\nc\nd\n").unwrap();
+        std::fs::write(r.join("img.bin"), [0u8, 9, 9, 9]).unwrap();
+        std::fs::write(r.join("a.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(r.join("untracked.txt"), "x\ny").unwrap();
+        git(r, &["add", "-A"]).unwrap();
+        git(r, &["reset", "-q", "untracked.txt"]).unwrap();
+        let c = changes_since(r, &base).unwrap();
+        let get = |p: &str| c.iter().find(|f| f.path == p).unwrap_or_else(|| panic!("{p} missing in {c:?}"));
+        assert_eq!((get("new name.txt").status.as_str(), get("new name.txt").additions), ("R", 1));
+        assert_eq!(get("a.txt").additions, 1);
+        assert_eq!(get("img.bin").additions, 0);
+        assert_eq!(get("untracked.txt").additions, 2);
+        assert!(!c.iter().any(|f| f.path.contains("old name")));
     }
 
     #[test]

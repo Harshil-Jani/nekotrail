@@ -80,6 +80,12 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Extra folders the agent may read and edit (/add-dir), as a JSON list.
     add("sessions", "extra_dirs", "TEXT NOT NULL DEFAULT '[]'")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
+    // Spend per finished turn, so totals never have to scan every chat message.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS turn_costs (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL, agent TEXT NOT NULL, cost REAL NOT NULL, created_at TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS turn_costs_at ON turn_costs(created_at);",
+    )?;
     // Once: tag history imported before events carried an "imported" flag. Imports were written in bulk
     // with one timestamp per chat, while live events each get their own, so shared timestamps mark them.
     let done: i64 = conn.query_row("SELECT COUNT(*) FROM settings WHERE key='migrated_imported_flag'", [], |r| r.get(0))?;
@@ -89,6 +95,17 @@ fn migrate(conn: &Connection) -> Result<()> {
              WHERE (session_id, created_at) IN (SELECT session_id, created_at FROM messages GROUP BY 1, 2 HAVING COUNT(*) > 1);
              DELETE FROM messages WHERE json_extract(event, '$.kind') = 'usage';
              INSERT INTO settings (key, value) VALUES ('migrated_imported_flag', '1');",
+        )?;
+    }
+    let done: i64 = conn.query_row("SELECT COUNT(*) FROM settings WHERE key='migrated_turn_costs'", [], |r| r.get(0))?;
+    if done == 0 {
+        conn.execute_batch(
+            "INSERT INTO turn_costs (session_id, workspace_id, agent, cost, created_at)
+             SELECT m.session_id, s.workspace_id, s.agent, json_extract(m.event, '$.cost_usd'), m.created_at
+             FROM messages m JOIN sessions s ON s.id = m.session_id
+             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
+               AND json_extract(m.event, '$.imported') IS NULL;
+             INSERT INTO settings (key, value) VALUES ('migrated_turn_costs', '1');",
         )?;
     }
     Ok(())
@@ -422,18 +439,27 @@ impl Store {
         Ok(())
     }
 
-    /// Spend per day (YYYY-MM-DD, UTC) and agent over the last `days` days, from finished turns.
+    /// Spend per day (YYYY-MM-DD, UTC) and agent over the last `days` days.
     pub fn daily_costs(&self, days: i64) -> Result<Vec<(String, String, f64)>> {
         let mut st = self.conn.prepare(
-            "SELECT substr(m.created_at, 1, 10) AS day, s.agent, SUM(json_extract(m.event, '$.cost_usd'))
-             FROM messages m JOIN sessions s ON s.id = m.session_id
-             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
-               AND json_extract(m.event, '$.imported') IS NULL AND m.created_at >= ?1
-             GROUP BY day, s.agent ORDER BY day",
+            "SELECT substr(created_at, 1, 10) AS day, agent, SUM(cost) FROM turn_costs WHERE created_at >= ?1 GROUP BY day, agent ORDER BY day",
         )?;
         let since = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
         let rows = st.query_map([since], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<f64>>(2)?.unwrap_or(0.0))))?.collect::<rusqlite::Result<_>>()?;
         Ok(rows)
+    }
+
+    /// The last `limit` events of a chat, plus how many there are in all (big chats open fast).
+    pub fn events_tail(&self, session_id: &str, limit: i64) -> Result<(Vec<serde_json::Value>, i64)> {
+        let total: i64 = self.conn.query_row("SELECT COUNT(*) FROM messages WHERE session_id=?1", [session_id], |r| r.get(0))?;
+        let mut st = self.conn.prepare(
+            "SELECT event FROM (SELECT id, event FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
+        )?;
+        let rows = st
+            .query_map(params![session_id, limit], |r| r.get::<_, String>(0))?
+            .filter_map(|r| r.ok().and_then(|t| serde_json::from_str(&t).ok()))
+            .collect();
+        Ok((rows, total))
     }
 
     pub fn set_branch(&self, id: &str, branch: &str) -> Result<()> {
@@ -461,15 +487,19 @@ impl Store {
         Ok(())
     }
 
-    /// Total agent cost (USD) per workspace, summed from finished turns.
-    pub fn workspace_costs(&self) -> Result<Vec<(String, f64)>> {
-        let mut st = self.conn.prepare(
-            "SELECT s.workspace_id, SUM(json_extract(m.event, '$.cost_usd')) FROM messages m
-             JOIN sessions s ON s.id = m.session_id
-             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
-               AND json_extract(m.event, '$.imported') IS NULL
-             GROUP BY s.workspace_id",
+    /// Record what a finished turn cost (from the CLI's own report).
+    pub fn record_cost(&self, session_id: &str, cost: f64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO turn_costs (session_id, workspace_id, agent, cost, created_at)
+             SELECT id, workspace_id, agent, ?2, ?3 FROM sessions WHERE id=?1",
+            params![session_id, cost, now()],
         )?;
+        Ok(())
+    }
+
+    /// Total agent cost (USD) per workspace.
+    pub fn workspace_costs(&self) -> Result<Vec<(String, f64)>> {
+        let mut st = self.conn.prepare("SELECT workspace_id, SUM(cost) FROM turn_costs GROUP BY workspace_id")?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get::<_, Option<f64>>(1)?.unwrap_or(0.0))))?.collect::<rusqlite::Result<_>>()?;
         Ok(rows)
     }
@@ -634,9 +664,9 @@ mod tests {
             effort: Some("high".into()),
         };
         s.insert_session(&sess).unwrap();
-        s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.5})).unwrap();
-        s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.25})).unwrap();
-        // Imported history doesn't count as spend.
+        s.record_cost(&sess.id, 0.5).unwrap();
+        s.record_cost(&sess.id, 0.25).unwrap();
+        // Imported history is never recorded as spend.
         s.append_events(&sess.id, &[serde_json::json!({"kind": "done", "cost_usd": 99.0, "imported": true})], &now()).unwrap();
         assert_eq!(s.workspace_costs().unwrap(), vec![(w.id.clone(), 0.75)]);
         let daily = s.daily_costs(7).unwrap();
@@ -647,5 +677,7 @@ mod tests {
 
         s.append_event(&sess.id, &serde_json::json!({"kind": "text", "text": "hi"})).unwrap();
         assert_eq!(s.events(&sess.id).unwrap().last().unwrap()["text"], "hi");
+        let (tail, total) = s.events_tail(&sess.id, 1).unwrap();
+        assert_eq!((tail.len(), tail[0]["text"].as_str(), total), (1, Some("hi"), 2));
     }
 }

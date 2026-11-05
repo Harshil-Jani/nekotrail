@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.4.0 (2026-11-06)
+
+**Fast with 30 workspaces** (measured on a real install with 23 workspaces and 18,500 chat messages)
+- Big chats open with their latest 600 events: the largest test chat went from 6.2 MB to 566 KB and opens about 10 times faster. "Load older events" brings in the rest.
+- Spend totals come from their own table instead of scanning every message: 19 ms to under 0.1 ms on every refresh.
+- Changed-line counts are cached; only workspaces an agent or a git action touched are recounted, instead of all of them after every turn.
+- GitHub and git checks run in the background, so a slow `gh` call can't hold up the app. The PR bar stops polling while the window is hidden.
+- Changed-file lists match git's output by path: exact for renames, spaces in names and binary files. Huge new files are no longer read whole to count lines.
+
 ## 0.3.0 (2026-11-06)
 
 **Safe to switch from Conductor**

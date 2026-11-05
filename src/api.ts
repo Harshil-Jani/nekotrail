@@ -208,6 +208,7 @@ export const api = {
   newSession: (workspaceId: string, agent: Agent) => invoke<Session>("new_session", { workspaceId, agent }),
   updateSession: (id: string, title: string, model: string | null, permissionMode: PermissionMode) =>
     invoke<void>("update_session", { id, title, model, permissionMode }),
+  sessionEventsTail: (id: string, limit: number) => invoke<{ events: ChatEvent[]; total: number }>("session_events_tail", { id, limit }),
   sessionEvents: (id: string) => invoke<ChatEvent[]>("session_events", { id }),
   queued: (id: string) => invoke<string[]>("queued", { id }),
   clearQueue: (id: string) => invoke<void>("clear_queue", { id }),

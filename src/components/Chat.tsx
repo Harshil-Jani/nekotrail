@@ -300,6 +300,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
 }
 
 const PAGE = 150; // rows rendered at a time; older rows load on demand
+const TAIL = 600; // events fetched when a chat opens
 
 export function Chat({
   workspaceId,
@@ -316,6 +317,15 @@ export function Chat({
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [events, setEvents] = useState<ChatEvent[]>([]);
+  const [older, setOlder] = useState(0); // events not loaded yet
+  const loadOlder = async () => {
+    if (!active) return;
+    anchor.current = scroller.current ? scroller.current.scrollHeight - scroller.current.scrollTop : null;
+    const all = await api.sessionEvents(active);
+    setEvents(all);
+    setOlder(0);
+    setLimit(Number.MAX_SAFE_INTEGER);
+  };
   const [queue, setQueue] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState(false);
@@ -410,7 +420,9 @@ export function Chat({
   useEffect(() => {
     if (!active) return;
     setEvents([]);
-    api.sessionEvents(active).then(setEvents);
+    setOlder(0);
+    // Big chats open with their latest events; older ones load on request.
+    api.sessionEventsTail(active, TAIL).then(({ events, total }) => { setEvents(events); setOlder(total - events.length); });
     api.queued(active).then(setQueue);
     const un1 = listen<{ session_id: string; event: ChatEvent }>("agent", ({ payload }) => {
       if (payload.session_id === active) setEvents((e) => [...e, payload.event]);
@@ -719,6 +731,9 @@ export function Chat({
         )}
         <RewindCtx.Provider value={rewindCtx}>
         <div className="thread">
+          {older > 0 && hidden === 0 && (
+            <button className="quiet earlier" onClick={loadOlder}>Load {older.toLocaleString()} older events</button>
+          )}
           {hidden > 0 && (
             <button className="quiet earlier" onClick={showEarlier}>
               Show {Math.min(PAGE, hidden)} earlier messages ({hidden} hidden)

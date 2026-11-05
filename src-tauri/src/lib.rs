@@ -34,6 +34,9 @@ struct Runs {
     forks: std::collections::HashSet<String>,
 }
 
+/// (counts with when they were taken, workspaces to recount)
+type LineCache = (HashMap<String, (std::time::Instant, (u32, u32))>, std::collections::HashSet<String>);
+
 pub struct AppState {
     store: Mutex<Store>,
     runs: Arc<Mutex<Runs>>,
@@ -42,6 +45,8 @@ pub struct AppState {
     branch_prefix: String,
     github: Mutex<Option<Value>>,
     repo_meta: Mutex<HashMap<String, Value>>,
+    /// Changed-line counts per workspace, and which ones need recounting (an agent touched them).
+    lines: Mutex<LineCache>,
 }
 
 impl AppState {
@@ -604,7 +609,11 @@ fn open_in_targets() -> Vec<Value> {
 /// PR state (OPEN / MERGED / CLOSED) per active workspace, one `gh` call per repo.
 /// Merged ones are recorded, so their stars shine even if you never opened them.
 #[tauri::command]
-async fn pr_states(st: State<'_, AppState>) -> Res<HashMap<String, String>> {
+async fn pr_states(app: AppHandle) -> Res<HashMap<String, String>> {
+    tauri::async_runtime::spawn_blocking(move || pr_states_blocking(&app.state::<AppState>())).await.map_err(e)?
+}
+
+fn pr_states_blocking(st: &AppState) -> Res<HashMap<String, String>> {
     let (repos, wss) = {
         let db = st.db();
         (db.repos().map_err(e)?, db.workspaces(false).map_err(e)?)
@@ -635,16 +644,47 @@ async fn pr_states(st: State<'_, AppState>) -> Res<HashMap<String, String>> {
 /// Lines added and removed per active workspace versus its target branch (for the sidebar).
 /// Runs the git calls in parallel; a workspace that fails is just left out.
 #[tauri::command]
-async fn line_counts(st: State<'_, AppState>) -> Res<HashMap<String, (u32, u32)>> {
-    let wss = st.db().workspaces(false).map_err(e)?;
-    let handles: Vec<_> = wss
-        .into_iter()
-        .map(|w| std::thread::spawn(move || {
-            let c = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
-            Some((w.id, (c.iter().map(|f| f.additions).sum(), c.iter().map(|f| f.deletions).sum())))
-        }))
-        .collect();
-    Ok(handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect())
+async fn line_counts(app: AppHandle) -> Res<HashMap<String, (u32, u32)>> {
+    // Off the async workers: this runs git in every workspace that needs a recount.
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<AppState>();
+        let wss = st.db().workspaces(false).map_err(e)?;
+        const FRESH: std::time::Duration = std::time::Duration::from_secs(300);
+        let (mut out, todo): (HashMap<String, (u32, u32)>, Vec<Workspace>) = {
+            let cache = st.lines.lock().unwrap();
+            let mut out = HashMap::new();
+            let mut todo = vec![];
+            for w in wss {
+                match cache.0.get(&w.id) {
+                    Some((at, v)) if !cache.1.contains(&w.id) && at.elapsed() < FRESH => { out.insert(w.id.clone(), *v); }
+                    _ => todo.push(w),
+                }
+            }
+            (out, todo)
+        };
+        let handles: Vec<_> = todo
+            .into_iter()
+            .map(|w| std::thread::spawn(move || {
+                let c = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
+                Some((w.id, (c.iter().map(|f| f.additions).sum::<u32>(), c.iter().map(|f| f.deletions).sum::<u32>())))
+            }))
+            .collect();
+        let fresh: Vec<(String, (u32, u32))> = handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect();
+        let mut cache = st.lines.lock().unwrap();
+        for (id, v) in fresh {
+            cache.1.remove(&id);
+            cache.0.insert(id.clone(), (std::time::Instant::now(), v));
+            out.insert(id, v);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(e)?
+}
+
+/// An agent or a git action changed this workspace: recount its lines next time.
+fn mark_changed(st: &AppState, workspace_id: &str) {
+    st.lines.lock().unwrap().1.insert(workspace_id.to_string());
 }
 
 // ---------- pull requests (gh) ----------
@@ -660,7 +700,12 @@ fn gh(dir: &str, args: &[&str]) -> Res<String> {
 /// PR for the workspace branch (open, merged or closed), or null when there is none yet.
 /// `gh pr list --head` also finds PRs opened from a fork, which `gh pr view <branch>` misses.
 #[tauri::command]
-async fn pr_status(st: State<'_, AppState>, id: String) -> Res<Value> {
+async fn pr_status(app: AppHandle, id: String) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || pr_status_blocking(&app.state::<AppState>(), &id)).await.map_err(e)?
+}
+
+fn pr_status_blocking(st: &AppState, id: &str) -> Res<Value> {
+    let id = id.to_string();
     let ws = st.db().workspace(&id).map_err(e)?;
     let out = gh(&ws.path, &[
         "pr", "list", "--head", &ws.branch, "--state", "all", "--limit", "1", "--json",
@@ -952,6 +997,7 @@ async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String,
 #[tauri::command]
 async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    mark_changed(&st, &ws.id);
     let dir = Path::new(&ws.path);
     let msg = if message.trim().is_empty() {
         st.db().sessions(&id).ok().and_then(|s| s.into_iter().map(|s| s.title).find(|t| t != "New chat")).unwrap_or_else(|| "Work in progress".into())
@@ -971,6 +1017,7 @@ async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Re
 #[tauri::command]
 async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    mark_changed(&st, &ws.id);
     let dir = Path::new(&ws.path);
     git::merge_target(dir, &ws.target_branch).map(str::to_string).map_err(e)
 }
@@ -1133,6 +1180,13 @@ async fn update_session(st: State<'_, AppState>, id: String, title: String, mode
     st.db().update_session_settings(&id, &title, model.as_deref().filter(|m| !m.is_empty()), &permission_mode).map_err(e)
 }
 
+/// The latest `limit` events of a chat and the total count, so a 7,000-message chat opens instantly.
+#[tauri::command]
+async fn session_events_tail(st: State<'_, AppState>, id: String, limit: i64) -> Res<Value> {
+    let (events, total) = st.db().events_tail(&id, limit).map_err(e)?;
+    Ok(json!({"events": events, "total": total}))
+}
+
 #[tauri::command]
 async fn session_events(st: State<'_, AppState>, id: String) -> Res<Vec<Value>> {
     st.db().events(&id).map_err(e)
@@ -1226,6 +1280,7 @@ async fn restore_checkpoint(app: AppHandle, st: State<'_, AppState>, id: String,
         let s = db.session(&id).map_err(e)?;
         db.workspace(&s.workspace_id).map_err(e)?
     };
+    mark_changed(&st, &ws.id);
     {
         let runs = st.runs.lock().unwrap();
         let busy = st.db().sessions(&ws.id).map_err(e)?.iter().any(|s| runs.running.contains_key(&s.id));
@@ -1476,6 +1531,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                 }
                 if ev["kind"] == "done" {
                     saw_done = true;
+                    if let Some(c) = ev["cost_usd"].as_f64() {
+                        let _ = st.db().record_cost(&id, c);
+                    }
                     ok = !ev["is_error"].as_bool().unwrap_or(false);
                 }
                 // Login and usage-limit problems arrive as ordinary text; tag them so the UI offers the fix.
@@ -1519,6 +1577,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             emit_event(&app, &id, &ev);
         }
         let _ = st.db().set_unread(&workspace_id, true);
+        mark_changed(&st, &workspace_id);
         let next = {
             let mut runs = st.runs.lock().unwrap();
             runs.running.remove(&id);
@@ -1674,7 +1733,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default() })
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default() })
         .invoke_handler(tauri::generate_handler![
             snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts,
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
@@ -1684,7 +1743,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

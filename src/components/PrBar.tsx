@@ -89,7 +89,8 @@ export function PrBar({
     setForm(null);
     setMenu(false);
     load();
-    const t = setInterval(load, 60_000);
+    // Poll GitHub only while you can see the window.
+    const t = setInterval(() => { if (!document.hidden) load(); }, 60_000);
     return () => clearInterval(t);
   }, [ws.id, refreshKey]);
 
