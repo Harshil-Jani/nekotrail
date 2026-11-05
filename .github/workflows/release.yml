@@ -1,4 +1,5 @@
-# Push a tag like v0.2.0 to build the macOS app and attach it to a draft GitHub release.
+# Push a tag like v0.2.0 (scripts/release.sh does it) to build the macOS app and publish a GitHub
+# release whose notes are that version's section of CHANGELOG.md.
 name: release
 
 on:
@@ -22,15 +23,25 @@ jobs:
         with:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          {
+            echo "body<<EOF"
+            cat notes.md
+            echo ""
+            echo "### Install"
+            echo "Download the \`.dmg\` below, open it and drag nekotrail to Applications. The app is not notarized yet: on first launch, right-click it and choose Open, or run \`xattr -dr com.apple.quarantine /Applications/nekotrail.app\`."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: nekotrail ${{ github.ref_name }}
-          releaseBody: |
-            Download the `.dmg`, open it and drag nekotrail to Applications.
-            The app is not notarized yet. On first launch, right-click the app and choose Open,
-            or run `xattr -dr com.apple.quarantine /Applications/nekotrail.app`.
-          releaseDraft: true
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
           args: --target universal-apple-darwin

@@ -2,6 +2,14 @@
 
 <h1 align="center">nekotrail</h1>
 
+<p align="center">
+  <a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><img src="https://img.shields.io/github/v/release/Harshil-Jani/nekotrail?label=release&color=ff9a4d" alt="Latest release"></a>
+  <a href="https://github.com/Harshil-Jani/nekotrail/actions/workflows/ci.yml"><img src="https://github.com/Harshil-Jani/nekotrail/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-what's%20new-555" alt="Changelog"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-555" alt="macOS 13+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="MIT"></a>
+</p>
+
 <p align="center">Run many coding agents at once on your Mac. Each one gets its own branch and folder, and each one ends as a pull request.</p>
 
 <p align="center"><img src="docs/screenshot.png" width="900" alt="nekotrail: a workspace with a Claude chat, PR status and CI checks"></p>
@@ -101,6 +109,10 @@ Committed values win over the ones saved in the app.
 - `src`: React UI. Open `http://localhost:1420/preview.html?ws=w1` (or `?view=sky`) during `bun run tauri dev` to see the UI with sample data in any browser.
 - `PRODUCT.md`: who it's for and the product principles.
 - `docs/FEATURES.md`: what's in, what's next, and what we're skipping.
+
+## Releases
+
+Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md) for what changed in each one, and [Releases](https://github.com/Harshil-Jani/nekotrail/releases) for the app downloads. Maintainers release with `scripts/release.sh <version>` after adding the version's section to the changelog.
 
 ## Status
 

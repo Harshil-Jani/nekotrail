@@ -932,3 +932,4 @@ input.switch:focus-visible { box-shadow: var(--ring) !important; }
 .sidebar-head .spacer { min-width: 0; }
 .app.no-sidebar .sidebar { display: flex; visibility: hidden; overflow: hidden; min-width: 0; border: none; }
 .app.no-sidebar .sidebar-resizer { visibility: hidden; pointer-events: none; }
+.version { font-size: 12px; }

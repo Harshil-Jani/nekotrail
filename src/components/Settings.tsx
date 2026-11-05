@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Volume2 } from "lucide-react";
 import { api, type AppSettings } from "../api";
+import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import pkg from "../../package.json";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
@@ -35,6 +38,8 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
   const [s, setS] = useState<S>(getSettings);
   const [backend, setBackend] = useState<AppSettings | null>(null);
   const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
+  const [version, setVersion] = useState(pkg.version);
+  useEffect(() => { getVersion().then(setVersion).catch(() => {}); }, []);
   useEffect(() => {
     api.appSettings().then(setBackend).catch(() => {});
     api.openInTargets().then(setTargets).catch(() => {});
@@ -177,6 +182,9 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
         </section>
 
         <div className="row end">
+          <span className="muted version num">nekotrail v{version}</span>
+          <button className="link" onClick={() => openUrl("https://github.com/Harshil-Jani/nekotrail/blob/main/CHANGELOG.md").catch(() => {})}>What's new</button>
+          <span className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>
       </div>
