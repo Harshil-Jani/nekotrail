@@ -3,6 +3,16 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.9.0 (2026-11-06)
+
+**Design pass** (from an outside design review)
+- Chat, Changes and Terminal moved into the toolbar, Finder style: three bars at the top became two, so the chat starts about 45 px higher.
+- A calmer PR bar: plain text with coloured icons, one height for everything, and a less blinding merge button.
+- Orange only where it means "act here": your messages are neutral grey, agent labels are grey, plan cards keep a thin accent edge.
+- Toolbar, PR bar and chat tabs share one left edge; toolbar buttons look like Mac toolbar items; pop-up menus use a single chevron.
+- Consecutive tool calls group together; letter avatars get a disc; empty sections and board columns stop shouting; the low-disk notice is one quiet row.
+- Opening a workspace with news shows one line on what happened while you were away: which agent finished, how long it took, what it cost, lines changed and the PR state.
+
 ## 0.8.0 (2026-11-06)
 
 **Storage**

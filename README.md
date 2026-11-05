@@ -32,7 +32,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
 **Choose the model and how hard it thinks.** One picker for the model and its intelligence level (⌘/).
 <img src="docs/screenshots/model-picker.png" width="900" alt="Model and intelligence picker in the chat box">
 
-**Approve the plan, watch the todo list.** The agent plans first if you ask; approve it with one click (⌘⇧↵).
+**Approve the plan, or split it.** Approve with one click (⌘⇧↵), or split a numbered plan into parallel workspaces. In "Ask before changes" mode, every edit and command waits for your Allow (↵) or Deny (⌫).
 <img src="docs/screenshots/plan.png" width="900" alt="Plan card with Approve and build, a live todo list and queued messages">
 
 **Review the changes.** Line numbers, comments on any line, GitHub review comments inline, side by side.
@@ -43,6 +43,12 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
 
 **Race Claude and Codex.** Same task, two workspaces. Compare files, time and cost; keep the winner.
 <img src="docs/screenshots/compare.png" width="900" alt="Bake-off comparison of a Claude and a Codex workspace">
+
+**See which agent works for you.** Clean-finish rate, turn time, spend and merged PRs per agent, from your own history.
+<img src="docs/screenshots/scorecard.png" width="900" alt="Agent scorecard comparing Claude and Codex">
+
+**Get disk space back.** See each workspace's size and clean the build folders git ignores, in one click.
+<img src="docs/screenshots/storage.png" width="900" alt="Storage sheet with per-workspace sizes and Clean buttons">
 
 **Do anything from the keyboard.** ⌘K jumps to any workspace or action.
 <img src="docs/screenshots/palette.png" width="900" alt="Command palette">

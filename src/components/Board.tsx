@@ -90,8 +90,7 @@ export function Board({
                     </button>
                   );
                 })}
-                {cards.length === 0 && <div className="card-empty">{over === col ? "Drop here" : "No workspaces"}</div>}
-                {col === "backlog" && <button className="ws-empty" onClick={onNew}><Plus size={13} />Create workspace</button>}
+                {cards.length === 0 && over === col && <div className="card-empty">Drop here</div>}
               </div>
             </section>
           );

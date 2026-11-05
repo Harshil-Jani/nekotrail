@@ -110,6 +110,7 @@ export function Sidebar(p: Props) {
   const [ctx, setCtx] = useState<{ w: Workspace; x: number; y: number } | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const [over, setOver] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [editing, setEditing] = useState<{ id: string | null; name: string } | null>(null);
   const [secMenu, setSecMenu] = useState<string | null>(null);
   useEffect(() => {
@@ -194,7 +195,8 @@ export function Sidebar(p: Props) {
         className={`ws ${p.selected === w.id ? "selected" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
         onClick={() => p.onSelect(w.id)}
         draggable={w.state === "active"}
-        onDragStart={(e) => { e.dataTransfer.setData(DRAG, w.id); e.dataTransfer.effectAllowed = "move"; }}
+        onDragStart={(e) => { e.dataTransfer.setData(DRAG, w.id); e.dataTransfer.effectAllowed = "move"; setDragging(true); }}
+        onDragEnd={() => { setDragging(false); setOver(null); }}
         onContextMenu={(e) => { e.preventDefault(); setCtx({ w, x: e.clientX, y: e.clientY }); }}
       >
         <span className="ws-mark">
@@ -299,7 +301,9 @@ export function Sidebar(p: Props) {
                   <section key={sec.id} className="repo">
                     {sectionHead(sec.id, sec.name, ws.length, null, true)}
                     {!folded(sec.id) && ws.map(row)}
-                    {!folded(sec.id) && ws.length === 0 && <div className={`drop-hint ${over === sec.id ? "drop" : ""}`} {...drop(sec.id)}>Drag a workspace here</div>}
+                    {!folded(sec.id) && ws.length === 0 && (dragging
+                      ? <div className={`drop-hint ${over === sec.id ? "drop" : ""}`} {...drop(sec.id)}>Drop here</div>
+                      : <p className="section-empty muted">Empty. Drag a workspace onto the name.</p>)}
                   </section>
                 );
               })}
@@ -353,17 +357,13 @@ export function Sidebar(p: Props) {
           {p.me ? <Avatar src={p.me.avatar_url} size={28} label={p.me.login} /> : <Mascot size={28} />}
           <span className="me-text">
             <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to GitHub"}</span>
-            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
+            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars{p.usage && p.usage.week > 0 ? ` · $${p.usage.today.toFixed(2)} today` : ""}</span>
           </span>
         </button>
-        {p.usage && p.usage.week > 0 && (
-          <div className="usage num" title={`API-equivalent prices reported by the CLIs. On a Claude or ChatGPT plan you aren't billed per token.\n7 days by agent: ${Object.entries(p.usage.by_agent).map(([a, c]) => `${a} $${c.toFixed(2)}`).join(", ")}`}>
-            Today ${p.usage.today.toFixed(2)} · 7 days ${p.usage.week.toFixed(2)}
-          </div>
-        )}
+
         {p.lowDiskMb !== null && (
-          <button className="low-disk" onClick={p.onStorage}>
-            <HardDrive size={14} />Only {p.lowDiskMb >= 1024 ? `${(p.lowDiskMb / 1024).toFixed(1)} GB` : `${p.lowDiskMb} MB`} free. Clean build folders
+          <button className="low-disk" onClick={p.onStorage} title="Disk is almost full. Open Storage to clean build folders.">
+            <HardDrive size={14} /><span className="muted">{p.lowDiskMb >= 1024 ? `${(p.lowDiskMb / 1024).toFixed(1)} GB` : `${p.lowDiskMb} MB`} free</span><span className="spacer" /><span className="clean-link">Clean up</span>
           </button>
         )}
         <button className={`quiet ${p.showArchived ? "on" : ""}`} onClick={p.onToggleArchived} aria-pressed={p.showArchived}>

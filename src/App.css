@@ -979,3 +979,70 @@ html.native .repo-actions { background: none; }
 .storage-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .low-disk { justify-content: flex-start; height: auto; padding: 6px 8px; background: var(--wait-soft); color: var(--wait); box-shadow: none; font-size: 12px; white-space: normal; text-align: left; }
 .low-disk:hover { background: var(--wait-soft); filter: brightness(1.1); }
+.away-banner { display: flex; align-items: center; gap: 8px; margin: var(--s2) var(--s5) 0; padding: 6px 6px 6px 12px; border-radius: var(--r-md); background: var(--accent-soft); font-size: 12.5px; }
+.away-banner b { font-weight: 600; }
+.away-banner .icon { width: 22px; height: 22px; }
+
+/* ===== Design review pass ===== */
+/* 1. Tabs live in the toolbar; three bars become two. */
+.ws-header .tabs { margin: 0; align-self: center; }
+.panel { border-top: none; }
+.ws-header { gap: var(--s2); }
+/* 2. PR bar: quiet text, colour only on icons; one height for everything. */
+.prbar { gap: 6px; }
+.prbar .pill { height: 22px; background: transparent; color: var(--muted); padding: 0 4px; font-weight: 500; }
+.prbar .pill.good svg { color: var(--good); }
+.prbar .pill.bad { color: var(--bad); }
+.prbar .pill.merged svg { color: var(--purple); }
+.prbar .pill.wait { background: var(--wait-soft); color: var(--wait); padding: 0 7px; }
+.prbar button.link.num { color: var(--muted); font-weight: 500; }
+.prbar button.link.num:hover { color: var(--text); }
+.prbar button.branch, .prbar .git-actions > button, .prbar .icon-btn { height: 24px; }
+/* 3. Merge is calmer; autopilot is neutral. */
+button.good-btn { background: color-mix(in srgb, var(--good) 72%, black); color: #fff; }
+button.good-btn:hover { background: color-mix(in srgb, var(--good) 82%, black); }
+.pill.autopilot { background: var(--hover) !important; color: var(--muted) !important; }
+/* 4. Less orange: user bubble neutral, plan title in text colour, agent labels muted. */
+.msg.user { background: var(--hover); max-width: 75%; }
+.msg-user-wrap { max-width: 75%; }
+.plan-card, .approval-card { background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.plan-head { color: var(--text); }
+.plan-head svg { color: var(--accent-text); }
+.agent-tag { color: var(--muted); }
+/* 5. One left edge for toolbar, PR bar and chat tabs. */
+.ws-header, .prbar, .chat-tabs { padding-left: var(--s5); }
+.chat-tabs { padding-left: calc(var(--s5) - 10px); }
+/* 6. Toolbar buttons are toolbar items, not web buttons; one ⌄ chevron for pop-ups. */
+.ws-actions > button:not(.primary):not(.accent):not(.danger), .ws-actions select { background-color: transparent; box-shadow: none; height: 28px; }
+.ws-actions > button:not(.primary):not(.accent):not(.danger):hover, .ws-actions select:hover { background-color: var(--hover); }
+.ws-actions select { width: auto; max-width: 150px; }
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 9px center; }
+/* 7. Consecutive tool calls read as one group. */
+[data-row]:has(> div > .step) + [data-row]:has(> div > .step) { margin-top: -9px; }
+.step { background: var(--hover); }
+.step summary { height: 28px; }
+.step summary b { font-size: 12px; color: var(--muted); font-weight: 600; }
+.step summary code { color: var(--text); font-size: 12px; }
+/* 8. Footer: one quiet row for low disk. */
+.low-disk { height: 24px !important; padding: 0 6px !important; background: transparent !important; color: var(--wait) !important; gap: 6px; }
+.low-disk .muted { font-size: 12px; }
+.low-disk .clean-link { color: var(--accent-text); font-weight: 600; font-size: 12px; }
+.low-disk:hover { background: var(--hover) !important; filter: none; }
+/* 9. Letter avatars get a disc; repo headers sit under section rank. */
+.avatar-fallback { background: var(--press); color: var(--muted); font-weight: 600; }
+.repo-head .repo-name { font-size: 12px; font-weight: 600; color: var(--muted); }
+/* 10. Quieter empty states. */
+.section-empty { margin: 0 0 4px 36px; font-size: 11.5px; }
+.new-section { opacity: 0.6; }
+.sidebar-scroll:hover .new-section { opacity: 1; }
+.board-col { background: transparent; }
+.board-col.drop { background: var(--accent-soft); }
+/* 11. Sheets: title close to body. */
+.modal { gap: var(--s3); }
+.modal h2 { font-size: 15px; font-weight: 600; }
+/* 12. Overlays have an edge; the todo and queue dock sits on its own ground. */
+.nw-backdrop { background: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.35)) !important; }
+.todos, .queue { box-shadow: 0 -12px 16px -12px var(--bg), 0 0 0 0.5px var(--line); }
+.me-text .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me-text { overflow: hidden; }
+.ws-actions select { width: 104px; }

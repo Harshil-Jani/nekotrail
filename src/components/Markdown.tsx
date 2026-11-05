@@ -10,7 +10,10 @@ function loadMermaid() {
     // Plain SVG text labels: measured reliably everywhere (HTML labels can collapse to nothing).
     m.default.initialize({
       startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral", htmlLabels: false,
-      flowchart: { htmlLabels: false, useMaxWidth: true }, fontFamily: "-apple-system, BlinkMacSystemFont, Helvetica, sans-serif", fontSize: 13,
+      flowchart: { htmlLabels: false, useMaxWidth: true, curve: "basis" }, fontFamily: "-apple-system, BlinkMacSystemFont, Helvetica, sans-serif", fontSize: 12,
+      themeVariables: dark
+        ? { primaryColor: "#2c2c2e", primaryBorderColor: "#4a4a4c", primaryTextColor: "#e8e8ea", lineColor: "#6b6b70", fontSize: "12px" }
+        : { primaryColor: "#ffffff", primaryBorderColor: "#c7c7cc", primaryTextColor: "#1d1d1f", lineColor: "#8e8e93", fontSize: "12px" },
     });
     return m.default;
   });

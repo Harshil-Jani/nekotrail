@@ -4,8 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, Crown, Kanban, PanelLeft, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
+import { Archive, ArchiveRestore, Check, Columns2, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -470,7 +470,31 @@ export default function App() {
     setTimeout(() => setToast((t) => (t?.text === text ? null : t)), error || action ? 8000 : 4000);
   };
 
+  // "While you were away": opening a workspace with news shows one line on what happened.
+  const [away, setAway] = useState<{ id: string; text: string } | null>(null);
+  const summarize = async (w: Workspace) => {
+    const sessions = await api.sessions(w.id).catch(() => []);
+    let last: { agent: string; ms?: number; cost?: number; error?: boolean } | null = null;
+    for (const s of sessions) {
+      const { events } = await api.sessionEventsTail(s.id, 40).catch(() => ({ events: [] as ChatEvent[], total: 0 }));
+      const done = [...events].reverse().find((e) => e.kind === "done") as Extract<ChatEvent, { kind: "done" }> | undefined;
+      if (done && !(done as { imported?: boolean }).imported) last = { agent: s.agent, ms: done.duration_ms, cost: done.cost_usd, error: done.is_error };
+    }
+    const parts: string[] = [];
+    if (last) {
+      const who = last.agent === "codex" ? "Codex" : "Claude";
+      const t = last.ms ? (last.ms >= 60_000 ? `${Math.floor(last.ms / 60_000)}m ${Math.round((last.ms % 60_000) / 1000)}s` : `${Math.round(last.ms / 1000)}s`) : "";
+      parts.push(`${who} ${last.error ? "stopped with an error" : "finished"}${t ? ` in ${t}` : ""}${last.cost ? ` for $${last.cost.toFixed(2)}` : ""}`);
+    }
+    const l = lines[w.id];
+    if (l && (l[0] || l[1])) parts.push(`+${l[0]} -${l[1]} lines changed`);
+    const pr = prStates[w.id];
+    if (pr) parts.push(pr === "OPEN" ? "PR open" : pr === "DRAFT" ? "draft PR" : pr === "MERGED" ? "PR merged" : "PR closed");
+    if (parts.length) setAway({ id: w.id, text: parts.join(" · ") });
+  };
   const select = (id: string) => {
+    const w = workspaces.find((x) => x.id === id);
+    if (w?.unread && w.id !== selected) summarize(w); else setAway(null);
     setSelected(id);
     setView("workspace");
   };
@@ -839,6 +863,16 @@ export default function App() {
                 </div>
               </div>
               <span className="spacer" />
+              {ws.state === "active" && (
+                <nav className="tabs" role="tablist" aria-label="Workspace">
+                  {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
+                    <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
+                      {t.label}
+                    </button>
+                  ))}
+                </nav>
+              )}
+              <span className="spacer" />
               <div className="ws-actions">
                 {ws.state === "archived" ? (
                   <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
@@ -850,7 +884,7 @@ export default function App() {
                       <button className="quiet" onClick={openLocal} title="Open in browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
                     )}
                     {ws.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1 && (
-                      <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Crown size={14} />Compare</button>
+                      <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Columns2 size={14} />Compare</button>
                     )}
                     {livePtys.has(`${ws.id}:run`) ? (
                       <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
@@ -898,14 +932,12 @@ export default function App() {
               />
             )}
 
-            {ws.state === "active" && (
-              <nav className="tabs" role="tablist" aria-label="Workspace">
-                {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
-                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
-                    {t.label}
-                  </button>
-                ))}
-              </nav>
+            {away?.id === ws.id && (
+              <div className="away-banner" role="status">
+                <span className="unread" /><b>While you were away:</b> {away.text}
+                <span className="spacer" />
+                <button className="icon" aria-label="Dismiss" onClick={() => setAway(null)}><X size={13} /></button>
+              </div>
             )}
 
             <div className="panel">
