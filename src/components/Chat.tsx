@@ -266,7 +266,8 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
         </details>
       );
     case "tool": {
-      if (r.name === "ExitPlanMode" && r.input) return <PlanCard plan={r.input} latest={latestPlan} />;
+      // The card already says "Plan", so drop a leading "# Plan" heading from the agent's text.
+      if (r.name === "ExitPlanMode" && r.input) return <PlanCard plan={r.input.replace(/^\s*#{1,3}\s*(the\s+)?plan:?\s*\n/i, "")} latest={latestPlan} />;
       if (r.name === "TodoWrite") {
         const todos = parseTodos(r.input);
         const done = todos?.filter((t) => t.status === "completed").length ?? 0;

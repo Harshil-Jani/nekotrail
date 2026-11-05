@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, CircleAlert, Copy, Download, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
+import { Check, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
 import { api, errText, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 
@@ -124,14 +124,19 @@ export function CloneSheet({ onDone, onClose }: { onDone: (r: Repo) => void; onC
 
 /** What you see with no workspace open: setup, ways to start, and the Conductor import. */
 export function Welcome({
-  me, repos, mood, purring, onPet, onAddRepo, onClone, onNew, canImport, onImport,
+  me, repos, mood, purring, onPet, onAddRepo, onClone, onNew, canImport, onImport, onImported,
 }: {
   me: GithubUser; repos: Repo[]; mood: Mood; purring: boolean; onPet: () => void;
   onAddRepo: () => void; onClone: () => void; onNew: () => void;
   canImport: boolean; onImport: () => Promise<void>;
+  onImported?: () => void;
 }) {
   const [preview, setPreview] = useState<ImportReport | null>(null);
   const [importing, setImporting] = useState(false);
+  const [outside, setOutside] = useState<string[]>([]);
+  const [moving, setMoving] = useState(false);
+  const [moveResult, setMoveResult] = useState<string | null>(null);
+  useEffect(() => { api.importedOutside().then(setOutside).catch(() => {}); }, [repos.length]);
   useEffect(() => { if (canImport) api.importPreview().then(setPreview).catch(() => {}); }, [canImport, repos.length]);
   const fresh = repos.length === 0;
   const hasImport = !!preview && preview.workspaces + preview.repos > 0;
@@ -141,6 +146,27 @@ export function Welcome({
       <h1>{me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Hi there."}</h1>
       <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
 
+      {outside.length > 0 && (
+        <div className="import-card hero">
+          <h2>Move your imported workspaces into nekotrail</h2>
+          <p>
+            {outside.length} imported {outside.length === 1 ? "workspace still lives" : "workspaces still live"} in Conductor's folder. If Conductor cleans up or is uninstalled, that folder can be deleted with your uncommitted work.
+            Moving them takes a few seconds; branches, chats and uncommitted changes come along.
+          </p>
+          <button className="accent" disabled={moving} onClick={async () => {
+            setMoving(true);
+            try {
+              const [n, problems] = await api.relocateImported();
+              setMoveResult(problems.length ? `Moved ${n}. Not moved: ${problems.join(" ")}` : `Moved ${n} ${n === 1 ? "workspace" : "workspaces"} into ~/nekotrail/workspaces.`);
+              setOutside(await api.importedOutside());
+              onImported?.();
+            } catch (e) { setMoveResult(String(e)); } finally { setMoving(false); }
+          }}>
+            {moving ? <span className="spinner" /> : <FolderInput size={15} />}Move {outside.length} {outside.length === 1 ? "workspace" : "workspaces"}
+          </button>
+        </div>
+      )}
+      {moveResult && <p className="muted">{moveResult}</p>}
       {hasImport && (
         <div className="import-card hero">
           <h2>{fresh ? "Pick up where you left off in Conductor" : "New work in Conductor"}</h2>

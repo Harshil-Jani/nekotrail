@@ -547,6 +547,25 @@ export default function App() {
     if (ws) api.openIn(ws.id, app).catch((er) => say(errText(er), true));
   };
 
+  // Versions and counts only: no paths, chats, tokens or repo names.
+  const copyDiagnostics = async () => {
+    const d = await api.doctor().catch(() => null);
+    const { getVersion } = await import("@tauri-apps/api/app");
+    const v = await getVersion().catch(() => "unknown");
+    const text = [
+      `nekotrail ${v}`,
+      `macOS: ${navigator.userAgent.match(/Mac OS X [\d_]+/)?.[0]?.replace(/_/g, ".") ?? "unknown"}`,
+      `git: ${d?.git.version || "missing"}`,
+      `gh: ${d?.gh.installed ? (d.gh.ok ? "signed in" : "not signed in") : "missing"}`,
+      `claude: ${d?.claude.version || "missing"}`,
+      `codex: ${d?.codex.version || "missing"}`,
+      `repos: ${repos.length}, workspaces: ${workspaces.filter((w) => w.state === "active").length} active, ${workspaces.filter((w) => w.state === "archived").length} archived`,
+      `memory: ${ram ? `${ram.total_mb} MB` : "unknown"}`,
+    ].join("\n");
+    await navigator.clipboard.writeText(text);
+    say("Copied diagnostics. Paste them into your GitHub issue.");
+  };
+
   // Everything the palette can do. Built on open, so it always reflects the current state.
   const commands = (): Command[] => {
     const c: Command[] = [];
@@ -585,6 +604,7 @@ export default function App() {
     }
     c.push(
       { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
       { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
@@ -709,7 +729,7 @@ export default function App() {
           <Welcome
             me={me} repos={repos} mood={mood} purring={purring} onPet={pet}
             onAddRepo={addRepo} onClone={() => setCloning(true)} onNew={() => openNew()}
-            canImport={canImport} onImport={importConductor}
+            canImport={canImport} onImport={importConductor} onImported={refresh}
           />
         )}
 
@@ -754,7 +774,7 @@ export default function App() {
                       <button className="quiet" onClick={openLocal} title="Open in browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
                     )}
                     {ws.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1 && (
-                      <button className="accent" onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Crown size={14} />Compare</button>
+                      <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Crown size={14} />Compare</button>
                     )}
                     {livePtys.has(`${ws.id}:run`) ? (
                       <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>

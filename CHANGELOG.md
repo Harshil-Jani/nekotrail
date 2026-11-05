@@ -3,6 +3,16 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.3.0 (2026-11-06)
+
+**Safe to switch from Conductor**
+- Move imported workspaces out of Conductor's folder in one click, so cleaning up or uninstalling Conductor can't delete them. Branches, chats and uncommitted changes come along.
+- "Copy diagnostics for a bug report" in ⌘K: versions and counts only, no paths, chats or tokens.
+
+**Polish**
+- The plan card no longer says "Plan" twice.
+- Compare is a regular button, so Merge stays the one loud action.
+
 ## 0.2.2 (2026-11-06)
 
 - Sidebar names use the full width; before, they were cut off halfway.
