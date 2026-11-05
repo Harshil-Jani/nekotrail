@@ -385,6 +385,24 @@ async fn set_session_effort(st: State<'_, AppState>, id: String, effort: Option<
     st.db().set_session_effort(&id, effort.as_deref().filter(|e| !e.is_empty())).map_err(e)
 }
 
+/// Let this chat's agent read and edit another folder too (/add-dir). Returns the full list.
+#[tauri::command]
+async fn add_dir(st: State<'_, AppState>, id: String, dir: String) -> Res<Vec<String>> {
+    let dir = dir.trim().replacen('~', &dirs::home_dir().unwrap_or_default().to_string_lossy(), 1);
+    let p = Path::new(&dir);
+    if !p.is_dir() {
+        return Err(format!("{dir} is not a folder"));
+    }
+    let full = p.canonicalize().map_err(e)?.to_string_lossy().to_string();
+    let db = st.db();
+    let mut dirs = db.extra_dirs(&id).map_err(e)?;
+    if !dirs.contains(&full) {
+        dirs.push(full);
+    }
+    db.set_extra_dirs(&id, &dirs).map_err(e)?;
+    Ok(dirs)
+}
+
 /// Close a chat tab. Its history stays in the database.
 #[tauri::command]
 async fn hide_session(st: State<'_, AppState>, id: String) -> Res<()> {
@@ -960,6 +978,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     };
     let env = workspace_env(&repo, &ws);
     let prefs = &repo.prefs;
+    let dirs = st.db().extra_dirs(&id).unwrap_or_default();
     let ws = maybe_name_branch(&app, st, ws, &text);
     // Snapshot the worktree first, so this turn can be undone with one click.
     let checkpoint = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id)).ok();
@@ -983,6 +1002,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         effort: session.effort.as_deref(),
         instructions: Some(prefs.general_prompt.trim()).filter(|p| !p.is_empty()),
         env: &env,
+        dirs: &dirs,
     });
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
@@ -1201,7 +1221,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

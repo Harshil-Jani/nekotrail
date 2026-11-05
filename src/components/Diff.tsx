@@ -43,6 +43,7 @@ const DiffLines = memo(function DiffLines({
   text,
   comments,
   gh,
+  split,
   onAdd,
   onRemove,
 }: {
@@ -52,11 +53,13 @@ const DiffLines = memo(function DiffLines({
   gh: GhComment[];
   onAdd: (c: ReviewComment) => void;
   onRemove: (id: string) => void;
+  split: boolean;
 }) {
   const lines = parseDiff(text);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   useEffect(() => { setEditing(null); setDraft(""); }, [file]);
+  if (split) return <SplitLines lines={lines} file={file} />;
 
   const save = (l: Line) => {
     const t = draft.trim();
@@ -127,6 +130,32 @@ const DiffLines = memo(function DiffLines({
     </div>
   );
 });
+
+/** Side by side: old on the left, new on the right; removed and added runs are paired up. */
+function SplitLines({ lines, file }: { lines: Line[]; file: string }) {
+  type Cell = Line | null;
+  const rows: [Cell, Cell][] = [];
+  for (let i = 0; i < lines.length; ) {
+    const l = lines[i];
+    if (l.kind === "hunk" || l.kind === "ctx") { rows.push([l, l]); i++; continue; }
+    const dels: Line[] = [], adds: Line[] = [];
+    while (i < lines.length && lines[i].kind === "del") dels.push(lines[i++]);
+    while (i < lines.length && lines[i].kind === "add") adds.push(lines[i++]);
+    for (let k = 0; k < Math.max(dels.length, adds.length); k++) rows.push([dels[k] ?? null, adds[k] ?? null]);
+  }
+  const cell = (c: Cell, side: "old" | "new") =>
+    !c ? <div className="sl empty-cell" /> :
+    c.kind === "hunk" ? <div className="sl hunk"><code>{c.text}</code></div> :
+    <div className={`sl ${c.kind}`}><span className="ln">{side === "old" ? c.old : c.new}</span><code>{c.text || " "}</code></div>;
+  return (
+    <div className="diff split" role="table" aria-label={`Changes in ${file}, side by side`}>
+      {rows.map(([a, b], i) => (
+        a?.kind === "hunk" ? <div key={i} className="split-row full">{cell(a, "old")}</div> :
+        <div key={i} className="split-row">{cell(a, "old")}{cell(b, "new")}</div>
+      ))}
+    </div>
+  );
+}
 
 /** Turn review comments into one message the agent can act on. */
 export function reviewPrompt(comments: ReviewComment[]): string {
@@ -206,6 +235,8 @@ export function Diff({
   const [diff, setDiff] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uncommitted, setUncommitted] = useState(false);
+  const [split, setSplit] = useState(() => localStorage.getItem("nekotrail.split") === "1");
+  const toggleSplit = () => setSplit((v) => { localStorage.setItem("nekotrail.split", v ? "0" : "1"); return !v; });
   const [editing, setEditing] = useState<string | null>(null);
   const [gh, setGh] = useState<GhComment[]>([]);
   // Draft comments survive tab switches and restarts until they are sent.
@@ -337,6 +368,7 @@ export function Diff({
             <div className="file-head">
               <code>{open}</code>
               <span className="spacer" />
+              <button className="quiet" onClick={toggleSplit} title="Unified or side by side">{split ? "Unified" : "Side by side"}</button>
               <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit</button>
             </div>
             <DiffLines
@@ -344,6 +376,7 @@ export function Diff({
               text={diff}
               comments={fileComments}
               gh={gh.filter((c) => c.path === open)}
+              split={split}
               onAdd={(c) => saveComments([...comments, c])}
               onRemove={(id) => saveComments(comments.filter((c) => c.id !== id))}
             />

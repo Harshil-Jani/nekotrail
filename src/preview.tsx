@@ -8,6 +8,7 @@ import ReactDOM from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
+if (new URLSearchParams(location.search).get("split")) localStorage.setItem("nekotrail.split", "1");
 if (new URLSearchParams(location.search).get("group") === "status") localStorage.setItem("nekotrail.settings", JSON.stringify({ groupBy: "status" }));
 
 // Sample review comments so the Changes tab shows them.

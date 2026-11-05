@@ -141,6 +141,7 @@ export const api = {
   renameBranch: (id: string, branch: string) => invoke<void>("rename_branch", { id, branch }),
   setRepoPrefs: (id: string, prefs: RepoPrefs) => invoke<void>("set_repo_prefs", { id, prefs }),
   setSessionEffort: (id: string, effort: Effort | null) => invoke<void>("set_session_effort", { id, effort }),
+  addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),
   hideSession: (id: string) => invoke<void>("hide_session", { id }),

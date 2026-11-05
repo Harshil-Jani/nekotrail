@@ -72,6 +72,8 @@ fn migrate(conn: &Connection) -> Result<()> {
     add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
     add("sessions", "effort", "TEXT")?;
     add("sessions", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
+    // Extra folders the agent may read and edit (/add-dir), as a JSON list.
+    add("sessions", "extra_dirs", "TEXT NOT NULL DEFAULT '[]'")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
     Ok(())
 }
@@ -354,6 +356,16 @@ impl Store {
 
     pub fn set_session_hidden(&self, id: &str, hidden: bool) -> Result<()> {
         self.conn.execute("UPDATE sessions SET hidden=?2 WHERE id=?1", params![id, hidden])?;
+        Ok(())
+    }
+
+    pub fn extra_dirs(&self, id: &str) -> Result<Vec<String>> {
+        let raw: String = self.conn.query_row("SELECT extra_dirs FROM sessions WHERE id=?1", [id], |r| r.get(0))?;
+        Ok(serde_json::from_str(&raw).unwrap_or_default())
+    }
+
+    pub fn set_extra_dirs(&self, id: &str, dirs: &[String]) -> Result<()> {
+        self.conn.execute("UPDATE sessions SET extra_dirs=?2 WHERE id=?1", params![id, serde_json::to_string(dirs)?])?;
         Ok(())
     }
 

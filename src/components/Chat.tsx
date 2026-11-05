@@ -463,6 +463,14 @@ export function Chat({
       case "/fork": await fork(); return true;
       case "/model": await update({ model: arg || null }); return true;
       case "/effort": await update({ effort: (arg || null) as Effort | null }); return true;
+      case "/add-dir": {
+        if (!active || !arg) { setError("Usage: /add-dir ~/code/other-repo"); return true; }
+        try {
+          const dirs = await api.addDir(active, arg);
+          setNote(`The agent can now use: ${dirs.join(", ")}`);
+        } catch (e) { setError(errText(e)); }
+        return true;
+      }
       default: return false; // anything else (e.g. /compact, custom commands) goes to the agent
     }
   };
@@ -522,11 +530,14 @@ export function Chat({
     setTimeout(() => setCopied(false), 1500);
   };
   const [copied, setCopied] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => { if (note) { const t = setTimeout(() => setNote(null), 5000); return () => clearTimeout(t); } }, [note]);
 
   // Slash commands: typed at the start of the composer.
   const SLASH: [string, string][] = [
     ["/clear", "Start a fresh chat"], ["/plan", "Plan only, no edits"], ["/auto", "Auto-accept edits"],
     ["/fork", "Copy this chat into a new tab"], ["/compact", "Summarise the chat to free up context"],
+    ["/add-dir", "Let the agent use another folder, e.g. /add-dir ~/code/api"],
     ["/model", "Set the model, e.g. /model sonnet"], ["/effort", "Set effort: low, medium, high, xhigh, max"],
   ];
   const [slash, setSlash] = useState<{ items: [string, string][]; sel: number } | null>(null);
@@ -683,6 +694,7 @@ export function Chat({
         </div>
       )}
       {error && <div className="banner error">{error}</div>}
+      {note && <div className="banner">{note}</div>}
 
       <div className="composer">
         <div className="composer-box">

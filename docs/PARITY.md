@@ -47,7 +47,7 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 | ✅ | Plan card: approve and run (⌘⇧↵) | Approve switches the chat to auto-accept and sends "go" |
 | ✅ | Queue: edit, delete, run next | |
 | ✅ | Enter sends (setting), Shift+Enter newline | |
-| ✅ | Slash commands: /clear /plan /auto /fork /model /effort; others go to the agent | /add-dir later |
+| ✅ | Slash commands: /clear /plan /auto /fork /add-dir /model /effort; others go to the agent | |
 | ✅ | Search in chat (⌘F), copy transcript | |
 | ✅ | Fork chat into a new tab | `--fork-session` |
 | ✅ | Chat tabs: ⌘T new, close button | ⌘W stays the window shortcut |
@@ -61,7 +61,7 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 |---|---|---|
 | ✅ | Line comments, send to agent | |
 | ✅ | Uncommitted-only toggle (⌘⌥U) | |
-| 🟡 | Split view, ↑/↓ between files, mark viewed | ↑/↓ and viewed done; split view not yet |
+| ✅ | Side-by-side view, ↑/↓ between files, mark viewed | |
 | ✅ | GitHub PR review comments in the diff, send to agent | `gh api` review comments, with replies |
 | ✅ | Quick open (⌘P) and edit a file (⌘S saves) | |
 

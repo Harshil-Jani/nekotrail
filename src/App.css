@@ -520,3 +520,14 @@ button.good-btn:hover { background: #20d095; }
 .status-dot.st-backlog { background: var(--muted); }
 .status-dot.st-done { background: #c69cff; }
 .ws-lines { display: inline-flex; gap: 4px; font-size: 11px; opacity: 0.85; }
+.diff.split { min-width: 0; }
+.split-row { display: grid; grid-template-columns: 1fr 1fr; }
+.split-row.full { grid-template-columns: 1fr; }
+.sl { display: grid; grid-template-columns: 44px 1fr; min-width: 0; overflow: hidden; }
+.sl + .sl { border-left: 1px solid var(--line); }
+.sl code { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-size: 12px; padding-right: var(--s3); }
+.sl .ln { color: #5b6066; text-align: right; padding-right: var(--s2); font-size: 11px; user-select: none; }
+.sl.add { background: rgba(0, 186, 124, 0.12); }
+.sl.del { background: rgba(255, 92, 102, 0.12); }
+.sl.hunk { grid-template-columns: 1fr; color: var(--muted); background: var(--surface); margin: var(--s2) 0; padding: 2px var(--s3); }
+.sl.empty-cell { background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255, 255, 255, 0.02) 6px 12px); }

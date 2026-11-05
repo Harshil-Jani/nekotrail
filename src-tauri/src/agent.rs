@@ -166,6 +166,8 @@ pub struct TurnSpec<'a> {
     pub instructions: Option<&'a str>,
     /// Extra environment variables from the repo's settings.
     pub env: &'a [(String, String)],
+    /// Other folders the agent may use (/add-dir).
+    pub dirs: &'a [String],
 }
 
 /// Build the CLI command for one turn.
@@ -185,6 +187,9 @@ pub fn command(spec: &TurnSpec) -> Command {
         c.args(["--json", "--skip-git-repo-check", "-c", &format!("sandbox_mode=\"{sandbox}\"")]);
         if let Some(m) = spec.model {
             c.args(["-m", m]);
+        }
+        for d in spec.dirs {
+            c.args(["--add-dir", d]);
         }
         if let Some(e) = spec.effort {
             let e = match e { "max" | "xhigh" => "xhigh", "low" => "low", "medium" => "medium", _ => "high" };
@@ -213,6 +218,9 @@ pub fn command(spec: &TurnSpec) -> Command {
         }
         if let Some(i) = spec.instructions {
             c.args(["--append-system-prompt", i]);
+        }
+        for d in spec.dirs {
+            c.args(["--add-dir", d]);
         }
     }
     c.envs(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
@@ -273,14 +281,15 @@ mod tests {
     #[test]
     fn commands() {
         let cwd = Path::new("/tmp");
-        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[] });
+        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &["/code/shared".into()] });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
+        assert!(args.windows(2).any(|w| w == ["--add-dir", "/code/shared"]));
         assert!(args.windows(2).any(|w| w == ["--effort", "high"]));
         assert!(args.windows(2).any(|w| w == ["--append-system-prompt", "Use pnpm."]));
         assert!(args.windows(2).any(|w| w == ["--resume", "s1"]));
         assert!(args.windows(2).any(|w| w == ["--permission-mode", "plan"]));
 
-        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[] });
+        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[] });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(&args[..3], ["exec", "resume", "t1"]);
         assert!(args.contains(&"sandbox_mode=\"read-only\"".to_string()));
