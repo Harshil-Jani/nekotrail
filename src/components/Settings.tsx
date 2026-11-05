@@ -8,28 +8,28 @@ import { chime, getSettings, saveSettings, ting, type Settings as S } from "../s
 
 const SHORTCUTS: [string, string][] = [
   ["⌘K", "Jump anywhere, run any command"],
-  ["⌘N / ⌘⇧N", "New workspace / from a pull request"],
+  ["⌘N / ⌘⇧N", "Create workspace / from a PR"],
   ["⌘1 to ⌘9", "Go to a workspace in the sidebar"],
   ["⌘⌥↑ / ⌘⌥↓", "Previous / next workspace"],
-  ["⌘⌥L", "Next workspace with news"],
-  ["⌘L / ⌘⇧D / ⌘J", "Chat / Changes / Terminal"],
-  ["⌘T", "New chat or terminal tab"],
+  ["⌘⌥L", "Go to next workspace with news"],
+  ["⌘L / ⌘⇧D / ⌘J", "Show chat / changes / terminal"],
+  ["⌘T", "Start a chat or open a terminal tab"],
   ["⌘F / ⌘G", "Search this chat / next match"],
-  ["↵ or ⌘↵", "Send message (pick which above)"],
+  ["↵ or ⌘↵", "Send message (choose which above)"],
   ["⌘⇧↵", "Approve the agent's plan"],
   ["⌘⇧⌫", "Stop the agent"],
-  ["Ctrl O", "Show every tool call's output"],
+  ["⌃O", "Show or hide every tool call's output"],
   ["⌘⇧P / ⌘⇧Y / ⌘⇧M", "Create PR / commit and push / merge"],
-  ["⌘⇧L / ⌘⇧R / ⌘⇧X", "Pull latest / review / fix failing checks"],
+  ["⌘⇧L / ⌘⇧R / ⌘⇧X", "Pull latest target branch / review / fix failing checks"],
   ["⌘⇧G", "Open the PR on GitHub"],
   ["⌘P", "Open any file"],
-  ["⌘⌥U", "Changes: all or uncommitted"],
-  ["⌘R / ⌘⇧B", "Run or stop / open localhost"],
+  ["⌘⌥U", "Switch changes: all or uncommitted"],
+  ["⌘R / ⌘⇧B", "Run or stop the app / open it in browser"],
   ["⌘O", "Open workspace in your editor"],
   ["⌘⇧A", "Archive workspace"],
   ["⌘B", "Hide or show the sidebar"],
-  ["⌘+ / ⌘- / ⌘0", "Zoom"],
-  ["⌘,", "Settings"],
+  ["⌘+ / ⌘- / ⌘0", "Zoom in / out / reset"],
+  ["⌘,", "Open settings"],
   ["@ and /", "Mention a file, run a command"],
 ];
 
@@ -68,9 +68,9 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
           <h3>When an agent needs you</h3>
           <p className="muted setting-note">A plan to approve, a question, a sign-in, a usage limit or an error.</p>
           <label className="setting">
-            <span>Ting ting</span>
+            <span>Ting ting sound</span>
             <span className="row">
-              <button className="icon" title="Play it" aria-label="Play the needs-you sound" onClick={() => ting()}><Volume2 size={16} /></button>
+              <button className="icon" title="Play the sound" aria-label="Play the needs-you sound" onClick={() => ting()}><Volume2 size={16} /></button>
               <input type="checkbox" className="switch" checked={s.needsSound} onChange={(e) => { set("needsSound", e.target.checked); if (e.target.checked) ting(); }} />
             </span>
           </label>
@@ -95,7 +95,7 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
             </select>
           </label>
           <label className="setting">
-            <span>Chime</span>
+            <span>Chime sound</span>
             <span className="row">
               <button className="icon" title="Play the chime" aria-label="Play the chime" onClick={() => chime(true)}><Volume2 size={16} /></button>
               <input type="checkbox" className="switch" checked={s.sound} onChange={(e) => { set("sound", e.target.checked); if (e.target.checked) chime(true); }} />
@@ -135,7 +135,7 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
             </select>
           </label>
           <div className="setting">
-            <span>Folder</span>
+            <span>Workspaces folder</span>
             <code className="muted">{backend?.home ? `${backend.home}/workspaces` : home}</code>
           </div>
         </section>

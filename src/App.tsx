@@ -473,7 +473,7 @@ export default function App() {
       await api.archiveWorkspace(target.id);
     } catch (e) {
       if (errText(e) !== "DIRTY") return say(errText(e), true);
-      if (opts?.auto) return say(`${name} merged, but it has uncommitted changes, so it stays open.`);
+      if (opts?.auto) return say(`${name}'s PR merged, but it has uncommitted changes, so it stays open. Commit or discard them, then archive it.`);
       if (!confirm(`${name} has uncommitted changes. Archive anyway? The branch ${target.branch} is kept, but uncommitted work in the folder is lost.`)) return;
       try {
         await api.archiveWorkspace(target.id, true);
@@ -541,7 +541,7 @@ export default function App() {
     const start = list.findIndex((w) => w.id === selected);
     const next = [...list.slice(start + 1), ...list.slice(0, start + 1)].find((w) => w.unread);
     if (next) select(next.id);
-    else say("Nothing new. Every cat is asleep or still working.");
+    else say("No workspaces with news. Every agent is idle or still working.");
   };
   const openInEditor = (app = getSettings().editor) => {
     if (ws) api.openIn(ws.id, app).catch((er) => say(errText(er), true));
@@ -554,25 +554,25 @@ export default function App() {
     if (ws && ws.state === "active") {
       const here = nameOf(ws);
       c.push(
-        { id: "tab-chat", group: here, label: "Chat", hint: "⌘L", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
-        { id: "tab-changes", group: here, label: "Changes", hint: "⌘⇧D", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
-        { id: "tab-term", group: here, label: "Terminal", hint: "⌘J", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
-        { id: "tab-notes", group: here, label: "Notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
+        { id: "tab-chat", group: here, label: "Show chat", hint: "⌘L", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
+        { id: "tab-changes", group: here, label: "Show changes", hint: "⌘⇧D", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
+        { id: "tab-term", group: here, label: "Show terminal", hint: "⌘J", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: runScript },
         { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
         { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
-        { id: "pr", group: here, label: "Pull request", keywords: "github pr create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
-        { id: "pin", group: here, label: ws.pinned ? "Unpin" : "Pin to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
+        { id: "pr", group: here, label: "Go to PR actions", keywords: "github pull request create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
+        { id: "pin", group: here, label: ws.pinned ? "Unpin workspace" : "Pin workspace to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
         { id: "archive", group: here, label: "Archive workspace", hint: "⌘⇧A", keywords: "close done remove", icon: <Archive size={15} />, run: () => archive() },
       );
     }
     c.push(
-      { id: "new", group: "Create", label: "New workspace", hint: "⌘N", keywords: "worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
-      { id: "new-pr", group: "Create", label: "New workspace from a pull request", hint: "⌘⇧N", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
-      { id: "new-issue", group: "Create", label: "New workspace from a GitHub issue", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
-      { id: "clone", group: "Create", label: "Clone a repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
+      { id: "new", group: "Create", label: "Create workspace", hint: "⌘N", keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
+      { id: "new-pr", group: "Create", label: "Create workspace from a PR", hint: "⌘⇧N", keywords: "new pull request", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
+      { id: "new-issue", group: "Create", label: "Create workspace from a GitHub issue", keywords: "new", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
+      { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
       { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
-      { id: "add-repo", group: "Create", label: "Add a repo", icon: <FolderOpen size={15} />, run: addRepo },
+      { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
     const active = workspaces.filter((w) => w.state === "active");
     for (const w of [...active].sort((a, b) => Number(b.unread) - Number(a.unread))) {
@@ -584,17 +584,17 @@ export default function App() {
       });
     }
     c.push(
-      { id: "next", group: "Go", label: "Next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
-      { id: "board", group: "Go", label: "Board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
-      { id: "new-section", group: "Create", label: "New sidebar section", keywords: "group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
-      { id: "sky", group: "Go", label: "Night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
+      { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
+      { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
+      { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
-      { id: "settings", group: "App", label: "Settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
+      { id: "settings", group: "App", label: "Open settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
 
     );
     for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
-    if (getSettings().repoFilter.length) c.push({ id: "filter-all", group: "Go", label: "Show all projects", keywords: "filter clear", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [] }) });
-    for (const r of repos) c.push({ id: `scripts-${r.id}`, group: "App", label: `${r.name}: setup and run scripts`, icon: <Gear size={15} />, run: () => setSettingsFor(r.id) });
+    if (getSettings().repoFilter.length) c.push({ id: "filter-all", group: "Go", label: "Show all repos", keywords: "filter clear project", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [] }) });
+    for (const r of repos) c.push({ id: `scripts-${r.id}`, group: "App", label: `Edit ${r.name} setup and run scripts`, icon: <Gear size={15} />, run: () => setSettingsFor(r.id) });
     if (canImport) c.push({ id: "import", group: "App", label: "Import from Conductor", icon: <Download size={15} />, run: importConductor });
     return c;
   };
@@ -739,22 +739,22 @@ export default function App() {
                   {ws.title && star ? ` · ${star.name}` : ""}
                   {star ? ` · ${starLine(star)}` : ws.imported_from ? " · imported from Conductor" : ""}
                   {ws.status ? <span className={`sub-status st-${ws.status}`}> · {STATUS_LABEL[ws.status as Exclude<WsStatus, "">]}</span> : null}
-                  {costs[ws.id] ? <span className="num" title="What the agents have spent in this workspace"> · ${costs[ws.id].toFixed(2)}</span> : null}
+                  {costs[ws.id] ? <span className="num" title="Agent spend in this workspace"> · ${costs[ws.id].toFixed(2)}</span> : null}
                 </div>
               </div>
               <span className="spacer" />
               <div className="ws-actions">
                 {ws.state === "archived" ? (
                   <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
-                    <ArchiveRestore size={16} />Restore
+                    <ArchiveRestore size={16} />Restore workspace
                   </button>
                 ) : (
                   <>
                     {localUrls[ws.id] && livePtys.has(`${ws.id}:run`) && (
-                      <button className="quiet" onClick={openLocal} title="Open in the browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
+                      <button className="quiet" onClick={openLocal} title="Open in browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
                     )}
                     {ws.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1 && (
-                      <button className="accent" onClick={() => setComparing(ws.pair_id)} title="Compare the agents that got this task"><Crown size={14} />Compare</button>
+                      <button className="accent" onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Crown size={14} />Compare</button>
                     )}
                     {livePtys.has(`${ws.id}:run`) ? (
                       <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
@@ -766,12 +766,12 @@ export default function App() {
                       {openTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                     <span className="git-menu">
-                      <button className="icon" aria-label="More" title="More" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
+                      <button className="icon" aria-label="More actions" title="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
                       {moreOpen && (
                         <span className="menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(ws.title || displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
-                          <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Notes</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <div className="menu-label">Status</div>
                           {([["", "Automatic (from the PR)"], ...Object.entries(STATUS_LABEL)] as [WsStatus, string][]).map(([k, v]) => (
                             <button key={k || "auto"} role="menuitemradio" aria-checked={ws.status === k} onClick={() => { setMoreOpen(false); api.setWorkspaceStatus(ws.id, k).then(refresh); }}>
@@ -803,7 +803,7 @@ export default function App() {
             {ws.state === "active" && (
               <nav className="tabs" role="tablist" aria-label="Workspace">
                 {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
-                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id]}>
+                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
                     {t.label}
                   </button>
                 ))}
@@ -815,7 +815,7 @@ export default function App() {
                 <div className="empty">
                   <Mascot size={88} mood="sleep" />
                   <h2>Archived</h2>
-                  <p>Restore it to bring the folder back on branch {ws.branch}.</p>
+                  <p>Its branch {ws.branch} is kept. Restore the workspace to bring its folder back.</p>
                 </div>
               ) : (
                 <>
@@ -853,7 +853,7 @@ export default function App() {
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
       {quickOpen && (
         <Palette
-          placeholder="Open a file in this workspace"
+          placeholder="Search files in this workspace"
           commands={quickOpen.map((f) => ({
             id: f, group: "Files", label: f.slice(f.lastIndexOf("/") + 1), hint: f.slice(0, f.lastIndexOf("/") + 1), keywords: f,
             icon: <FilePlus2 size={15} />, run: () => { setTab("changes"); setFocusFile({ path: f, nonce: Date.now() }); },
@@ -881,7 +881,7 @@ export default function App() {
             setComparing(null);
             await refresh();
             select(id);
-            say(`Kept ${displayName(sky, workspaces.find((w) => w.id === id)!)}. The other branch is archived and kept.`);
+            say(`Kept ${displayName(sky, workspaces.find((w) => w.id === id)!)}. The other workspace is archived, and its branch is kept.`);
           }}
           onClose={() => setComparing(null)}
         />

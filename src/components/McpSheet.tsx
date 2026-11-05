@@ -51,7 +51,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
             ))}
           </ul>
         )}
-        {text !== null && servers.length === 0 && <pre className="mcp-raw">{text || "No MCP servers configured."}</pre>}
+        {text !== null && servers.length === 0 && <pre className="mcp-raw">{text || "No MCP servers set up. Add one with Manage in terminal."}</pre>}
         <div className="row">
           <span className="muted">Servers come from your {bin} settings, so every workspace and your terminal see the same ones.</span>
           <span className="spacer" />

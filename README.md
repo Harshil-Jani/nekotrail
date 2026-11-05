@@ -12,9 +12,9 @@
 
 <p align="center">Run many coding agents at once on your Mac. Each one gets its own branch and folder, and each one ends as a pull request.</p>
 
-<p align="center"><img src="docs/screenshot.png" width="900" alt="nekotrail: a workspace with a Claude chat, PR status and CI checks"></p>
+<p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="nekotrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
 
-<p align="center"><sub>Screenshot uses sample data from <code>preview.html</code>.</sub></p>
+<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a></p>
 
 ---
 
@@ -22,7 +22,39 @@ nekotrail is an open-source, local-first desktop app for running Claude Code and
 
 **The night sky.** Every workspace is named after a star in one of eight cat constellations. Starting a workspace lights its star; merging its PR makes it shine, and lines appear between neighbouring stars once both have shipped. Ship enough and a whole cat appears in your sky. One of them, Felis, is a real constellation: astronomer Jérôme Lalande drew a cat among the stars in 1799.
 
-<p align="center"><img src="docs/night-sky.png" width="900" alt="The night sky view: The Loaf constellation complete, The Pounce half drawn"></p>
+## Tour
+
+Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
+
+**Start a workspace.** Type the task and press Enter. Pick Claude, Codex, or Both to race them. Start from an issue, an open PR or an existing branch.
+<img src="docs/screenshots/new-workspace.png" width="900" alt="New workspace panel with the task box, agent picker and sources">
+
+**Choose the model and how hard it thinks.** One picker for the model and its intelligence level (⌘/).
+<img src="docs/screenshots/model-picker.png" width="900" alt="Model and intelligence picker in the chat box">
+
+**Approve the plan, watch the todo list.** The agent plans first if you ask; approve it with one click (⌘⇧↵).
+<img src="docs/screenshots/plan.png" width="900" alt="Plan card with Approve and build, a live todo list and queued messages">
+
+**Review the changes.** Line numbers, comments on any line, GitHub review comments inline, side by side.
+<img src="docs/screenshots/changes.png" width="900" alt="Changes tab with a diff, a review comment and GitHub comments">
+
+**See everything on a board.** Backlog, In progress, In review, Done. Drag to change status (⌘⇧K).
+<img src="docs/screenshots/board.png" width="900" alt="Kanban board of workspaces">
+
+**Race Claude and Codex.** Same task, two workspaces. Compare files, time and cost; keep the winner.
+<img src="docs/screenshots/compare.png" width="900" alt="Bake-off comparison of a Claude and a Codex workspace">
+
+**Do anything from the keyboard.** ⌘K jumps to any workspace or action.
+<img src="docs/screenshots/palette.png" width="900" alt="Command palette">
+
+**Check your MCP servers.** Type `/mcp` in any chat.
+<img src="docs/screenshots/mcp.png" width="900" alt="MCP servers sheet with connection status">
+
+**Light up the night sky.** Every workspace lights a star; every merged PR makes it shine.
+<img src="docs/screenshots/night-sky.png" width="900" alt="Night sky with constellations">
+
+**First launch checks your setup.** It shows the command for anything missing and offers the Conductor import.
+<img src="docs/screenshots/welcome.png" width="900" alt="Welcome screen in light mode with the setup check and Conductor import">
 
 ## Why
 

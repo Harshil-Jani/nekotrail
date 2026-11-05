@@ -88,7 +88,7 @@ export function ModelPicker({
 
   return (
     <span className="model-picker" ref={root}>
-      <button className="picker-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title="Model and intelligence (⌘/)">
+      <button className="picker-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title="Pick model and intelligence (⌘/)">
         <Sparkles size={13} />
         <span className="picker-label">{label}</span>
         <ChevronDown size={12} />
@@ -107,7 +107,7 @@ export function ModelPicker({
           )}
           {showOlder && older.map(row)}
           <form className="custom-model" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) { onChange({ model: custom.trim(), effort }); setCustom(""); } }}>
-            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Other model id" aria-label="Other model id" />
+            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Other model ID, then ↵" aria-label="Other model ID" />
           </form>
           {efforts.length > 0 && (
             <>

@@ -64,7 +64,7 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
   useEffect(() => { api.repoGithub(repo.id).then(setGh); }, [repo.id]);
   return (
     <div className="repo-head">
-      <button className="fold" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Show ${repo.name}` : `Fold ${repo.name}`}>
+      <button className="fold" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${repo.name}` : `Collapse ${repo.name}`}>
         {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
       </button>
       {gh?.owner_avatar ? (
@@ -80,8 +80,8 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
         </span>
       )}
       <span className="repo-actions">
-        <button className="icon" title="Repo scripts" aria-label={`${repo.name} scripts`} onClick={onSettings}><Settings2 size={16} /></button>
-        <button className="icon" title="New workspace (⌘N)" aria-label={`New workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
+        <button className="icon" title="Edit repo scripts" aria-label={`Edit ${repo.name} scripts`} onClick={onSettings}><Settings2 size={16} /></button>
+        <button className="icon" title="Create workspace (⌘N)" aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
       </span>
     </div>
   );
@@ -148,7 +148,7 @@ export function Sidebar(p: Props) {
     const folded = collapsed.includes(`sec:${id}`) && !q;
     return (
       <div className={`repo-head section-head ${over === id ? "drop" : ""}`} {...drop(id === "pinned" ? "pinned" : id)}>
-        <button className="fold" onClick={() => toggleCollapsed(`sec:${id}`)} aria-expanded={!folded} aria-label={folded ? `Show ${name}` : `Fold ${name}`}>
+        <button className="fold" onClick={() => toggleCollapsed(`sec:${id}`)} aria-expanded={!folded} aria-label={folded ? `Expand ${name}` : `Collapse ${name}`}>
           {folded ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         </button>
         {icon}
@@ -165,7 +165,7 @@ export function Sidebar(p: Props) {
               <button className="icon" aria-label={`${name} options`} onClick={() => setSecMenu((m) => (m === id ? null : id))}><Ellipsis size={14} /></button>
               {secMenu === id && (
                 <span className="menu sec-menu" role="menu" onMouseLeave={() => setSecMenu(null)}>
-                  <button role="menuitem" onClick={() => { setSecMenu(null); setEditing({ id, name }); }}><Pencil size={14} /><span>Rename</span></button>
+                  <button role="menuitem" onClick={() => { setSecMenu(null); setEditing({ id, name }); }}><Pencil size={14} /><span>Rename section</span></button>
                   <button role="menuitem" onClick={async () => { setSecMenu(null); await api.deleteSection(id); p.onChanged(); }}><Trash2 size={14} /><span>Delete section</span></button>
                 </span>
               )}
@@ -227,7 +227,7 @@ export function Sidebar(p: Props) {
             const r = p.repos.find((x) => x.id === id);
             return r ? <button key={id} className="chip" onClick={() => setFilter(filter.filter((x) => x !== id))} aria-label={`Stop filtering by ${r.name}`}>{r.name}<X size={11} /></button> : null;
           })}
-          <button className="quiet chip-clear" onClick={() => setFilter([])}>Show all</button>
+          <button className="quiet chip-clear" onClick={() => setFilter([])}>Show all repos</button>
         </div>
       )}
       <div className="search-row">
@@ -235,15 +235,15 @@ export function Sidebar(p: Props) {
           <Search size={14} />
           <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
         </label>
-        <button className="icon" onClick={p.onBoard} title="Board (⌘⇧K)" aria-label="Board"><Kanban size={16} /></button>
+        <button className="icon" onClick={p.onBoard} title="Open board (⌘⇧K)" aria-label="Open board"><Kanban size={16} /></button>
         <span className="filter-wrap">
-          <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by project" aria-label="Filter by project" aria-expanded={filterOpen}>
+          <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by repo" aria-label="Filter by repo" aria-expanded={filterOpen}>
             <Filter size={16} />
           </button>
           {filterOpen && (
             <span className="menu filter-menu" role="menu" onMouseLeave={() => setFilterOpen(false)}>
               <button role="menuitemradio" aria-checked={!filter.length} onClick={() => { setFilter([]); setFilterOpen(false); }}>
-                {!filter.length ? <Check size={14} /> : <span className="check-space" />}<span>All projects</span>
+                {!filter.length ? <Check size={14} /> : <span className="check-space" />}<span>All repos</span>
               </button>
               {p.repos.map((r) => {
                 const on = filter.includes(r.id);
@@ -255,7 +255,7 @@ export function Sidebar(p: Props) {
                   </button>
                 );
               })}
-              <p className="muted menu-hint">Click shows one project. ⌘-click adds more.</p>
+              <p className="muted menu-hint">Click to show one repo. ⌘-click to add more.</p>
             </span>
           )}
         </span>
@@ -267,11 +267,11 @@ export function Sidebar(p: Props) {
         >
           {p.groupBy === "repo" ? <ListChecks size={17} /> : <FolderGit2 size={17} />}
         </button>
-        <button className="icon" onClick={p.onAddRepo} title="Add a local git repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
+        <button className="icon" onClick={p.onAddRepo} title="Add local repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
       </div>
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
-        {p.groupBy === "repo" && (() => {
+        {p.groupBy === "repo" && p.repos.length > 0 && (() => {
           const live = p.workspaces.filter((w) => w.state === "active" && inFilter(w) && match(w));
           const pinned = live.filter((w) => w.pinned);
           // Inbox: workspaces whose agent finished while you were elsewhere.
@@ -308,7 +308,7 @@ export function Sidebar(p: Props) {
                     onBlur={saveSection} onKeyDown={(e) => { if (e.key === "Enter") saveSection(); if (e.key === "Escape") setEditing(null); }} />
                 </div>
               ) : (
-                <button className="ws-empty new-section" onClick={() => setEditing({ id: null, name: "" })}><Plus size={13} />New section</button>
+                <button className="ws-empty new-section" onClick={() => setEditing({ id: null, name: "" })}><Plus size={13} />Add section</button>
               )}
             </>
           );
@@ -321,7 +321,7 @@ export function Sidebar(p: Props) {
                 <section key={r.id} className="repo" {...drop("")}>
                   <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} collapsed={folded} onToggle={() => toggleCollapsed(r.id)} count={ws.length} />
                   {!folded && ws.map(row)}
-                  {!folded && ws.length === 0 && !q && <button className="ws-empty" onClick={() => p.onNewWorkspace(r.id)}><Plus size={13} />New workspace</button>}
+                  {!folded && ws.length === 0 && !q && <button className="ws-empty" onClick={() => p.onNewWorkspace(r.id)}><Plus size={13} />Create workspace</button>}
                 </section>
               );
             })
@@ -350,7 +350,7 @@ export function Sidebar(p: Props) {
         <button className="me" onClick={p.onSky} title="Open your night sky">
           {p.me ? <Avatar src={p.me.avatar_url} size={28} label={p.me.login} /> : <Mascot size={28} />}
           <span className="me-text">
-            <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to gh"}</span>
+            <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to GitHub"}</span>
             <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
           </span>
         </button>
@@ -366,7 +366,7 @@ export function Sidebar(p: Props) {
       </div>
       {ctx && (
         <div className="menu ctx-menu" role="menu" style={{ left: Math.min(ctx.x, window.innerWidth - 240), top: Math.min(ctx.y, window.innerHeight - 260) }} onMouseDown={(e) => e.stopPropagation()}>
-          <button role="menuitem" onClick={() => act(() => api.setPinned(ctx.w.id, !ctx.w.pinned))}>{ctx.w.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{ctx.w.pinned ? "Unpin" : "Pin"}</span></button>
+          <button role="menuitem" onClick={() => act(() => api.setPinned(ctx.w.id, !ctx.w.pinned))}>{ctx.w.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{ctx.w.pinned ? "Unpin" : "Pin to top"}</span></button>
           <button role="menuitem" onClick={() => setMoveOpen((o) => !o)} aria-expanded={moveOpen}><FolderInput size={14} /><span>Move to section</span><ChevronRight size={13} /></button>
           {moveOpen && (
             <div className="ctx-sub">
@@ -375,9 +375,9 @@ export function Sidebar(p: Props) {
                   {ctx.w.section_id === sec.id ? <Check size={14} /> : <span className="check-space" />}<span>{sec.name}</span>
                 </button>
               ))}
-              {ctx.w.section_id && <button role="menuitem" onClick={() => act(() => api.setSection(ctx.w.id, ""))}><span className="check-space" /><span>No section</span></button>}
-              <button role="menuitem" onClick={() => act(async () => { const name = prompt("New section name"); if (name?.trim()) { const sec = await api.createSection(name); await api.setSection(ctx.w.id, sec.id); } })}>
-                <Plus size={14} /><span>New section…</span>
+              {ctx.w.section_id && <button role="menuitem" onClick={() => act(() => api.setSection(ctx.w.id, ""))}><span className="check-space" /><span>Remove from section</span></button>}
+              <button role="menuitem" onClick={() => act(async () => { const name = prompt("Section name"); if (name?.trim()) { const sec = await api.createSection(name); await api.setSection(ctx.w.id, sec.id); } })}>
+                <Plus size={14} /><span>Add section…</span>
               </button>
             </div>
           )}

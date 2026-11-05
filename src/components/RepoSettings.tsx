@@ -62,10 +62,10 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
         {section === "scripts" && (
           <>
             <p className="muted">
-              Run in each workspace folder. A <code>nekotrail.json</code> committed in the repo overrides these, so your team can share one setup.
+              These run in each workspace folder. A <code>nekotrail.json</code> committed in the repo overrides these, so your team can share one setup.
             </p>
             {script("setup", "Setup: runs when a workspace is created", "bun install")}
-            {script("run", "Run: the Run button (⌘R)", "bun dev --port $NEKOTRAIL_PORT")}
+            {script("run", "Run: runs from the Run button (⌘R)", "bun dev --port $NEKOTRAIL_PORT")}
             {script("archive", "Archive: runs before the folder is removed", "docker compose down")}
           </>
         )}
@@ -91,7 +91,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
             <label className="field">
               <span>Files to copy into new workspaces</span>
               <textarea rows={3} value={globs} placeholder={".env*\napps/web/.env.local"} onChange={(e) => setGlobs(e.target.value)} />
-              <small className="muted">One per line. These are git-ignored, so a fresh worktree wouldn't have them. <code>*</code> works in file names.</small>
+              <small className="muted">One per line. These are git-ignored, so a new workspace wouldn't have them otherwise. <code>*</code> works in file names.</small>
             </label>
             <div className="field">
               <span>Environment variables</span>

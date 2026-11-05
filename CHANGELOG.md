@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.2.1 (2026-11-06)
+
+**Clearer words everywhere**
+- About 160 labels, messages and errors rewritten in one plain voice: buttons say what they do ("Create workspace", "Add local repo"), the same thing has the same name everywhere, and every error says what to do next.
+
+**Easier to get started**
+- The README has a screenshot tour of every main screen, plus a Download for Mac link.
+- A fresh install no longer shows empty sidebar sections.
+
 ## 0.2.0 (2026-11-06)
 
 The Conductor-replacement release: everything a daily Conductor user reaches for, plus things it never had.

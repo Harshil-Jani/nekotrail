@@ -4,7 +4,7 @@ import { displayName, statusOf, STATUS_LABEL, type Repo, type Sky, type Workspac
 
 const COLUMNS = ["backlog", "in_progress", "in_review", "done"] as const;
 const HINT: Record<(typeof COLUMNS)[number], string> = {
-  backlog: "Ideas and tasks not started",
+  backlog: "Ideas not started yet",
   in_progress: "An agent is on it",
   in_review: "PR open, waiting on review or CI",
   done: "Merged or finished",
@@ -38,7 +38,7 @@ export function Board({
         <h1>Board</h1>
         <span className="muted">{live.length} workspaces{repoFilter.length ? ` in ${repoFilter.map(repoName).join(", ")}` : ""}. Drag a card to change its status.</span>
         <span className="spacer" />
-        <button className="primary" onClick={onNew}><Plus size={14} />New workspace</button>
+        <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>
       </div>
       <div className="board-cols">
         {COLUMNS.map((col) => {
@@ -85,13 +85,13 @@ export function Board({
                         {l && (l[0] > 0 || l[1] > 0) && <><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></>}
                         {prStates[w.id] && <span className="muted"><GitPullRequest size={11} /> {prStates[w.id].toLowerCase()}</span>}
                         {costs[w.id] ? <span className="muted">${costs[w.id].toFixed(2)}</span> : null}
-                        {w.status && <span className="manual" title="Set by hand. Drag it back to its automatic column to clear.">manual</span>}
+                        {w.status && <span className="manual" title="Set by hand. Drag back to its automatic column to clear.">manual</span>}
                       </span>
                     </button>
                   );
                 })}
-                {cards.length === 0 && <div className="card-empty">{over === col ? "Drop here" : "Nothing here"}</div>}
-                {col === "backlog" && <button className="ws-empty" onClick={onNew}><Plus size={13} />New workspace</button>}
+                {cards.length === 0 && <div className="card-empty">{over === col ? "Drop here" : "No workspaces"}</div>}
+                {col === "backlog" && <button className="ws-empty" onClick={onNew}><Plus size={13} />Create workspace</button>}
               </div>
             </section>
           );

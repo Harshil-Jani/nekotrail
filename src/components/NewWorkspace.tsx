@@ -116,7 +116,7 @@ export function NewWorkspace({
       >
         <div className="nw-head" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
           <label className="nw-repo">
-            <select value={repoId} onChange={(e) => setRepoId(e.target.value)} aria-label="Repository">
+            <select value={repoId} onChange={(e) => setRepoId(e.target.value)} aria-label="Repo">
               {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
             <ChevronDown size={16} />
@@ -125,21 +125,21 @@ export function NewWorkspace({
           <div className="nw-agent" role="radiogroup" aria-label="Agent">
             {(["claude", "codex", "both"] as (Agent | "both")[]).map((a) => (
               <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => setAgent(a)}
-                title={a === "both" ? "Bake-off: Claude and Codex each get the task in their own workspace. Compare, keep the better one." : undefined}>
+                title={a === "both" ? "Run Claude and Codex side by side, then keep the better one" : undefined}>
                 {a === "claude" ? "Claude" : a === "codex" ? "Codex" : "Both"}
               </button>
             ))}
           </div>
         </div>
         <nav className="seg nw-source" role="tablist" aria-label="Start from">
-          {([["task", "New task"], ["issue", "Issue"], ["pr", "Pull request"], ["branch", "Branch"]] as [Source, string][]).map(([id, label]) => (
+          {([["task", "New branch"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"]] as [Source, string][]).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={source === id} className={source === id ? "on" : ""} onClick={() => setSource(id)}>{label}</button>
           ))}
         </nav>
         {source === "pr" && (
-          <div className="nw-list" role="listbox" aria-label="Open pull requests">
+          <div className="nw-list" role="listbox" aria-label="Open PRs">
             {prs === null && <p className="muted"><span className="spinner" /> Loading open PRs…</p>}
-            {prs?.length === 0 && <p className="muted">{loadError ? `Couldn't load PRs: ${loadError}` : "No open PRs in this repo."}</p>}
+            {prs?.length === 0 && <p className="muted">{loadError ? `Couldn't load PRs. ${loadError}` : "No open PRs in this repo."}</p>}
             {prs?.map((p) => (
               <button key={p.number} role="option" aria-selected={prPick === p.number} className={prPick === p.number ? "on" : ""} onClick={() => setPrPick(p.number)}>
                 <span className="num muted">#{p.number}</span>
@@ -152,7 +152,7 @@ export function NewWorkspace({
         {source === "issue" && (
           <div className="nw-list" role="listbox" aria-label="Open issues">
             {issues === null && <p className="muted"><span className="spinner" /> Loading open issues…</p>}
-            {issues?.length === 0 && <p className="muted">{loadError ? `Couldn't load issues: ${loadError}` : "No open issues in this repo."}</p>}
+            {issues?.length === 0 && <p className="muted">{loadError ? `Couldn't load issues. ${loadError}` : "No open issues in this repo."}</p>}
             {issues?.map((i) => (
               <button key={i.number} role="option" aria-selected={issuePick === i.number} className={issuePick === i.number ? "on" : ""}
                 onClick={() => {
@@ -168,7 +168,7 @@ export function NewWorkspace({
         )}
         {source === "branch" && (
           <div className="nw-branch">
-            <input list="nw-branches" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch name" aria-label="Branch" autoFocus />
+            <input list="nw-branches" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch name, e.g. fix/login" aria-label="Branch" autoFocus />
             <datalist id="nw-branches">{branches.map((b) => <option key={b} value={b} />)}</datalist>
           </div>
         )}
@@ -183,8 +183,8 @@ export function NewWorkspace({
               submit();
             }
           }}
-          placeholder={source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Leave empty to just make the workspace.` : "Optional: what should the agent do first? (e.g. address the review comments)"}
-          aria-label="Task for the agent"
+          placeholder={source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
+          aria-label="What the agent should do"
         />
         <div className="nw-foot">
           <ModelPicker
@@ -198,10 +198,10 @@ export function NewWorkspace({
             {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <span className="spacer" />
-          <span className="muted nw-hint">Shift ↵ new line · Esc close</span>
+          <span className="muted nw-hint">⇧↵ new line · Esc to close</span>
           <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick)}>
             {busy ? <span className="spinner" /> : null}
-            {source === "issue" ? (issuePick ? `Start on #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Open #${prPick}` : "Pick a PR") : source === "branch" ? "Open branch" : prompt.trim() ? "Create" : "Create empty"}
+            {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : prompt.trim() ? "Create workspace" : "Create empty workspace"}
             <CornerDownLeft size={14} />
           </button>
         </div>

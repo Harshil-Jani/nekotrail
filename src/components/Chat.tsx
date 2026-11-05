@@ -52,7 +52,7 @@ function ContextMeter({ tokens, window }: { tokens: number; window: number }) {
   const tone = pct > 0.85 ? "var(--bad)" : pct > 0.7 ? "var(--wait)" : "var(--muted)";
   const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
   return (
-    <span className="ctx" title={`Context: ${k(tokens)} of ${k(window)} tokens (${Math.round(pct * 100)}%). Start a new chat or ask the agent to summarise when it fills up.`}>
+    <span className="ctx" title={`Context: ${k(tokens)} of ${k(window)} tokens (${Math.round(pct * 100)}%). When it fills up, run /compact or start a new chat.`}>
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
         <circle cx="9" cy="9" r={r} fill="none" stroke="var(--line)" strokeWidth="2.5" />
         <circle cx="9" cy="9" r={r} fill="none" stroke={tone} strokeWidth="2.5" strokeDasharray={`${pct * c} ${c}`} transform="rotate(-90 9 9)" />
@@ -163,8 +163,8 @@ function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; age
             <button onClick={() => runInTerminal(INSTALL[agent])}><SquareTerminal size={13} />Run in terminal</button>
           </>
         )}
-        {fix === "login" && <button className="accent" onClick={() => runInTerminal(agent === "codex" ? "codex login" : "claude /login")}><SquareTerminal size={13} />Sign in, in the terminal</button>}
-        {fix === "limit" && <span className="muted">It resets on its own. Your chat is kept.</span>}
+        {fix === "login" && <button className="accent" onClick={() => runInTerminal(agent === "codex" ? "codex login" : "claude /login")}><SquareTerminal size={13} />Sign in from terminal</button>}
+        {fix === "limit" && <span className="muted">The limit resets on its own. Your chat is kept.</span>}
         <span className="spacer" />
         <button className="quiet" onClick={() => switchAgent(other)}>Use {other === "codex" ? "Codex" : "Claude"} instead</button>
       </div>
@@ -193,7 +193,7 @@ function PlanCard({ plan, latest }: { plan: string; latest: boolean }) {
         <div className="row">
           <span className="muted">Approving switches this chat to auto-accept edits.</span>
           <span className="spacer" />
-          <button className="accent" disabled={disabled} onClick={approvePlan} title="⌘⇧↵"><Play size={14} />Approve and build</button>
+          <button className="accent" disabled={disabled} onClick={approvePlan} title="Approve and build (⌘⇧↵)"><Play size={14} />Approve and build</button>
         </div>
       )}
     </div>
@@ -214,7 +214,7 @@ function RewindButton({ checkpoint }: { checkpoint: string }) {
     <button
       className={`rewind ${armed ? "armed" : ""}`}
       disabled={disabled || busy}
-      title={disabled ? "Stop the agent to rewind" : "Undo every file change made from this message on"}
+      title={disabled ? "Stop the agent to rewind" : "Undo file changes made since this message"}
       onClick={async () => {
         if (!armed) return setArmed(true);
         setBusy(true);
@@ -529,10 +529,10 @@ export function Chat({
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: cmd.slice(1) }));
         return true;
       case "/add-dir": {
-        if (!active || !arg) { setError("Usage: /add-dir ~/code/other-repo"); return true; }
+        if (!active || !arg) { setError("Add a folder path, e.g. /add-dir ~/code/other-repo"); return true; }
         try {
           const dirs = await api.addDir(active, arg);
-          setNote(`The agent can now use: ${dirs.join(", ")}`);
+          setNote(`Added. The agent can now use: ${dirs.join(", ")}`);
         } catch (e) { setError(errText(e)); }
         return true;
       }
@@ -601,16 +601,16 @@ export function Chat({
   // Slash commands: typed at the start of the composer.
   // Slash commands: nekotrail's own actions first, then the repo's and your own .claude/commands.
   const BASE_SLASH: [string, string][] = [
-    ["/mcp", "MCP servers this agent can use"],
+    ["/mcp", "Show MCP servers this agent can use"],
     ["/model", "Pick the model and intelligence (⌘/)"],
     ["/intelligence", "Set how hard it thinks: /intelligence high"],
-    ["/plan", "Plan only, no edits"], ["/auto", "Auto-accept edits"],
-    ["/review", "Agent reviews the branch (⌘⇧R)"], ["/second-opinion", "The other agent reviews it, read-only"],
-    ["/pr", "Commit, push and open the PR (⌘⇧P)"], ["/merge", "Merge the PR (⌘⇧M)"], ["/pull", "Merge the latest target branch (⌘⇧L)"],
+    ["/plan", "Switch to plan mode, no edits"], ["/auto", "Switch to auto-accept edits"],
+    ["/review", "Review the branch with this agent (⌘⇧R)"], ["/second-opinion", "Get a read-only review from the other agent"],
+    ["/pr", "Commit, push and create the PR (⌘⇧P)"], ["/merge", "Merge the PR (⌘⇧M)"], ["/pull", "Merge the latest target branch (⌘⇧L)"],
     ["/fix-ci", "Fix failing checks from their logs (⌘⇧X)"],
     ["/run", "Run or stop the app (⌘R)"], ["/diff", "Show the changes (⌘⇧D)"], ["/terminal", "Open the terminal (⌘J)"],
-    ["/fork", "Copy this chat into a new tab"], ["/clear", "Start a fresh chat"], ["/compact", "Summarise the chat to free up context"],
-    ["/add-dir", "Let the agent use another folder: /add-dir ~/code/api"],
+    ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
+    ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];
   const [custom, setCustom] = useState<[string, string][]>([]);
   useEffect(() => { api.slashCommands(workspaceId).then((c) => setCustom(c.map(([n, d]) => [`/${n}`, d || "Your command"]))).catch(() => {}); }, [workspaceId]);
@@ -656,16 +656,16 @@ export function Chat({
               {s.agent === "codex" ? "Codex · " : ""}{s.title}
             </button>
             {sessions.length > 1 && !running.has(s.id) && (
-              <button className="tab-close" aria-label={`Close ${s.title}`} title="Close chat (history is kept)" onClick={() => closeChat(s.id)}><X size={12} /></button>
+              <button className="tab-close" aria-label={`Close ${s.title}`} title="Close chat. Its history is kept." onClick={() => closeChat(s.id)}><X size={12} /></button>
             )}
           </span>
         ))}
         <span className="newchat">
-          <button className="icon" title="New chat" aria-label="New chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
+          <button className="icon" title="Start a chat (⌘T)" aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
-              <button role="menuitem" onClick={() => { setMenu(false); newChat("claude"); }}>New Claude chat</button>
-              <button role="menuitem" onClick={() => { setMenu(false); newChat("codex"); }}>New Codex chat</button>
+              <button role="menuitem" onClick={() => { setMenu(false); newChat("claude"); }}>Start a Claude chat</button>
+              <button role="menuitem" onClick={() => { setMenu(false); newChat("codex"); }}>Start a Codex chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
             </span>
@@ -673,7 +673,7 @@ export function Chat({
         </span>
         <span className="spacer" />
         {copied && <span className="muted chat-flag">Copied</span>}
-        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title="Ctrl+O">Tool output shown</button>}
+        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title="Collapse tool output (⌃O)">Hide tool output</button>}
       </div>
 
       {search !== null && (
@@ -720,7 +720,7 @@ export function Chat({
         <div className="thread">
           {hidden > 0 && (
             <button className="quiet earlier" onClick={showEarlier}>
-              Show {Math.min(PAGE, hidden)} earlier ({hidden} hidden)
+              Show {Math.min(PAGE, hidden)} earlier messages ({hidden} hidden)
             </button>
           )}
           {visible.map((r, k) => (
@@ -758,14 +758,14 @@ export function Chat({
             <span className="spinner" />
             <span>{queue.length} queued. They run one by one when the agent finishes.</span>
             <span className="spacer" />
-            <button className="quiet" onClick={() => active && api.clearQueue(active)}>Clear all</button>
+            <button className="quiet" onClick={() => active && api.clearQueue(active)}>Clear queue</button>
           </div>
           {queue.map((q, i) => (
             <div className="queue-item" key={i}>
               <span className="num muted">{i + 1}</span>
               <span className="queue-text">{q}</span>
-              <button className="icon" title="Edit (moves it back to the composer)" aria-label="Edit queued message" onClick={() => { if (active) { api.removeQueued(active, i); setDraft(q); input.current?.focus(); } }}><Pencil size={13} /></button>
-              <button className="icon" title="Remove" aria-label="Remove queued message" onClick={() => active && api.removeQueued(active, i)}><X size={13} /></button>
+              <button className="icon" title="Move back to the composer to edit" aria-label="Edit queued message" onClick={() => { if (active) { api.removeQueued(active, i); setDraft(q); input.current?.focus(); } }}><Pencil size={13} /></button>
+              <button className="icon" title="Remove from queue" aria-label="Remove queued message" onClick={() => active && api.removeQueued(active, i)}><X size={13} /></button>
             </div>
           ))}
         </div>
@@ -810,7 +810,7 @@ export function Chat({
             ref={input}
             value={draft}
             aria-label="Message"
-            placeholder={busy ? "Working… anything you send now runs next." : "Ask for a change, a fix or a plan. @ to mention a file, paste a screenshot."}
+            placeholder={busy ? "Agent is working. Messages you send now run next." : "Ask for a change, fix or plan. Type @ to mention a file, or paste a screenshot."}
             onChange={(e) => { setDraft(e.target.value); updateMention(e.target.value, e.target.selectionStart); updateSlash(e.target.value); }}
             onBlur={() => { setMention(null); setSlash(null); }}
             onPaste={(e) => {
@@ -882,7 +882,7 @@ export function Chat({
                 {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>
             )}
-            <label className="icon attach" title="Attach files (or paste a screenshot)">
+            <label className="icon attach" title="Attach files or paste a screenshot">
               <Paperclip size={15} />
               <input type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
             </label>

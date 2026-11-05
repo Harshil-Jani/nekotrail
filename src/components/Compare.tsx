@@ -44,7 +44,7 @@ export function Compare({
           <span className="spacer" />
           <button className="icon" aria-label="Close" onClick={onClose}><X size={16} /></button>
         </div>
-        <p className="muted">Same task, different agents. Open each to read the diff, then keep the one you like. The other is archived and its branch is kept.</p>
+        <p className="muted">Same prompt, different agents. Open each to read the diff, then keep the one you like. The other workspace is archived, and its branch is kept.</p>
         <div className="compare-grid" style={{ gridTemplateColumns: `repeat(${workspaces.length}, 1fr)` }}>
           {workspaces.map((w) => {
             const s = stats[w.id];
@@ -62,7 +62,7 @@ export function Compare({
                   <div><dt>PR</dt><dd>{prStates[w.id] ? prStates[w.id].toLowerCase() : "none yet"}</dd></div>
                 </dl>
                 <div className="row">
-                  <button onClick={() => onOpen(w.id)}>Open</button>
+                  <button onClick={() => onOpen(w.id)}>Open changes</button>
                   <button className="primary" onClick={() => onKeep(w.id)}>Keep this one</button>
                 </div>
               </section>

@@ -9,7 +9,7 @@ function Cmd({ text }: { text: string }) {
   return (
     <span className="cmd">
       <code>{text}</code>
-      <button className="icon" aria-label={`Copy ${text}`} title="Copy" onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+      <button className="icon" aria-label={`Copy ${text}`} title="Copy command" onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
         {copied ? <Check size={13} /> : <Copy size={13} />}
       </button>
     </span>
@@ -41,7 +41,7 @@ export function SetupCheck({ compact = false }: { compact?: boolean }) {
   return (
     <section className="setup-check">
       <div className="row">
-        <h2>{allOk ? "All set" : "Two minutes of setup"}</h2>
+        <h2>{allOk ? "All set" : "Finish setup (about 2 minutes)"}</h2>
         <span className="spacer" />
         <button className="quiet" onClick={run} disabled={busy}>{busy ? <span className="spinner" /> : <RotateCw size={13} />}Check again</button>
       </div>
@@ -139,7 +139,7 @@ export function Welcome({
     <div className="welcome">
       <Mascot size={88} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={onPet} title="Pet the cat" />
       <h1>{me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Hi there."}</h1>
-      <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a pull request.</p>
+      <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
 
       {hasImport && (
         <div className="import-card hero">
@@ -147,7 +147,7 @@ export function Welcome({
           <p>
             Bring over {preview.repos > 0 ? `${preview.repos} ${preview.repos === 1 ? "repo" : "repos"}, ` : ""}
             {preview.workspaces} {preview.workspaces === 1 ? "workspace" : "workspaces"} and {preview.sessions} {preview.sessions === 1 ? "chat" : "chats"} with their history.
-            {preview.skipped > 0 ? ` ${preview.skipped} already here or gone from disk.` : ""} nekotrail only reads Conductor's data; nothing is moved or deleted, and chats continue the same agent session.
+            {preview.skipped > 0 ? ` ${preview.skipped} already here or gone from disk.` : ""} nekotrail only reads Conductor's data. Nothing is moved or deleted, and chats continue where they left off.
           </p>
           <button className="accent" disabled={importing} onClick={async () => { setImporting(true); await onImport(); setImporting(false); setPreview(null); }}>
             {importing ? <span className="spinner" /> : <Download size={15} />}Import from Conductor
@@ -158,9 +158,9 @@ export function Welcome({
       <SetupCheck compact={!fresh} />
 
       <div className="start-actions">
-        {!fresh && <button className="primary" onClick={onNew}><Plus size={15} />New workspace <kbd>⌘N</kbd></button>}
-        <button className={fresh ? "primary" : ""} onClick={onAddRepo}><FolderOpen size={15} />Open a local repo</button>
-        <button onClick={onClone}><GitFork size={15} />Clone from GitHub</button>
+        {!fresh && <button className="primary" onClick={onNew}><Plus size={15} />Create workspace <kbd>⌘N</kbd></button>}
+        <button className={fresh ? "primary" : ""} onClick={onAddRepo}><FolderOpen size={15} />Add local repo</button>
+        <button onClick={onClone}><GitFork size={15} />Clone repo from GitHub</button>
       </div>
       {!fresh && <p className="muted">⌘K finds any workspace or action. ⌘⌥L jumps to the next one with news.</p>}
     </div>

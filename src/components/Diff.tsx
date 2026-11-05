@@ -160,7 +160,7 @@ function SplitLines({ lines, file }: { lines: Line[]; file: string }) {
 /** Turn review comments into one message the agent can act on. */
 export function reviewPrompt(comments: ReviewComment[]): string {
   const lines = comments.map((c, i) => `${i + 1}. ${c.file}:${c.line}${c.side === "old" ? " (removed line)" : ""}${c.code ? `\n   \`${c.code.slice(0, 120)}\`` : ""}\n   ${c.text}`);
-  return `Please address these review comments on your changes:\n\n${lines.join("\n\n")}`;
+  return `Address these review comments on your changes:\n\n${lines.join("\n\n")}`;
 }
 
 /** Turn GitHub review comments into one message for the agent. */
@@ -192,8 +192,8 @@ function FileEditor({ workspaceId, path, onDone }: { workspaceId: string; path: 
       <div className="file-head">
         <code>{path}</code>{dirty && <span className="muted">· edited</span>}
         <span className="spacer" />
-        <button onClick={save} disabled={!dirty} title="⌘S"><Save size={14} />Save</button>
-        <button className="quiet" onClick={() => { if (!dirty || confirm("Discard your edits?")) onDone(); }}>Done</button>
+        <button onClick={save} disabled={!dirty} title="Save file (⌘S)"><Save size={14} />Save</button>
+        <button className="quiet" onClick={() => { if (!dirty || confirm("Discard unsaved edits to this file?")) onDone(); }}>Done</button>
       </div>
       {error && <div className="banner error">{error}</div>}
       {text === null && !error ? <div className="empty"><span className="spinner" /></div> : (
@@ -313,7 +313,7 @@ export function Diff({
   const scope = (
     <span className="seg scope" role="tablist" aria-label="Which changes">
       <button role="tab" aria-selected={!uncommitted} className={!uncommitted ? "on" : ""} onClick={() => setUncommitted(false)}>All</button>
-      <button role="tab" aria-selected={uncommitted} className={uncommitted ? "on" : ""} onClick={() => setUncommitted(true)} title="⌘⌥U">Uncommitted</button>
+      <button role="tab" aria-selected={uncommitted} className={uncommitted ? "on" : ""} onClick={() => setUncommitted(true)} title="Show uncommitted changes only (⌘⌥U)">Uncommitted</button>
     </span>
   );
 
@@ -322,25 +322,25 @@ export function Diff({
       <div className="file-list">
         <div className="file-list-head">
           {scope}
-          <span className="spacer" /><button className="icon" onClick={load} title="Refresh" aria-label="Refresh changes"><RefreshCw size={15} /></button>
+          <span className="spacer" /><button className="icon" onClick={load} title="Refresh changes" aria-label="Refresh changes"><RefreshCw size={15} /></button>
         </div>
         <div className="file-list-sum num">
           {files.length} {files.length === 1 ? "file" : "files"} <span className="add">+{add}</span> <span className="del">-{del}</span>
           {files.length > 0 && <span className="muted"> · {seen} viewed</span>}
         </div>
         {files.length === 0 && (
-          <p className="muted file-list-empty">{uncommitted ? "Nothing uncommitted. Everything is in commits." : "Nothing changed yet. Edits the agent makes show up here, compared with the target branch."}</p>
+          <p className="muted file-list-empty">{uncommitted ? "No uncommitted changes. Everything is committed." : "Nothing changed yet. Edits the agent makes show up here, compared with the target branch."}</p>
         )}
         {files.map((f) => {
           const n = comments.filter((c) => c.file === f.path).length + gh.filter((c) => c.path === f.path && !c.reply_to).length;
           const isViewed = viewed[f.path] === sig(f);
           return (
             <div key={f.path} data-file={f.path} className={`file ${open === f.path ? "selected" : ""} ${isViewed ? "viewed" : ""}`}>
-              <input type="checkbox" checked={isViewed} onChange={() => toggleViewed(f)} aria-label={`Mark ${f.path} as viewed`} title="Viewed" />
+              <input type="checkbox" checked={isViewed} onChange={() => toggleViewed(f)} aria-label={`Mark ${f.path} as viewed`} title="Mark as viewed" />
               <button onClick={() => { setOpen(f.path); setEditing(null); }}>
                 <span className={`status s-${f.status}`}>{f.status}</span>
                 <span className="file-path" title={f.path}>{f.path}</span>
-                {n > 0 && <span className="comment-count num" title={`${n} comments`}>{n}</span>}
+                {n > 0 && <span className="comment-count num" title={`${n} ${n === 1 ? "comment" : "comments"}`}>{n}</span>}
                 <span className="add">+{f.additions}</span>
                 <span className="del">-{f.deletions}</span>
               </button>
@@ -350,17 +350,17 @@ export function Diff({
         <div className="review-bar">
           {ghTop.length > 0 && (
             <button onClick={() => onSendReview(githubPrompt(gh))}>
-              <Send size={14} /> Send GitHub comments ({ghTop.length})
+              <Send size={14} /> Send {ghTop.length} GitHub {ghTop.length === 1 ? "comment" : "comments"} to agent
             </button>
           )}
           {comments.length === 0 ? (
-            <p className="muted">Hover a line and click the speech bubble to leave a comment. ↑/↓ moves between files.</p>
+            <p className="muted">Hover a line and click the bubble to comment. ↑/↓ moves between files.</p>
           ) : (
             <>
               <button className="accent" onClick={() => { onSendReview(reviewPrompt(comments)); saveComments([]); }}>
                 <Send size={14} /> Send {comments.length} {comments.length === 1 ? "comment" : "comments"} to agent
               </button>
-              <button className="quiet" onClick={() => saveComments([])}>Discard</button>
+              <button className="quiet" onClick={() => saveComments([])}>Discard comments</button>
             </>
           )}
         </div>
@@ -373,8 +373,8 @@ export function Diff({
             <div className="file-head">
               <code>{open}</code>
               <span className="spacer" />
-              <button className="quiet" onClick={toggleSplit} title="Unified or side by side">{split ? "Unified" : "Side by side"}</button>
-              <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit</button>
+              <button className="quiet" onClick={toggleSplit} title="Switch diff layout">{split ? "Show unified" : "Show side by side"}</button>
+              <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit file</button>
             </div>
             <DiffLines
               file={open}
@@ -387,7 +387,7 @@ export function Diff({
             />
           </>
         ) : (
-          <div className="empty"><Mascot size={64} mood="sleep" /><h2>Nothing to show</h2><p>Pick a file, or press ⌘P to open any file.</p></div>
+          <div className="empty"><Mascot size={64} mood="sleep" /><h2>No file selected</h2><p>Pick a file from the list, or press ⌘P to open any file.</p></div>
         )}
       </div>
     </div>

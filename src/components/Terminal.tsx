@@ -167,10 +167,10 @@ export function TerminalPanel({
             )}
           </span>
         ))}
-        <span className="newchat"><button className="icon" title="New terminal (⌘T)" aria-label="New terminal" onClick={addShell}><Plus size={15} /></button></span>
+        <span className="newchat"><button className="icon" title="Open a new terminal (⌘T)" aria-label="Open a new terminal" onClick={addShell}><Plus size={15} /></button></span>
         <span className="spacer" />
         {cur.kind === "run" && (
-          <button className={running.has(runId) ? "danger term-action" : "term-action"} onClick={onRun} title="⌘R">
+          <button className={running.has(runId) ? "danger term-action" : "term-action"} onClick={onRun} title="Run or stop (⌘R)">
             {running.has(runId) ? <><Square size={12} />Stop</> : <><Play size={12} />Run</>}
           </button>
         )}

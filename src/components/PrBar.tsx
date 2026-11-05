@@ -142,18 +142,18 @@ export function PrBar({
       id: "pull", label: `Pull latest ${ws.target_branch}`, keys: "⌘⇧L", icon: <ArrowDownToLine size={15} />,
       run: () => task("pull", async () => {
         const r = await api.pullTarget(ws.id);
-        if (r === "conflicts") { onSay("Conflicts. The agent is resolving them."); onSendAgent(agentPrompts.conflicts(ws)); }
+        if (r === "conflicts") { onSay(`Merging ${ws.target_branch} hit conflicts. The agent is resolving them.`); onSendAgent(agentPrompts.conflicts(ws)); }
         else onSay(r === "merged" ? `Merged the latest ${ws.target_branch}.` : `Already up to date with ${ws.target_branch}.`);
       }),
     },
     review: { id: "review", label: "Review changes", keys: "⌘⇧R", icon: <ScanSearch size={15} />, run: () => onSendAgent(agentPrompts.review(ws, repo)) },
     second: {
-      id: "second", label: "Second opinion from the other agent", keys: "", icon: <ScanSearch size={15} />,
+      id: "second", label: "Get a second opinion from the other agent", keys: "", icon: <ScanSearch size={15} />,
       run: () => task("second", async () => {
         const last = (await api.sessions(ws.id)).pop();
         const other = last?.agent === "codex" ? "claude" : "codex";
         await api.startChat(ws.id, other, "plan", `Review by ${other === "codex" ? "Codex" : "Claude"}`, agentPrompts.secondOpinion(ws, repo));
-        onSay(`${other === "codex" ? "Codex" : "Claude"} is reviewing in a new chat (read-only). Add its findings to your review with one click.`);
+        onSay(`${other === "codex" ? "Codex" : "Claude"} is reviewing in a new read-only chat. Add its findings to your review from there.`);
       }),
     },
     fix: {
@@ -183,7 +183,7 @@ export function PrBar({
     : null;
   // Why Merge is greyed out, said in words.
   const mergeBlocked = !open ? null
-    : pr?.isDraft ? "Draft PR: mark it ready on GitHub first"
+    : pr?.isDraft ? "Draft PR. Mark it ready on GitHub first."
     : conflicting ? "Conflicts with the target branch"
     : checks?.cls === "bad" ? `${checks.text} checks`
     : checks?.cls === "wait" ? `${checks.text.replace(" running", "")} checks still running`
@@ -206,7 +206,7 @@ export function PrBar({
     const onAction = (e: Event) => {
       const a = ref.current[slash[(e as CustomEvent<string>).detail]];
       if (!a) return;
-      if (a.disabled) onSay(a.id === "merge" ? "This PR can't be merged yet. The PR bar says why." : `${a.label} isn't available right now.`);
+      if (a.disabled) onSay(a.id === "merge" ? "This PR can't merge yet. Open the PR actions menu to see why." : `${a.label} isn't available for this PR yet.`);
       else a.run();
     };
     window.addEventListener("keydown", onKey);
@@ -233,7 +233,7 @@ export function PrBar({
           onKeyDown={(e) => { if (e.key === "Enter") renameBranch(); if (e.key === "Escape") setRenaming(null); }}
         />
       ) : (
-        <button className="branch" title={pr ? `${ws.branch} into ${ws.target_branch}` : "Click to rename the branch"} onClick={() => !pr && setRenaming(ws.branch)}>
+        <button className="branch" title={pr ? `${ws.branch} into ${ws.target_branch}` : "Rename branch"} onClick={() => !pr && setRenaming(ws.branch)}>
           <GitBranch size={14} />{ws.branch} → {ws.target_branch}
         </button>
       )}
@@ -263,7 +263,7 @@ export function PrBar({
       {pr !== undefined && pr?.state !== "MERGED" && (
         <span className="git-actions">
           {primary && (
-            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy} title={primary.keys}>
+            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy} title={primary.keys ? `${primary.label} (${primary.keys})` : undefined}>
               {busy ? <span className="spinner" /> : primary.icon}{primary.label}
             </button>
           )}
@@ -289,14 +289,14 @@ export function PrBar({
       {pr?.state === "MERGED" && (
         <div className="merged-banner" role="status">
           <Mascot size={36} mood="happy" title="Merged" />
-          <span><b>Merged.</b> {name}'s work is in {ws.target_branch}. Archive it to tidy up; the branch stays.</span>
+          <span><b>Merged.</b> {name}'s work is in {ws.target_branch}. Archive it to tidy up. The branch is kept.</span>
           <span className="spacer" />
           <button className="primary" onClick={() => onArchive()}>Archive {name}</button>
         </div>
       )}
       {form && (
         <div className="pr-form">
-          <input placeholder="Title" aria-label="PR title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus />
+          <input placeholder="PR title" aria-label="PR title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus />
           <textarea placeholder="What changed and why" aria-label="PR description" rows={4} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
           <div className="row">
             <label className="check"><input type="checkbox" checked={form.draft} onChange={(e) => setForm({ ...form, draft: e.target.checked })} /> Open as draft</label>
@@ -304,14 +304,14 @@ export function PrBar({
             <button className="quiet" onClick={() => setForm(null)}>Cancel</button>
             <button className="primary" disabled={!!busy || !form.title.trim()} onClick={create}>
               {busy === "pr" ? <span className="spinner" /> : <GitPullRequest size={16} />}
-              {busy === "pr" ? "Pushing…" : "Push and open PR"}
+              {busy === "pr" ? "Pushing…" : "Push and create PR"}
             </button>
           </div>
         </div>
       )}
       {error && /auth|log ?in|token|credentials/i.test(error) ? (
         <button className="accent" onClick={() => window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: "gh auth login" }))} title={error}>
-          <CircleX size={14} />Connect GitHub
+          <CircleX size={14} />Sign in to GitHub
         </button>
       ) : error && <span className="pill bad" title={error}><CircleX size={14} />GitHub: {error.split("\n")[0].slice(0, 60)}</span>}
     </div>

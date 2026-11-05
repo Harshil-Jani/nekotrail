@@ -128,7 +128,7 @@ async fn github_repos() -> Res<Value> {
 #[tauri::command]
 async fn clone_repo(st: State<'_, AppState>, spec: String) -> Res<Repo> {
     let spec = spec.trim().trim_end_matches(".git").to_string();
-    let name = spec.rsplit(['/', ':']).next().filter(|n| !n.is_empty()).ok_or("Type a repo like owner/name")?.to_string();
+    let name = spec.rsplit(['/', ':']).next().filter(|n| !n.is_empty()).ok_or("Type the repo as owner/name.")?.to_string();
     let dest = st.home.join("repos").join(&name);
     if dest.exists() {
         return add_repo_at(&st, &dest.to_string_lossy());
@@ -139,7 +139,7 @@ async fn clone_repo(st: State<'_, AppState>, spec: String) -> Res<Repo> {
 }
 
 fn add_repo_at(st: &AppState, path: &str) -> Res<Repo> {
-    let root = git::toplevel(Path::new(&path)).map_err(|_| format!("{path} is not inside a git repo"))?;
+    let root = git::toplevel(Path::new(&path)).map_err(|_| format!("{path} isn't in a git repo. Choose a repo folder, or run git init there first."))?;
     let root_s = root.to_string_lossy().to_string();
     let db = st.db();
     if let Some(r) = db.repo_by_path(&root_s).map_err(e)? {
@@ -435,7 +435,7 @@ async fn rename_branch(st: State<'_, AppState>, id: String, branch: String) -> R
     if git::git(dir, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", ws.branch)]).is_ok() {
         return Err("This branch is already pushed. Renaming it would break the PR.".into());
     }
-    git::git(dir, &["check-ref-format", "--branch", &branch]).map_err(|_| format!("\"{branch}\" is not a valid branch name"))?;
+    git::git(dir, &["check-ref-format", "--branch", &branch]).map_err(|_| format!("\"{branch}\" isn't a valid branch name. Use letters, numbers, - and /."))?;
     git::git(dir, &["branch", "-m", &ws.branch, &branch]).map_err(e)?;
     st.db().set_branch(&id, &branch).map_err(e)
 }
@@ -459,7 +459,7 @@ async fn add_dir(st: State<'_, AppState>, id: String, dir: String) -> Res<Vec<St
     let dir = dir.trim().replacen('~', &dirs::home_dir().unwrap_or_default().to_string_lossy(), 1);
     let p = Path::new(&dir);
     if !p.is_dir() {
-        return Err(format!("{dir} is not a folder"));
+        return Err(format!("{dir} isn't a folder. Check the path and try again."));
     }
     let full = p.canonicalize().map_err(e)?.to_string_lossy().to_string();
     let db = st.db();
@@ -497,7 +497,7 @@ async fn app_settings(st: State<'_, AppState>) -> Res<Value> {
 async fn set_app_setting(st: State<'_, AppState>, key: String, value: String) -> Res<()> {
     const KEYS: &[&str] = &["caffeinate", "auto_branch", "claude_model", "claude_effort", "claude_mode", "codex_model", "codex_effort", "codex_mode"];
     if !KEYS.contains(&key.as_str()) {
-        return Err(format!("unknown setting {key}"));
+        return Err(format!("Unknown setting: {key}."));
     }
     st.db().set_setting(&key, &value).map_err(e)
 }
@@ -535,9 +535,9 @@ async fn read_file(st: State<'_, AppState>, id: String, path: String) -> Res<Str
     let ws = st.db().workspace(&id).map_err(e)?;
     let full = inside(&ws, &path)?;
     if std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0) > 2_000_000 {
-        return Err("This file is over 2 MB; open it in your editor instead.".into());
+        return Err("This file is over 2 MB. Open it in your editor instead.".into());
     }
-    std::fs::read_to_string(&full).map_err(|_| "This file isn't text, or it can't be read.".to_string())
+    std::fs::read_to_string(&full).map_err(|_| "This file isn't text or can't be read. Open it in your editor instead.".to_string())
 }
 
 #[tauri::command]
@@ -572,7 +572,7 @@ async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
     if app == "finder" {
         c.arg(&ws.path);
     } else {
-        let name = OPEN_IN.iter().find(|(k, _)| *k == app).map(|(_, n)| *n).ok_or(format!("unknown app {app}"))?;
+        let name = OPEN_IN.iter().find(|(k, _)| *k == app).map(|(_, n)| *n).ok_or(format!("Unknown app: {app}. Pick another one in Settings."))?;
         c.args(["-a", name, &ws.path]);
     }
     c.spawn().map_err(e)?;
@@ -717,7 +717,7 @@ async fn sections(st: State<'_, AppState>) -> Res<Vec<store::Section>> {
 #[tauri::command]
 async fn create_section(st: State<'_, AppState>, name: String) -> Res<store::Section> {
     let name = name.trim();
-    if name.is_empty() { return Err("Give the section a name".into()); }
+    if name.is_empty() { return Err("Give the section a name.".into()); }
     st.db().create_section(name).map_err(e)
 }
 
@@ -868,7 +868,7 @@ fn model_catalog() -> Value {
 async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let bin = if agent == "codex" { "codex" } else { "claude" };
-    let out = Command::new(bin).args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Could not run {bin}: {err}"))?;
+    let out = Command::new(bin).args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Couldn't run {bin}: {err}. Check that it's installed."))?;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     Ok(text.trim().to_string())
 }
@@ -1371,7 +1371,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(err) => {
-            let ev = json!({"kind": "error", "text": format!("Could not start {}: {err}", session.agent), "fix": "install", "agent": session.agent});
+            let ev = json!({"kind": "error", "text": format!("Couldn't start {}: {err}", session.agent), "fix": "install", "agent": session.agent});
             st.db().append_event(&id, &ev).map_err(e)?;
             emit_event(&app, &id, &ev);
             return Ok(());
@@ -1458,7 +1458,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                 json!({"kind": "done", "is_error": true, "stopped": true})
             } else {
                 json!({"kind": "error", "fix": classify_error(&stderr), "agent": agent_name,
-                       "text": if stderr.is_empty() { "Agent exited without a result".to_string() } else { stderr }})
+                       "text": if stderr.is_empty() { "The agent stopped without a reply. Send your message again.".to_string() } else { stderr }})
             };
             ok = false;
             user_stopped = stopped;
@@ -1571,7 +1571,7 @@ fn conductor_available() -> bool {
 /// that already knows what you have, so duplicates count as skipped.
 #[tauri::command]
 async fn import_preview(st: State<'_, AppState>) -> Res<importer::Report> {
-    let db = importer::default_db_path().ok_or("No Conductor data found on this Mac")?;
+    let db = importer::default_db_path().ok_or("No Conductor data found on this Mac.")?;
     let scratch = Store::in_memory().map_err(e)?;
     {
         let cur = st.db();
@@ -1587,7 +1587,7 @@ async fn import_preview(st: State<'_, AppState>) -> Res<importer::Report> {
 
 #[tauri::command]
 async fn import_conductor(st: State<'_, AppState>) -> Res<importer::Report> {
-    let db = importer::default_db_path().ok_or("No Conductor data found on this Mac")?;
+    let db = importer::default_db_path().ok_or("No Conductor data found on this Mac.")?;
     importer::import(&st.db(), &db).map_err(e)
 }
 
@@ -1674,7 +1674,7 @@ mod tests {
         assert_eq!(task_title("\n  Add dark mode?\nmore"), "Add dark mode");
         let long = task_title("The load balancer returns 502 on /v1/tickets right after a deploy and nobody knows why");
         assert!(long.ends_with('…') && long.chars().count() <= 49, "{long}");
-        assert_eq!(classify_error("Could not start claude: No such file or directory (os error 2)"), Some("install"));
+        assert_eq!(classify_error("Couldn't start claude: No such file or directory (os error 2)"), Some("install"));
         assert_eq!(classify_error("Invalid API key · Please run /login"), Some("login"));
         assert_eq!(classify_error("Claude AI usage limit reached|1762400000"), Some("limit"));
         assert_eq!(classify_error("tests failed"), None);

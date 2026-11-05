@@ -77,7 +77,7 @@ export function Palette({ commands, onClose, placeholder = "Jump to a workspace 
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" id="palette-list" role="listbox" ref={list}>
-          {results.length === 0 && <p className="muted palette-empty">No match. The cat looked everywhere.</p>}
+          {results.length === 0 && <p className="muted palette-empty">No matches. Try a shorter search.</p>}
           {results.map((c, i) => {
             const head = !q.trim() && c.group !== lastGroup ? c.group : null;
             lastGroup = c.group;
