@@ -624,7 +624,10 @@ export function Chat({
         return true;
       case "/effort": case "/intelligence": await update({ effort: (arg || null) as Effort | null }); return true;
       case "/mcp": setMcpOpen(true); return true;
-      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/run": case "/diff": case "/terminal":
+      case "/run":
+        window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: arg ? `run:${arg}` : "run" }));
+        return true;
+      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: cmd.slice(1) }));
         return true;
       case "/add-dir": {
@@ -707,7 +710,7 @@ export function Chat({
     ["/review", "Review the branch with this agent (⌘⇧R)"], ["/second-opinion", "Get a read-only review from the other agent"],
     ["/pr", "Commit, push and create the PR (⌘⇧P)"], ["/merge", "Merge the PR (⌘⇧M)"], ["/pull", "Merge the latest target branch (⌘⇧L)"],
     ["/fix-ci", "Fix failing checks from their logs (⌘⇧X)"],
-    ["/run", "Run or stop the app (⌘R)"], ["/diff", "Show the changes (⌘⇧D)"], ["/terminal", "Open the terminal (⌘J)"],
+    ["/run", "Run or stop the app (⌘R), or /run test for a named action"], ["/diff", "Show the changes (⌘⇧D)"], ["/terminal", "Open the terminal (⌘J)"],
     ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
     ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];

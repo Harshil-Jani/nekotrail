@@ -3,6 +3,11 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.10.0 (2026-11-06)
+
+- Named actions: besides Run, give a repo commands like test, lint or db:migrate (repo settings, Scripts). Start them from the menu next to Run, from ⌘K, or with /run test in a chat. They run in the workspace terminal so you see the output.
+- "Copy branch name" and "Copy PR link" in the workspace's ⋯ menu.
+
 ## 0.9.0 (2026-11-06)
 
 **Design pass** (from an outside design review)

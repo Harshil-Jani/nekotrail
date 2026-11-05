@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, Columns2, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
 import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -138,10 +138,18 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // A repo's named action ("test", "lint"): typed into the workspace terminal so you see it run.
+  const runAction = (name: string) => {
+    const cmd = repo?.prefs?.actions?.find(([n]) => n === name)?.[1];
+    if (!cmd) return say(`No action named "${name}". Add it in the repo's settings.`, true);
+    setTab("terminal");
+    window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: cmd }));
+  };
   // Slash commands that change the view: /run, /diff, /terminal.
   const actionRef = useRef<(a: string) => void>(() => {});
   actionRef.current = (a: string) => {
-    if (a === "run") runScript();
+    if (a.startsWith("run:")) runAction(a.slice(4));
+    else if (a === "run") runScript();
     else if (a === "diff") setTab("changes");
     else if (a === "terminal") setTab("terminal");
   };
@@ -249,6 +257,7 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
   // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
@@ -673,6 +682,7 @@ export default function App() {
         { id: "tab-changes", group: here, label: "Show changes", hint: "⌘⇧D", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
         { id: "tab-term", group: here, label: "Show terminal", hint: "⌘J", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
         { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
+        ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: runScript },
         { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
         { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
@@ -890,6 +900,18 @@ export default function App() {
                       <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
                     ) : (
                       <button onClick={runScript} title="Run the repo's run script (⌘R)"><Play size={14} />Run</button>
+                    )}
+                    {(repo?.prefs?.actions?.length ?? 0) > 0 && (
+                      <span className="git-menu">
+                        <button className="icon" aria-label="More actions" title="More actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen((o) => !o)}><ChevronDown size={14} /></button>
+                        {actionsOpen && (
+                          <span className="menu" role="menu" onMouseLeave={() => setActionsOpen(false)}>
+                            {repo!.prefs.actions.map(([n, c]) => (
+                              <button key={n} role="menuitem" onClick={() => { setActionsOpen(false); runAction(n); }} title={c}><Play size={14} /><span>{n}</span><kbd>{c.length > 24 ? c.slice(0, 24) + "…" : c}</kbd></button>
+                            ))}
+                          </span>
+                        )}
+                      </span>
                     )}
                     <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value).catch((er) => say(errText(er), true))}>
                       <option value="">Open in…</option>

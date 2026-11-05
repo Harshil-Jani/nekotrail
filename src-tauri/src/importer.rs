@@ -114,6 +114,7 @@ fn conductor_prefs(src: &Connection, repo_id: &str) -> crate::store::RepoPrefs {
             .unwrap_or_else(|_| globs.split([',', '\n']).map(|g| g.trim().to_string()).filter(|g| !g.is_empty()).collect()),
         env: vec![],
         merge_method: String::new(),
+        actions: vec![],
     }
 }
 

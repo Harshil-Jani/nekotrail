@@ -9,7 +9,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
   const [section, setSection] = useState<Section>("scripts");
   const [s, setS] = useState({ setup: repo.setup_script ?? "", run: repo.run_script ?? "", archive: repo.archive_script ?? "" });
   const [p, setP] = useState<RepoPrefs>(() => ({
-    ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [], merge_method: "" },
+    ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [], merge_method: "", actions: [] },
     ...(repo.prefs as Partial<RepoPrefs> | undefined),
   }));
   const [globs, setGlobs] = useState(p.copy_files.join("\n"));
@@ -29,6 +29,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
         ...p,
         copy_files: globs.split("\n").map((g) => g.trim()).filter(Boolean),
         env: p.env.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v]),
+        actions: (p.actions ?? []).filter(([n, c]) => n.trim() && c.trim()).map(([n, c]) => [n.trim(), c.trim()]),
       });
       onClose();
     } catch (e) {
@@ -67,6 +68,18 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
             {script("setup", "Setup: runs when a workspace is created", "bun install")}
             {script("run", "Run: runs from the Run button (⌘R)", "bun dev --port $NEKOTRAIL_PORT")}
             {script("archive", "Archive: runs before the folder is removed", "docker compose down")}
+            <div className="field">
+              <span>More actions</span>
+              <small className="muted">Named commands next to Run, like test or lint. Start them from the Run menu, ⌘K, or /run name in a chat. They run in the workspace terminal.</small>
+              {(p.actions ?? []).map(([n, c], i) => (
+                <div className="env-row" key={i}>
+                  <input value={n} placeholder="test" aria-label="Action name" onChange={(e) => setP({ ...p, actions: p.actions.map((x, j) => (j === i ? [e.target.value.replace(/\s+/g, "-"), x[1]] : x)) })} />
+                  <input value={c} placeholder="bun test" aria-label="Action command" onChange={(e) => setP({ ...p, actions: p.actions.map((x, j) => (j === i ? [x[0], e.target.value] : x)) })} />
+                  <button className="icon" aria-label="Remove action" onClick={() => setP({ ...p, actions: p.actions.filter((_, j) => j !== i) })}><X size={14} /></button>
+                </div>
+              ))}
+              <button className="quiet add-env" onClick={() => setP({ ...p, actions: [...(p.actions ?? []), ["", ""]] })}><Plus size={14} />Add action</button>
+            </div>
           </>
         )}
 

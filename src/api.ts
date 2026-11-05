@@ -19,6 +19,7 @@ export type RepoPrefs = {
   copy_files: string[];
   env: [string, string][];
   merge_method: string;
+  actions: [string, string][];
 };
 
 export type Doctor = {

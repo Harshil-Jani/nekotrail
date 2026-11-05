@@ -149,6 +149,8 @@ pub struct RepoPrefs {
     pub env: Vec<(String, String)>,
     /// How PRs merge: squash (default), merge or rebase.
     pub merge_method: String,
+    /// Named commands besides Run, e.g. ("test", "bun test"). Run from the Run menu, ⌘K or /run name.
+    pub actions: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
