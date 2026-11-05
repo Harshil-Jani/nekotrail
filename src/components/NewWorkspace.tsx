@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api as backend } from "../api";
-import { ChevronDown, CornerDownLeft, GripHorizontal } from "lucide-react";
+import { ChevronDown, CornerDownLeft } from "lucide-react";
 import type { Agent, PermissionMode, Repo } from "../api";
 
 const MODES: { value: PermissionMode; label: string }[] = [
@@ -15,7 +15,8 @@ export type NewWorkspaceRequest = {
   from?: string;
 };
 
-type Source = "task" | "pr" | "branch";
+type Source = "task" | "pr" | "branch" | "issue";
+type IssueItem = { number: number; title: string; body: string; url: string; labels: { name: string }[] };
 type PrItem = { number: number; title: string; headRefName: string; author: { login: string }; isDraft: boolean };
 
 /**
@@ -48,11 +49,14 @@ export function NewWorkspace({
   const [prPick, setPrPick] = useState<number | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [branch, setBranch] = useState("");
+  const [issues, setIssues] = useState<IssueItem[] | null>(null);
+  const [issuePick, setIssuePick] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     setLoadError(null);
     if (source === "pr") { setPrs(null); backend.repoPrs(repoId).then(setPrs).catch((e) => { setPrs([]); setLoadError(String(e)); }); }
     if (source === "branch") backend.repoBranches(repoId).then(setBranches).catch(() => setBranches([]));
+    if (source === "issue") { setIssues(null); backend.repoIssues(repoId).then(setIssues).catch((e) => { setIssues([]); setLoadError(String(e)); }); }
   }, [source, repoId]);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
@@ -114,7 +118,6 @@ export function NewWorkspace({
             </select>
             <ChevronDown size={16} />
           </label>
-          <span className="nw-grip" aria-hidden><GripHorizontal size={16} /></span>
           <span className="spacer" />
           <div className="nw-agent" role="radiogroup" aria-label="Agent">
             {(["claude", "codex"] as Agent[]).map((a) => (
@@ -125,7 +128,7 @@ export function NewWorkspace({
           </div>
         </div>
         <nav className="seg nw-source" role="tablist" aria-label="Start from">
-          {([["task", "New task"], ["pr", "Pull request"], ["branch", "Branch"]] as [Source, string][]).map(([id, label]) => (
+          {([["task", "New task"], ["issue", "Issue"], ["pr", "Pull request"], ["branch", "Branch"]] as [Source, string][]).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={source === id} className={source === id ? "on" : ""} onClick={() => setSource(id)}>{label}</button>
           ))}
         </nav>
@@ -142,6 +145,23 @@ export function NewWorkspace({
             ))}
           </div>
         )}
+        {source === "issue" && (
+          <div className="nw-list" role="listbox" aria-label="Open issues">
+            {issues === null && <p className="muted"><span className="spinner" /> Loading open issues…</p>}
+            {issues?.length === 0 && <p className="muted">{loadError ? `Couldn't load issues: ${loadError}` : "No open issues in this repo."}</p>}
+            {issues?.map((i) => (
+              <button key={i.number} role="option" aria-selected={issuePick === i.number} className={issuePick === i.number ? "on" : ""}
+                onClick={() => {
+                  setIssuePick(i.number);
+                  setPrompt(`Fix issue #${i.number}: ${i.title}\n\n${(i.body || "").trim().slice(0, 4000)}\n\nWhen you open the PR, put "Fixes #${i.number}" in its description.`);
+                }}>
+                <span className="num muted">#{i.number}</span>
+                <span className="nw-pr-title">{i.title}</span>
+                <span className="muted">{i.labels.slice(0, 2).map((l) => l.name).join(", ")}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {source === "branch" && (
           <div className="nw-branch">
             <input list="nw-branches" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch name" aria-label="Branch" autoFocus />
@@ -149,7 +169,7 @@ export function NewWorkspace({
           </div>
         )}
         <textarea
-          className={`nw-prompt ${source !== "task" ? "short" : ""}`}
+          className={`nw-prompt ${source === "pr" || source === "branch" ? "short" : ""}`}
           autoFocus
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -159,7 +179,7 @@ export function NewWorkspace({
               submit();
             }
           }}
-          placeholder={source === "task" ? `What should the agent do in ${repo?.name ?? "this repo"}? Leave empty to just make the workspace.` : "Optional: what should the agent do first? (e.g. address the review comments)"}
+          placeholder={source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Leave empty to just make the workspace.` : "Optional: what should the agent do first? (e.g. address the review comments)"}
           aria-label="Task for the agent"
         />
         <div className="nw-foot">
@@ -179,9 +199,9 @@ export function NewWorkspace({
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">Shift ↵ new line · Esc close</span>
-          <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim())}>
+          <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick)}>
             {busy ? <span className="spinner" /> : null}
-            {source === "pr" ? (prPick ? `Open #${prPick}` : "Pick a PR") : source === "branch" ? "Open branch" : prompt.trim() ? "Create" : "Create empty"}
+            {source === "issue" ? (issuePick ? `Start on #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Open #${prPick}` : "Pick a PR") : source === "branch" ? "Open branch" : prompt.trim() ? "Create" : "Create empty"}
             <CornerDownLeft size={14} />
           </button>
         </div>

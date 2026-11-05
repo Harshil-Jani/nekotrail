@@ -114,6 +114,8 @@ pub struct RepoPrefs {
     pub copy_files: Vec<String>,
     /// Extra environment variables for agents, scripts and terminals in this repo.
     pub env: Vec<(String, String)>,
+    /// How PRs merge: squash (default), merge or rebase.
+    pub merge_method: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

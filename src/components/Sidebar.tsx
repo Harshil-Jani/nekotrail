@@ -105,7 +105,6 @@ export function Sidebar(p: Props) {
       </button>
     );
   };
-  const pct = total ? Math.round((p.lit / total) * 100) : 0;
 
   return (
     <aside className="sidebar">
@@ -162,6 +161,16 @@ export function Sidebar(p: Props) {
       </label>
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
+        {p.groupBy === "repo" && (() => {
+          // Inbox: workspaces whose agent finished while you were elsewhere.
+          const news = p.workspaces.filter((w) => w.unread && w.state === "active" && inFilter(w) && match(w) && !p.running.has(w.id));
+          return news.length > 0 ? (
+            <section className="repo needs-you">
+              <div className="repo-head status-head"><span className="unread" /><span className="repo-name">Needs you</span><span className="repo-meta num">{news.length}</span></div>
+              {news.map(row)}
+            </section>
+          ) : null;
+        })()}
         {p.groupBy === "repo"
           ? shownRepos.map((r) => {
               const ws = p.workspaces.filter((w) => w.repo_id === r.id && match(w));
@@ -193,7 +202,6 @@ export function Sidebar(p: Props) {
             <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
           </span>
         </button>
-        <div className="progress-bar" aria-label={`${pct}% of stars lit`}><span style={{ width: `${pct}%` }} /></div>
         <button className="quiet" onClick={p.onToggleArchived}>
           {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
           {p.showArchived ? "Hide archived" : "Show archived"}

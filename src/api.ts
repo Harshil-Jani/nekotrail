@@ -18,7 +18,16 @@ export type RepoPrefs = {
   pr_prompt: string;
   copy_files: string[];
   env: [string, string][];
+  merge_method: string;
 };
+
+export type Doctor = {
+  git: { ok: boolean; version: string };
+  gh: { installed: boolean; ok: boolean; login: string | null };
+  claude: { ok: boolean; version: string };
+  codex: { ok: boolean; version: string };
+};
+export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number };
 
 export type AppSettings = {
   caffeinate: "on" | "off"; auto_branch: "on" | "off"; home: string;
@@ -65,12 +74,12 @@ export type Session = {
 export type ChatEvent =
   | { kind: "user"; text: string; checkpoint?: string | null }
   | { kind: "note"; text: string }
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { kind: "thinking"; text: string }
   | { kind: "tool"; id: string; name: string; input: string }
   | { kind: "tool_result"; id: string; output: string; is_error: boolean }
   | { kind: "done"; is_error: boolean; cost_usd?: number; duration_ms?: number; stopped?: boolean; context_tokens?: number; context_window?: number }
-  | { kind: "error"; text: string };
+  | { kind: "error"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent };
 
 export type FileChange = { path: string; status: string; additions: number; deletions: number };
 export type Scripts = { setup: string | null; run: string | null; archive: string | null };
@@ -149,7 +158,7 @@ export const api = {
   setAppSetting: (key: Exclude<keyof AppSettings, "home">, value: string) => invoke<void>("set_app_setting", { key, value }),
   commitPush: (id: string, message = "") => invoke<string>("commit_push", { id, message }),
   pullTarget: (id: string) => invoke<"up-to-date" | "merged" | "conflicts">("pull_target", { id }),
-  mergePr: (id: string, method: "squash" | "merge" | "rebase") => invoke<void>("merge_pr", { id, method }),
+  mergePr: (id: string, auto = false) => invoke<void>("merge_pr", { id, auto }),
   failingLogs: (id: string) => invoke<string>("failing_logs", { id }),
   sendToWorkspace: (id: string, text: string) => invoke<string>("send_to_workspace", { id, text }),
   archiveWorkspace: (id: string, force = false) => invoke<void>("archive_workspace", { id, force }),
@@ -190,9 +199,13 @@ export const api = {
   ptyWrite: (id: string, data: string) => invoke<void>("pty_write", { id, data }),
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),
   ptyClose: (id: string) => invoke<void>("pty_close", { id }),
+  doctor: () => invoke<Doctor>("doctor"),
+  githubRepos: () => invoke<{ nameWithOwner: string; description: string; pushedAt: string; isPrivate: boolean }[]>("github_repos"),
+  cloneRepo: (spec: string) => invoke<Repo>("clone_repo", { spec }),
+  importPreview: () => invoke<ImportReport>("import_preview"),
+  repoIssues: (id: string) => invoke<{ number: number; title: string; body: string; url: string; labels: { name: string }[] }[]>("repo_issues", { id }),
   conductorAvailable: () => invoke<boolean>("conductor_available"),
-  importConductor: () =>
-    invoke<{ repos: number; workspaces: number; sessions: number; skipped: number }>("import_conductor"),
+  importConductor: () => invoke<ImportReport>("import_conductor"),
 };
 
 export const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e));

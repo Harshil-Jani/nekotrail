@@ -112,6 +112,33 @@ async fn snapshot(st: State<'_, AppState>, include_archived: bool) -> Res<Snapsh
 
 #[tauri::command]
 async fn add_repo(st: State<'_, AppState>, path: String) -> Res<Repo> {
+    add_repo_at(&st, &path)
+}
+
+/// Your GitHub repos (most recently pushed first), for "Clone from GitHub".
+#[tauri::command]
+async fn github_repos() -> Res<Value> {
+    let out = gh(".", &["repo", "list", "--limit", "100", "--json", "nameWithOwner,description,pushedAt,isPrivate"])?;
+    let mut v: Vec<Value> = serde_json::from_str(&out).map_err(e)?;
+    v.sort_by(|a, b| b["pushedAt"].as_str().cmp(&a["pushedAt"].as_str()));
+    Ok(Value::Array(v))
+}
+
+/// Clone `owner/repo` (or any URL gh understands) into ~/nekotrail/repos and add it.
+#[tauri::command]
+async fn clone_repo(st: State<'_, AppState>, spec: String) -> Res<Repo> {
+    let spec = spec.trim().trim_end_matches(".git").to_string();
+    let name = spec.rsplit(['/', ':']).next().filter(|n| !n.is_empty()).ok_or("Type a repo like owner/name")?.to_string();
+    let dest = st.home.join("repos").join(&name);
+    if dest.exists() {
+        return add_repo_at(&st, &dest.to_string_lossy());
+    }
+    std::fs::create_dir_all(dest.parent().unwrap()).map_err(e)?;
+    gh(".", &["repo", "clone", &spec, &dest.to_string_lossy()])?;
+    add_repo_at(&st, &dest.to_string_lossy())
+}
+
+fn add_repo_at(st: &AppState, path: &str) -> Res<Repo> {
     let root = git::toplevel(Path::new(&path)).map_err(|_| format!("{path} is not inside a git repo"))?;
     let root_s = root.to_string_lossy().to_string();
     let db = st.db();
@@ -600,6 +627,9 @@ async fn pr_status(st: State<'_, AppState>, id: String) -> Res<Value> {
     if pr["state"] == "MERGED" {
         st.db().set_merged(&id).map_err(e)?;
     }
+    if ws.title.is_empty() && let Some(t) = pr["title"].as_str() {
+        st.db().set_title(&id, t).map_err(e)?;
+    }
     Ok(pr)
 }
 
@@ -609,6 +639,17 @@ async fn repo_prs(st: State<'_, AppState>, id: String) -> Res<Value> {
     let repo = st.db().repo(&id).map_err(e)?;
     let out = gh(&repo.root_path, &["pr", "list", "--state", "open", "--limit", "50", "--json", "number,title,headRefName,author,isDraft,updatedAt"])?;
     serde_json::from_str(&out).map_err(e)
+}
+
+/// Open issues in a repo (assigned to you first), for "new workspace from an issue".
+#[tauri::command]
+async fn repo_issues(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let repo = st.db().repo(&id).map_err(e)?;
+    let out = gh(&repo.root_path, &["issue", "list", "--state", "open", "--limit", "100", "--json", "number,title,body,labels,assignees,url"])?;
+    let mut v: Vec<Value> = serde_json::from_str(&out).map_err(e)?;
+    let me = st.branch_prefix.clone();
+    v.sort_by_key(|i| !i["assignees"].as_array().is_some_and(|a| a.iter().any(|x| x["login"] == me.as_str())));
+    Ok(Value::Array(v))
 }
 
 /// Commit everything and push. An empty message uses the chat's first task as the subject.
@@ -640,9 +681,15 @@ async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
 
 /// Merge the workspace's PR on GitHub. `method` is squash, merge or rebase.
 #[tauri::command]
-async fn merge_pr(st: State<'_, AppState>, id: String, method: String) -> Res<()> {
+async fn merge_pr(st: State<'_, AppState>, id: String, auto: Option<bool>) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    let method = st.db().repo(&ws.repo_id).map(|r| r.prefs.merge_method).unwrap_or_default();
     let flag = match method.as_str() { "merge" => "--merge", "rebase" => "--rebase", _ => "--squash" };
+    if auto.unwrap_or(false) {
+        // GitHub merges it once the required checks pass.
+        gh(&ws.path, &["pr", "merge", &ws.branch, flag, "--auto"])?;
+        return Ok(());
+    }
     gh(&ws.path, &["pr", "merge", &ws.branch, flag])?;
     st.db().set_merged(&id).map_err(e)?;
     Ok(())
@@ -939,6 +986,75 @@ fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
 
 /// Rename a fresh workspace's branch after its first task, while nothing has been pushed:
 /// `me/mochi` becomes `me/fix-502-after-deploy`, which reads better in PRs.
+/// What the user can do about an agent error: "install", "login" or "limit". The UI shows the fix.
+fn classify_error(text: &str) -> Option<&'static str> {
+    let t = text.to_lowercase();
+    if t.contains("no such file or directory") || t.contains("command not found") || t.contains("not found in path") {
+        Some("install")
+    } else if t.contains("/login") || t.contains("not logged in") || t.contains("invalid api key") || t.contains("authentication") || t.contains("unauthorized") || t.contains("401") {
+        Some("login")
+    } else if t.contains("usage limit") || t.contains("rate limit") || t.contains("limit reached") || t.contains("quota") {
+        Some("limit")
+    } else {
+        None
+    }
+}
+
+/// The CLI's own login / limit notices, which arrive as a short assistant message. Strict on purpose:
+/// an ordinary reply that mentions "401" must not be flagged.
+fn classify_cli_notice(text: &str) -> Option<&'static str> {
+    let t = text.to_lowercase();
+    if t.contains("please run /login") || t.starts_with("invalid api key") || t.contains("not logged in") {
+        Some("login")
+    } else if t.contains("usage limit reached") || t.contains("you've hit your limit") || t.contains("limit will reset") {
+        Some("limit")
+    } else {
+        None
+    }
+}
+
+/// A short workspace title from the first message: its first sentence, cut at a word near 48 chars.
+fn task_title(text: &str) -> String {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let sentence = line.split_inclusive(['.', '?', '!']).next().unwrap_or(line).trim_end_matches(['.', '?', '!']).trim();
+    if sentence.chars().count() <= 48 {
+        return sentence.to_string();
+    }
+    let cut: String = sentence.chars().take(48).collect();
+    match cut.rfind(' ') {
+        Some(i) if i > 20 => format!("{}…", &cut[..i]),
+        _ => format!("{cut}…"),
+    }
+}
+
+/// Is a tool installed, and what does it say about itself? Used by the first-run setup check.
+fn probe(cmd: &str, args: &[&str]) -> (bool, String) {
+    match Command::new(cmd).args(args).stdin(Stdio::null()).output() {
+        Ok(o) => {
+            let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            (o.status.success(), out.lines().next().unwrap_or("").trim().to_string())
+        }
+        Err(_) => (false, String::new()),
+    }
+}
+
+/// First-run check: git, GitHub CLI login, and the agent CLIs.
+#[tauri::command]
+async fn doctor() -> Res<Value> {
+    let (git_ok, git_v) = probe("git", &["--version"]);
+    let (gh_installed, _) = probe("gh", &["--version"]);
+    let (gh_ok, _) = probe("gh", &["auth", "status"]);
+    let login = if gh_ok { github_login() } else { None };
+    let (claude_ok, claude_v) = probe("claude", &["--version"]);
+    let (codex_ok, codex_v) = probe("codex", &["--version"]);
+    Ok(json!({
+        "git": {"ok": git_ok, "version": git_v},
+        "gh": {"installed": gh_installed, "ok": gh_ok, "login": login},
+        "claude": {"ok": claude_ok, "version": claude_v},
+        "codex": {"ok": codex_ok, "version": codex_v},
+    }))
+}
+
 fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) -> Workspace {
     let placeholder = format!("{}/{}", st.branch_prefix, ws.name);
     if ws.branch != placeholder || ws.imported_from.is_some() || st.db().setting("auto_branch").ok().flatten().as_deref() == Some("off") {
@@ -980,6 +1096,14 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     let prefs = &repo.prefs;
     let dirs = st.db().extra_dirs(&id).unwrap_or_default();
     let ws = maybe_name_branch(&app, st, ws, &text);
+    // Name the workspace after its first task, so 20 workspaces stay readable.
+    if ws.title.is_empty() && ws.imported_from.is_none() {
+        let t = task_title(&text);
+        if !t.is_empty() {
+            let _ = st.db().set_title(&ws.id, &t);
+            let _ = app.emit("workspaces-changed", json!({}));
+        }
+    }
     // Snapshot the worktree first, so this turn can be undone with one click.
     let checkpoint = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id)).ok();
     let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
@@ -1008,7 +1132,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(err) => {
-            let ev = json!({"kind": "error", "text": format!("Could not start {}: {err}", session.agent)});
+            let ev = json!({"kind": "error", "text": format!("Could not start {}: {err}", session.agent), "fix": "install", "agent": session.agent});
             st.db().append_event(&id, &ev).map_err(e)?;
             emit_event(&app, &id, &ev);
             return Ok(());
@@ -1062,6 +1186,16 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                     saw_done = true;
                     ok = !ev["is_error"].as_bool().unwrap_or(false);
                 }
+                // Login and usage-limit problems arrive as ordinary text; tag them so the UI offers the fix.
+                let fix = match ev["kind"].as_str() {
+                    Some("error") => ev["text"].as_str().and_then(classify_error),
+                    Some("text") => ev["text"].as_str().filter(|t| t.len() < 300).and_then(classify_cli_notice),
+                    _ => None,
+                };
+                if let Some(fix) = fix {
+                    ev["fix"] = json!(fix);
+                    ev["agent"] = json!(agent_name);
+                }
                 let _ = st.db().append_event(&id, &ev);
                 emit_event(&app, &id, &ev);
             }
@@ -1073,7 +1207,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let ev = if stopped {
                 json!({"kind": "done", "is_error": true, "stopped": true})
             } else {
-                json!({"kind": "error", "text": if stderr.is_empty() { "Agent exited without a result".to_string() } else { stderr }})
+                json!({"kind": "error", "fix": classify_error(&stderr), "agent": agent_name,
+                       "text": if stderr.is_empty() { "Agent exited without a result".to_string() } else { stderr }})
             };
             ok = false;
             let _ = st.db().append_event(&id, &ev);
@@ -1177,6 +1312,24 @@ fn conductor_available() -> bool {
     importer::default_db_path().is_some()
 }
 
+/// What an import would bring over, without changing anything: a dry run into a scratch database
+/// that already knows what you have, so duplicates count as skipped.
+#[tauri::command]
+async fn import_preview(st: State<'_, AppState>) -> Res<importer::Report> {
+    let db = importer::default_db_path().ok_or("No Conductor data found on this Mac")?;
+    let scratch = Store::in_memory().map_err(e)?;
+    {
+        let cur = st.db();
+        for r in cur.repos().map_err(e)? {
+            scratch.insert_repo(&r).map_err(e)?;
+        }
+        for w in cur.workspaces(true).map_err(e)? {
+            scratch.insert_workspace(&w).map_err(e)?;
+        }
+    }
+    importer::import(&scratch, &db).map_err(e)
+}
+
 #[tauri::command]
 async fn import_conductor(st: State<'_, AppState>) -> Res<importer::Report> {
     let db = importer::default_db_path().ok_or("No Conductor data found on this Mac")?;
@@ -1221,7 +1374,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
@@ -1253,6 +1406,20 @@ mod tests {
         assert_eq!(get("NEKOTRAIL_PORT"), workspace_env(&repo, &ws).iter().find(|(k, _)| k == "NEKOTRAIL_PORT").unwrap().1);
         assert_eq!(get("API_URL"), "http://localhost");
         assert_eq!(get("NEKOTRAIL_ROOT_PATH"), "/code/demo");
+    }
+
+    #[test]
+    fn titles_and_error_fixes() {
+        assert_eq!(task_title("Fix the 502 after deploy. Then add a test."), "Fix the 502 after deploy");
+        assert_eq!(task_title("\n  Add dark mode?\nmore"), "Add dark mode");
+        let long = task_title("The load balancer returns 502 on /v1/tickets right after a deploy and nobody knows why");
+        assert!(long.ends_with('…') && long.chars().count() <= 49, "{long}");
+        assert_eq!(classify_error("Could not start claude: No such file or directory (os error 2)"), Some("install"));
+        assert_eq!(classify_error("Invalid API key · Please run /login"), Some("login"));
+        assert_eq!(classify_error("Claude AI usage limit reached|1762400000"), Some("limit"));
+        assert_eq!(classify_error("tests failed"), None);
+        assert_eq!(classify_cli_notice("The endpoint returns 401 when the token expires, so I added a refresh."), None);
+        assert_eq!(classify_cli_notice("Invalid API key · Please run /login"), Some("login"));
     }
 
     #[test]

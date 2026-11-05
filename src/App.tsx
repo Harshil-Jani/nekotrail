@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Cat, ExternalLink, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, ZoomIn } from "lucide-react";
+import { Archive, ArchiveRestore, Check, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
 import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type GithubUser, type Repo, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -17,6 +17,7 @@ import { NightSky } from "./components/NightSky";
 import { NewWorkspace, type NewWorkspaceRequest } from "./components/NewWorkspace";
 import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
+import { CloneSheet, Welcome } from "./components/Welcome";
 import { Settings } from "./components/Settings";
 import { chime, getSettings, saveSettings } from "./settings";
 
@@ -58,7 +59,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -78,6 +79,34 @@ export default function App() {
     });
     return () => { unExit.then((f) => f()); unData.then((f) => f()); };
   }, []);
+  /** Resolves when a terminal process ends (or after 20 minutes, whichever is first). */
+  const waitForExit = (id: string) => new Promise<void>((resolve) => {
+    const t = setTimeout(() => resolve(), 20 * 60_000);
+    const un = listen<{ id: string }>("pty-exit", ({ payload }) => {
+      if (payload.id === id) { clearTimeout(t); un.then((f) => f()); resolve(); }
+    });
+  });
+  // j / k move through the sidebar when you're not typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || (e.key !== "j" && e.key !== "k")) return;
+      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable], .xterm")) return;
+      const rows = Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws"));
+      if (!rows.length) return;
+      e.preventDefault();
+      const i = rows.findIndex((r) => r.classList.contains("selected"));
+      rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === "j" ? 1 : -1)))].click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // "Run in terminal" requests switch to the Terminal tab; the panel types the command.
+  useEffect(() => {
+    const show = () => setTab("terminal");
+    window.addEventListener("nekotrail-terminal", show);
+    return () => window.removeEventListener("nekotrail-terminal", show);
+  }, []);
   const startPty = async (id: string, cwd: string, cmd: string, tabName: string) => {
     await api.ptyRun(id, cwd, cmd);
     setLivePtys((s) => new Set(s).add(id));
@@ -88,7 +117,7 @@ export default function App() {
   const [sidebarW, setSidebarW] = useState(() => Number(localStorage.getItem("nekotrail.sidebar")) || 264);
   const [resizing, setResizing] = useState(false);
   const [newFor, setNewFor] = useState<string | null>(params.get("new"));
-  const [newSource, setNewSource] = useState<"task" | "pr" | "branch">((params.get("from") as "pr") || "task"); // repo id the new-workspace panel opens on
+  const [newSource, setNewSource] = useState<"task" | "pr" | "branch" | "issue">((params.get("from") as "pr") || "task"); // repo id the new-workspace panel opens on
   const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
   const [lastActive, setLastActive] = useState(Date.now());
@@ -114,6 +143,8 @@ export default function App() {
   const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
   const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [cloning, setCloning] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
 
@@ -285,9 +316,9 @@ export default function App() {
     if (ws.unread) api.setUnread(ws.id, false).then(refresh);
   }, [ws?.id]);
 
-  const say = (text: string, error = false) => {
-    setToast({ text, error });
-    setTimeout(() => setToast(null), error ? 8000 : 4000);
+  const say = (text: string, error = false, action?: { label: string; run: () => void }) => {
+    setToast({ text, error, action });
+    setTimeout(() => setToast((t) => (t?.text === text ? null : t)), error || action ? 8000 : 4000);
   };
 
   const select = (id: string) => {
@@ -309,36 +340,43 @@ export default function App() {
   const newWorkspace = async ({ repoId, prompt, agent, model, mode, from }: NewWorkspaceRequest) => {
     try {
       const w = await api.createWorkspace(repoId, undefined, undefined, from);
-      if (prompt) {
-        // Start the agent right away in the new worktree.
-        const session = await api.newSession(w.id, agent);
-        await api.updateSession(session.id, "New chat", model, mode);
-        await api.send(session.id, prompt);
-      }
+      const session = prompt ? await api.newSession(w.id, agent) : null;
+      if (session) await api.updateSession(session.id, "New chat", model, mode);
       setNewFor(null);
-      const isNew = !lit.has(w.name.replace(/-\d+$/, ""));
       await refresh();
       select(w.id);
+      // Celebrate the first star of each constellation only, so it stays special.
       const found = starFor(sky, w.name);
-      if (found && isNew) {
+      if (found && !sky.stars.some((x) => x.constellation === found.constellation && lit.has(x.slug))) {
         setDiscovery({ star: found, kind: "lit" });
         setTimeout(() => setDiscovery(null), 7000);
       }
       const scripts = await api.workspaceScripts(w.id);
-      if (scripts.setup) await startPty(`${w.id}:setup`, w.path, scripts.setup, "setup"); // its own terminal tab
-      setTab(scripts.setup && !prompt ? "terminal" : "chat");
+      if (scripts.setup) {
+        // Setup (installs, .env) first, so the agent's first test run has what it needs.
+        const done = waitForExit(`${w.id}:setup`);
+        await startPty(`${w.id}:setup`, w.path, scripts.setup, "setup");
+        if (session) {
+          setTab("chat");
+          say("Setup is running in the Terminal tab. The agent starts as soon as it finishes.");
+          await done;
+        } else setTab("terminal");
+      } else setTab("chat");
+      if (session) await api.send(session.id, prompt);
     } catch (e) {
       say(`Couldn't create the workspace. ${errText(e)}`, true);
     }
   };
 
-  const archive = async () => {
+  const archive = async (opts?: { auto?: boolean }) => {
     if (!ws) return;
     const name = displayName(sky, ws);
+    const target = ws;
     try {
       await api.archiveWorkspace(ws.id);
     } catch (e) {
       if (errText(e) !== "DIRTY") return say(errText(e), true);
+      if (opts?.auto) return say(`${name} merged, but it has uncommitted changes, so it stays open.`);
       if (!confirm(`${name} has uncommitted changes. Archive anyway? The branch ${ws.branch} is kept, but uncommitted work in the folder is lost.`)) return;
       try {
         await api.archiveWorkspace(ws.id, true);
@@ -351,7 +389,10 @@ export default function App() {
     setLeaving(null);
     setSelected(null);
     await refresh();
-    say(`Archived ${name}. Branch ${ws.branch} is kept.`);
+    say(`Archived ${name}. Branch ${target.branch} is kept.`, false, {
+      label: "Undo",
+      run: () => api.restoreWorkspace(target.id).then(refresh).then(() => select(target.id)).catch((e) => say(errText(e), true)),
+    });
   };
 
   // ⌘R: start the run script, or stop it if it is running.
@@ -383,10 +424,19 @@ export default function App() {
     try {
       const r = await api.importConductor();
       await refresh();
-      say(`Imported ${r.repos} repos, ${r.workspaces} workspaces and ${r.sessions} chats${r.skipped ? `. Skipped ${r.skipped} already here or missing on disk` : ""}.`);
+      say(`Imported ${r.repos} repos, ${r.workspaces} workspaces and ${r.sessions} chats (${r.chats_with_history} with history)${r.skipped ? `. Skipped ${r.skipped} already here or missing on disk` : ""}.`);
     } catch (e) {
       say(errText(e), true);
     }
+  };
+
+  // ⌘N: the current workspace's repo, else the filtered project, else the first repo.
+  const openNew = (source: "task" | "pr" | "branch" | "issue" = "task") => {
+    const f = getSettings().repoFilter;
+    const repoId = ws?.repo_id ?? (f.length === 1 ? f[0] : repos[0]?.id);
+    if (!repoId) return addRepo();
+    setNewSource(source);
+    setNewFor(repoId);
   };
 
   const nextUnread = () => {
@@ -416,11 +466,15 @@ export default function App() {
         { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
         { id: "pr", group: here, label: "Pull request", keywords: "github pr create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
         { id: "pin", group: here, label: ws.pinned ? "Unpin" : "Pin to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
-        { id: "archive", group: here, label: "Archive workspace", keywords: "close done remove", icon: <Archive size={15} />, run: archive },
+        { id: "archive", group: here, label: "Archive workspace", hint: "⌘⇧A", keywords: "close done remove", icon: <Archive size={15} />, run: () => archive() },
       );
     }
     c.push(
-      { id: "new", group: "Create", label: "New workspace", hint: "⌘N", keywords: "worktree branch task", icon: <Plus size={15} />, run: () => { const r = ws?.repo_id ?? repos[0]?.id; if (r) setNewFor(r); else addRepo(); } },
+      { id: "new", group: "Create", label: "New workspace", hint: "⌘N", keywords: "worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
+      { id: "new-pr", group: "Create", label: "New workspace from a pull request", hint: "⌘⇧N", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
+      { id: "new-issue", group: "Create", label: "New workspace from a GitHub issue", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
+      { id: "clone", group: "Create", label: "Clone a repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
+      { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add a repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
     const active = workspaces.filter((w) => w.state === "active");
@@ -437,8 +491,7 @@ export default function App() {
       { id: "sky", group: "Go", label: "Night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
       { id: "settings", group: "App", label: "Settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
-      { id: "pet", group: "App", label: "Pet the cat", icon: <Cat size={15} />, run: pet },
-      { id: "zoom-reset", group: "App", label: "Reset zoom", hint: "⌘0", icon: <ZoomIn size={15} />, run: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", metaKey: true })) },
+
     );
     for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
     if (getSettings().repoFilter.length) c.push({ id: "filter-all", group: "Go", label: "Show all projects", keywords: "filter clear", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [] }) });
@@ -459,7 +512,7 @@ export default function App() {
       if (k === "k" && !e.shiftKey) return go(() => setPalette((p) => !p));
       if (k === ",") return go(() => setSettingsOpen(true));
       if (k === "b" && !e.shiftKey && !e.altKey) return go(() => setSidebarHidden((h) => !h));
-      if (k === "n" && (ws || repos[0])) return go(() => { setNewSource(e.shiftKey ? "pr" : "task"); setNewFor(ws?.repo_id ?? repos[0].id); });
+      if (k === "n") return go(() => openNew(e.shiftKey ? "pr" : "task"));
       if (e.altKey && e.code === "KeyL") return go(nextUnread);
       if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) return go(() => {
         const rows = sidebarRows();
@@ -472,7 +525,7 @@ export default function App() {
       if (k === "j" && !e.shiftKey) return go(() => setTab((t) => (t === "terminal" ? "chat" : "terminal")));
       if (k === "d" && e.shiftKey) return go(() => setTab("changes"));
       if (k === "l" && !e.shiftKey && !e.altKey) return go(() => { setTab("chat"); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()); });
-      if (k === "a" && e.shiftKey) return go(archive);
+      if (k === "a" && e.shiftKey) return go(() => archive());
       if (e.key === "Backspace" && e.shiftKey) return go(() => { for (const id of runningSessions) api.stop(id); });
       if (k === "o" && !e.shiftKey) return go(() => openInEditor());
       if (k === "r" && !e.shiftKey) return go(runScript);
@@ -524,30 +577,11 @@ export default function App() {
         {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}
 
         {view === "workspace" && !ws && (
-          <div className="welcome">
-            <Mascot size={88} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={pet} title="Pet the cat" />
-            <h1>{me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Hi there."}</h1>
-            <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a pull request.</p>
-            {repos.length > 0 ? (
-              <p className="muted">Pick a workspace on the left, press ⌘N to start a new one in {repos[0].name}, or ⌘⌥L to jump to the next one with news. ⌘K finds everything else.</p>
-            ) : (
-            <ol className="steps">
-              <li><b className="n">1</b><span>Add a repo with the <b>+</b> at the top left.</span></li>
-              <li><b className="n">2</b><span>Press <b>+</b> next to the repo, or ⌘N, to start a workspace. Each one lights a star in a cat constellation; merged PRs make it shine.</span></li>
-              <li><b className="n">3</b><span>Tell Claude or Codex what to build, check the changes, open the PR.</span></li>
-            </ol>
-            )}
-            {repos.length === 0 && (
-              <button className="primary" onClick={addRepo}><FolderOpen size={16} />Add a repo</button>
-            )}
-            {canImport && !workspaces.some((w) => w.imported_from === "conductor") && (
-              <div className="import-card" style={{ marginTop: 24 }}>
-                <h2>Coming from Conductor?</h2>
-                <p>Bring over your repos, active workspaces and chats. nekotrail only reads Conductor's data; nothing is moved or deleted.</p>
-                <button className="accent" onClick={importConductor}>Import from Conductor</button>
-              </div>
-            )}
-          </div>
+          <Welcome
+            me={me} repos={repos} mood={mood} purring={purring} onPet={pet}
+            onAddRepo={addRepo} onClone={() => setCloning(true)} onNew={() => openNew()}
+            canImport={canImport} onImport={importConductor}
+          />
         )}
 
         {view === "workspace" && ws && (
@@ -575,23 +609,12 @@ export default function App() {
                   {repo?.name}
                   {ws.title && star ? ` · ${star.name}` : ""}
                   {star ? ` · ${starLine(star)}` : ws.imported_from ? " · imported from Conductor" : ""}
+                  {ws.status ? <span className={`sub-status st-${ws.status}`}> · {STATUS_LABEL[ws.status as Exclude<WsStatus, "">]}</span> : null}
                   {costs[ws.id] ? <span className="num" title="What the agents have spent in this workspace"> · ${costs[ws.id].toFixed(2)}</span> : null}
                 </div>
               </div>
               <span className="spacer" />
               <div className="ws-actions">
-                {ws.state === "active" && (
-                  <select
-                    className={`status-select st-${ws.status || "auto"}`}
-                    aria-label="Status"
-                    title="Status. Automatic follows the PR: open is In review, merged is Done."
-                    value={ws.status}
-                    onChange={(e) => api.setWorkspaceStatus(ws.id, e.target.value as WsStatus).then(refresh)}
-                  >
-                    <option value="">Status: automatic</option>
-                    {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
-                )}
                 {ws.state === "archived" ? (
                   <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
                     <ArchiveRestore size={16} />Restore
@@ -610,10 +633,24 @@ export default function App() {
                       <option value="">Open in…</option>
                       {openTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
-                    <button className="icon" title={ws.pinned ? "Unpin" : "Pin to top"} aria-label={ws.pinned ? "Unpin" : "Pin"} onClick={() => api.setPinned(ws.id, !ws.pinned).then(refresh)}>
-                      {ws.pinned ? <PinOff size={18} /> : <Pin size={18} />}
-                    </button>
-                    <button className="icon" title="Archive (keeps the branch)" aria-label="Archive" onClick={archive}><Archive size={18} /></button>
+                    <span className="git-menu">
+                      <button className="icon" aria-label="More" title="More" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
+                      {moreOpen && (
+                        <span className="menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(ws.title || displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Notes</span></button>
+                          <div className="menu-label">Status</div>
+                          {([["", "Automatic (from the PR)"], ...Object.entries(STATUS_LABEL)] as [WsStatus, string][]).map(([k, v]) => (
+                            <button key={k || "auto"} role="menuitemradio" aria-checked={ws.status === k} onClick={() => { setMoreOpen(false); api.setWorkspaceStatus(ws.id, k).then(refresh); }}>
+                              {ws.status === k ? <Check size={15} /> : <span className={`status-dot st-${k || "auto"}`} />}<span>{v}</span>
+                            </button>
+                          ))}
+                          <div className="menu-sep" />
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); archive(); }}><Archive size={15} /><span>Archive</span><kbd>⌘⇧A</kbd></button>
+                        </span>
+                      )}
+                    </span>
                   </>
                 )}
               </div>
@@ -625,7 +662,7 @@ export default function App() {
                 repo={repo ?? undefined}
                 name={displayName(sky, ws)}
                 refreshKey={refreshKey}
-                onArchive={archive}
+                onArchive={(auto) => archive({ auto })}
                 onSay={say}
                 onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
               />
@@ -633,7 +670,7 @@ export default function App() {
 
             {ws.state === "active" && (
               <nav className="tabs" role="tablist" aria-label="Workspace">
-                {TABS.map((t) => (
+                {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
                   <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id]}>
                     {t.label}
                   </button>
@@ -693,7 +730,18 @@ export default function App() {
         />
       )}
       {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} />}
-      {toast && <div role="status" className={`toast ${toast.error ? "error" : ""}`}>{toast.text}</div>}
+      {toast && (
+        <div role="status" className={`toast ${toast.error ? "error" : ""}`}>
+          {toast.text}
+          {toast.action && <button className="toast-action" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}
+        </div>
+      )}
+      {cloning && (
+        <CloneSheet
+          onClose={() => setCloning(false)}
+          onDone={async (r) => { setCloning(false); await refresh(); say(`Cloned ${r.name}.`); setNewSource("task"); setNewFor(r.id); }}
+        />
+      )}
       {discovery && (
         <div className="discovery" role="status">
           <Mascot size={56} mood="happy" />

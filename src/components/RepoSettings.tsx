@@ -9,7 +9,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
   const [section, setSection] = useState<Section>("scripts");
   const [s, setS] = useState({ setup: repo.setup_script ?? "", run: repo.run_script ?? "", archive: repo.archive_script ?? "" });
   const [p, setP] = useState<RepoPrefs>(() => ({
-    ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [] },
+    ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [], merge_method: "" },
     ...(repo.prefs as Partial<RepoPrefs> | undefined),
   }));
   const [globs, setGlobs] = useState(p.copy_files.join("\n"));
@@ -75,6 +75,14 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
             {prompt("general_prompt", "Instructions for every chat in this repo", "Use pnpm, not npm. Run `pnpm test` before you say you're done.", 4)}
             {prompt("review_prompt", "Extra instructions for Review (⌘⇧R)", "Focus on security and missing tests.")}
             {prompt("pr_prompt", "Extra instructions for Create PR (⌘⇧P)", "Link the Jira ticket from the branch name. Keep the description under 10 lines.")}
+            <label className="field">
+              <span>Merge PRs with</span>
+              <select value={p.merge_method || "squash"} onChange={(e) => setP({ ...p, merge_method: e.target.value })}>
+                <option value="squash">Squash and merge</option>
+                <option value="merge">Merge commit</option>
+                <option value="rebase">Rebase and merge</option>
+              </select>
+            </label>
           </>
         )}
 

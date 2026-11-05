@@ -34,10 +34,10 @@ export const agentPrompts = {
 1. Commit any uncommitted work with a clear message.
 2. Push the branch \`${ws.branch}\` to origin.
 3. Run \`gh pr create --base ${ws.target_branch}\` with a short title and a description of what changed, why, and how you tested it.
-Reply with the PR link.${repo?.prefs.pr_prompt ? `\n\n${repo.prefs.pr_prompt}` : ""}`,
+Reply with the PR link.${repo?.prefs?.pr_prompt ? `\n\n${repo.prefs.pr_prompt}` : ""}`,
   review: (ws: Workspace, repo?: Repo) =>
     `Review the changes on this branch against origin/${ws.target_branch}: run \`git fetch origin ${ws.target_branch}\` and \`git diff origin/${ws.target_branch}...HEAD\`, and check uncommitted files too. Do not change any code.
-List real problems first (bugs, security, missing tests), each with file:line and a suggested fix. Then smaller nits. End with whether it is ready to merge.${repo?.prefs.review_prompt ? `\n\n${repo.prefs.review_prompt}` : ""}`,
+List real problems first (bugs, security, missing tests), each with file:line and a suggested fix. Then smaller nits. End with whether it is ready to merge.${repo?.prefs?.review_prompt ? `\n\n${repo.prefs.review_prompt}` : ""}`,
   fixErrors: (prNumber: number, logs: string) =>
     `CI is failing on PR #${prNumber}. Failing logs:\n\n\`\`\`\n${logs.slice(-12000)}\n\`\`\`\n\nFind the cause, fix it, run the relevant tests locally, then commit and push.`,
   conflicts: (ws: Workspace) =>
@@ -45,6 +45,9 @@ List real problems first (bugs, security, missing tests), each with file:line an
 };
 
 type Action = { id: string; label: string; keys: string; icon: React.ReactNode; run: () => void; disabled?: boolean };
+
+const mergeLabel = (repo?: Repo) =>
+  repo?.prefs?.merge_method === "merge" ? "Merge" : repo?.prefs?.merge_method === "rebase" ? "Rebase and merge" : "Squash and merge";
 
 export function PrBar({
   ws,
@@ -61,7 +64,8 @@ export function PrBar({
   refreshKey: number;
   /** Send a prompt to the agent right away. */
   onSendAgent: (prompt: string) => void;
-  onArchive: () => void;
+  /** `auto` is true when archiving by itself after a merge. */
+  onArchive: (auto?: boolean) => void;
   onSay: (text: string, error?: boolean) => void;
 }) {
   const [pr, setPr] = useState<Pr | undefined>(undefined);
@@ -89,7 +93,7 @@ export function PrBar({
   useEffect(() => {
     if (pr?.state === "MERGED" && getSettings().archiveOnMerge && archivedFor.current !== ws.id) {
       archivedFor.current = ws.id;
-      onArchive();
+      onArchive(true);
     }
   }, [pr?.state, ws.id]);
 
@@ -144,9 +148,14 @@ export function PrBar({
     },
     conflicts: { id: "conflicts", label: "Resolve conflicts", keys: "", icon: <Sparkles size={15} />, disabled: !conflicting, run: () => actions.pull.run() },
     merge: {
-      id: "merge", label: "Squash and merge", keys: "⌘⇧M", icon: <GitMerge size={15} />,
-      disabled: !open || pr?.isDraft || conflicting || checks?.cls === "bad" || checks?.cls === "wait",
-      run: () => task("merge", async () => { await api.mergePr(ws.id, "squash"); onSay(`Merged #${pr!.number}. ${name}'s star shines.`); }),
+      id: "merge", label: mergeLabel(repo), keys: "⌘⇧M", icon: <GitMerge size={15} />,
+      disabled: !open || !!pr?.isDraft || conflicting || checks?.cls === "bad" || checks?.cls === "wait",
+      run: () => task("merge", async () => { await api.mergePr(ws.id); onSay(`Merged #${pr!.number}. ${name}'s star shines.`); }),
+    },
+    mergeWhenGreen: {
+      id: "mergeWhenGreen", label: "Merge when checks pass", keys: "", icon: <GitMerge size={15} />,
+      disabled: !open || !!pr?.isDraft || conflicting || checks?.cls !== "wait",
+      run: () => task("merge", async () => { await api.mergePr(ws.id, true); onSay(`GitHub will merge #${pr!.number} when its checks pass.`); }),
     },
     openPr: { id: "openPr", label: "Open on GitHub", keys: "⌘⇧G", icon: <ExternalLink size={15} />, disabled: !pr, run: () => pr && openUrl(pr.url) },
   };
@@ -156,6 +165,14 @@ export function PrBar({
     : conflicting ? actions.conflicts
     : open && checks?.cls === "bad" ? actions.fix
     : open && !actions.merge.disabled ? actions.merge
+    : open && !actions.mergeWhenGreen.disabled ? actions.mergeWhenGreen
+    : null;
+  // Why Merge is greyed out, said in words.
+  const mergeBlocked = !open ? null
+    : pr?.isDraft ? "Draft PR: mark it ready on GitHub first"
+    : conflicting ? "Conflicts with the target branch"
+    : checks?.cls === "bad" ? `${checks.text} checks`
+    : checks?.cls === "wait" ? `${checks.text.replace(" running", "")} checks still running`
     : null;
 
   // Conductor's shortcuts, so muscle memory carries over.
@@ -233,9 +250,12 @@ export function PrBar({
             </button>
             {menu && (
               <span className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
-                {Object.values(actions).filter((a) => a.id !== primary?.id && a.id !== "conflicts").map((a) => (
-                  <button key={a.id} role="menuitem" disabled={a.disabled || !!busy} onClick={() => { setMenu(false); a.run(); }}>
-                    {a.icon}<span>{a.label}</span>{a.keys && <kbd>{a.keys}</kbd>}
+                {Object.values(actions).filter((a) => a.id !== primary?.id && a.id !== "conflicts" && !(a.id === "mergeWhenGreen" && a.disabled)).map((a) => (
+                  <button key={a.id} role="menuitem" disabled={a.disabled || !!busy} onClick={() => { setMenu(false); a.run(); }}
+                    title={a.id === "merge" && mergeBlocked ? mergeBlocked : undefined}>
+                    {a.icon}
+                    <span>{a.label}{a.id === "merge" && mergeBlocked && <small className="why">{mergeBlocked}</small>}</span>
+                    {a.keys && <kbd>{a.keys}</kbd>}
                   </button>
                 ))}
               </span>
@@ -248,7 +268,7 @@ export function PrBar({
           <Mascot size={36} mood="happy" title="Merged" />
           <span><b>Merged.</b> {name}'s work is in {ws.target_branch}. Archive it to tidy up; the branch stays.</span>
           <span className="spacer" />
-          <button className="primary" onClick={onArchive}>Archive {name}</button>
+          <button className="primary" onClick={() => onArchive()}>Archive {name}</button>
         </div>
       )}
       {form && (
@@ -266,7 +286,11 @@ export function PrBar({
           </div>
         </div>
       )}
-      {error && <span className="pill bad" title={error}><CircleX size={14} />GitHub: {error.split("\n")[0].slice(0, 60)}</span>}
+      {error && /auth|log ?in|token|credentials/i.test(error) ? (
+        <button className="accent" onClick={() => window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: "gh auth login" }))} title={error}>
+          <CircleX size={14} />Connect GitHub
+        </button>
+      ) : error && <span className="pill bad" title={error}><CircleX size={14} />GitHub: {error.split("\n")[0].slice(0, 60)}</span>}
     </div>
   );
 }

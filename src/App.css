@@ -546,3 +546,33 @@ button.good-btn:hover { background: #20d095; }
 .repo-head .repo-name { cursor: pointer; }
 .ws-empty { border: none; color: var(--muted); font-size: 12px; font-weight: 500; padding: 4px var(--s3) 6px 30px; }
 .ws-empty:hover { color: var(--accent); background: none; }
+.menu button small.why { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.fix-card { border: 1px solid rgba(255, 92, 102, 0.45); background: var(--surface); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.fix-head { display: flex; align-items: center; gap: var(--s2); color: var(--bad); }
+.fix-head b { color: var(--text); }
+.fix-card p { margin: 0; font-size: 12.5px; }
+.cmd-inline { background: var(--bg); border: 1px solid var(--line); padding: 3px 8px; font-size: 12px; }
+
+/* ---------- launch pass ---------- */
+.menu-label { padding: var(--s2) var(--s3) 2px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; border-top: 1px solid var(--line); margin-top: var(--s1); }
+.menu-sep { border-top: 1px solid var(--line); margin: var(--s1) 0; }
+.status-dot.st-auto { background: transparent; border: 1px solid var(--muted); }
+.menu .status-dot { margin: 0 3px; }
+.sub-status.st-in_progress { color: var(--wait); } .sub-status.st-in_review { color: var(--good); } .sub-status.st-done { color: #c69cff; }
+.needs-you .repo-head .unread { margin: 0 8px 0 4px; }
+.toast-action { margin-left: var(--s3); padding: 1px var(--s2); font-size: 12px; border-color: currentColor; color: inherit; }
+.welcome .import-card.hero { border-color: rgba(255, 154, 77, 0.5); margin: var(--s4) 0; }
+.setup-check { width: 100%; max-width: 560px; border: 1px solid var(--line); background: var(--surface); padding: var(--s3) var(--s4); margin: var(--s3) 0; }
+.setup-check h2 { margin: 0; font-size: 15px; }
+.setup-check ul { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.check-row { display: flex; gap: var(--s2); align-items: flex-start; font-size: 13px; }
+.check-row > svg { margin-top: 2px; flex-shrink: 0; }
+.check-row.ok > svg { color: var(--good); }
+.check-row.bad > svg { color: var(--bad); }
+.check-row.warn > svg { color: var(--muted); }
+.check-fix { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: 4px; font-size: 12px; }
+.cmd { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--bg); }
+.cmd code { padding: 2px 8px; font-size: 12px; }
+.cmd .icon { padding: 4px; }
+.start-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0; }
+.palette.clone small { margin-left: var(--s2); font-weight: 400; }

@@ -26,7 +26,8 @@ nekotrail is an open-source, local-first desktop app for running Claude Code and
 
 | | |
 |---|---|
-| Workspaces | One git worktree and branch per task. Archive removes the folder and keeps the branch; restore brings it back. |
+| Start | Open a local repo, clone one of your GitHub repos, or import from Conductor (it shows what it will bring over first). Start a workspace from a task, a GitHub issue, an open PR or a branch. |
+| Workspaces | One git worktree and branch per task, named after the task. Archive removes the folder and keeps the branch; restore brings it back. |
 | Chat | Claude Code or Codex, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
 | Checkpoints | Every message snapshots the workspace first. Hover a message and click **Rewind files to here** to undo everything the agent did from that point, commits included. |
 | Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line and send all your comments to the agent as one review. |
@@ -53,7 +54,7 @@ The cat reflects the real state of your work, so its moods carry information:
 
 Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so on first launch right-click it and choose **Open**.
 
-Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code) or [`codex`](https://github.com/openai/codex).
+nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code) or [`codex`](https://github.com/openai/codex).
 
 To build it yourself:
 
@@ -101,7 +102,7 @@ Committed values win over the ones saved in the app.
 
 ## Status
 
-Early (v0.1). Built and used daily on macOS. Feedback and PRs welcome.
+Early (v0.2). Built and used daily on macOS. Feedback and PRs welcome.
 
 ## License
 

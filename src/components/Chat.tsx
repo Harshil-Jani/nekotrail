@@ -78,7 +78,7 @@ const MODELS: Record<Agent, string[]> = {
 
 type Row =
   | { type: "user"; text: string; checkpoint?: string | null }
-  | { type: "text" | "thinking" | "error" | "note"; text: string }
+  | { type: "text" | "thinking" | "error" | "note"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { type: "tool"; name: string; input: string; output?: string; is_error?: boolean; pending: boolean }
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> };
 
@@ -107,7 +107,7 @@ function toRows(events: ChatEvent[]): Row[] {
         rows.push({ type: "user", text: ev.text, checkpoint: ev.checkpoint });
         break;
       default:
-        rows.push({ type: ev.kind, text: ev.text });
+        rows.push("fix" in ev && ev.fix ? { type: ev.kind, text: ev.text, fix: ev.fix, agent: ev.agent } : { type: ev.kind, text: ev.text });
     }
   }
   return rows;
@@ -123,8 +123,42 @@ type ChatCtxValue = {
   expandAll: boolean;
   /** Row index of the current search match, and the query to highlight. */
   query: string;
+  /** Start a fresh chat with the other agent (when one is missing or out of quota). */
+  switchAgent: (to: Agent) => void;
 };
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "" });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {} });
+
+const INSTALL: Record<Agent, string> = { claude: "npm install -g @anthropic-ai/claude-code", codex: "npm install -g @openai/codex" };
+
+/** An agent problem with the way out: install it, sign in, or switch agents. */
+function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; agent: Agent; text: string }) {
+  const { switchAgent } = useContext(RewindCtx);
+  const name = agent === "codex" ? "Codex" : "Claude Code";
+  const other: Agent = agent === "codex" ? "claude" : "codex";
+  const [copied, setCopied] = useState(false);
+  const runInTerminal = (cmd: string) => window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: cmd }));
+  return (
+    <div className="fix-card">
+      <div className="fix-head"><AlertCircle size={15} />
+        <b>{fix === "install" ? `${name} isn't installed` : fix === "login" ? `${name} needs you to sign in` : `${name} hit its usage limit`}</b>
+      </div>
+      <p className="muted">{text.split("\n")[0].slice(0, 200)}</p>
+      <div className="row">
+        {fix === "install" && (
+          <>
+            <code className="cmd-inline">{INSTALL[agent]}</code>
+            <button onClick={() => { navigator.clipboard.writeText(INSTALL[agent]); setCopied(true); }}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : "Copy"}</button>
+            <button onClick={() => runInTerminal(INSTALL[agent])}><SquareTerminal size={13} />Run in terminal</button>
+          </>
+        )}
+        {fix === "login" && <button className="accent" onClick={() => runInTerminal(agent === "codex" ? "codex login" : "claude /login")}><SquareTerminal size={13} />Sign in, in the terminal</button>}
+        {fix === "limit" && <span className="muted">It resets on its own. Your chat is kept.</span>}
+        <span className="spacer" />
+        <button className="quiet" onClick={() => switchAgent(other)}>Use {other === "codex" ? "Codex" : "Claude"} instead</button>
+      </div>
+    </div>
+  );
+}
 
 type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string };
 const parseTodos = (input: string): Todo[] | null => {
@@ -205,6 +239,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
     case "note":
       return <div className="msg note"><History size={14} />{r.text}</div>;
     case "text":
+      if (r.fix) return <FixCard fix={r.fix} agent={r.agent ?? "claude"} text={r.text} />;
       return (
         <div className="msg assistant">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.text}</ReactMarkdown>
@@ -236,6 +271,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       );
     }
     case "error":
+      if (r.fix) return <FixCard fix={r.fix} agent={r.agent ?? "claude"} text={r.text} />;
       return <div className="msg error">{r.text}</div>;
     case "done":
       return (
@@ -325,6 +361,7 @@ export function Chat({
     onRunningChange();
   };
   const rewindCtx = useMemo(() => ({
+    switchAgent: (to: Agent) => { newChat(to); },
     approvePlan,
     expandAll,
     query: (search ?? "").trim().toLowerCase(),

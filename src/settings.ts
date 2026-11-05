@@ -19,7 +19,7 @@ export type Settings = {
 };
 
 const KEY = "nekotrail.settings";
-const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: false, groupBy: "repo", repoFilter: [], collapsed: [] };
+const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: true, groupBy: "repo", repoFilter: [], collapsed: [] };
 
 export function getSettings(): Settings {
   try {

@@ -124,6 +124,18 @@ export function TerminalPanel({
     });
   };
 
+  // "Run in terminal" from anywhere (sign in, install): show the first shell and type it there.
+  useEffect(() => {
+    const onRun = (e: Event) => {
+      const cmd = (e as CustomEvent<string>).detail;
+      const shell = shells[0];
+      setActive(shell);
+      setTimeout(() => api.ptyWrite(shell, cmd + "\n").catch(() => {}), 400);
+    };
+    window.addEventListener("nekotrail-terminal", onRun);
+    return () => window.removeEventListener("nekotrail-terminal", onRun);
+  }, [shells]);
+
   // ⌘T opens another shell while the terminal is showing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
