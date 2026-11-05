@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Volume2 } from "lucide-react";
 import { api, type AppSettings } from "../api";
-import { chime, getSettings, saveSettings, type Settings as S } from "../settings";
+import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
   ["⌘K", "Jump anywhere, run any command"],
@@ -58,6 +58,26 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal settings" role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
         <h2>Settings</h2>
+
+        <section>
+          <h3>When an agent needs you</h3>
+          <p className="muted setting-note">A plan to approve, a question, a sign-in, a usage limit or an error.</p>
+          <label className="setting">
+            <span>Ting ting</span>
+            <span className="row">
+              <button className="icon" title="Play it" aria-label="Play the needs-you sound" onClick={() => ting()}><Volume2 size={16} /></button>
+              <input type="checkbox" className="switch" checked={s.needsSound} onChange={(e) => { set("needsSound", e.target.checked); if (e.target.checked) ting(); }} />
+            </span>
+          </label>
+          <label className="setting">
+            <span>Notification</span>
+            <input type="checkbox" className="switch" checked={s.needsNotify} onChange={(e) => set("needsNotify", e.target.checked)} />
+          </label>
+          <label className="setting">
+            <span>Bounce the Dock icon</span>
+            <input type="checkbox" className="switch" checked={s.needsBounce} onChange={(e) => set("needsBounce", e.target.checked)} />
+          </label>
+        </section>
 
         <section>
           <h3>When an agent finishes</h3>

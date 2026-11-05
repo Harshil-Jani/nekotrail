@@ -21,7 +21,8 @@ import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
 import { Settings } from "./components/Settings";
-import { chime, getSettings, saveSettings } from "./settings";
+import { chime, getSettings, saveSettings, ting } from "./settings";
+import { UserAttentionType } from "@tauri-apps/api/window";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
 
@@ -231,13 +232,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean }>("running", ({ payload }) => {
+    const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
       refresh();
       setRefreshKey((k) => k + 1); // a turn ended: reload changes and PR state
       setLastActive(Date.now());
       if (payload.running || !payload.workspace_id || payload.more_queued) return;
       if (payload.ok === false) setWorriedUntil(Date.now() + 15_000);
       const prefs = getSettings();
+      // Human in the loop: the agent stopped because it needs you. Ting ting, a notification, a Dock bounce.
+      if (payload.needs) {
+        const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
+        const name = w ? displayName(skyRef.current, w) : "A workspace";
+        const why: Record<string, string> = {
+          plan: "has a plan for you to approve",
+          question: "has a question for you",
+          login: "needs you to sign in",
+          limit: "hit its usage limit",
+          install: "can't find its agent CLI",
+          error: "stopped with an error",
+        };
+        if (prefs.needsSound) ting();
+        if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, payload.title || "Open nekotrail to continue.");
+        if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
+          try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
+        }
+        return;
+      }
       if (prefs.sound) chime(payload.ok !== false);
       // The cat brings you something: tell the user when they're looking elsewhere.
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
@@ -352,7 +372,7 @@ export default function App() {
     const mine = sky.constellations.filter((c) => sky.stars.some((x) => x.constellation === c.slug && lit.has(x.slug)));
     const pool = mine.length ? mine : sky.constellations;
     const c = pool[Math.floor(Math.random() * pool.length)];
-    if (c) say(`Purr. ${c.name}: ${c.story}`);
+    if (c) say(`${c.name}: ${c.story}`);
   };
 
   const ws = workspaces.find((w) => w.id === selected) ?? null;
@@ -664,7 +684,7 @@ export default function App() {
         onDoubleClick={() => { setSidebarW(264); localStorage.removeItem("nekotrail.sidebar"); }}
       />
       <main className="main">
-        {view !== "board" && !(view === "workspace" && ws) && <div className="titlebar-drag" data-tauri-drag-region />}
+        {view === "workspace" && !ws && <div className="titlebar-drag" data-tauri-drag-region />}
         {view === "board" && (
           <Board
             workspaces={workspaces} repos={repos} sky={sky} prStates={prStates} lines={lines} running={runningWs} costs={costs}

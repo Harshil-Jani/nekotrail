@@ -1405,6 +1405,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let mut saw_done = false;
         let mut ok = true;
         let mut context_tokens: Option<u64> = None;
+        // Why the user is needed when this turn ends, if they are: plan, question, login, limit, install, error.
+        let mut needs: Option<String> = None;
+        let mut user_stopped = false;
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             for mut ev in agent::parse(&agent_name, &line) {
                 if ev["kind"] == "usage" {
@@ -1434,6 +1437,14 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                 if let Some(fix) = fix {
                     ev["fix"] = json!(fix);
                     ev["agent"] = json!(agent_name);
+                    needs = Some(fix.to_string());
+                }
+                match (ev["kind"].as_str(), ev["name"].as_str()) {
+                    (Some("tool"), Some("ExitPlanMode")) => needs = Some("plan".into()),
+                    (Some("tool"), Some("AskUserQuestion")) => needs = Some("question".into()),
+                    (Some("text"), _) if needs.as_deref() == Some("plan") || needs.as_deref() == Some("question") => {}
+                    (Some("tool"), _) => { if matches!(needs.as_deref(), Some("plan") | Some("question")) { needs = None; } }
+                    _ => {}
                 }
                 let _ = st.db().append_event(&id, &ev);
                 emit_event(&app, &id, &ev);
@@ -1450,6 +1461,10 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                        "text": if stderr.is_empty() { "Agent exited without a result".to_string() } else { stderr }})
             };
             ok = false;
+            user_stopped = stopped;
+            if !stopped && needs.is_none() {
+                needs = Some(classify_error(ev["text"].as_str().unwrap_or("")).unwrap_or("error").to_string());
+            }
             let _ = st.db().append_event(&id, &ev);
             emit_event(&app, &id, &ev);
         }
@@ -1466,6 +1481,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let _ = app.emit("running", json!({
             "session_id": id, "running": false, "workspace_id": workspace_id,
             "ok": ok, "title": title, "more_queued": next.is_some(),
+            "needs": if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs },
         }));
         if let Some(text) = next {
             let _ = start_turn(app.clone(), &st, id, text);

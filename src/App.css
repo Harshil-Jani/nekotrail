@@ -337,36 +337,6 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .terminal { flex: 1; padding: var(--s3) var(--s4); background: var(--bg); min-height: 0; }
 .notes { flex: 1; margin: var(--s6); resize: none; line-height: 1.6; border-radius: var(--radius); padding: var(--s4); }
 
-/* ---------- night sky ---------- */
-.sky-view { overflow-y: auto; padding: var(--s7); }
-.sky-head { display: flex; align-items: center; gap: var(--s5); max-width: 1200px; margin: 0 auto var(--s5); }
-.sky-head h1 { margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
-.sky-head p { margin: var(--s1) 0 0; max-width: 72ch; }
-.sky { display: block; width: 100%; max-width: 1200px; margin: 0 auto; border: 0.5px solid var(--line-strong); background: radial-gradient(ellipse at 50% 120%, #0b1220 0%, #000 60%); }
-.sky-line.shipped { stroke: var(--accent); stroke-width: 1.6; opacity: 0.9; }
-.sky-line.hinted { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 3 5; }
-.sky-line.ghost { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 6; }
-.sky-star circle:nth-child(3) { transition: r 0.4s var(--ease); }
-.sky-star.dark circle:nth-child(3) { fill: #000; stroke: var(--faint); stroke-width: 1.2; }
-.sky-star.lit circle:nth-child(3) { fill: var(--text); }
-.sky-star.shining circle:nth-child(3) { fill: var(--accent); animation: twinkle 3.2s ease-in-out infinite; }
-.sky-star text { fill: var(--muted); font-size: 12px; font-weight: 600; pointer-events: none; }
-.sky-star.shining text { fill: var(--text); }
-.sky-star.openable { cursor: pointer; }
-.sky-star.openable:hover circle:nth-child(3), .sky-star.openable:focus-visible circle:nth-child(3) { r: 7; }
-.sky-star:focus-visible { outline: none; }
-.sky-label { fill: var(--muted); font-size: 12px; font-weight: 600; }
-.sky-label.complete { fill: var(--accent); }
-@keyframes twinkle { 50% { opacity: 0.55; } }
-.constellations { max-width: 1200px; margin: var(--s5) auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s3); }
-.constellation { border: 0.5px solid var(--line-strong); padding: var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
-.constellation.complete { border-color: var(--accent-text); }
-.constellation h3 { margin: 0; font-size: 17px; }
-.constellation p { margin: 0; color: var(--muted); font-size: 14px; }
-.meter { display: flex; gap: var(--s1); }
-.meter span { flex: 1; height: 4px; background: var(--raised); }
-.meter span.half { background: var(--faint); }
-.meter span.on { background: var(--accent); }
 
 /* ---------- new workspace panel ---------- */
 .nw-backdrop {
@@ -907,3 +877,48 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 .search-row .search { flex: 1; margin: 0 4px 0 0; min-width: 60px; }
 .search-row .icon { width: 26px; height: 26px; }
 .search-row .filter-wrap .icon.on { color: var(--accent-text); }
+
+/* ---------- night sky: the sky is the page ---------- */
+.sky-view { position: relative; height: 100%; overflow: hidden; color-scheme: dark; color: #e8eaee;
+  background: radial-gradient(ellipse 120% 90% at 50% 115%, #15233d 0%, #0a1120 38%, #04060b 75%); }
+.sky { position: absolute; inset: 64px 32px 132px; width: calc(100% - 64px); height: calc(100% - 196px); overflow: visible; }
+.sky-line { transition: opacity 0.4s var(--ease), stroke 0.4s var(--ease); }
+.sky-line.shipped { stroke: #ff9a4d; stroke-width: 1.6; opacity: 0.95; }
+.sky-line.hinted { stroke: rgba(232, 234, 238, 0.45); stroke-width: 1; stroke-dasharray: 3 5; }
+.sky-line.ghost { stroke: rgba(232, 234, 238, 0.16); stroke-width: 1; stroke-dasharray: 2 6; }
+.sky-cat.dim .sky-line, .sky-star.dim { opacity: 0.18; }
+.sky-star { transition: opacity 0.4s var(--ease); }
+.sky-star circle:nth-child(3) { transition: r 0.4s var(--ease); }
+.sky-star.dark circle:nth-child(3) { fill: #04060b; stroke: rgba(232, 234, 238, 0.45); stroke-width: 1.1; }
+.sky-star.lit circle:nth-child(3) { fill: #e8eaee; }
+.sky-star.shining circle:nth-child(3) { fill: #ff9a4d; animation: twinkle 3.2s ease-in-out infinite; }
+.sky-star text { fill: rgba(232, 234, 238, 0.7); font-size: 11px; font-weight: 500; pointer-events: none; }
+.sky-star.shining text { fill: #fff; }
+.sky-star.openable { cursor: pointer; }
+.sky-star.openable:hover circle:nth-child(3), .sky-star.openable:focus-visible circle:nth-child(3) { r: 7; }
+.sky-star:focus-visible { outline: none; }
+.sky-label { fill: rgba(232, 234, 238, 0.5); font-size: 12.5px; font-weight: 500; letter-spacing: 0.02em; cursor: pointer; transition: fill 0.3s var(--ease), opacity 0.4s var(--ease); }
+.sky-label.dim { opacity: 0.25; }
+.sky-label.on, .sky-label:hover { fill: #fff; }
+.sky-label.complete { fill: #ffb27a; }
+.sky-title { position: absolute; top: 0; left: 0; right: 0; height: 64px; display: flex; align-items: baseline; gap: var(--s3); padding: 22px var(--s6) 0; }
+.sky-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #fff; }
+.sky-title p { margin: 0; font-size: 12.5px; color: rgba(232, 234, 238, 0.6); }
+.sky-caption { position: absolute; left: var(--s6); bottom: 64px; max-width: 520px; min-height: 56px; }
+.sky-caption h2 { margin: 0 0 4px; font-size: 17px; font-weight: 700; color: #fff; }
+.sky-caption .story { margin: 0; font-size: 14px; line-height: 1.55; color: rgba(232, 234, 238, 0.82); text-wrap: pretty; }
+.sky-caption .count { margin: 6px 0 0; font-size: 12px; color: rgba(232, 234, 238, 0.55); }
+.sky-caption .legend { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 12px; color: rgba(232, 234, 238, 0.55); }
+.sky-caption .legend svg { margin-left: 8px; color: rgba(232, 234, 238, 0.6); }
+.sky-caption .legend svg:first-child { margin-left: 0; }
+.sky-index { position: absolute; left: var(--s4); right: var(--s4); bottom: 16px; display: flex; flex-wrap: wrap; gap: 2px; }
+.sky-index button { height: 28px; padding: 0 10px; background: transparent; box-shadow: none; color: rgba(232, 234, 238, 0.6); font-weight: 500; font-size: 12.5px; border-radius: var(--r); }
+.sky-index button .num { font-size: 11px; color: rgba(232, 234, 238, 0.4); margin-left: 2px; }
+.sky-index button:hover, .sky-index button.on { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.sky-index button.complete { color: #ffb27a; }
+@keyframes twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .sky-star.shining circle:nth-child(3) { animation: none; } }
+.setting-note { margin: -2px 0 4px; font-size: 12px; }
+input.switch { width: 32px; height: 18px; flex-shrink: 0; border-radius: 9px; background: var(--press); box-shadow: inset 0 0 0 0.5px var(--line-strong); padding: 0; margin: 0; }
+input.switch:checked { background: var(--accent); box-shadow: none; }
+input.switch:focus-visible { box-shadow: var(--ring) !important; }

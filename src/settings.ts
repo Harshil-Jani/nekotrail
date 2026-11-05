@@ -12,6 +12,10 @@ export type Settings = {
   archiveOnMerge: boolean;
   /** Sidebar grouping. */
   groupBy: "repo" | "status";
+  /** When an agent needs you (plan to approve, question, sign-in, limit, error): sound, notification, Dock bounce. */
+  needsSound: boolean;
+  needsNotify: boolean;
+  needsBounce: boolean;
   /** Repo ids to show in the sidebar; empty shows every repo. */
   repoFilter: string[];
   /** Repo ids whose sidebar section is folded. */
@@ -19,7 +23,7 @@ export type Settings = {
 };
 
 const KEY = "nekotrail.settings";
-const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: true, groupBy: "repo", repoFilter: [], collapsed: [] };
+const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: true, groupBy: "repo", needsSound: true, needsNotify: true, needsBounce: true, repoFilter: [], collapsed: [] };
 
 export function getSettings(): Settings {
   try {
@@ -54,6 +58,29 @@ export function chime(ok = true) {
       o.connect(g).connect(ctx!.destination);
       o.start(at);
       o.stop(at + 0.55);
+    });
+  } catch {
+    /* audio unavailable */
+  }
+}
+
+/** "Ting ting": two bright, quick pings, clearly different from the done chime. Means "come back, you're needed". */
+export function ting() {
+  try {
+    ctx ??= new AudioContext();
+    const t = ctx.currentTime;
+    [0, 0.16].forEach((offset) => {
+      const o = ctx!.createOscillator();
+      const g = ctx!.createGain();
+      o.type = "triangle";
+      o.frequency.value = 1318.5; // E6
+      const at = t + offset;
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(0.16, at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+      o.connect(g).connect(ctx!.destination);
+      o.start(at);
+      o.stop(at + 0.4);
     });
   } catch {
     /* audio unavailable */
