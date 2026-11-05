@@ -54,8 +54,12 @@ pub fn history_events(src: &Connection, conductor_session: &str, agent: &str) ->
                 out.push(serde_json::json!({"kind": "user", "text": content}));
             }
         } else {
-            out.extend(crate::agent::parse(agent, &content).into_iter().filter(|e| e["kind"] != "session"));
+            out.extend(crate::agent::parse(agent, &content).into_iter().filter(|e| e["kind"] != "session" && e["kind"] != "usage"));
         }
+    }
+    // Marked so spend totals don't count Conductor's history as if it happened today.
+    for ev in out.iter_mut() {
+        ev["imported"] = serde_json::json!(true);
     }
     Ok(out)
 }

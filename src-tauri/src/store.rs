@@ -77,6 +77,17 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Extra folders the agent may read and edit (/add-dir), as a JSON list.
     add("sessions", "extra_dirs", "TEXT NOT NULL DEFAULT '[]'")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
+    // Once: tag history imported before events carried an "imported" flag. Imports were written in bulk
+    // with one timestamp per chat, while live events each get their own, so shared timestamps mark them.
+    let done: i64 = conn.query_row("SELECT COUNT(*) FROM settings WHERE key='migrated_imported_flag'", [], |r| r.get(0))?;
+    if done == 0 {
+        conn.execute_batch(
+            "UPDATE messages SET event = json_set(event, '$.imported', json('true'))
+             WHERE (session_id, created_at) IN (SELECT session_id, created_at FROM messages GROUP BY 1, 2 HAVING COUNT(*) > 1);
+             DELETE FROM messages WHERE json_extract(event, '$.kind') = 'usage';
+             INSERT INTO settings (key, value) VALUES ('migrated_imported_flag', '1');",
+        )?;
+    }
     Ok(())
 }
 
@@ -369,7 +380,7 @@ impl Store {
             "SELECT substr(m.created_at, 1, 10) AS day, s.agent, SUM(json_extract(m.event, '$.cost_usd'))
              FROM messages m JOIN sessions s ON s.id = m.session_id
              WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
-               AND m.created_at >= ?1
+               AND json_extract(m.event, '$.imported') IS NULL AND m.created_at >= ?1
              GROUP BY day, s.agent ORDER BY day",
         )?;
         let since = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
@@ -408,6 +419,7 @@ impl Store {
             "SELECT s.workspace_id, SUM(json_extract(m.event, '$.cost_usd')) FROM messages m
              JOIN sessions s ON s.id = m.session_id
              WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
+               AND json_extract(m.event, '$.imported') IS NULL
              GROUP BY s.workspace_id",
         )?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get::<_, Option<f64>>(1)?.unwrap_or(0.0))))?.collect::<rusqlite::Result<_>>()?;
@@ -569,6 +581,8 @@ mod tests {
         s.insert_session(&sess).unwrap();
         s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.5})).unwrap();
         s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.25})).unwrap();
+        // Imported history doesn't count as spend.
+        s.append_events(&sess.id, &[serde_json::json!({"kind": "done", "cost_usd": 99.0, "imported": true})], &now()).unwrap();
         assert_eq!(s.workspace_costs().unwrap(), vec![(w.id.clone(), 0.75)]);
         let daily = s.daily_costs(7).unwrap();
         assert_eq!(daily.len(), 1);

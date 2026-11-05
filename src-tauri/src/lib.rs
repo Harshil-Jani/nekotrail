@@ -204,6 +204,41 @@ fn workspace_env(repo: &Repo, ws: &Workspace) -> Vec<(String, String)> {
     env
 }
 
+/// Local files that must never be committed: secrets copied into workspaces, and nekotrail's own folder.
+/// Written to the repo's `.git/info/exclude` (shared by all its worktrees, never pushed). Tracked files
+/// are unaffected, and `.env.example` style templates still show up.
+fn ensure_local_excludes(dir: &Path, extra: &[String]) {
+    let Ok(common) = git::git(dir, &["rev-parse", "--path-format=absolute", "--git-common-dir"]) else { return };
+    let exclude = Path::new(&common).join("info").join("exclude");
+    let cur = std::fs::read_to_string(&exclude).unwrap_or_default();
+    let mut want: Vec<String> = [".nekotrail/", ".env", ".env.local", ".env.*.local"].iter().map(|s| s.to_string()).collect();
+    want.extend(extra.iter().map(|g| g.trim().to_string()).filter(|g| !g.is_empty() && !g.contains("example") && !g.contains("sample")));
+    let missing: Vec<&String> = want.iter().filter(|w| !cur.lines().any(|l| l.trim() == w.as_str())).collect();
+    if missing.is_empty() {
+        return;
+    }
+    let mut next = cur.clone();
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    if !cur.contains("# nekotrail") {
+        next.push_str("# nekotrail: local files that should never be committed\n");
+    }
+    for m in missing {
+        next.push_str(m);
+        next.push('\n');
+    }
+    // Broad globs like `.env*` would also hide templates that belong in the repo.
+    for keep in ["!.env.example", "!.env.sample", "!.env.template"] {
+        if !next.lines().any(|l| l.trim() == keep) {
+            next.push_str(keep);
+            next.push('\n');
+        }
+    }
+    let _ = std::fs::create_dir_all(exclude.parent().unwrap());
+    let _ = std::fs::write(&exclude, next);
+}
+
 /// `*` matches any run of characters within one path segment.
 fn glob_match(pat: &str, name: &str) -> bool {
     let parts: Vec<&str> = pat.split('*').collect();
@@ -325,6 +360,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         pair_id: String::new(),
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
+    ensure_local_excludes(&root, &prefs.copy_files);
     copy_into_workspace(&root, &path, &prefs.copy_files);
     st.db().insert_workspace(&ws).map_err(e)?;
     Ok(ws)
@@ -405,6 +441,9 @@ async fn rename_branch(st: State<'_, AppState>, id: String, branch: String) -> R
 
 #[tauri::command]
 async fn set_repo_prefs(st: State<'_, AppState>, id: String, prefs: store::RepoPrefs) -> Res<()> {
+    if let Ok(r) = st.db().repo(&id) {
+        ensure_local_excludes(Path::new(&r.root_path), &prefs.copy_files);
+    }
     st.db().set_repo_prefs(&id, &prefs).map_err(e)
 }
 
@@ -1087,14 +1126,7 @@ async fn workspace_files(st: State<'_, AppState>, id: String) -> Res<Vec<String>
 async fn save_attachment(st: State<'_, AppState>, id: String, name: String, bytes: Vec<u8>) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let root = Path::new(&ws.path);
-    if let Ok(common) = git::git(root, &["rev-parse", "--path-format=absolute", "--git-common-dir"]) {
-        let exclude = Path::new(&common).join("info").join("exclude");
-        let cur = std::fs::read_to_string(&exclude).unwrap_or_default();
-        if !cur.lines().any(|l| l.trim() == ".nekotrail/") {
-            let _ = std::fs::create_dir_all(exclude.parent().unwrap());
-            let _ = std::fs::write(&exclude, format!("{cur}{}.nekotrail/\n", if cur.is_empty() || cur.ends_with('\n') { "" } else { "\n" }));
-        }
-    }
+    ensure_local_excludes(root, &[]);
     let safe: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' }).collect();
     let rel = format!(".nekotrail/attachments/{}-{}", chrono::Local::now().format("%H%M%S"), safe);
     let full = root.join(&rel);
@@ -1483,6 +1515,11 @@ pub fn run() {
             eprintln!("could not copy Conductor chat history: {err}");
         }
 
+    // Protect secrets in every known repo (also covers workspaces imported from Conductor).
+    for r in store.repos().unwrap_or_default() {
+        ensure_local_excludes(Path::new(&r.root_path), &r.prefs.copy_files);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1543,6 +1580,21 @@ mod tests {
         assert_eq!(classify_error("tests failed"), None);
         assert_eq!(classify_cli_notice("The endpoint returns 401 when the token expires, so I added a refresh."), None);
         assert_eq!(classify_cli_notice("Invalid API key · Please run /login"), Some("login"));
+    }
+
+    #[test]
+    fn secrets_are_excluded_but_templates_are_not() {
+        let repo = git::tests::init_repo();
+        let r = repo.path();
+        std::fs::write(r.join(".env.local"), "SECRET=1").unwrap();
+        std::fs::write(r.join(".env.example"), "SECRET=").unwrap();
+        ensure_local_excludes(r, &[".env*".into(), "config/local.json".into()]);
+        ensure_local_excludes(r, &[]); // idempotent
+        let untracked = git::git(r, &["ls-files", "--others", "--exclude-standard"]).unwrap();
+        assert!(!untracked.contains(".env.local"), "{untracked}");
+        assert!(untracked.contains(".env.example"), "{untracked}");
+        let ex = std::fs::read_to_string(r.join(".git/info/exclude")).unwrap();
+        assert_eq!(ex.matches(".env.local").count(), 1);
     }
 
     #[test]
