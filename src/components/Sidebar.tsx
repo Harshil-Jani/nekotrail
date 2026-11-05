@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, FolderGit2, ListChecks, Pin, Plus, Search, Settings2, Star } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Filter, FolderGit2, ListChecks, Pin, Plus, Search, Settings2, Star, X } from "lucide-react";
+import { getSettings, saveSettings } from "../settings";
 import { api, displayName, statusOf, STATUS_LABEL, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
@@ -32,17 +33,21 @@ type Props = {
   lines: Record<string, [number, number]>;
 };
 
-function RepoHead({ repo, onNew, onSettings }: { repo: Repo; onNew: () => void; onSettings: () => void }) {
+function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { repo: Repo; onNew: () => void; onSettings: () => void; collapsed: boolean; onToggle: () => void; count: number }) {
   const [gh, setGh] = useState<RepoGithub>(null);
   useEffect(() => { api.repoGithub(repo.id).then(setGh); }, [repo.id]);
   return (
     <div className="repo-head">
+      <button className="fold" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Show ${repo.name}` : `Fold ${repo.name}`}>
+        {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+      </button>
       {gh?.owner_avatar ? (
         <Avatar src={gh.owner_avatar} size={20} label={gh.nameWithOwner} />
       ) : (
         <span className="avatar" style={{ width: 20, height: 20 }} />
       )}
-      <span className="repo-name" title={gh?.description || repo.root_path}>{repo.name}</span>
+      <span className="repo-name" title={gh?.description || repo.root_path} onClick={onToggle}>{repo.name}</span>
+      {collapsed && count > 0 && <span className="repo-meta num">{count}</span>}
       {gh && gh.stargazerCount > 0 && (
         <span className="repo-meta num" title={`${gh.stargazerCount} stars on ${gh.nameWithOwner}`}>
           <Star size={12} />{gh.stargazerCount >= 1000 ? `${(gh.stargazerCount / 1000).toFixed(1)}k` : gh.stargazerCount}
@@ -58,6 +63,22 @@ function RepoHead({ repo, onNew, onSettings }: { repo: Repo; onNew: () => void; 
 
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
+  // Project filter and folded sections, remembered between launches.
+  const [filter, setFilterState] = useState<string[]>(() => getSettings().repoFilter);
+  const [collapsed, setCollapsedState] = useState<string[]>(() => getSettings().collapsed);
+  const [filterOpen, setFilterOpen] = useState(false);
+  useEffect(() => {
+    const sync = () => { setFilterState(getSettings().repoFilter); setCollapsedState(getSettings().collapsed); };
+    window.addEventListener("nekotrail-settings", sync);
+    return () => window.removeEventListener("nekotrail-settings", sync);
+  }, []);
+  const setFilter = (f: string[]) => saveSettings({ ...getSettings(), repoFilter: f });
+  const toggleCollapsed = (id: string) => {
+    const c = getSettings().collapsed;
+    saveSettings({ ...getSettings(), collapsed: c.includes(id) ? c.filter((x) => x !== id) : [...c, id] });
+  };
+  const shownRepos = p.repos.filter((r) => !filter.length || filter.includes(r.id));
+  const inFilter = (w: Workspace) => !filter.length || filter.includes(w.repo_id);
   const q = query.trim().toLowerCase();
   const label = (w: Workspace) => displayName(p.sky, w);
   const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
@@ -93,6 +114,29 @@ export function Sidebar(p: Props) {
         <span className="wordmark">nekotrail</span>
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
+        <span className="filter-wrap">
+          <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by project" aria-label="Filter by project" aria-expanded={filterOpen}>
+            <Filter size={16} />
+          </button>
+          {filterOpen && (
+            <span className="menu filter-menu" role="menu" onMouseLeave={() => setFilterOpen(false)}>
+              <button role="menuitemradio" aria-checked={!filter.length} onClick={() => { setFilter([]); setFilterOpen(false); }}>
+                {!filter.length ? <Check size={14} /> : <span className="check-space" />}<span>All projects</span>
+              </button>
+              {p.repos.map((r) => {
+                const on = filter.includes(r.id);
+                const n = p.workspaces.filter((w) => w.repo_id === r.id && w.state === "active").length;
+                return (
+                  <button key={r.id} role="menuitemcheckbox" aria-checked={on}
+                    onClick={(e) => setFilter(e.metaKey || e.shiftKey ? (on ? filter.filter((x) => x !== r.id) : [...filter, r.id]) : on && filter.length === 1 ? [] : [r.id])}>
+                    {on ? <Check size={14} /> : <span className="check-space" />}<span>{r.name}</span><span className="muted num">{n}</span>
+                  </button>
+                );
+              })}
+              <p className="muted menu-hint">Click shows one project. ⌘-click adds more.</p>
+            </span>
+          )}
+        </span>
         <button
           className="icon"
           onClick={() => p.onGroupBy(p.groupBy === "repo" ? "status" : "repo")}
@@ -103,6 +147,15 @@ export function Sidebar(p: Props) {
         </button>
         <button className="icon" onClick={p.onAddRepo} title="Add a local git repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
       </div>
+      {filter.length > 0 && (
+        <div className="filter-chips">
+          {filter.map((id) => {
+            const r = p.repos.find((x) => x.id === id);
+            return r ? <button key={id} className="chip" onClick={() => setFilter(filter.filter((x) => x !== id))} aria-label={`Stop filtering by ${r.name}`}>{r.name}<X size={11} /></button> : null;
+          })}
+          <button className="quiet chip-clear" onClick={() => setFilter([])}>Show all</button>
+        </div>
+      )}
       <label className="search">
         <Search size={14} />
         <input placeholder="Search workspaces" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
@@ -110,14 +163,19 @@ export function Sidebar(p: Props) {
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
         {p.groupBy === "repo"
-          ? p.repos.map((r) => (
-              <section key={r.id} className="repo">
-                <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} />
-                {p.workspaces.filter((w) => w.repo_id === r.id && match(w)).map(row)}
-              </section>
-            ))
+          ? shownRepos.map((r) => {
+              const ws = p.workspaces.filter((w) => w.repo_id === r.id && match(w));
+              const folded = collapsed.includes(r.id) && !q;
+              return (
+                <section key={r.id} className="repo">
+                  <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} collapsed={folded} onToggle={() => toggleCollapsed(r.id)} count={ws.length} />
+                  {!folded && ws.map(row)}
+                  {!folded && ws.length === 0 && !q && <button className="ws-empty" onClick={() => p.onNewWorkspace(r.id)}><Plus size={13} />New workspace</button>}
+                </section>
+              );
+            })
           : (["in_progress", "in_review", "backlog", "done"] as const).map((st) => {
-              const ws = p.workspaces.filter((w) => w.state === "active" && match(w) && statusOf(w, p.prStates[w.id]) === st);
+              const ws = p.workspaces.filter((w) => w.state === "active" && inFilter(w) && match(w) && statusOf(w, p.prStates[w.id]) === st);
               if (!ws.length) return null;
               return (
                 <section key={st} className="repo">

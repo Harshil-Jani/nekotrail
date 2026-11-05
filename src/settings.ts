@@ -12,10 +12,14 @@ export type Settings = {
   archiveOnMerge: boolean;
   /** Sidebar grouping. */
   groupBy: "repo" | "status";
+  /** Repo ids to show in the sidebar; empty shows every repo. */
+  repoFilter: string[];
+  /** Repo ids whose sidebar section is folded. */
+  collapsed: string[];
 };
 
 const KEY = "nekotrail.settings";
-const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: false, groupBy: "repo" };
+const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: false, groupBy: "repo", repoFilter: [], collapsed: [] };
 
 export function getSettings(): Settings {
   try {

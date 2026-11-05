@@ -440,6 +440,8 @@ export default function App() {
       { id: "pet", group: "App", label: "Pet the cat", icon: <Cat size={15} />, run: pet },
       { id: "zoom-reset", group: "App", label: "Reset zoom", hint: "⌘0", icon: <ZoomIn size={15} />, run: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", metaKey: true })) },
     );
+    for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
+    if (getSettings().repoFilter.length) c.push({ id: "filter-all", group: "Go", label: "Show all projects", keywords: "filter clear", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [] }) });
     for (const r of repos) c.push({ id: `scripts-${r.id}`, group: "App", label: `${r.name}: setup and run scripts`, icon: <Gear size={15} />, run: () => setSettingsFor(r.id) });
     if (canImport) c.push({ id: "import", group: "App", label: "Import from Conductor", icon: <Download size={15} />, run: importConductor });
     return c;
