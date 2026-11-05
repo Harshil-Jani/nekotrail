@@ -789,6 +789,56 @@ fn tree_usage(root: u32, rows: &[(u32, u32, u64, String)]) -> Value {
     })
 }
 
+/// Imported workspaces whose folders still live outside nekotrail's own folder (in Conductor's).
+#[tauri::command]
+async fn imported_outside(st: State<'_, AppState>) -> Res<Vec<String>> {
+    let root = st.home.join("workspaces");
+    Ok(st.db().workspaces(false).map_err(e)?.into_iter()
+        .filter(|w| w.imported_from.is_some() && !Path::new(&w.path).starts_with(&root) && Path::new(&w.path).exists())
+        .map(|w| w.id).collect())
+}
+
+/// Move imported workspaces into ~/nekotrail/workspaces with `git worktree move`, so cleaning up
+/// Conductor can't delete them. Skips any with an agent running. Returns (moved, problems).
+#[tauri::command]
+async fn relocate_imported(st: State<'_, AppState>) -> Res<(usize, Vec<String>)> {
+    let ids = imported_outside(st.clone()).await?;
+    let running: Vec<String> = {
+        let runs = st.runs.lock().unwrap();
+        let db = st.db();
+        ids.iter().filter(|id| db.sessions(id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(false)).cloned().collect()
+    };
+    let (mut moved, mut problems) = (0, vec![]);
+    for id in ids {
+        let (ws, repo) = { let db = st.db(); let ws = db.workspace(&id).map_err(e)?; let repo = db.repo(&ws.repo_id).map_err(e)?; (ws, repo) };
+        let label = if ws.title.is_empty() { ws.name.clone() } else { ws.title.clone() };
+        if running.contains(&id) {
+            problems.push(format!("{label}: an agent is working. Move it later."));
+            continue;
+        }
+        let base = Path::new(&ws.path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| ws.name.clone());
+        let dir = st.home.join("workspaces").join(&repo.name);
+        let mut to = dir.join(&base);
+        let mut n = 2;
+        while to.exists() {
+            to = dir.join(format!("{base}-{n}"));
+            n += 1;
+        }
+        // Terminals hold the old folder open; close them first.
+        for key in [format!("{id}:term"), format!("{id}:run"), format!("{id}:setup")] {
+            st.ptys.close(&key);
+        }
+        match git::move_worktree(Path::new(&repo.root_path), Path::new(&ws.path), &to) {
+            Ok(()) => {
+                st.db().set_path(&id, &to.to_string_lossy()).map_err(e)?;
+                moved += 1;
+            }
+            Err(err) => problems.push(format!("{label}: {err}")),
+        }
+    }
+    Ok((moved, problems))
+}
+
 /// Link workspaces that got the same task (a bake-off).
 #[tauri::command]
 async fn set_pair(st: State<'_, AppState>, ids: Vec<String>) -> Res<String> {
@@ -1634,7 +1684,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

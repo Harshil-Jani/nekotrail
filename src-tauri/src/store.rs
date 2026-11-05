@@ -370,6 +370,11 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn set_path(&self, id: &str, path: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET path=?2 WHERE id=?1", params![id, path])?;
+        Ok(())
+    }
+
     pub fn set_title(&self, id: &str, title: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET title=?2 WHERE id=?1", params![id, title])?;
         Ok(())

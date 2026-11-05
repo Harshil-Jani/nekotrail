@@ -70,7 +70,7 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
       {gh?.owner_avatar ? (
         <Avatar src={gh.owner_avatar} size={20} label={gh.nameWithOwner} />
       ) : (
-        <span className="avatar" style={{ width: 20, height: 20 }} />
+        <Avatar src="" size={20} label={repo.name} />
       )}
       <span className="repo-name" title={gh?.description || repo.root_path} onClick={onToggle}>{repo.name}</span>
       {collapsed && count > 0 && <span className="repo-meta num">{count}</span>}
@@ -199,7 +199,6 @@ export function Sidebar(p: Props) {
           {w.unread && !p.running.has(w.id) && <span className="unread badge" aria-label="Unread" />}
         </span>
         <span className="ws-name" title={`${label(w)}\n${repoName(w.repo_id)} · ${w.branch}`}>{label(w)}</span>
-        <span className="spacer" />
         {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
         {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}
       </button>

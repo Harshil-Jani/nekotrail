@@ -3,6 +3,13 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.2.2 (2026-11-06)
+
+- Sidebar names use the full width; before, they were cut off halfway.
+- Section chevrons, row icons and "Add section" line up on one edge, and the sidebar button sits on the traffic lights' line.
+- Repo buttons appear on hover without squeezing the repo name; repos without a picture get a letter.
+- README screenshots retaken with a made-up sample project.
+
 ## 0.2.1 (2026-11-06)
 
 **Clearer words everywhere**

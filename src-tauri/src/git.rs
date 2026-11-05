@@ -268,6 +268,15 @@ pub fn merge_target(ws: &Path, target: &str) -> Result<&'static str> {
     }
 }
 
+/// Move a worktree folder somewhere else, keeping git's bookkeeping right (`git worktree move`).
+pub fn move_worktree(repo: &Path, from: &Path, to: &Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    git(repo, &["worktree", "move", &from.to_string_lossy(), &to.to_string_lossy()])?;
+    Ok(())
+}
+
 /// Tracked and untracked (not ignored) files, for @-mentions.
 pub fn files(ws: &Path) -> Result<Vec<String>> {
     Ok(git(ws, &["ls-files", "-co", "--exclude-standard"])?.lines().map(String::from).collect())
@@ -287,6 +296,22 @@ pub mod tests {
         git(p, &["add", "."]).unwrap();
         git(p, &["commit", "-qm", "init"]).unwrap();
         d
+    }
+
+    #[test]
+    fn worktrees_can_move_with_their_uncommitted_work() {
+        let repo = init_repo();
+        let r = repo.path();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let from = elsewhere.path().join("conductor/workspaces/demo/lome");
+        add_worktree(r, &from, "me/lome", "main").unwrap();
+        std::fs::write(from.join("wip.txt"), "unsaved work\n").unwrap();
+        let to = elsewhere.path().join("nekotrail/workspaces/demo/lome");
+        move_worktree(r, &from, &to).unwrap();
+        assert!(!from.exists());
+        assert_eq!(std::fs::read_to_string(to.join("wip.txt")).unwrap(), "unsaved work\n");
+        assert_eq!(current_branch(&to).unwrap(), "me/lome");
+        assert!(git(r, &["worktree", "list"]).unwrap().contains("nekotrail/workspaces/demo/lome"));
     }
 
     #[test]

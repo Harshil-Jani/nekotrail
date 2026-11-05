@@ -933,3 +933,22 @@ input.switch:focus-visible { box-shadow: var(--ring) !important; }
 .app.no-sidebar .sidebar { display: flex; visibility: hidden; overflow: hidden; min-width: 0; border: none; }
 .app.no-sidebar .sidebar-resizer { visibility: hidden; pointer-events: none; }
 .version { font-size: 12px; }
+
+/* Sidebar alignment: one left edge. Chevron column = row icon column (18px) at 8px from the list edge. */
+.ws { gap: 10px; }
+.ws .ws-name { flex: 1 1 auto; }
+.repo-head, .section-head, .status-head { padding: 0 4px 0 8px; gap: 10px; }
+.repo-head .fold { margin-left: 0; width: 18px; height: 18px; }
+.repo-head .avatar, .section-head > svg, .status-head > svg { flex-shrink: 0; }
+.status-head .unread, .needs-you .repo-head .unread { margin: 0 5px; }
+.repo-head .repo-name { flex: 1 1 auto; min-width: 0; }
+.ws-empty, .new-section { padding-left: 36px; }
+.drop-hint { margin-left: 36px; }
+.sidebar-head { align-items: center; }
+.sidebar-toggle { width: 26px; height: 26px; }
+
+.repo-head { position: relative; }
+.repo-actions { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); padding-left: 12px;
+  background: linear-gradient(to right, transparent, var(--sidebar) 12px); }
+html.native .repo-actions { background: none; }
+.repo-head:hover .repo-meta { visibility: hidden; }
