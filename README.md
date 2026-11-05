@@ -64,7 +64,7 @@ bun run tauri dev
 
 | Keys | Action |
 |---|---|
-| ⌘N | New workspace |
+| ⌘N | New workspace: type the task, Enter starts the agent |
 | ⌘J | Next workspace with news |
 | ⌘K | Search workspaces |
 | ⌘1 to ⌘4 | Chat, Changes, Terminal, Notes |

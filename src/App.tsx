@@ -12,6 +12,7 @@ import { Terminal } from "./components/Terminal";
 import { PrBar } from "./components/PrBar";
 import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
+import { NewWorkspace, type NewWorkspaceRequest } from "./components/NewWorkspace";
 import { Mascot, type Mood } from "./components/Mascot";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
@@ -59,6 +60,7 @@ export default function App() {
   const [run, setRun] = useState<{ cmd: string; nonce: number } | undefined>();
   const [notes, setNotes] = useState("");
   const [leaving, setLeaving] = useState<string | null>(null);
+  const [newFor, setNewFor] = useState<string | null>(params.get("new")); // repo id the new-workspace panel opens on
   const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
   const [lastActive, setLastActive] = useState(Date.now());
@@ -201,9 +203,16 @@ export default function App() {
     }
   };
 
-  const newWorkspace = async (repoId: string) => {
+  const newWorkspace = async ({ repoId, prompt, agent, model, mode }: NewWorkspaceRequest) => {
     try {
       const w = await api.createWorkspace(repoId);
+      if (prompt) {
+        // Start the agent right away in the new worktree.
+        const session = await api.newSession(w.id, agent);
+        await api.updateSession(session.id, "New chat", model, mode);
+        await api.send(session.id, prompt);
+      }
+      setNewFor(null);
       const isNew = !lit.has(w.name.replace(/-\d+$/, ""));
       await refresh();
       select(w.id);
@@ -213,12 +222,8 @@ export default function App() {
         setTimeout(() => setDiscovery(null), 7000);
       }
       const scripts = await api.workspaceScripts(w.id);
-      if (scripts.setup) {
-        setTab("terminal");
-        setRun({ cmd: scripts.setup, nonce: Date.now() });
-      } else {
-        setTab("chat");
-      }
+      if (scripts.setup) setRun({ cmd: scripts.setup, nonce: Date.now() }); // runs in the workspace terminal
+      setTab(scripts.setup && !prompt ? "terminal" : "chat");
     } catch (e) {
       say(`Couldn't create the workspace. ${errText(e)}`, true);
     }
@@ -269,7 +274,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return;
       if (e.key === "k") { e.preventDefault(); document.getElementById("workspace-search")?.focus(); }
-      if (e.key === "n" && (ws || repos[0])) { e.preventDefault(); newWorkspace(ws?.repo_id ?? repos[0].id); }
+      if (e.key === "n" && (ws || repos[0])) { e.preventDefault(); setNewFor(ws?.repo_id ?? repos[0].id); }
       if (e.key === "j") {
         // Next workspace with news, wrapping around.
         e.preventDefault();
@@ -300,7 +305,7 @@ export default function App() {
         selected={view === "workspace" ? selected : null}
         showArchived={showArchived}
         onSelect={select}
-        onNewWorkspace={newWorkspace}
+        onNewWorkspace={setNewFor}
         onAddRepo={addRepo}
         onRepoSettings={setSettingsFor}
         onToggleArchived={() => setShowArchived((v) => !v)}
@@ -428,6 +433,9 @@ export default function App() {
 
       </main>
 
+      {newFor && repos.length > 0 && (
+        <NewWorkspace repos={repos} initialRepo={newFor} onCreate={newWorkspace} onClose={() => setNewFor(null)} />
+      )}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
       {toast && <div role="status" className={`toast ${toast.error ? "error" : ""}`}>{toast.text}</div>}
       {discovery && (

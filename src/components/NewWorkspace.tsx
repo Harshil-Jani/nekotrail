@@ -1,0 +1,145 @@
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, CornerDownLeft, GripHorizontal } from "lucide-react";
+import type { Agent, PermissionMode, Repo } from "../api";
+
+const MODES: { value: PermissionMode; label: string }[] = [
+  { value: "plan", label: "Plan (read only)" },
+  { value: "acceptEdits", label: "Auto-accept edits" },
+  { value: "bypassPermissions", label: "Full auto" },
+];
+
+export type NewWorkspaceRequest = { repoId: string; prompt: string; agent: Agent; model: string | null; mode: PermissionMode };
+
+/**
+ * Prompt-first workspace creation: write the task, press Enter, and the agent starts in a fresh
+ * worktree. The panel floats over a blurred app and can be dragged by its top bar.
+ */
+export function NewWorkspace({
+  repos,
+  initialRepo,
+  onCreate,
+  onClose,
+}: {
+  repos: Repo[];
+  initialRepo: string;
+  onCreate: (r: NewWorkspaceRequest) => Promise<void>;
+  onClose: () => void;
+}) {
+  // Remember the last choices so the next workspace starts the same way.
+  const saved = JSON.parse(localStorage.getItem("nekotrail.new") || "{}");
+  const [repoId, setRepoId] = useState(initialRepo);
+  const [prompt, setPrompt] = useState("");
+  const [agent, setAgent] = useState<Agent>(saved.agent ?? "claude");
+  const [model, setModel] = useState<string>(saved.model ?? "");
+  const [mode, setMode] = useState<PermissionMode>(saved.mode ?? "acceptEdits");
+  const [busy, setBusy] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    localStorage.setItem("nekotrail.new", JSON.stringify({ agent, model, mode }));
+    try {
+      await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, mode });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("select, button, input")) return;
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    const r = panel.current?.getBoundingClientRect();
+    if (!d || !r) return;
+    // Keep at least 80px of the panel on screen in every direction.
+    const maxX = window.innerWidth / 2 + r.width / 2 - 80;
+    const maxY = window.innerHeight / 2 + r.height / 2 - 80;
+    setPos({
+      x: Math.max(-maxX, Math.min(maxX, d.ox + e.clientX - d.sx)),
+      y: Math.max(-maxY, Math.min(maxY, d.oy + e.clientY - d.sy)),
+    });
+  };
+  const onPointerUp = () => { drag.current = null; };
+
+  const repo = repos.find((r) => r.id === repoId);
+
+  return (
+    <div className="nw-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div
+        ref={panel}
+        className="nw-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="New workspace"
+        style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      >
+        <div className="nw-head" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
+          <label className="nw-repo">
+            <select value={repoId} onChange={(e) => setRepoId(e.target.value)} aria-label="Repository">
+              {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <ChevronDown size={16} />
+          </label>
+          <span className="nw-grip" aria-hidden><GripHorizontal size={16} /></span>
+          <span className="spacer" />
+          <div className="nw-agent" role="radiogroup" aria-label="Agent">
+            {(["claude", "codex"] as Agent[]).map((a) => (
+              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => setAgent(a)}>
+                {a === "claude" ? "Claude" : "Codex"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <textarea
+          className="nw-prompt"
+          autoFocus
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={`What should the agent do in ${repo?.name ?? "this repo"}? Leave empty to just make the workspace.`}
+          aria-label="Task for the agent"
+        />
+        <div className="nw-foot">
+          <input
+            className="nw-model"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="Default model"
+            aria-label="Model"
+            list="nw-models"
+          />
+          <datalist id="nw-models">
+            {agent === "claude" && ["opus", "sonnet", "haiku"].map((m) => <option key={m} value={m} />)}
+          </datalist>
+          <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)} aria-label="Permissions">
+            {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <span className="spacer" />
+          <span className="muted nw-hint">Shift ↵ new line · Esc close</span>
+          <button className="primary" onClick={submit} disabled={busy || !repo}>
+            {busy ? <span className="spinner" /> : null}
+            {prompt.trim() ? "Create" : "Create empty"}
+            <CornerDownLeft size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

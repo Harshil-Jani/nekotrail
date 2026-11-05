@@ -256,6 +256,35 @@ code, pre { font-family: var(--mono); font-size: 13px; }
 .meter span.half { background: #5d646c; }
 .meter span.on { background: var(--accent); }
 
+/* ---------- new workspace panel ---------- */
+.nw-backdrop {
+  position: fixed; inset: 0; z-index: 15; display: flex; align-items: flex-start; justify-content: center; padding-top: 18vh;
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(14px) saturate(0.8); -webkit-backdrop-filter: blur(14px) saturate(0.8);
+  animation: nw-fade 0.18s var(--ease);
+}
+.nw-panel {
+  width: min(720px, calc(100vw - 64px)); background: var(--surface); border: 1px solid var(--line);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7); display: flex; flex-direction: column;
+  animation: nw-rise 0.22s var(--ease);
+}
+.nw-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
+.nw-head:active { cursor: grabbing; }
+.nw-repo { position: relative; display: inline-flex; align-items: center; }
+.nw-repo select { background: none; border: none; font-weight: 700; font-size: 16px; padding: var(--s1) var(--s6) var(--s1) 0; background-image: none; cursor: pointer; }
+.nw-repo svg { position: absolute; right: var(--s1); pointer-events: none; color: var(--muted); }
+.nw-grip { color: var(--line); display: inline-flex; }
+.nw-agent { display: flex; border: 1px solid var(--line); }
+.nw-agent button { border: none; padding: 4px var(--s3); font-size: 13px; color: var(--muted); }
+.nw-agent button.on { background: var(--text); color: #0f1419; }
+.nw-prompt { min-height: 160px; resize: none; border: none; background: transparent; padding: var(--s4); font-size: 16px; line-height: 1.5; }
+.nw-prompt:focus { outline: none; }
+.nw-foot { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); }
+.nw-model { width: 150px; padding: 4px var(--s3); font-size: 13px; background: var(--raised); border-color: transparent; }
+.nw-foot select { font-size: 13px; padding: 4px var(--s6) 4px var(--s3); background-color: var(--raised); border-color: transparent; }
+.nw-hint { font-size: 12px; }
+@keyframes nw-fade { from { opacity: 0; } }
+@keyframes nw-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+
 /* ---------- modal, toast ---------- */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(91, 112, 131, 0.4); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { background: var(--bg); border-radius: var(--radius); padding: var(--s6); width: 600px; display: flex; flex-direction: column; gap: var(--s4); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6); }
