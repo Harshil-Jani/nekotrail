@@ -30,6 +30,8 @@ struct Runs {
     queued: HashMap<String, VecDeque<String>>,
     /// session id -> context the agent must hear before the next prompt (e.g. "files were rewound")
     notes: HashMap<String, String>,
+    /// Chats whose next turn should fork the agent's conversation instead of continuing it.
+    forks: std::collections::HashSet<String>,
 }
 
 pub struct AppState {
@@ -669,6 +671,49 @@ async fn clear_queue(app: AppHandle, st: State<'_, AppState>, id: String) -> Res
     Ok(())
 }
 
+/// Drop one queued message (by position). Returns the remaining queue.
+#[tauri::command]
+async fn remove_queued(app: AppHandle, st: State<'_, AppState>, id: String, index: usize) -> Res<Vec<String>> {
+    let mut runs = st.runs.lock().unwrap();
+    let q = runs.queued.entry(id.clone()).or_default();
+    if index < q.len() {
+        q.remove(index);
+    }
+    let rest: Vec<String> = q.iter().cloned().collect();
+    let _ = app.emit("queue", json!({"session_id": id, "queued": rest}));
+    Ok(rest)
+}
+
+/// Copy a chat into a new tab that continues from the same point without changing the original.
+/// Claude forks its conversation (`--fork-session`); Codex starts fresh with the history shown.
+#[tauri::command]
+async fn fork_session(st: State<'_, AppState>, id: String) -> Res<Session> {
+    let (src, events) = {
+        let db = st.db();
+        (db.session(&id).map_err(e)?, db.events(&id).map_err(e)?)
+    };
+    let s = Session {
+        id: new_id(),
+        workspace_id: src.workspace_id.clone(),
+        agent: src.agent.clone(),
+        agent_session_id: if src.agent == "claude" { src.agent_session_id.clone() } else { None },
+        title: format!("{} (fork)", src.title),
+        model: src.model.clone(),
+        permission_mode: src.permission_mode.clone(),
+        effort: src.effort.clone(),
+    };
+    {
+        let db = st.db();
+        db.insert_session(&s).map_err(e)?;
+        // Checkpoints refer to the shared worktree, so they still work in the copy.
+        db.append_events(&s.id, &events, &store::now()).map_err(e)?;
+    }
+    if s.agent_session_id.is_some() {
+        st.runs.lock().unwrap().forks.insert(s.id.clone());
+    }
+    Ok(s)
+}
+
 /// Send a prompt. If the agent is busy, the prompt waits in the queue and runs next.
 #[tauri::command]
 async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<()> {
@@ -808,7 +853,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         None => text.clone(),
     };
 
+    let fork = st.runs.lock().unwrap().forks.remove(&id);
     let mut cmd = agent::command(&agent::TurnSpec {
+        fork,
         agent: &session.agent,
         prompt: &prompt,
         agent_session_id: session.agent_session_id.as_deref(),
@@ -1013,6 +1060,7 @@ pub fn run() {
             restore_checkpoint, workspace_files, save_attachment,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
+            remove_queued, fork_session,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

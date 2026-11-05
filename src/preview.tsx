@@ -20,6 +20,18 @@ const repos = [
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
   id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", status: "", ...extra,
 });
+const planEvents = [
+  { kind: "user", checkpoint: "c1", text: "Tickets should breach SLA after 4 business hours, not 4 hours. Plan it first." },
+  { kind: "tool", id: "t1", name: "Read", input: "internal/tickets/sla.go" },
+  { kind: "tool_result", id: "t1", output: "…", is_error: false },
+  { kind: "tool", id: "t2", name: "TodoWrite", input: JSON.stringify([
+    { content: "Add a business-hours calendar", status: "completed" },
+    { content: "Use it in the SLA timer", status: "in_progress", activeForm: "Wiring the calendar into the SLA timer" },
+    { content: "Tests for weekends and holidays", status: "pending" },
+  ]) },
+  { kind: "tool", id: "t3", name: "ExitPlanMode", input: "## Plan\n1. Add `BusinessHours` (9:00 to 18:00, Mon to Fri, holiday list from config).\n2. `slaDeadline` adds 4 business hours instead of 4 wall-clock hours.\n3. Table tests: Friday 17:00 rolls to Monday 12:00; holidays skip.\n\nNo schema changes." },
+];
+
 const workspaces = [
   ws("w1", "r1", "mochi", "harshil/fix-502-gateway", { pinned: true }),
   ws("w2", "r1", "comet", "harshil/ticket-sla", { unread: true }),
@@ -69,8 +81,8 @@ mockIPC(
       case "sessions": return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: "claude", agent_session_id: null, title: "New chat", model: null, permission_mode: "acceptEdits" }];
-      case "session_events": return args.id === "s1" ? events : [];
-      case "queued": return [];
+      case "session_events": return args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
+      case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_status":
         if (args.id === "w1") return pr;
         if (args.id === "w2") return { ...pr, number: 479, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };

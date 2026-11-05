@@ -2,7 +2,7 @@ import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, u
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Brain, Check, History, Paperclip, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
 import { getSettings } from "../settings";
@@ -114,10 +114,45 @@ function toRows(events: ChatEvent[]): Row[] {
 }
 
 /** Rewind handler shared through context, so memoized rows don't re-render when it changes. */
-const RewindCtx = createContext<{ rewind: (checkpoint: string) => Promise<void>; disabled: boolean }>({
-  rewind: async () => {},
-  disabled: true,
-});
+type ChatCtxValue = {
+  rewind: (checkpoint: string) => Promise<void>;
+  disabled: boolean;
+  /** Approve a plan: switch the chat to auto-accept edits and tell the agent to go. */
+  approvePlan: () => void;
+  /** Ctrl+O: show every tool call's output instead of collapsing them. */
+  expandAll: boolean;
+  /** Row index of the current search match, and the query to highlight. */
+  query: string;
+};
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "" });
+
+type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string };
+const parseTodos = (input: string): Todo[] | null => {
+  try {
+    const t = JSON.parse(input);
+    return Array.isArray(t) ? t : null;
+  } catch {
+    return null;
+  }
+};
+
+/** The plan the agent proposes in plan mode, with a button to approve it. */
+function PlanCard({ plan, latest }: { plan: string; latest: boolean }) {
+  const { approvePlan, disabled } = useContext(RewindCtx);
+  return (
+    <div className="plan-card">
+      <div className="plan-head"><ClipboardList size={15} /><b>Plan</b></div>
+      <div className="msg assistant"><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown></div>
+      {latest && (
+        <div className="row">
+          <span className="muted">Approving switches this chat to auto-accept edits.</span>
+          <span className="spacer" />
+          <button className="accent" disabled={disabled} onClick={approvePlan} title="⌘⇧↵"><Play size={14} />Approve and build</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Two-step button: the first click arms it, the second (within 4s) rewinds. No modal needed. */
 function RewindButton({ checkpoint }: { checkpoint: string }) {
@@ -147,7 +182,18 @@ function RewindButton({ checkpoint }: { checkpoint: string }) {
 }
 
 /** One chat row. Memoized: a new message renders only the new row, not the whole history. */
-const RowView = memo(function RowView({ r, pendingSpin }: { r: Row; pendingSpin: boolean }) {
+const RowView = memo(function RowView({ r, pendingSpin, latestPlan }: { r: Row; pendingSpin: boolean; latestPlan: boolean }) {
+  const { expandAll, query } = useContext(RewindCtx);
+  const hit = !!query && "text" in r && r.text.toLowerCase().includes(query);
+  return <div className={hit ? "row-hit" : undefined}>{rowBody(r, pendingSpin, latestPlan, expandAll)}</div>;
+}, (a, b) => {
+  if (a.pendingSpin !== b.pendingSpin || a.latestPlan !== b.latestPlan) return false;
+  const x = a.r as Record<string, unknown>, y = b.r as Record<string, unknown>;
+  const keys = Object.keys(x);
+  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
+});
+
+function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: boolean) {
   switch (r.type) {
     case "user":
       return (
@@ -172,9 +218,15 @@ const RowView = memo(function RowView({ r, pendingSpin }: { r: Row; pendingSpin:
         </details>
       );
     case "tool": {
+      if (r.name === "ExitPlanMode" && r.input) return <PlanCard plan={r.input} latest={latestPlan} />;
+      if (r.name === "TodoWrite") {
+        const todos = parseTodos(r.input);
+        const done = todos?.filter((t) => t.status === "completed").length ?? 0;
+        return <div className="msg done"><ListTodo size={14} />Todo list: {done} of {todos?.length ?? 0} done</div>;
+      }
       const Icon = r.is_error ? AlertCircle : TOOL_ICON[r.name] ?? Wrench;
       return (
-        <details className={`step ${r.is_error ? "failed" : ""}`}>
+        <details className={`step ${r.is_error ? "failed" : ""}`} open={expandAll || undefined}>
           <summary>
             {r.pending && pendingSpin ? <span className="spinner" /> : <Icon size={16} />}
             <b>{r.name}</b> <code>{r.input}</code>
@@ -195,13 +247,7 @@ const RowView = memo(function RowView({ r, pendingSpin }: { r: Row; pendingSpin:
         </div>
       );
   }
-}, (a, b) => {
-  // Rows are rebuilt on every new event; compare their fields so unchanged rows skip rendering.
-  if (a.pendingSpin !== b.pendingSpin) return false;
-  const x = a.r as Record<string, unknown>, y = b.r as Record<string, unknown>;
-  const keys = Object.keys(x);
-  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
-});
+}
 
 const PAGE = 150; // rows rendered at a time; older rows load on demand
 
@@ -269,14 +315,26 @@ export function Chat({
     }
   };
 
+  const [expandAll, setExpandAll] = useState(false);
+  const [search, setSearch] = useState<string | null>(null);
+  const [hitIdx, setHitIdx] = useState(0);
+  const approvePlan = async () => {
+    if (!session || !active) return;
+    await update({ permission_mode: "acceptEdits" });
+    await api.send(active, "Approved. Go ahead and implement the plan.");
+    onRunningChange();
+  };
   const rewindCtx = useMemo(() => ({
+    approvePlan,
+    expandAll,
+    query: (search ?? "").trim().toLowerCase(),
     disabled: anyBusy,
     rewind: async (checkpoint: string) => {
       if (!active) return;
       setError(null);
       try { await api.restoreCheckpoint(active, checkpoint); } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, active]);
+  }), [anyBusy, active, expandAll, search, session]);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);
@@ -346,6 +404,35 @@ export function Chat({
     }
     return null;
   }, [events]);
+  const latestPlanIdx = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i];
+      if (r.type === "user") return -1; // a newer message was sent after the plan
+      if (r.type === "tool" && r.name === "ExitPlanMode") return i;
+    }
+    return -1;
+  }, [rows]);
+  const todos = useMemo(() => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i];
+      if (r.type === "tool" && r.name === "TodoWrite") return parseTodos(r.input);
+    }
+    return null;
+  }, [rows]);
+  const [todosOpen, setTodosOpen] = useState(true);
+  const hits = useMemo(() => {
+    const q = (search ?? "").trim().toLowerCase();
+    if (!q) return [] as number[];
+    return rows.flatMap((r, i) => ("text" in r && r.text.toLowerCase().includes(q) ? [i] : []));
+  }, [rows, search]);
+  useEffect(() => setHitIdx(Math.max(0, hits.length - 1)), [hits.length]);
+  // Bring the current match into view (loading older rows if it is hidden).
+  useEffect(() => {
+    const i = hits[hitIdx];
+    if (i === undefined) return;
+    if (i < rows.length - limit) setLimit(rows.length - i + 20);
+    requestAnimationFrame(() => scroller.current?.querySelector(`[data-row="${i}"]`)?.scrollIntoView({ block: "center" }));
+  }, [hitIdx, hits]);
   const ctxWindow = context?.window ?? (session?.agent === "claude" ? 200_000 : 0);
   const ctxTokens = liveTokens ?? context?.tokens ?? 0;
   const [limit, setLimit] = useState(PAGE);
@@ -366,11 +453,27 @@ export function Chat({
     }
   }, [limit]);
 
+  const runSlash = async (text: string): Promise<boolean> => {
+    const [cmd, ...rest] = text.split(/\s+/);
+    const arg = rest.join(" ");
+    switch (cmd) {
+      case "/clear": await newChat(session?.agent ?? "claude"); return true;
+      case "/plan": await update({ permission_mode: "plan" }); return true;
+      case "/auto": await update({ permission_mode: "acceptEdits" }); return true;
+      case "/fork": await fork(); return true;
+      case "/model": await update({ model: arg || null }); return true;
+      case "/effort": await update({ effort: (arg || null) as Effort | null }); return true;
+      default: return false; // anything else (e.g. /compact, custom commands) goes to the agent
+    }
+  };
+
   const submit = async () => {
     const text = draft.trim();
     if (!text || !active) return;
     setDraft("");
     setError(null);
+    setSlash(null);
+    if (text.startsWith("/") && (await runSlash(text))) return;
     try {
       await api.send(active, text);
       onRunningChange();
@@ -401,6 +504,60 @@ export function Chat({
     await loadSessions(s.id);
   };
 
+  const fork = async () => {
+    if (!active) return;
+    try {
+      const s = await api.forkSession(active);
+      await loadSessions(s.id);
+    } catch (e) {
+      setError(errText(e));
+    }
+  };
+
+  const copyTranscript = async () => {
+    const md = events.flatMap((ev) =>
+      ev.kind === "user" ? [`**You:** ${ev.text}`] : ev.kind === "text" ? [ev.text] : ev.kind === "tool" ? [`> ${ev.name} ${ev.input.split("\n")[0].slice(0, 120)}`] : []);
+    await navigator.clipboard.writeText(md.join("\n\n"));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const [copied, setCopied] = useState(false);
+
+  // Slash commands: typed at the start of the composer.
+  const SLASH: [string, string][] = [
+    ["/clear", "Start a fresh chat"], ["/plan", "Plan only, no edits"], ["/auto", "Auto-accept edits"],
+    ["/fork", "Copy this chat into a new tab"], ["/compact", "Summarise the chat to free up context"],
+    ["/model", "Set the model, e.g. /model sonnet"], ["/effort", "Set effort: low, medium, high, xhigh, max"],
+  ];
+  const [slash, setSlash] = useState<{ items: [string, string][]; sel: number } | null>(null);
+  const updateSlash = (text: string) => {
+    const m = /^\/(\S*)$/.exec(text);
+    if (!m) return setSlash(null);
+    const items = SLASH.filter(([c]) => c.startsWith(`/${m[1]}`));
+    setSlash(items.length ? { items, sel: 0 } : null);
+  };
+
+  // ⌘T new chat, ⌘F search, ⌘G next match, Ctrl+O expand all, ⌘⇧↵ approve plan.
+  const keys = useRef({ newChat, approvePlan, latestPlanIdx, agent: session?.agent });
+  keys.current = { newChat, approvePlan, latestPlanIdx, agent: session?.agent };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (scroller.current?.closest(".pane")?.hasAttribute("hidden")) return; // Chat tab not showing
+      if (e.ctrlKey && !e.metaKey && e.key === "o") { e.preventDefault(); setExpandAll((x) => !x); return; }
+      if (!e.metaKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "t" && !e.shiftKey) { e.preventDefault(); keys.current.newChat(keys.current.agent ?? "claude"); }
+      else if (k === "f" && !e.shiftKey) { e.preventDefault(); setSearch((q) => q ?? ""); requestAnimationFrame(() => document.getElementById("chat-search")?.focus()); }
+      else if (k === "g") { e.preventDefault(); setHitIdx((i) => (e.shiftKey ? i - 1 : i + 1)); }
+      else if (e.key === "Enter" && e.shiftKey && keys.current.latestPlanIdx >= 0) { e.preventDefault(); keys.current.approvePlan(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (hits.length) setHitIdx((i) => ((i % hits.length) + hits.length) % hits.length);
+  }, [hitIdx, hits.length]);
+
   return (
     <div className="chat">
       <div className="chat-tabs" role="tablist" aria-label="Chats">
@@ -421,10 +578,36 @@ export function Chat({
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
               <button role="menuitem" onClick={() => { setMenu(false); newChat("claude"); }}>New Claude chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); newChat("codex"); }}>New Codex chat</button>
+              <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
+              <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
             </span>
           )}
         </span>
+        <span className="spacer" />
+        {copied && <span className="muted chat-flag">Copied</span>}
+        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title="Ctrl+O">Tool output shown</button>}
       </div>
+
+      {search !== null && (
+        <div className="chat-search">
+          <Search size={14} />
+          <input
+            id="chat-search"
+            value={search}
+            placeholder="Search this chat"
+            aria-label="Search this chat"
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearch(null);
+              if (e.key === "Enter") { e.preventDefault(); setHitIdx((i) => (e.shiftKey ? i - 1 : i + 1)); }
+            }}
+          />
+          <span className="muted num">{search.trim() ? (hits.length ? `${hitIdx + 1} of ${hits.length}` : "No matches") : ""}</span>
+          <button className="icon" aria-label="Previous match" onClick={() => setHitIdx((i) => i - 1)} disabled={!hits.length}><ChevronUp size={15} /></button>
+          <button className="icon" aria-label="Next match" onClick={() => setHitIdx((i) => i + 1)} disabled={!hits.length}><ChevronDown size={15} /></button>
+          <button className="icon" aria-label="Close search" onClick={() => setSearch(null)}><X size={14} /></button>
+        </div>
+      )}
 
       <div
         className="messages"
@@ -453,23 +636,66 @@ export function Chat({
             </button>
           )}
           {visible.map((r, k) => (
-            <RowView key={hidden + k} r={r} pendingSpin={busy && hidden + k === rows.length - 1} />
+            <div key={hidden + k} data-row={hidden + k} className={hits[hitIdx] === hidden + k ? "row-current" : undefined}>
+              <RowView r={r} pendingSpin={busy && hidden + k === rows.length - 1} latestPlan={hidden + k === latestPlanIdx} />
+            </div>
           ))}
         </div>
         </RewindCtx.Provider>
       </div>
 
+      {todos && todos.length > 0 && (
+        <div className="todos">
+          <button className="todos-head" onClick={() => setTodosOpen((o) => !o)} aria-expanded={todosOpen}>
+            <ListTodo size={14} />
+            <span>Todo · {todos.filter((t) => t.status === "completed").length} of {todos.length} done</span>
+            <span className="spacer" />
+            {todosOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
+          {todosOpen && (
+            <ul>
+              {todos.map((t, i) => (
+                <li key={i} className={`todo ${t.status}`}>
+                  {t.status === "completed" ? <CircleCheck size={14} /> : t.status === "in_progress" ? <CircleDot size={14} /> : <Circle size={14} />}
+                  <span>{t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {queue.length > 0 && (
         <div className="queue">
-          <span className="spinner" />
-          <span>{queue.length} queued, runs next: {queue[0].slice(0, 80)}</span>
-          <button className="quiet" onClick={() => active && api.clearQueue(active)}>Clear queue</button>
+          <div className="queue-head">
+            <span className="spinner" />
+            <span>{queue.length} queued. They run one by one when the agent finishes.</span>
+            <span className="spacer" />
+            <button className="quiet" onClick={() => active && api.clearQueue(active)}>Clear all</button>
+          </div>
+          {queue.map((q, i) => (
+            <div className="queue-item" key={i}>
+              <span className="num muted">{i + 1}</span>
+              <span className="queue-text">{q}</span>
+              <button className="icon" title="Edit (moves it back to the composer)" aria-label="Edit queued message" onClick={() => { if (active) { api.removeQueued(active, i); setDraft(q); input.current?.focus(); } }}><Pencil size={13} /></button>
+              <button className="icon" title="Remove" aria-label="Remove queued message" onClick={() => active && api.removeQueued(active, i)}><X size={13} /></button>
+            </div>
+          ))}
         </div>
       )}
       {error && <div className="banner error">{error}</div>}
 
       <div className="composer">
         <div className="composer-box">
+          {slash && (
+            <div className="mention" role="listbox" aria-label="Commands">
+              {slash.items.map(([c, d], i) => (
+                <button key={c} role="option" aria-selected={i === slash.sel} className={i === slash.sel ? "on" : ""}
+                  onMouseDown={(e) => { e.preventDefault(); setDraft(c + " "); setSlash(null); input.current?.focus(); }}>
+                  <b>{c}</b><span className="muted">{d}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {mention && (
             <div className="mention" role="listbox" aria-label="Files">
               {mention.items.map((f, i) => {
@@ -495,8 +721,8 @@ export function Chat({
             value={draft}
             aria-label="Message"
             placeholder={busy ? "Working… anything you send now runs next." : "Ask for a change, a fix or a plan. @ to mention a file, paste a screenshot."}
-            onChange={(e) => { setDraft(e.target.value); updateMention(e.target.value, e.target.selectionStart); }}
-            onBlur={() => setMention(null)}
+            onChange={(e) => { setDraft(e.target.value); updateMention(e.target.value, e.target.selectionStart); updateSlash(e.target.value); }}
+            onBlur={() => { setMention(null); setSlash(null); }}
             onPaste={(e) => {
               if (e.clipboardData.files.length) {
                 e.preventDefault();
@@ -504,6 +730,21 @@ export function Chat({
               }
             }}
             onKeyDown={(e) => {
+              if (slash) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const d = e.key === "ArrowDown" ? 1 : -1;
+                  setSlash({ ...slash, sel: (slash.sel + d + slash.items.length) % slash.items.length });
+                  return;
+                }
+                if (e.key === "Tab" || (e.key === "Enter" && draft.trim() !== slash.items[slash.sel][0])) {
+                  e.preventDefault();
+                  setDraft(slash.items[slash.sel][0] + " ");
+                  setSlash(null);
+                  return;
+                }
+                if (e.key === "Escape") { e.preventDefault(); setSlash(null); return; }
+              }
               if (mention) {
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   e.preventDefault();

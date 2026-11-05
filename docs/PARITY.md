@@ -44,15 +44,15 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 |---|---|---|
 | ✅ | Checkpoints and rewind | |
 | ✅ | @ file mentions, attachments, pasted images | |
-| ⬜ | Plan card: approve and run (⌘⇧↵) | Approve switches the chat to auto-accept and sends "go" |
-| ⬜ | Queue: edit, delete, run next | |
+| ✅ | Plan card: approve and run (⌘⇧↵) | Approve switches the chat to auto-accept and sends "go" |
+| ✅ | Queue: edit, delete, run next | |
 | ✅ | Enter sends (setting), Shift+Enter newline | |
-| ⬜ | Slash commands: /clear /compact /plan /add-dir | |
-| ⬜ | Search in chat (⌘F), copy transcript | |
-| ⬜ | Fork chat into a new tab | `--fork-session` |
-| ⬜ | Chat tabs: ⌘T new, ⌘W close | |
-| ⬜ | Todo list from the agent | `TodoWrite` |
-| ⬜ | Expand all tool calls | |
+| ✅ | Slash commands: /clear /plan /auto /fork /model /effort; others go to the agent | /add-dir later |
+| ✅ | Search in chat (⌘F), copy transcript | |
+| ✅ | Fork chat into a new tab | `--fork-session` |
+| ✅ | Chat tabs: ⌘T new, close button | ⌘W stays the window shortcut |
+| ✅ | Todo list from the agent | `TodoWrite` |
+| ✅ | Expand all tool calls (Ctrl+O) | |
 | ⬜ | Tool approvals mid-turn | Needs Claude's streaming input; later |
 
 ## Round 4: diff and review

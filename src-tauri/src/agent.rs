@@ -30,6 +30,9 @@ fn summarize_input(name: &str, input: &Value) -> String {
         "WebFetch" => pick("url"),
         "WebSearch" => pick("query"),
         "Task" | "Agent" => pick("description"),
+        // Shown as a plan card / todo list, so keep the whole thing.
+        "ExitPlanMode" => return pick("plan").unwrap_or_default(),
+        "TodoWrite" => return input["todos"].to_string(),
         _ => None,
     };
     s.unwrap_or_else(|| clip(&input.to_string()))
@@ -148,6 +151,8 @@ pub fn parse_codex(line: &str) -> Vec<Value> {
 }
 
 pub struct TurnSpec<'a> {
+    /// Resume `agent_session_id` as a new branch of the conversation (Claude `--fork-session`).
+    pub fork: bool,
     pub agent: &'a str,
     pub prompt: &'a str,
     pub agent_session_id: Option<&'a str>,
@@ -199,6 +204,9 @@ pub fn command(spec: &TurnSpec) -> Command {
         }
         if let Some(id) = spec.agent_session_id {
             c.args(["--resume", id]);
+            if spec.fork {
+                c.arg("--fork-session");
+            }
         }
         if let Some(e) = spec.effort {
             c.args(["--effort", e]);
@@ -265,14 +273,14 @@ mod tests {
     #[test]
     fn commands() {
         let cwd = Path::new("/tmp");
-        let c = command(&TurnSpec { agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[] });
+        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[] });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert!(args.windows(2).any(|w| w == ["--effort", "high"]));
         assert!(args.windows(2).any(|w| w == ["--append-system-prompt", "Use pnpm."]));
         assert!(args.windows(2).any(|w| w == ["--resume", "s1"]));
         assert!(args.windows(2).any(|w| w == ["--permission-mode", "plan"]));
 
-        let c = command(&TurnSpec { agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[] });
+        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[] });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(&args[..3], ["exec", "resume", "t1"]);
         assert!(args.contains(&"sandbox_mode=\"read-only\"".to_string()));
