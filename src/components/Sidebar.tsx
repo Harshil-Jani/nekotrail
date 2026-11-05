@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, Pin, Plus, Search, Settings2, Star } from "lucide-react";
-import { api, starFor, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
+import { api, displayName, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
 
@@ -53,7 +53,7 @@ function RepoHead({ repo, onNew, onSettings }: { repo: Repo; onNew: () => void; 
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const label = (w: Workspace) => starFor(p.sky, w.name)?.name ?? w.name;
+  const label = (w: Workspace) => displayName(p.sky, w);
   const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
   const total = p.sky.stars.length;
   const pct = total ? Math.round((p.lit / total) * 100) : 0;

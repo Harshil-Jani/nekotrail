@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleDashed, CircleX, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, Sparkles } from "lucide-react";
-import { api, avatar, errText, type Pr, type Workspace } from "../api";
+import { ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, ScanSearch, Sparkles, Upload } from "lucide-react";
+import { api, avatar, errText, type Pr, type Repo, type Workspace } from "../api";
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
+import { getSettings } from "../settings";
 
 type Checks = { cls: "good" | "bad" | "wait"; text: string; names: string[] };
 
@@ -26,23 +27,49 @@ function PrState({ pr }: { pr: NonNullable<Pr> }) {
   return <span className="pill good"><GitPullRequest size={14} />Open</span>;
 }
 
+/** Prompts for the git actions the agent does for you. The repo's own instructions are added. */
+export const agentPrompts = {
+  createPr: (ws: Workspace, repo?: Repo) =>
+    `Open a pull request for this workspace:
+1. Commit any uncommitted work with a clear message.
+2. Push the branch \`${ws.branch}\` to origin.
+3. Run \`gh pr create --base ${ws.target_branch}\` with a short title and a description of what changed, why, and how you tested it.
+Reply with the PR link.${repo?.prefs.pr_prompt ? `\n\n${repo.prefs.pr_prompt}` : ""}`,
+  review: (ws: Workspace, repo?: Repo) =>
+    `Review the changes on this branch against origin/${ws.target_branch}: run \`git fetch origin ${ws.target_branch}\` and \`git diff origin/${ws.target_branch}...HEAD\`, and check uncommitted files too. Do not change any code.
+List real problems first (bugs, security, missing tests), each with file:line and a suggested fix. Then smaller nits. End with whether it is ready to merge.${repo?.prefs.review_prompt ? `\n\n${repo.prefs.review_prompt}` : ""}`,
+  fixErrors: (prNumber: number, logs: string) =>
+    `CI is failing on PR #${prNumber}. Failing logs:\n\n\`\`\`\n${logs.slice(-12000)}\n\`\`\`\n\nFind the cause, fix it, run the relevant tests locally, then commit and push.`,
+  conflicts: (ws: Workspace) =>
+    `Merging origin/${ws.target_branch} into this branch left conflicts (see \`git status\`). Resolve each one keeping the intent of both sides, run the tests, and commit the merge. Then push.`,
+};
+
+type Action = { id: string; label: string; keys: string; icon: React.ReactNode; run: () => void; disabled?: boolean };
+
 export function PrBar({
   ws,
+  repo,
   name,
   refreshKey,
-  onAskAgent,
+  onSendAgent,
   onArchive,
+  onSay,
 }: {
   ws: Workspace;
+  repo?: Repo;
   name: string;
   refreshKey: number;
-  onAskAgent: (prompt: string) => void;
+  /** Send a prompt to the agent right away. */
+  onSendAgent: (prompt: string) => void;
   onArchive: () => void;
+  onSay: (text: string, error?: boolean) => void;
 }) {
   const [pr, setPr] = useState<Pr | undefined>(undefined);
   const [form, setForm] = useState<{ title: string; body: string; draft: boolean } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   const load = () =>
     api.prStatus(ws.id).then((p) => { setPr(p); setError(null); }).catch((e) => { setPr(null); setError(errText(e)); });
@@ -51,27 +78,45 @@ export function PrBar({
     setPr(undefined);
     setError(null);
     setForm(null);
+    setMenu(false);
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, [ws.id, refreshKey]);
 
-  const create = async () => {
-    if (!form) return;
-    setBusy(true);
+  // Optional: tidy up by itself once the PR merges.
+  const archivedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (pr?.state === "MERGED" && getSettings().archiveOnMerge && archivedFor.current !== ws.id) {
+      archivedFor.current = ws.id;
+      onArchive();
+    }
+  }, [pr?.state, ws.id]);
+
+  const task = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
     setError(null);
     try {
-      await api.createPr(ws.id, form.title, form.body, form.draft);
-      setForm(null);
-      await load();
+      await fn();
     } catch (e) {
-      setError(errText(e));
+      onSay(errText(e), true);
     } finally {
-      setBusy(false);
+      setBusy(null);
+      load();
     }
   };
 
+  const create = async () => {
+    if (!form) return;
+    await task("pr", async () => {
+      await api.createPr(ws.id, form.title, form.body, form.draft);
+      setForm(null);
+    });
+  };
+
   const checks = pr ? checkSummary(pr) : null;
+  const open = pr?.state === "OPEN";
+  const conflicting = open && pr?.mergeable === "CONFLICTING";
   const CheckIcon = checks?.cls === "good" ? CircleCheck : checks?.cls === "bad" ? CircleX : CircleDashed;
   const reviewers = pr
     ? [
@@ -80,11 +125,78 @@ export function PrBar({
       ]
     : [];
 
+  const actions: Record<string, Action> = {
+    createPr: { id: "createPr", label: "Create PR", keys: "⌘⇧P", icon: <GitPullRequest size={15} />, run: () => onSendAgent(agentPrompts.createPr(ws, repo)), disabled: !!pr && pr.state !== "CLOSED" },
+    manualPr: { id: "manualPr", label: "Write the PR myself", keys: "", icon: <GitPullRequest size={15} />, run: () => setForm({ title: "", body: "", draft: false }), disabled: !!pr && pr.state !== "CLOSED" },
+    commitPush: { id: "commitPush", label: "Commit and push", keys: "⌘⇧Y", icon: <Upload size={15} />, run: () => task("push", async () => onSay(`Pushed: ${await api.commitPush(ws.id)}`)) },
+    pull: {
+      id: "pull", label: `Pull latest ${ws.target_branch}`, keys: "⌘⇧L", icon: <ArrowDownToLine size={15} />,
+      run: () => task("pull", async () => {
+        const r = await api.pullTarget(ws.id);
+        if (r === "conflicts") { onSay("Conflicts. The agent is resolving them."); onSendAgent(agentPrompts.conflicts(ws)); }
+        else onSay(r === "merged" ? `Merged the latest ${ws.target_branch}.` : `Already up to date with ${ws.target_branch}.`);
+      }),
+    },
+    review: { id: "review", label: "Review changes", keys: "⌘⇧R", icon: <ScanSearch size={15} />, run: () => onSendAgent(agentPrompts.review(ws, repo)) },
+    fix: {
+      id: "fix", label: "Fix failing checks", keys: "⌘⇧X", icon: <Sparkles size={15} />, disabled: !(open && checks?.cls === "bad"),
+      run: () => task("fix", async () => onSendAgent(agentPrompts.fixErrors(pr!.number, await api.failingLogs(ws.id)))),
+    },
+    conflicts: { id: "conflicts", label: "Resolve conflicts", keys: "", icon: <Sparkles size={15} />, disabled: !conflicting, run: () => actions.pull.run() },
+    merge: {
+      id: "merge", label: "Squash and merge", keys: "⌘⇧M", icon: <GitMerge size={15} />,
+      disabled: !open || pr?.isDraft || conflicting || checks?.cls === "bad" || checks?.cls === "wait",
+      run: () => task("merge", async () => { await api.mergePr(ws.id, "squash"); onSay(`Merged #${pr!.number}. ${name}'s star shines.`); }),
+    },
+    openPr: { id: "openPr", label: "Open on GitHub", keys: "⌘⇧G", icon: <ExternalLink size={15} />, disabled: !pr, run: () => pr && openUrl(pr.url) },
+  };
+  // The one button you most likely want next.
+  const primary =
+    !pr || pr.state === "CLOSED" ? actions.createPr
+    : conflicting ? actions.conflicts
+    : open && checks?.cls === "bad" ? actions.fix
+    : open && !actions.merge.disabled ? actions.merge
+    : null;
+
+  // Conductor's shortcuts, so muscle memory carries over.
+  const ref = useRef(actions);
+  ref.current = actions;
+  useEffect(() => {
+    const keys: Record<string, string> = { p: "createPr", y: "commitPush", l: "pull", r: "review", x: "fix", m: "merge", g: "openPr" };
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey || !e.shiftKey || e.altKey) return;
+      const a = ref.current[keys[e.key.toLowerCase()]];
+      if (!a) return;
+      e.preventDefault();
+      if (!a.disabled) a.run();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const renameBranch = async () => {
+    const next = renaming?.trim();
+    setRenaming(null);
+    if (next && next !== ws.branch) await task("rename", () => api.renameBranch(ws.id, next));
+  };
+
   return (
     <div className="prbar">
-      <span className="branch" title={`${ws.branch} into ${ws.target_branch}`}>
-        <GitBranch size={14} />{ws.branch} → {ws.target_branch}
-      </span>
+      {renaming !== null ? (
+        <input
+          className="branch-edit"
+          autoFocus
+          value={renaming}
+          aria-label="Branch name"
+          onChange={(e) => setRenaming(e.target.value)}
+          onBlur={renameBranch}
+          onKeyDown={(e) => { if (e.key === "Enter") renameBranch(); if (e.key === "Escape") setRenaming(null); }}
+        />
+      ) : (
+        <button className="branch" title={pr ? `${ws.branch} into ${ws.target_branch}` : "Click to rename the branch"} onClick={() => !pr && setRenaming(ws.branch)}>
+          <GitBranch size={14} />{ws.branch} → {ws.target_branch}
+        </button>
+      )}
       <span className="spacer" />
       {pr === undefined && <span className="muted">Looking for a PR…</span>}
       {pr && (
@@ -104,19 +216,32 @@ export function PrBar({
               ))}
             </span>
           )}
-          {checks && <span className={`pill ${checks.cls}`}><CheckIcon size={14} />CI {checks.text}</span>}
-          {pr.state === "OPEN" && checks?.cls === "bad" && <Mascot size={28} mood="worried" title="CI is failing" />}
-          {pr.state === "OPEN" && checks?.cls === "bad" && (
-            <button onClick={() => onAskAgent(`CI is failing on PR #${pr.number}: ${checks.names.join(", ")}. Run \`gh pr checks ${pr.number}\`, read the failing logs, and fix them.`)}>
-              <Sparkles size={14} />Fix CI
-            </button>
-          )}
-          {pr.state === "OPEN" && pr.mergeable === "CONFLICTING" && (
-            <button onClick={() => onAskAgent(`PR #${pr.number} has merge conflicts with ${ws.target_branch}. Fetch origin, merge ${ws.target_branch} into this branch, resolve the conflicts, and commit.`)}>
-              <Sparkles size={14} />Resolve conflicts
-            </button>
-          )}
+          {checks && <span className={`pill ${checks.cls}`} title={checks.names.join(", ")}><CheckIcon size={14} />CI {checks.text}</span>}
+          {open && checks?.cls === "bad" && <Mascot size={28} mood="worried" title="CI is failing" />}
         </>
+      )}
+      {pr !== undefined && pr?.state !== "MERGED" && (
+        <span className="git-actions">
+          {primary && (
+            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy} title={primary.keys}>
+              {busy ? <span className="spinner" /> : primary.icon}{primary.label}
+            </button>
+          )}
+          <span className="git-menu">
+            <button className="icon-btn" aria-label="More git actions" aria-expanded={menu} onClick={() => setMenu((m) => !m)} disabled={!!busy && !primary}>
+              {busy && !primary ? <span className="spinner" /> : <ChevronDown size={15} />}
+            </button>
+            {menu && (
+              <span className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
+                {Object.values(actions).filter((a) => a.id !== primary?.id && a.id !== "conflicts").map((a) => (
+                  <button key={a.id} role="menuitem" disabled={a.disabled || !!busy} onClick={() => { setMenu(false); a.run(); }}>
+                    {a.icon}<span>{a.label}</span>{a.keys && <kbd>{a.keys}</kbd>}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+        </span>
       )}
       {pr?.state === "MERGED" && (
         <div className="merged-banner" role="status">
@@ -126,16 +251,6 @@ export function PrBar({
           <button className="primary" onClick={onArchive}>Archive {name}</button>
         </div>
       )}
-      {pr === null && !form && (
-        <>
-          <button className="quiet" onClick={() => onAskAgent("Commit all the work in this workspace with a clear message. Then reply with a PR title on the first line and a short PR description below it.")}>
-            <Sparkles size={14} />Commit with agent
-          </button>
-          <button className="primary" onClick={() => setForm({ title: "", body: "", draft: false })}>
-            <GitPullRequest size={16} />Create PR
-          </button>
-        </>
-      )}
       {form && (
         <div className="pr-form">
           <input placeholder="Title" aria-label="PR title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} autoFocus />
@@ -144,9 +259,9 @@ export function PrBar({
             <label className="check"><input type="checkbox" checked={form.draft} onChange={(e) => setForm({ ...form, draft: e.target.checked })} /> Open as draft</label>
             <span className="spacer" />
             <button className="quiet" onClick={() => setForm(null)}>Cancel</button>
-            <button className="primary" disabled={busy || !form.title.trim()} onClick={create}>
-              {busy ? <span className="spinner" /> : <GitPullRequest size={16} />}
-              {busy ? "Pushing…" : "Push and open PR"}
+            <button className="primary" disabled={!!busy || !form.title.trim()} onClick={create}>
+              {busy === "pr" ? <span className="spinner" /> : <GitPullRequest size={16} />}
+              {busy === "pr" ? "Pushing…" : "Push and open PR"}
             </button>
           </div>
         </div>

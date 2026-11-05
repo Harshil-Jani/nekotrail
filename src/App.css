@@ -173,7 +173,11 @@ code, pre { font-family: var(--mono); font-size: 13px; }
 /* ---------- chat ---------- */
 .chat { display: flex; flex-direction: column; height: 100%; }
 .chat-tabs { display: flex; gap: 0; align-items: stretch; padding: 0 var(--s2); border-bottom: 1px solid var(--line); overflow-x: auto; min-height: 32px; position: relative; }
-.chat-tab { border: none; padding: 0 var(--s3); font-weight: 500; font-size: 12px; color: var(--muted); max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.chat-tab { display: inline-flex; align-items: center; color: var(--muted); max-width: 260px; flex-shrink: 0; }
+.chat-tab > button[role="tab"] { border: none; padding: 0 var(--s3); font-weight: 500; font-size: 12px; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; height: 100%; }
+.chat-tab .tab-close { border: none; padding: 2px; margin-right: 4px; color: var(--muted); opacity: 0; }
+.chat-tab:hover .tab-close, .chat-tab .tab-close:focus-visible { opacity: 1; }
+.chat-tab .tab-close:hover { color: var(--text); }
 .chat-tab.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
 .messages { flex: 1; overflow-y: auto; padding: var(--s5) var(--s6); display: flex; flex-direction: column; gap: var(--s3); }
 .thread { width: 100%; max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--s3); }
@@ -410,3 +414,48 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1p
 .shortcuts dt { order: 2; }
 .shortcuts dd { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .palette, .palette-backdrop { animation: none; } }
+
+/* ---------- git actions ---------- */
+button.branch { border: none; padding: 2px 4px; font-weight: 400; }
+button.branch:hover { color: var(--text); }
+.branch-edit { font-family: var(--mono); font-size: 12px; padding: 2px 6px; width: 320px; }
+.git-actions { display: inline-flex; align-items: stretch; }
+.git-actions > button { border-right: none; }
+.git-menu { position: relative; display: inline-flex; }
+.icon-btn { padding: 4px 6px; }
+.git-actions > .git-menu:first-child .icon-btn { border-left: 1px solid var(--line); }
+button.good-btn { background: var(--good); border-color: var(--good); color: #000; }
+button.good-btn:hover { background: #20d095; }
+.menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); padding: var(--s1) 0; display: flex; flex-direction: column; }
+.menu button { border: none; justify-content: flex-start; padding: 7px var(--s3); font-weight: 500; width: 100%; }
+.menu button span { flex: 1; text-align: left; }
+.menu button svg { color: var(--muted); }
+.menu button:hover:not(:disabled) svg { color: var(--accent); }
+
+/* ---------- repo settings ---------- */
+.modal.repo-settings { width: 640px; max-height: 88vh; overflow-y: auto; border: 1px solid var(--line); }
+.seg { display: flex; border-bottom: 1px solid var(--line); }
+.seg button { border: none; border-bottom: 2px solid transparent; padding: 6px var(--s3); color: var(--muted); font-weight: 600; }
+.seg button.on { color: var(--text); border-bottom-color: var(--accent); }
+.field small { font-weight: 400; font-size: 12px; line-height: 1.5; }
+.env-row { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: var(--s2); }
+.env-row input { font-family: var(--mono); font-size: 12.5px; font-weight: 400; }
+.add-env { align-self: flex-start; padding-left: 0; }
+
+.ctx { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; padding: 0 4px; cursor: default; }
+.title-edit { font-size: 15px; font-weight: 700; padding: 2px 6px; width: 320px; }
+.status-select { font-size: 12px; padding: 3px var(--s6) 3px var(--s2); }
+.status-select.st-auto { color: var(--muted); }
+.status-select.st-backlog { color: var(--muted); }
+.status-select.st-in_progress { color: var(--wait); }
+.status-select.st-in_review { color: var(--good); }
+.status-select.st-done { color: #c69cff; }
+.nw-source { padding: 0 var(--s3); }
+.nw-prompt.short { min-height: 72px; font-size: 14px; }
+.nw-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; padding: var(--s1) 0; border-bottom: 1px solid var(--line); }
+.nw-list p { padding: var(--s3) var(--s4); margin: 0; display: flex; gap: var(--s2); align-items: center; }
+.nw-list button { border: none; justify-content: flex-start; padding: 7px var(--s4); font-weight: 400; gap: var(--s3); }
+.nw-list button.on { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.nw-pr-title { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.nw-branch { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); }
+.nw-branch input { width: 100%; font-family: var(--mono); font-size: 13px; }

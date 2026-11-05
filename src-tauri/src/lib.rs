@@ -159,6 +159,22 @@ async fn workspace_scripts(st: State<'_, AppState>, id: String) -> Res<config::S
 
 // ---------- workspaces ----------
 
+/// Environment for anything running in a workspace: the repo's variables plus workspace facts.
+/// Each workspace gets 10 ports from `NEKOTRAIL_PORT`, stable for its lifetime.
+fn workspace_env(repo: &Repo, ws: &Workspace) -> Vec<(String, String)> {
+    let hash = ws.id.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+    let port = 41000 + (hash % 1800) * 10; // 41000..58990
+    let mut env = vec![
+        ("NEKOTRAIL_PORT".to_string(), port.to_string()),
+        ("NEKOTRAIL_WORKSPACE_NAME".to_string(), ws.name.clone()),
+        ("NEKOTRAIL_WORKSPACE_PATH".to_string(), ws.path.clone()),
+        ("NEKOTRAIL_ROOT_PATH".to_string(), repo.root_path.clone()),
+        ("NEKOTRAIL_DEFAULT_BRANCH".to_string(), ws.target_branch.clone()),
+    ];
+    env.extend(repo.prefs.env.iter().cloned());
+    env
+}
+
 /// `*` matches any run of characters within one path segment.
 fn glob_match(pat: &str, name: &str) -> bool {
     let parts: Vec<&str> = pat.split('*').collect();
@@ -221,7 +237,7 @@ fn branch_slug(text: &str) -> String {
 }
 
 #[tauri::command]
-async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>) -> Res<Workspace> {
+async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>) -> Res<Workspace> {
     let (repo, taken) = {
         let db = st.db();
         let repo = db.repo(&repo_id).map_err(e)?;
@@ -235,9 +251,33 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
     while taken.contains(&name) || dir.join(&name).exists() || git::branch_exists(&root, &format!("{}/{name}", st.branch_prefix)) {
         name = names::pick(&taken.iter().cloned().chain([name.clone()]).collect::<Vec<_>>());
     }
-    let branch = format!("{}/{name}", st.branch_prefix);
     let path = dir.join(&name);
-    git::add_worktree(&root, &path, &branch, &base).map_err(e)?;
+    // Start from an existing PR or branch ("pr:123" / "branch:feature-x"), or a fresh branch.
+    let (branch, base) = match from.as_deref().and_then(|f| f.split_once(':')) {
+        Some(("pr", n)) => {
+            let info: Value = serde_json::from_str(&gh(&repo.root_path, &["pr", "view", n, "--json", "headRefName,isCrossRepository,baseRefName"])?).map_err(e)?;
+            let head = info["headRefName"].as_str().unwrap_or("pr").to_string();
+            let local = if info["isCrossRepository"].as_bool().unwrap_or(false) { format!("pr-{n}-{head}") } else { head };
+            if !git::branch_exists(&root, &local) {
+                git::git(&root, &["fetch", "--quiet", "origin", &format!("pull/{n}/head:{local}")]).map_err(e)?;
+            }
+            git::restore_worktree(&root, &path, &local).map_err(e)?;
+            (local, info["baseRefName"].as_str().unwrap_or(&base).to_string())
+        }
+        Some(("branch", b)) => {
+            let _ = git::git(&root, &["fetch", "--quiet", "origin", b]);
+            if !git::branch_exists(&root, b) {
+                git::git(&root, &["branch", "--track", b, &format!("origin/{b}")]).map_err(e)?;
+            }
+            git::restore_worktree(&root, &path, b).map_err(e)?;
+            (b.to_string(), base)
+        }
+        _ => {
+            let branch = format!("{}/{name}", st.branch_prefix);
+            git::add_worktree(&root, &path, &branch, &base).map_err(e)?;
+            (branch, base)
+        }
+    };
     let ws = Workspace {
         id: new_id(),
         repo_id,
@@ -270,13 +310,14 @@ async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> 
         if !force && git::is_dirty(path).unwrap_or(false) {
             return Err("DIRTY".into());
         }
+        let repo = st.db().repo(&ws.repo_id).map_err(e)?;
         if let Some(script) = scripts_for(&st, &ws)?.archive {
             let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
                 .args(["-lc", &script])
                 .current_dir(path)
+                .envs(workspace_env(&repo, &ws))
                 .status();
         }
-        let repo = st.db().repo(&ws.repo_id).map_err(e)?;
         git::remove_worktree(Path::new(&repo.root_path), path).map_err(e)?;
     }
     st.ptys.close(&format!("{id}:term"));
@@ -424,6 +465,101 @@ async fn pr_status(st: State<'_, AppState>, id: String) -> Res<Value> {
         st.db().set_merged(&id).map_err(e)?;
     }
     Ok(pr)
+}
+
+/// Open PRs in a repo, for "new workspace from a PR".
+#[tauri::command]
+async fn repo_prs(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let repo = st.db().repo(&id).map_err(e)?;
+    let out = gh(&repo.root_path, &["pr", "list", "--state", "open", "--limit", "50", "--json", "number,title,headRefName,author,isDraft,updatedAt"])?;
+    serde_json::from_str(&out).map_err(e)
+}
+
+/// Commit everything and push. An empty message uses the chat's first task as the subject.
+#[tauri::command]
+async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let dir = Path::new(&ws.path);
+    let msg = if message.trim().is_empty() {
+        st.db().sessions(&id).ok().and_then(|s| s.into_iter().map(|s| s.title).find(|t| t != "New chat")).unwrap_or_else(|| "Work in progress".into())
+    } else {
+        message.trim().to_string()
+    };
+    git::git(dir, &["add", "-A"]).map_err(e)?;
+    if git::git(dir, &["diff", "--cached", "--quiet"]).is_err() {
+        git::git(dir, &["commit", "-q", "-m", &msg]).map_err(e)?;
+    }
+    git::git(dir, &["push", "-u", "origin", &ws.branch]).map_err(e)?;
+    Ok(msg)
+}
+
+/// Merge the target branch from origin into the workspace. Returns "up-to-date", "merged" or
+/// "conflicts" (left in place, for the agent or the user to resolve).
+#[tauri::command]
+async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let dir = Path::new(&ws.path);
+    git::merge_target(dir, &ws.target_branch).map(str::to_string).map_err(e)
+}
+
+/// Merge the workspace's PR on GitHub. `method` is squash, merge or rebase.
+#[tauri::command]
+async fn merge_pr(st: State<'_, AppState>, id: String, method: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let flag = match method.as_str() { "merge" => "--merge", "rebase" => "--rebase", _ => "--squash" };
+    gh(&ws.path, &["pr", "merge", &ws.branch, flag])?;
+    st.db().set_merged(&id).map_err(e)?;
+    Ok(())
+}
+
+/// The last lines of each failing check's log, for "Fix errors".
+#[tauri::command]
+async fn failing_logs(st: State<'_, AppState>, id: String) -> Res<String> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let out = gh(&ws.path, &["pr", "view", &ws.branch, "--json", "statusCheckRollup"])?;
+    let v: Value = serde_json::from_str(&out).map_err(e)?;
+    let mut runs: Vec<String> = vec![];
+    let mut names: Vec<String> = vec![];
+    for c in v["statusCheckRollup"].as_array().into_iter().flatten() {
+        let res = c["conclusion"].as_str().or(c["state"].as_str()).unwrap_or("").to_uppercase();
+        if !["FAILURE", "ERROR", "TIMED_OUT", "STARTUP_FAILURE"].contains(&res.as_str()) {
+            continue;
+        }
+        names.push(c["name"].as_str().or(c["context"].as_str()).unwrap_or("check").to_string());
+        let url = c["detailsUrl"].as_str().or(c["targetUrl"].as_str()).unwrap_or("");
+        if let Some(run) = url.split("/actions/runs/").nth(1).and_then(|r| r.split('/').next())
+            && !runs.contains(&run.to_string()) {
+                runs.push(run.to_string());
+            }
+    }
+    let mut text = format!("Failing checks: {}\n", names.join(", "));
+    for run in runs.iter().take(3) {
+        if let Ok(log) = gh(&ws.path, &["run", "view", run, "--log-failed"]) {
+            let lines: Vec<&str> = log.lines().collect();
+            let tail = &lines[lines.len().saturating_sub(120)..];
+            text.push_str(&format!("\n--- run {run}, last {} lines ---\n{}\n", tail.len(), tail.join("\n")));
+        }
+    }
+    Ok(text)
+}
+
+/// Send a prompt to a workspace's most recent chat (making one if needed) and say which chat.
+#[tauri::command]
+async fn send_to_workspace(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<String> {
+    let sid = match st.db().sessions(&id).map_err(e)?.pop() {
+        Some(s) => s.id,
+        None => {
+            let s = Session {
+                id: new_id(), workspace_id: id.clone(), agent: "claude".into(), agent_session_id: None,
+                title: "New chat".into(), model: None, permission_mode: "acceptEdits".into(), effort: None,
+            };
+            st.db().insert_session(&s).map_err(e)?;
+            s.id
+        }
+    };
+    let _ = app.emit("focus-session", json!({"workspace_id": id, "session_id": sid}));
+    send(app, st, sid.clone(), text).await?;
+    Ok(sid)
 }
 
 #[tauri::command]
@@ -648,17 +784,19 @@ fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) 
 }
 
 fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()> {
-    let (session, ws, prefs) = {
+    let (session, ws, repo) = {
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
         let ws = db.workspace(&s.workspace_id).map_err(e)?;
-        let prefs = db.repo(&ws.repo_id).map(|r| r.prefs).unwrap_or_default();
+        let repo = db.repo(&ws.repo_id).map_err(e)?;
         if s.title == "New chat" {
             let t: String = text.lines().next().unwrap_or("").chars().take(48).collect();
             db.update_session_settings(&id, if t.is_empty() { "New chat" } else { &t }, s.model.as_deref(), &s.permission_mode).map_err(e)?;
         }
-        (s, ws, prefs)
+        (s, ws, repo)
     };
+    let env = workspace_env(&repo, &ws);
+    let prefs = &repo.prefs;
     let ws = maybe_name_branch(&app, st, ws, &text);
     // Snapshot the worktree first, so this turn can be undone with one click.
     let checkpoint = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id)).ok();
@@ -679,7 +817,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         cwd: Path::new(&ws.path),
         effort: session.effort.as_deref(),
         instructions: Some(prefs.general_prompt.trim()).filter(|p| !p.is_empty()),
-        env: &prefs.env,
+        env: &env,
     });
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
@@ -789,8 +927,7 @@ async fn pty_open(app: AppHandle, st: State<'_, AppState>, id: String, cwd: Stri
         .split(':')
         .next()
         .and_then(|ws_id| st.db().workspace(ws_id).ok())
-        .and_then(|w| st.db().repo(&w.repo_id).ok())
-        .map(|r| r.prefs.env)
+        .and_then(|w| st.db().repo(&w.repo_id).ok().map(|r| workspace_env(&r, &w)))
         .unwrap_or_default();
     let (a1, a2, id1, id2) = (app.clone(), app, id.clone(), id.clone());
     st.ptys
@@ -876,6 +1013,7 @@ pub fn run() {
             restore_checkpoint, workspace_files, save_attachment,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
+            repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
         ])
@@ -886,6 +1024,27 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_env_has_stable_ports_and_repo_vars() {
+        let mut repo = Repo {
+            id: "r".into(), name: "demo".into(), root_path: "/code/demo".into(), default_branch: "main".into(),
+            remote_url: None, setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        };
+        repo.prefs.env = vec![("API_URL".into(), "http://localhost".into())];
+        let ws = Workspace {
+            id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(),
+        };
+        let env = workspace_env(&repo, &ws);
+        let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
+        let port: u32 = get("NEKOTRAIL_PORT").parse().unwrap();
+        assert!((41000..59000).contains(&port) && port.is_multiple_of(10));
+        assert_eq!(get("NEKOTRAIL_PORT"), workspace_env(&repo, &ws).iter().find(|(k, _)| k == "NEKOTRAIL_PORT").unwrap().1);
+        assert_eq!(get("API_URL"), "http://localhost");
+        assert_eq!(get("NEKOTRAIL_ROOT_PATH"), "/code/demo");
+    }
 
     #[test]
     fn globs() {

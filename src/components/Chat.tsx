@@ -3,8 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Brain, Check, History, Paperclip, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
-import { api, errText, type Agent, type ChatEvent, type PermissionMode, type Session } from "../api";
+import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
+import { getSettings } from "../settings";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
 export function matchFiles(files: string[], q: string, max = 8): string[] {
@@ -40,6 +41,34 @@ const MODES: { value: PermissionMode; label: string }[] = [
   { value: "acceptEdits", label: "Auto-accept edits" },
   { value: "bypassPermissions", label: "Full auto" },
 ];
+
+const EFFORTS: Record<Agent, { value: Effort; label: string }[]> = {
+  claude: [
+    { value: "", label: "Effort: default" }, { value: "low", label: "Low effort" }, { value: "medium", label: "Medium effort" },
+    { value: "high", label: "High effort" }, { value: "xhigh", label: "Extra high effort" }, { value: "max", label: "Max effort" },
+  ],
+  codex: [
+    { value: "", label: "Reasoning: default" }, { value: "low", label: "Low reasoning" }, { value: "medium", label: "Medium reasoning" },
+    { value: "high", label: "High reasoning" }, { value: "xhigh", label: "Extra high reasoning" },
+  ],
+};
+
+/** Ring that fills as the conversation uses up the model's context window. */
+function ContextMeter({ tokens, window }: { tokens: number; window: number }) {
+  const pct = Math.min(1, tokens / window);
+  const r = 7, c = 2 * Math.PI * r;
+  const tone = pct > 0.85 ? "var(--bad)" : pct > 0.7 ? "var(--wait)" : "var(--muted)";
+  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  return (
+    <span className="ctx" title={`Context: ${k(tokens)} of ${k(window)} tokens (${Math.round(pct * 100)}%). Start a new chat or ask the agent to summarise when it fills up.`}>
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+        <circle cx="9" cy="9" r={r} fill="none" stroke="var(--line)" strokeWidth="2.5" />
+        <circle cx="9" cy="9" r={r} fill="none" stroke={tone} strokeWidth="2.5" strokeDasharray={`${pct * c} ${c}`} transform="rotate(-90 9 9)" />
+      </svg>
+      {pct >= 0.5 && <span className="num" style={{ color: tone }}>{Math.round(pct * 100)}%</span>}
+    </span>
+  );
+}
 
 // Suggestions only: any model id the CLI accepts can be typed in.
 const MODELS: Record<Agent, string[]> = {
@@ -276,12 +305,24 @@ export function Chat({
       onRunningChange();
       api.sessions(workspaceId).then(setSessions);
     });
+    const un4 = listen<{ session_id: string; context_tokens: number }>("usage", ({ payload }) => {
+      if (payload.session_id === active) setLiveTokens(payload.context_tokens);
+    });
     return () => {
       un1.then((f) => f());
       un2.then((f) => f());
       un3.then((f) => f());
+      un4.then((f) => f());
     };
   }, [active]);
+
+  // A git action (Create PR, Review...) messaged one of this workspace's chats: show it.
+  useEffect(() => {
+    const un = listen<{ workspace_id: string; session_id: string }>("focus-session", ({ payload }) => {
+      if (payload.workspace_id === workspaceId) loadSessions(payload.session_id);
+    });
+    return () => { un.then((f) => f()); };
+  }, [workspaceId]);
 
   const stick = useRef(true); // follow new output only while the reader is at the bottom
   useEffect(() => {
@@ -295,6 +336,18 @@ export function Chat({
   }, [inject?.nonce]);
 
   const rows = useMemo(() => toRows(events), [events]);
+  const [liveTokens, setLiveTokens] = useState<number | null>(null);
+  useEffect(() => setLiveTokens(null), [active]);
+  // Latest context size: live while a turn runs, else from the last finished turn.
+  const context = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev.kind === "done" && ev.context_window) return { tokens: ev.context_tokens ?? 0, window: ev.context_window };
+    }
+    return null;
+  }, [events]);
+  const ctxWindow = context?.window ?? (session?.agent === "claude" ? 200_000 : 0);
+  const ctxTokens = liveTokens ?? context?.tokens ?? 0;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [active]);
   const hidden = Math.max(0, rows.length - limit);
@@ -326,11 +379,21 @@ export function Chat({
     }
   };
 
-  const update = async (patch: Partial<Pick<Session, "model" | "permission_mode" | "title">>) => {
+  const update = async (patch: Partial<Pick<Session, "model" | "permission_mode" | "title" | "effort">>) => {
     if (!session) return;
     const next = { ...session, ...patch };
-    await api.updateSession(next.id, next.title, next.model, next.permission_mode);
+    if ("effort" in patch) await api.setSessionEffort(next.id, next.effort || null);
+    else await api.updateSession(next.id, next.title, next.model, next.permission_mode);
     setSessions((ss) => ss.map((s) => (s.id === next.id ? next : s)));
+  };
+
+  const closeChat = async (id: string) => {
+    try {
+      await api.hideSession(id);
+      await loadSessions(active === id ? undefined : active ?? undefined);
+    } catch (e) {
+      setError(errText(e));
+    }
   };
 
   const newChat = async (agent: Agent) => {
@@ -342,10 +405,15 @@ export function Chat({
     <div className="chat">
       <div className="chat-tabs" role="tablist" aria-label="Chats">
         {sessions.map((s) => (
-          <button key={s.id} role="tab" aria-selected={s.id === active} className={`chat-tab ${s.id === active ? "active" : ""}`} onClick={() => setActive(s.id)} title={s.title}>
-            {running.has(s.id) && <span className="spinner" />}
-            {s.agent === "codex" ? "Codex · " : ""}{s.title}
-          </button>
+          <span key={s.id} className={`chat-tab ${s.id === active ? "active" : ""}`}>
+            <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} title={s.title}>
+              {running.has(s.id) && <span className="spinner" />}
+              {s.agent === "codex" ? "Codex · " : ""}{s.title}
+            </button>
+            {sessions.length > 1 && !running.has(s.id) && (
+              <button className="tab-close" aria-label={`Close ${s.title}`} title="Close chat (history is kept)" onClick={() => closeChat(s.id)}><X size={12} /></button>
+            )}
+          </span>
         ))}
         <span className="newchat">
           <button className="icon" title="New chat" aria-label="New chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
@@ -454,7 +522,8 @@ export function Chat({
                   return;
                 }
               }
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              const enterSends = getSettings().sendKey === "enter";
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && (enterSends ? !e.shiftKey && !e.metaKey : e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 submit();
               }
@@ -486,6 +555,15 @@ export function Chat({
                 >
                   {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
+                <select
+                  value={session.effort ?? ""}
+                  onChange={(e) => update({ effort: (e.target.value || null) as Effort | null })}
+                  aria-label="Effort"
+                  title="How hard the model thinks. Higher is slower and costs more."
+                >
+                  {EFFORTS[session.agent].map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>
             )}
             <label className="icon attach" title="Attach files (or paste a screenshot)">
@@ -493,7 +571,7 @@ export function Chat({
               <input type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
             </label>
             <span className="spacer" />
-            <span className="muted" style={{ fontSize: 13 }}>⌘↵</span>
+            <span className="muted" style={{ fontSize: 13 }}>{getSettings().sendKey === "enter" ? "↵" : "⌘↵"}</span>
             {busy && <button className="danger" onClick={() => active && api.stop(active)}><Square size={14} />Stop</button>}
             <button className="accent" onClick={submit} disabled={!draft.trim()}>{busy ? "Queue" : "Send"}</button>
           </div>

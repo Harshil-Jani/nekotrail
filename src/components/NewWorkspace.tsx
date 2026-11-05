@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { api as backend } from "../api";
 import { ChevronDown, CornerDownLeft, GripHorizontal } from "lucide-react";
 import type { Agent, PermissionMode, Repo } from "../api";
 
@@ -8,7 +9,14 @@ const MODES: { value: PermissionMode; label: string }[] = [
   { value: "bypassPermissions", label: "Full auto" },
 ];
 
-export type NewWorkspaceRequest = { repoId: string; prompt: string; agent: Agent; model: string | null; mode: PermissionMode };
+export type NewWorkspaceRequest = {
+  repoId: string; prompt: string; agent: Agent; model: string | null; mode: PermissionMode;
+  /** "pr:123" or "branch:name" to start from existing work; empty for a fresh branch. */
+  from?: string;
+};
+
+type Source = "task" | "pr" | "branch";
+type PrItem = { number: number; title: string; headRefName: string; author: { login: string }; isDraft: boolean };
 
 /**
  * Prompt-first workspace creation: write the task, press Enter, and the agent starts in a fresh
@@ -17,11 +25,13 @@ export type NewWorkspaceRequest = { repoId: string; prompt: string; agent: Agent
 export function NewWorkspace({
   repos,
   initialRepo,
+  initialSource = "task",
   onCreate,
   onClose,
 }: {
   repos: Repo[];
   initialRepo: string;
+  initialSource?: Source;
   onCreate: (r: NewWorkspaceRequest) => Promise<void>;
   onClose: () => void;
 }) {
@@ -33,6 +43,17 @@ export function NewWorkspace({
   const [model, setModel] = useState<string>(saved.model ?? "");
   const [mode, setMode] = useState<PermissionMode>(saved.mode ?? "acceptEdits");
   const [busy, setBusy] = useState(false);
+  const [source, setSource] = useState<Source>(initialSource);
+  const [prs, setPrs] = useState<PrItem[] | null>(null);
+  const [prPick, setPrPick] = useState<number | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branch, setBranch] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    setLoadError(null);
+    if (source === "pr") { setPrs(null); backend.repoPrs(repoId).then(setPrs).catch((e) => { setPrs([]); setLoadError(String(e)); }); }
+    if (source === "branch") backend.repoBranches(repoId).then(setBranches).catch(() => setBranches([]));
+  }, [source, repoId]);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -48,7 +69,8 @@ export function NewWorkspace({
     setBusy(true);
     localStorage.setItem("nekotrail.new", JSON.stringify({ agent, model, mode }));
     try {
-      await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, mode });
+      const from = source === "pr" && prPick ? `pr:${prPick}` : source === "branch" && branch.trim() ? `branch:${branch.trim()}` : undefined;
+      await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, mode, from });
     } finally {
       setBusy(false);
     }
@@ -102,8 +124,32 @@ export function NewWorkspace({
             ))}
           </div>
         </div>
+        <nav className="seg nw-source" role="tablist" aria-label="Start from">
+          {([["task", "New task"], ["pr", "Pull request"], ["branch", "Branch"]] as [Source, string][]).map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={source === id} className={source === id ? "on" : ""} onClick={() => setSource(id)}>{label}</button>
+          ))}
+        </nav>
+        {source === "pr" && (
+          <div className="nw-list" role="listbox" aria-label="Open pull requests">
+            {prs === null && <p className="muted"><span className="spinner" /> Loading open PRs…</p>}
+            {prs?.length === 0 && <p className="muted">{loadError ? `Couldn't load PRs: ${loadError}` : "No open PRs in this repo."}</p>}
+            {prs?.map((p) => (
+              <button key={p.number} role="option" aria-selected={prPick === p.number} className={prPick === p.number ? "on" : ""} onClick={() => setPrPick(p.number)}>
+                <span className="num muted">#{p.number}</span>
+                <span className="nw-pr-title">{p.title}</span>
+                <span className="muted">@{p.author.login}{p.isDraft ? " · draft" : ""}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {source === "branch" && (
+          <div className="nw-branch">
+            <input list="nw-branches" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch name" aria-label="Branch" autoFocus />
+            <datalist id="nw-branches">{branches.map((b) => <option key={b} value={b} />)}</datalist>
+          </div>
+        )}
         <textarea
-          className="nw-prompt"
+          className={`nw-prompt ${source !== "task" ? "short" : ""}`}
           autoFocus
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -113,7 +159,7 @@ export function NewWorkspace({
               submit();
             }
           }}
-          placeholder={`What should the agent do in ${repo?.name ?? "this repo"}? Leave empty to just make the workspace.`}
+          placeholder={source === "task" ? `What should the agent do in ${repo?.name ?? "this repo"}? Leave empty to just make the workspace.` : "Optional: what should the agent do first? (e.g. address the review comments)"}
           aria-label="Task for the agent"
         />
         <div className="nw-foot">
@@ -133,9 +179,9 @@ export function NewWorkspace({
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">Shift ↵ new line · Esc close</span>
-          <button className="primary" onClick={submit} disabled={busy || !repo}>
+          <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim())}>
             {busy ? <span className="spinner" /> : null}
-            {prompt.trim() ? "Create" : "Create empty"}
+            {source === "pr" ? (prPick ? `Open #${prPick}` : "Pick a PR") : source === "branch" ? "Open branch" : prompt.trim() ? "Create" : "Create empty"}
             <CornerDownLeft size={14} />
           </button>
         </div>

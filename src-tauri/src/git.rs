@@ -244,6 +244,23 @@ pub fn restore_checkpoint(ws: &Path, checkpoint: &str) -> Result<()> {
     Ok(())
 }
 
+/// Fetch `origin/<target>` and merge it in. Returns "up-to-date", "merged" or "conflicts"
+/// (conflicts are left in the worktree for the agent or the user to resolve).
+pub fn merge_target(ws: &Path, target: &str) -> Result<&'static str> {
+    git(ws, &["fetch", "--quiet", "origin", target])?;
+    let before = git(ws, &["rev-parse", "HEAD"])?;
+    match git(ws, &["merge", "--no-edit", &format!("origin/{target}")]) {
+        Ok(_) => Ok(if git(ws, &["rev-parse", "HEAD"])? == before { "up-to-date" } else { "merged" }),
+        Err(err) => {
+            if git(ws, &["diff", "--name-only", "--diff-filter=U"]).map(|o| !o.is_empty()).unwrap_or(false) {
+                Ok("conflicts")
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
 /// Tracked and untracked (not ignored) files, for @-mentions.
 pub fn files(ws: &Path) -> Result<Vec<String>> {
     Ok(git(ws, &["ls-files", "-co", "--exclude-standard"])?.lines().map(String::from).collect())
@@ -263,6 +280,31 @@ pub mod tests {
         git(p, &["add", "."]).unwrap();
         git(p, &["commit", "-qm", "init"]).unwrap();
         d
+    }
+
+    #[test]
+    fn merge_target_reports_merged_and_conflicts() {
+        let origin = init_repo();
+        let o = origin.path();
+        let clone = tempfile::tempdir().unwrap();
+        let c = clone.path().join("c");
+        git(o, &["clone", "-q", &o.to_string_lossy(), &c.to_string_lossy()]).unwrap();
+        git(&c, &["config", "user.email", "t@example.com"]).unwrap();
+        git(&c, &["config", "user.name", "T"]).unwrap();
+        git(&c, &["checkout", "-qb", "feature"]).unwrap();
+        assert_eq!(merge_target(&c, "main").unwrap(), "up-to-date");
+
+        std::fs::write(o.join("b.txt"), "new\n").unwrap();
+        git(o, &["add", "."]).unwrap();
+        git(o, &["commit", "-qm", "b"]).unwrap();
+        assert_eq!(merge_target(&c, "main").unwrap(), "merged");
+        assert!(c.join("b.txt").exists());
+
+        std::fs::write(o.join("a.txt"), "theirs\n").unwrap();
+        git(o, &["commit", "-qam", "theirs"]).unwrap();
+        std::fs::write(c.join("a.txt"), "ours\n").unwrap();
+        git(&c, &["commit", "-qam", "ours"]).unwrap();
+        assert_eq!(merge_target(&c, "main").unwrap(), "conflicts");
     }
 
     #[test]

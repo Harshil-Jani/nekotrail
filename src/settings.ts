@@ -6,10 +6,14 @@ export type Settings = {
   sound: boolean;
   /** Where ⌘O opens the current workspace. */
   editor: "cursor" | "vscode" | "finder" | "terminal";
+  /** Which key sends a message; the other one adds a new line. */
+  sendKey: "enter" | "cmd-enter";
+  /** Archive a workspace by itself once its PR merges. */
+  archiveOnMerge: boolean;
 };
 
 const KEY = "nekotrail.settings";
-const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor" };
+const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: false };
 
 export function getSettings(): Settings {
   try {

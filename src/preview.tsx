@@ -18,7 +18,7 @@ const repos = [
   { id: "r2", name: "website", root_path: "/code/website", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null },
 ];
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
-  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", ...extra,
+  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", status: "", ...extra,
 });
 const workspaces = [
   ws("w1", "r1", "mochi", "harshil/fix-502-gateway", { pinned: true }),
@@ -38,7 +38,7 @@ const events = [
   { kind: "tool_result", id: "t3", output: "", is_error: false },
   { kind: "tool", id: "t4", name: "Bash", input: "go test ./internal/server/..." },
   { kind: "tool_result", id: "t4", output: "ok  \tsage/internal/server\t0.412s", is_error: false },
-  { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18 },
+  { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18, context_tokens: 128000, context_window: 200000 },
 ];
 const pr = {
   number: 482, url: "https://github.com", state: "OPEN", title: "Fix 502s after deploy: outlive the ALB idle timeout", isDraft: false,
@@ -61,13 +61,13 @@ const diff = `diff --git a/internal/server/http.go b/internal/server/http.go
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
-      case "snapshot": return { repos, workspaces, running: [], running_workspaces: ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"] };
+      case "snapshot": return { repos, workspaces, running: [], running_workspaces: ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       case "repo_github": return { nameWithOwner: "nactore/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "https://github.com/github.png?size=64", isPrivate: false };
       case "sky": return SKY;
       case "conductor_available": return true;
       case "sessions": return args.workspaceId === "w1"
-        ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits" }]
+        ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: "claude", agent_session_id: null, title: "New chat", model: null, permission_mode: "acceptEdits" }];
       case "session_events": return args.id === "s1" ? events : [];
       case "queued": return [];
@@ -81,6 +81,11 @@ mockIPC(
         { path: "internal/server/http_test.go", status: "A", additions: 35, deletions: 0 },
       ] : [];
       case "file_diff": return diff;
+      case "repo_prs": return [
+        { number: 512, title: "Retry webhooks with backoff", headRefName: "ana/webhook-retry", author: { login: "ana" }, isDraft: false, updatedAt: "" },
+        { number: 509, title: "Move ticket SLA timer to the worker", headRefName: "raj/sla-worker", author: { login: "raj" }, isDraft: true, updatedAt: "" },
+      ];
+      case "app_settings": return { caffeinate: "on", auto_branch: "on", home: "~/nekotrail" };
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;

@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Cat, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, ZoomIn } from "lucide-react";
-import { api, constellationOf, errText, starFor, type GithubUser, type Repo, type Sky, type Star, type Workspace } from "./api";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type GithubUser, type Repo, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -66,12 +66,15 @@ export default function App() {
   const [leaving, setLeaving] = useState<string | null>(null);
   const [sidebarW, setSidebarW] = useState(() => Number(localStorage.getItem("nekotrail.sidebar")) || 264);
   const [resizing, setResizing] = useState(false);
-  const [newFor, setNewFor] = useState<string | null>(params.get("new")); // repo id the new-workspace panel opens on
+  const [newFor, setNewFor] = useState<string | null>(params.get("new"));
+  const [newSource, setNewSource] = useState<"task" | "pr" | "branch">((params.get("from") as "pr") || "task"); // repo id the new-workspace panel opens on
   const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
   const [lastActive, setLastActive] = useState(Date.now());
   const [worriedUntil, setWorriedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [costs, setCosts] = useState<Record<string, number>>({});
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
 
@@ -79,6 +82,7 @@ export default function App() {
     const s = await api.snapshot(showArchived);
     setRepos(s.repos);
     setWorkspaces(s.workspaces);
+    setCosts(s.costs ?? {});
     setRunningSessions(new Set(s.running));
     setRunningWs(new Set(s.running_workspaces));
     setLit(new Set(s.lit));
@@ -115,7 +119,7 @@ export default function App() {
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
       if (prefs.notify === "always" || (prefs.notify === "away" && away)) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-        const name = (w && starFor(skyRef.current, w.name)?.name) || w?.name || "A workspace";
+        const name = w ? displayName(skyRef.current, w) : "A workspace";
         notify(payload.ok === false ? `${name} needs you` : `${name} is done`, payload.title || "The agent finished its turn.");
       }
     });
@@ -263,9 +267,9 @@ export default function App() {
     }
   };
 
-  const newWorkspace = async ({ repoId, prompt, agent, model, mode }: NewWorkspaceRequest) => {
+  const newWorkspace = async ({ repoId, prompt, agent, model, mode, from }: NewWorkspaceRequest) => {
     try {
-      const w = await api.createWorkspace(repoId);
+      const w = await api.createWorkspace(repoId, undefined, undefined, from);
       if (prompt) {
         // Start the agent right away in the new worktree.
         const session = await api.newSession(w.id, agent);
@@ -291,7 +295,7 @@ export default function App() {
 
   const archive = async () => {
     if (!ws) return;
-    const name = star?.name ?? ws.name;
+    const name = displayName(sky, ws);
     try {
       await api.archiveWorkspace(ws.id);
     } catch (e) {
@@ -343,7 +347,7 @@ export default function App() {
   // Everything the palette can do. Built on open, so it always reflects the current state.
   const commands = (): Command[] => {
     const c: Command[] = [];
-    const nameOf = (w: Workspace) => starFor(sky, w.name)?.name ?? w.name;
+    const nameOf = (w: Workspace) => displayName(sky, w);
     if (ws && ws.state === "active") {
       const here = nameOf(ws);
       c.push(
@@ -392,7 +396,7 @@ export default function App() {
       if (e.key === "k") { e.preventDefault(); setPalette((p) => !p); return; }
       if (e.key === ",") { e.preventDefault(); setSettingsOpen(true); return; }
       if (e.key === "o" && ws) { e.preventDefault(); openInEditor(); return; }
-      if (e.key === "n" && (ws || repos[0])) { e.preventDefault(); setNewFor(ws?.repo_id ?? repos[0].id); }
+      if (e.key.toLowerCase() === "n" && (ws || repos[0])) { e.preventDefault(); setNewSource(e.shiftKey ? "pr" : "task"); setNewFor(ws?.repo_id ?? repos[0].id); }
       if (e.key === "j") { e.preventDefault(); nextUnread(); }
       const i = Number(e.key) - 1;
       if (ws && i >= 0 && i < TABS.length) { e.preventDefault(); setTab(TABS[i].id); }
@@ -468,17 +472,44 @@ export default function App() {
           <>
             <header className="ws-header">
               <div className="ws-title">
-                <h1>
-                  {star?.name ?? ws.name}
-                  {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
-                </h1>
+                {editingTitle !== null ? (
+                  <input
+                    className="title-edit"
+                    autoFocus
+                    value={editingTitle}
+                    aria-label="Workspace name"
+                    placeholder={star?.name ?? ws.name}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onBlur={() => { api.setWorkspaceTitle(ws.id, editingTitle).then(refresh); setEditingTitle(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingTitle(null); }}
+                  />
+                ) : (
+                  <h1 onDoubleClick={() => setEditingTitle(ws.title || (star?.name ?? ws.name))} title="Double-click to rename">
+                    {displayName(sky, ws)}
+                    {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
+                  </h1>
+                )}
                 <div className="ws-sub">
                   {repo?.name}
+                  {ws.title && star ? ` · ${star.name}` : ""}
                   {star ? ` · ${starLine(star)}` : ws.imported_from ? " · imported from Conductor" : ""}
+                  {costs[ws.id] ? <span className="num" title="What the agents have spent in this workspace"> · ${costs[ws.id].toFixed(2)}</span> : null}
                 </div>
               </div>
               <span className="spacer" />
               <div className="ws-actions">
+                {ws.state === "active" && (
+                  <select
+                    className={`status-select st-${ws.status || "auto"}`}
+                    aria-label="Status"
+                    title="Status. Automatic follows the PR: open is In review, merged is Done."
+                    value={ws.status}
+                    onChange={(e) => api.setWorkspaceStatus(ws.id, e.target.value as WsStatus).then(refresh)}
+                  >
+                    <option value="">Status: automatic</option>
+                    {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                )}
                 {ws.state === "archived" ? (
                   <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
                     <ArchiveRestore size={16} />Restore
@@ -503,7 +534,15 @@ export default function App() {
             </header>
 
             {ws.state === "active" && (
-              <PrBar ws={ws} name={star?.name ?? ws.name} refreshKey={refreshKey} onArchive={archive} onAskAgent={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />
+              <PrBar
+                ws={ws}
+                repo={repo ?? undefined}
+                name={displayName(sky, ws)}
+                refreshKey={refreshKey}
+                onArchive={archive}
+                onSay={say}
+                onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
+              />
             )}
 
             {ws.state === "active" && (
@@ -553,7 +592,7 @@ export default function App() {
       </main>
 
       {newFor && repos.length > 0 && (
-        <NewWorkspace repos={repos} initialRepo={newFor} onCreate={newWorkspace} onClose={() => setNewFor(null)} />
+        <NewWorkspace repos={repos} initialRepo={newFor} initialSource={newSource} onCreate={newWorkspace} onClose={() => { setNewFor(null); setNewSource("task"); }} />
       )}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}

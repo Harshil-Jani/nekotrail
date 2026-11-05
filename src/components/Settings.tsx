@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Volume2 } from "lucide-react";
+import { api } from "../api";
 import { chime, getSettings, saveSettings, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
@@ -7,7 +8,9 @@ const SHORTCUTS: [string, string][] = [
   ["⌘N", "New workspace"],
   ["⌘J", "Next workspace with news"],
   ["⌘1 to ⌘4", "Chat, Changes, Terminal, Notes"],
-  ["⌘↵", "Send message"],
+  ["↵ or ⌘↵", "Send message (pick which above)"],
+  ["⌘⇧P / ⌘⇧Y / ⌘⇧M", "Create PR, commit and push, merge"],
+  ["⌘⇧L / ⌘⇧R / ⌘⇧X", "Pull latest, review, fix failing checks"],
   ["⌘O", "Open workspace in your editor"],
   ["⌘+ / ⌘- / ⌘0", "Zoom"],
   ["⌘,", "Settings"],
@@ -17,6 +20,13 @@ const SHORTCUTS: [string, string][] = [
 /** ⌘, : a few preferences and the shortcut list. Changes save as you make them. */
 export function Settings({ onClose, home }: { onClose: () => void; home: string }) {
   const [s, setS] = useState<S>(getSettings);
+  const [backend, setBackend] = useState<{ caffeinate: "on" | "off"; auto_branch: "on" | "off" } | null>(null);
+  useEffect(() => { api.appSettings().then(setBackend).catch(() => {}); }, []);
+  const setB = (key: "caffeinate" | "auto_branch", on: boolean) => {
+    const v = on ? "on" : "off";
+    setBackend((b) => (b ? { ...b, [key]: v } : b));
+    api.setAppSetting(key, v);
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -52,7 +62,30 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
         </section>
 
         <section>
+          <h3>Chat</h3>
+          <label className="setting">
+            <span>Send with</span>
+            <select value={s.sendKey} onChange={(e) => set("sendKey", e.target.value as S["sendKey"])}>
+              <option value="enter">↵ sends, ⇧↵ new line</option>
+              <option value="cmd-enter">⌘↵ sends, ↵ new line</option>
+            </select>
+          </label>
+          <label className="setting">
+            <span>Keep the Mac awake while agents work</span>
+            <input type="checkbox" className="switch" checked={backend?.caffeinate !== "off"} onChange={(e) => setB("caffeinate", e.target.checked)} />
+          </label>
+        </section>
+
+        <section>
           <h3>Workspaces</h3>
+          <label className="setting">
+            <span>Name the branch after the first message</span>
+            <input type="checkbox" className="switch" checked={backend?.auto_branch !== "off"} onChange={(e) => setB("auto_branch", e.target.checked)} />
+          </label>
+          <label className="setting">
+            <span>Archive when the PR merges</span>
+            <input type="checkbox" className="switch" checked={s.archiveOnMerge} onChange={(e) => set("archiveOnMerge", e.target.checked)} />
+          </label>
           <label className="setting">
             <span>⌘O opens in</span>
             <select value={s.editor} onChange={(e) => set("editor", e.target.value as S["editor"])}>
