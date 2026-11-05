@@ -3,6 +3,12 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.8.0 (2026-11-06)
+
+**Storage**
+- See how much disk each workspace uses and clean its build output in one click: dependency and build folders that git ignores (node_modules, .venv, target, .next, caches). Code, commits and .env files are never touched, and each folder is checked against git again right before it's deleted. On a real install this found 2.6 GB to free.
+- When the disk drops under 3 GB, the sidebar says so and opens Storage. A full disk makes agents and builds fail in confusing ways.
+
 ## 0.7.0 (2026-11-06)
 
 **Ask before changes** (Claude)

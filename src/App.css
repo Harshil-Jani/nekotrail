@@ -968,3 +968,14 @@ html.native .repo-actions { background: none; }
 .approval-input { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
 .approval-done code { font-size: 11.5px; color: var(--muted); }
 .approval-done.denied { color: var(--bad); }
+.modal.storage { width: 620px; }
+.storage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface); max-height: 52vh; overflow-y: auto; }
+.storage-list li { display: grid; grid-template-columns: 1fr 120px auto; align-items: center; gap: var(--s3); padding: 8px var(--s3); border-bottom: 0.5px solid var(--line); }
+.storage-list li:last-child { border-bottom: none; }
+.storage-list li > div:first-child { display: flex; flex-direction: column; min-width: 0; }
+.storage-list b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.storage-list .muted { font-size: 11.5px; }
+.storage-bar { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
+.storage-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.low-disk { justify-content: flex-start; height: auto; padding: 6px 8px; background: var(--wait-soft); color: var(--wait); box-shadow: none; font-size: 12px; white-space: normal; text-align: left; }
+.low-disk:hover { background: var(--wait-soft); filter: brightness(1.1); }

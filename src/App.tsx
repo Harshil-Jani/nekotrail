@@ -21,6 +21,7 @@ import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
 import { Scorecard } from "./components/Scorecard";
+import { Storage } from "./components/Storage";
 import { Settings } from "./components/Settings";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { UserAttentionType } from "@tauri-apps/api/window";
@@ -249,6 +250,15 @@ export default function App() {
   const [cloning, setCloning] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
+  const [storage, setStorage] = useState(params.has("storage"));
+  // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
+  const [freeMb, setFreeMb] = useState<number | null>(null);
+  useEffect(() => {
+    const load = () => api.freeDiskMb().then(setFreeMb).catch(() => {});
+    load();
+    const t = setInterval(load, 120_000);
+    return () => clearInterval(t);
+  }, []);
   const [comparing, setComparing] = useState<string | null>(params.get("compare")); // pair id
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
@@ -667,6 +677,7 @@ export default function App() {
     c.push(
       { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
       { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
+      { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
       { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
       { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
@@ -755,6 +766,8 @@ export default function App() {
         onArchive={(id) => archive({ id })}
         onBoard={() => setView("board")}
         ram={ram}
+        lowDiskMb={freeMb !== null && freeMb < 3072 ? freeMb : null}
+        onStorage={() => setStorage(true)}
         canBack={history.current.at > 0}
         canForward={history.current.at < history.current.stack.length - 1}
         onBack={() => goHistory(-1)}
@@ -954,6 +967,7 @@ export default function App() {
         </div>
       )}
       {scorecard && <Scorecard onClose={() => setScorecard(false)} />}
+      {storage && <Storage names={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : id; }} onClose={() => setStorage(false)} onSay={say} />}
       {comparing && (
         <Compare
           workspaces={workspaces.filter((w) => w.pair_id === comparing && w.state === "active")}

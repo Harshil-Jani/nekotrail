@@ -136,6 +136,12 @@ mockIPC(
         { agent: "claude", turns: 212, errors: 9, duration_ms: 212 * 96000, merged: 31, cost_usd: 148.2 },
         { agent: "codex", turns: 87, errors: 6, duration_ms: 87 * 71000, merged: 11, cost_usd: 39.6 },
       ];
+      case "free_disk_mb": return 1430;
+      case "workspace_storage": return [
+        { workspace_id: "w1", total_kb: 2_400_000, cleanable_kb: 2_150_000, dirs: [{ path: ".venv", kb: 1_900_000 }, { path: "node_modules", kb: 250_000 }] },
+        { workspace_id: "w2", total_kb: 940_000, cleanable_kb: 431_000, dirs: [{ path: "web/.next", kb: 431_000 }] },
+        { workspace_id: "w3", total_kb: 120_000, cleanable_kb: 0, dirs: [] },
+      ];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;

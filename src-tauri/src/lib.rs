@@ -1051,6 +1051,55 @@ async fn overlaps(app: AppHandle, id: String) -> Res<Vec<Value>> {
     .map_err(e)?
 }
 
+/// Disk used by each workspace folder, and how much of it is build output that can be cleaned.
+#[tauri::command]
+async fn workspace_storage(app: AppHandle) -> Res<Vec<Value>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let wss = app.state::<AppState>().db().workspaces(false).map_err(e)?;
+        let handles: Vec<_> = wss.into_iter().map(|w| std::thread::spawn(move || {
+            let p = Path::new(&w.path);
+            if !p.exists() { return None; }
+            let dirs = git::cleanable(p);
+            Some(json!({
+                "workspace_id": w.id, "total_kb": git::dir_kb(p),
+                "cleanable_kb": dirs.iter().map(|d| d.1).sum::<u64>(),
+                "dirs": dirs.iter().map(|d| json!({"path": d.0, "kb": d.1})).collect::<Vec<_>>(),
+            }))
+        })).collect();
+        Ok(handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect())
+    })
+    .await
+    .map_err(e)?
+}
+
+/// Free space on the disk that holds nekotrail's workspaces, in MB.
+#[tauri::command]
+async fn free_disk_mb(st: State<'_, AppState>) -> Res<u64> {
+    let out = Command::new("df").arg("-k").arg(st.home.parent().unwrap_or(&st.home)).output().map_err(e)?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let avail = text.lines().nth(1).and_then(|l| l.split_whitespace().nth(3)).and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
+    Ok(avail / 1024)
+}
+
+/// Delete a workspace's build output (git-ignored dependency and build folders). Returns KB freed.
+#[tauri::command]
+async fn clean_workspace(app: AppHandle, id: String) -> Res<u64> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<AppState>();
+        let busy = {
+            let runs = st.runs.lock().unwrap();
+            st.db().sessions(&id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(false)
+        };
+        if busy {
+            return Err("An agent is working in this workspace. Clean it when it's done.".to_string());
+        }
+        let ws = st.db().workspace(&id).map_err(e)?;
+        Ok(git::clean(Path::new(&ws.path)))
+    })
+    .await
+    .map_err(e)?
+}
+
 // ---------- autopilot: drive a PR to green without you ----------
 
 const AUTOPILOT_TRIES: u64 = 3;
@@ -2000,7 +2049,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

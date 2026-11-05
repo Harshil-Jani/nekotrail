@@ -312,6 +312,61 @@ pub fn move_worktree(repo: &Path, from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Build output and dependency folders that are safe to delete because they are regenerated.
+const HEAVY: &[&str] = &[
+    "node_modules", "target", "dist", "build", ".next", ".nuxt", ".turbo", ".parcel-cache", ".svelte-kit",
+    ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".gradle", "coverage", "DerivedData", "Pods",
+];
+
+/// Folders under `ws` (up to 4 levels deep) named like build output AND ignored by git, with their
+/// size in KB. Only ignored folders count, so nothing tracked or hand-made is ever offered.
+pub fn cleanable(ws: &Path) -> Vec<(String, u64)> {
+    fn walk(root: &Path, dir: &Path, depth: u32, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            let Ok(ft) = e.file_type() else { continue };
+            if !ft.is_dir() || ft.is_symlink() { continue; }
+            let name = e.file_name().to_string_lossy().to_string();
+            if name == ".git" || name == ".nekotrail" { continue; }
+            if HEAVY.contains(&name.as_str()) {
+                out.push(p.strip_prefix(root).unwrap_or(&p).to_path_buf());
+            } else if depth < 4 {
+                walk(root, &p, depth + 1, out);
+            }
+        }
+    }
+    let mut found = vec![];
+    walk(ws, ws, 1, &mut found);
+    found
+        .into_iter()
+        .filter(|rel| is_ignored(ws, &rel.to_string_lossy()))
+        .map(|rel| { let kb = dir_kb(&ws.join(&rel)); (rel.to_string_lossy().to_string(), kb) })
+        .collect()
+}
+
+pub fn is_ignored(ws: &Path, rel: &str) -> bool {
+    Command::new("git").arg("-C").arg(ws).args(["check-ignore", "-q", rel]).status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// Size of a folder in KB (`du -sk`), 0 if it can't be read.
+pub fn dir_kb(p: &Path) -> u64 {
+    Command::new("du").arg("-sk").arg(p).output().ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().next().and_then(|n| n.parse().ok()))
+        .unwrap_or(0)
+}
+
+/// Delete the cleanable folders, re-checking each is still git-ignored right before removing it.
+pub fn clean(ws: &Path) -> u64 {
+    let mut freed = 0;
+    for (rel, kb) in cleanable(ws) {
+        if is_ignored(ws, &rel) && std::fs::remove_dir_all(ws.join(&rel)).is_ok() {
+            freed += kb;
+        }
+    }
+    freed
+}
+
 /// Tracked and untracked (not ignored) files, for @-mentions.
 pub fn files(ws: &Path) -> Result<Vec<String>> {
     Ok(git(ws, &["ls-files", "-co", "--exclude-standard"])?.lines().map(String::from).collect())
@@ -356,6 +411,26 @@ pub mod tests {
         assert_eq!(get("img.bin").additions, 0);
         assert_eq!(get("untracked.txt").additions, 2);
         assert!(!c.iter().any(|f| f.path.contains("old name")));
+    }
+
+    #[test]
+    fn cleaning_only_removes_ignored_build_folders() {
+        let repo = init_repo();
+        let r = repo.path();
+        std::fs::write(r.join(".gitignore"), "node_modules/\napps/web/.next/\n.env\n").unwrap();
+        git(r, &["add", ".gitignore"]).unwrap();
+        git(r, &["commit", "-qm", "ignore"]).unwrap();
+        for d in ["node_modules/pkg", "apps/web/.next/cache", "build"] {
+            std::fs::create_dir_all(r.join(d)).unwrap();
+            std::fs::write(r.join(d).join("f.bin"), vec![7u8; 4096]).unwrap();
+        }
+        std::fs::write(r.join(".env"), "SECRET=1").unwrap();
+        let found: Vec<String> = cleanable(r).into_iter().map(|(p, _)| p).collect();
+        assert!(found.contains(&"node_modules".to_string()) && found.contains(&"apps/web/.next".to_string()), "{found:?}");
+        assert!(!found.contains(&"build".to_string()), "build/ is not ignored here, so it must stay");
+        assert!(clean(r) > 0);
+        assert!(!r.join("node_modules").exists() && !r.join("apps/web/.next").exists());
+        assert!(r.join("build/f.bin").exists() && r.join(".env").exists() && r.join("a.txt").exists());
     }
 
     #[test]

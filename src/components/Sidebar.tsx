@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { api, displayName, statusOf, STATUS_LABEL, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
@@ -44,6 +44,9 @@ type Props = {
   onBack: () => void;
   onForward: () => void;
   onToggleSidebar: () => void;
+  /** Free disk space in MB when it is getting low; null when fine. */
+  lowDiskMb: number | null;
+  onStorage: () => void;
 };
 
 const DRAG = "application/x-nekotrail-workspace";
@@ -357,6 +360,11 @@ export function Sidebar(p: Props) {
           <div className="usage num" title={`API-equivalent prices reported by the CLIs. On a Claude or ChatGPT plan you aren't billed per token.\n7 days by agent: ${Object.entries(p.usage.by_agent).map(([a, c]) => `${a} $${c.toFixed(2)}`).join(", ")}`}>
             Today ${p.usage.today.toFixed(2)} · 7 days ${p.usage.week.toFixed(2)}
           </div>
+        )}
+        {p.lowDiskMb !== null && (
+          <button className="low-disk" onClick={p.onStorage}>
+            <HardDrive size={14} />Only {p.lowDiskMb >= 1024 ? `${(p.lowDiskMb / 1024).toFixed(1)} GB` : `${p.lowDiskMb} MB`} free. Clean build folders
+          </button>
         )}
         <button className={`quiet ${p.showArchived ? "on" : ""}`} onClick={p.onToggleArchived} aria-pressed={p.showArchived}>
           {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
