@@ -101,11 +101,15 @@ pub fn merge_base(ws: &Path, target: &str) -> Result<String> {
 
 /// Files changed in the workspace versus the target branch, including uncommitted and untracked work.
 pub fn changes(ws: &Path, target: &str) -> Result<Vec<FileChange>> {
-    let base = merge_base(ws, target)?;
+    changes_since(ws, &merge_base(ws, target)?)
+}
+
+/// Files changed versus `base` (a commit), plus untracked files. `HEAD` gives uncommitted work only.
+pub fn changes_since(ws: &Path, base: &str) -> Result<Vec<FileChange>> {
     let mut out: Vec<FileChange> = Vec::new();
 
-    let numstat = git(ws, &["diff", "--numstat", &base])?;
-    let names = git(ws, &["diff", "--name-status", &base])?;
+    let numstat = git(ws, &["diff", "--numstat", base])?;
+    let names = git(ws, &["diff", "--name-status", base])?;
     for (ns, st) in numstat.lines().zip(names.lines()) {
         let mut n = ns.split('\t');
         let add = n.next().unwrap_or("0").parse().unwrap_or(0);
@@ -126,8 +130,11 @@ pub fn changes(ws: &Path, target: &str) -> Result<Vec<FileChange>> {
 
 /// Unified diff of one file versus the target branch's merge base.
 pub fn file_diff(ws: &Path, target: &str, file: &str) -> Result<String> {
-    let base = merge_base(ws, target)?;
-    let d = git(ws, &["diff", &base, "--", file])?;
+    file_diff_since(ws, &merge_base(ws, target)?, file)
+}
+
+pub fn file_diff_since(ws: &Path, base: &str, file: &str) -> Result<String> {
+    let d = git(ws, &["diff", base, "--", file])?;
     if !d.is_empty() {
         return Ok(d);
     }
@@ -368,6 +375,10 @@ pub mod tests {
         );
         assert!(file_diff(&ws, "main", "a.txt").unwrap().contains("+three"));
         assert!(file_diff(&ws, "main", "new.txt").unwrap().contains("+y"));
+        // Uncommitted only: the committed "two" is not in it, the uncommitted "three" is.
+        let unc = file_diff_since(&ws, "HEAD", "a.txt").unwrap();
+        assert!(unc.contains("+three") && !unc.contains("+two"));
+        assert_eq!(changes_since(&ws, "HEAD").unwrap()[0].additions, 1);
 
         // Archive keeps the branch; restore brings the worktree back.
         git(&ws, &["add", "."]).unwrap();

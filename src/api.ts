@@ -151,8 +151,11 @@ export const api = {
   setUnread: (id: string, unread: boolean) => invoke<void>("set_unread", { id, unread }),
   setNotes: (id: string, notes: string) => invoke<void>("set_notes", { id, notes }),
   setTargetBranch: (id: string, branch: string) => invoke<void>("set_target_branch", { id, branch }),
-  changes: (id: string) => invoke<FileChange[]>("changes", { id }),
-  fileDiff: (id: string, file: string) => invoke<string>("file_diff", { id, file }),
+  changes: (id: string, uncommitted = false) => invoke<FileChange[]>("changes", { id, uncommitted }),
+  fileDiff: (id: string, file: string, uncommitted = false) => invoke<string>("file_diff", { id, file, uncommitted }),
+  readFile: (id: string, path: string) => invoke<string>("read_file", { id, path }),
+  writeFile: (id: string, path: string, content: string) => invoke<void>("write_file", { id, path, content }),
+  prReviewComments: (id: string) => invoke<import("./components/Diff").GhComment[]>("pr_review_comments", { id }),
   openIn: (id: string, app: "finder" | "vscode" | "cursor" | "terminal") => invoke<void>("open_in", { id, app }),
   prStatus: (id: string) => invoke<Pr>("pr_status", { id }),
   createPr: (id: string, title: string, body: string, draft: boolean) =>

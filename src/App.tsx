@@ -74,6 +74,8 @@ export default function App() {
   const [worriedUntil, setWorriedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [costs, setCosts] = useState<Record<string, number>>({});
+  const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
+  const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
@@ -396,6 +398,7 @@ export default function App() {
       if (e.key === "k") { e.preventDefault(); setPalette((p) => !p); return; }
       if (e.key === ",") { e.preventDefault(); setSettingsOpen(true); return; }
       if (e.key === "o" && ws) { e.preventDefault(); openInEditor(); return; }
+      if (e.key === "p" && !e.shiftKey && ws) { e.preventDefault(); api.workspaceFiles(ws.id).then(setQuickOpen).catch((er) => say(errText(er), true)); return; }
       if (e.key.toLowerCase() === "n" && (ws || repos[0])) { e.preventDefault(); setNewSource(e.shiftKey ? "pr" : "task"); setNewFor(ws?.repo_id ?? repos[0].id); }
       if (e.key === "j") { e.preventDefault(); nextUnread(); }
       const i = Number(e.key) - 1;
@@ -568,7 +571,7 @@ export default function App() {
                     <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
-                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
+                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} focusFile={focusFile} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
                     <Terminal key={ws.id} ptyId={`${ws.id}:term`} cwd={ws.path} run={run} />
@@ -596,6 +599,16 @@ export default function App() {
       )}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+      {quickOpen && (
+        <Palette
+          placeholder="Open a file in this workspace"
+          commands={quickOpen.map((f) => ({
+            id: f, group: "Files", label: f.slice(f.lastIndexOf("/") + 1), hint: f.slice(0, f.lastIndexOf("/") + 1), keywords: f,
+            icon: <FilePlus2 size={15} />, run: () => { setTab("changes"); setFocusFile({ path: f, nonce: Date.now() }); },
+          }))}
+          onClose={() => setQuickOpen(null)}
+        />
+      )}
       {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} />}
       {toast && <div role="status" className={`toast ${toast.error ? "error" : ""}`}>{toast.text}</div>}
       {discovery && (

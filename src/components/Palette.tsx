@@ -26,7 +26,7 @@ function score(c: Command, q: string): number {
 }
 
 /** ⌘K: one box to jump to any workspace or run any action. */
-export function Palette({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
+export function Palette({ commands, onClose, placeholder = "Jump to a workspace or run a command" }: { commands: Command[]; onClose: () => void; placeholder?: string }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const list = useRef<HTMLDivElement>(null);
@@ -62,7 +62,7 @@ export function Palette({ commands, onClose }: { commands: Command[]; onClose: (
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Jump to a workspace or run a command"
+            placeholder={placeholder}
             aria-label="Search commands"
             role="combobox"
             aria-expanded="true"

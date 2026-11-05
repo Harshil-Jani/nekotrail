@@ -60,10 +60,10 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 | Status | Feature | Notes |
 |---|---|---|
 | ✅ | Line comments, send to agent | |
-| ⬜ | Uncommitted-only toggle | |
-| ⬜ | Split view, ↑/↓ between files, mark viewed | |
-| ⬜ | GitHub PR review comments in the diff | `gh api` review comments |
-| ⬜ | Quick open (⌘P) and edit a file | |
+| ✅ | Uncommitted-only toggle (⌘⌥U) | |
+| 🟡 | Split view, ↑/↓ between files, mark viewed | ↑/↓ and viewed done; split view not yet |
+| ✅ | GitHub PR review comments in the diff, send to agent | `gh api` review comments, with replies |
+| ✅ | Quick open (⌘P) and edit a file (⌘S saves) | |
 
 ## Round 5: terminal, run, ports
 

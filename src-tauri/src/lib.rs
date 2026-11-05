@@ -416,15 +416,61 @@ async fn set_target_branch(st: State<'_, AppState>, id: String, branch: String) 
 }
 
 #[tauri::command]
-async fn changes(st: State<'_, AppState>, id: String) -> Res<Vec<git::FileChange>> {
+async fn changes(st: State<'_, AppState>, id: String, uncommitted: Option<bool>) -> Res<Vec<git::FileChange>> {
     let ws = st.db().workspace(&id).map_err(e)?;
-    git::changes(Path::new(&ws.path), &ws.target_branch).map_err(e)
+    let dir = Path::new(&ws.path);
+    if uncommitted.unwrap_or(false) { git::changes_since(dir, "HEAD") } else { git::changes(dir, &ws.target_branch) }.map_err(e)
 }
 
 #[tauri::command]
-async fn file_diff(st: State<'_, AppState>, id: String, file: String) -> Res<String> {
+async fn file_diff(st: State<'_, AppState>, id: String, file: String, uncommitted: Option<bool>) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
-    git::file_diff(Path::new(&ws.path), &ws.target_branch, &file).map_err(e)
+    let dir = Path::new(&ws.path);
+    if uncommitted.unwrap_or(false) { git::file_diff_since(dir, "HEAD", &file) } else { git::file_diff(dir, &ws.target_branch, &file) }.map_err(e)
+}
+
+/// A path inside the workspace, refusing anything that escapes it.
+fn inside(ws: &Workspace, rel: &str) -> Res<PathBuf> {
+    let p = Path::new(rel);
+    if p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err("That file is outside the workspace.".into());
+    }
+    Ok(Path::new(&ws.path).join(p))
+}
+
+#[tauri::command]
+async fn read_file(st: State<'_, AppState>, id: String, path: String) -> Res<String> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let full = inside(&ws, &path)?;
+    if std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0) > 2_000_000 {
+        return Err("This file is over 2 MB; open it in your editor instead.".into());
+    }
+    std::fs::read_to_string(&full).map_err(|_| "This file isn't text, or it can't be read.".to_string())
+}
+
+#[tauri::command]
+async fn write_file(st: State<'_, AppState>, id: String, path: String, content: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    std::fs::write(inside(&ws, &path)?, content).map_err(e)
+}
+
+/// Review comments left on the workspace's PR on GitHub (line comments, not general ones).
+#[tauri::command]
+async fn pr_review_comments(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let n = gh(&ws.path, &["pr", "view", &ws.branch, "--json", "number", "--jq", ".number"])?;
+    let out = gh(&ws.path, &[
+        "api", "--paginate", &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", n.trim()),
+        "--jq", "[.[] | {id, path, line: (.line // .original_line), side, body, user: .user.login, avatar: .user.avatar_url, url: .html_url, reply_to: .in_reply_to_id, outdated: (.line == null)}]",
+    ])?;
+    // --paginate prints one JSON array per page.
+    let mut all = vec![];
+    for page in serde_json::Deserializer::from_str(&out).into_iter::<Value>() {
+        if let Value::Array(a) = page.map_err(e)? {
+            all.extend(a);
+        }
+    }
+    Ok(Value::Array(all))
 }
 
 #[tauri::command]
@@ -1060,7 +1106,7 @@ pub fn run() {
             restore_checkpoint, workspace_files, save_attachment,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
-            remove_queued, fork_session,
+            remove_queued, fork_session, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
