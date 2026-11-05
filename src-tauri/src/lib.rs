@@ -358,6 +358,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         title: String::new(),
         status: String::new(),
         pair_id: String::new(),
+        section_id: String::new(),
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
     ensure_local_excludes(&root, &prefs.copy_files);
@@ -703,6 +704,34 @@ async fn start_chat(app: AppHandle, st: State<'_, AppState>, id: String, agent: 
     let _ = app.emit("focus-session", json!({"workspace_id": id, "session_id": s.id}));
     send(app, st, s.id.clone(), text).await?;
     Ok(s.id)
+}
+
+#[tauri::command]
+async fn sections(st: State<'_, AppState>) -> Res<Vec<store::Section>> {
+    st.db().sections().map_err(e)
+}
+
+#[tauri::command]
+async fn create_section(st: State<'_, AppState>, name: String) -> Res<store::Section> {
+    let name = name.trim();
+    if name.is_empty() { return Err("Give the section a name".into()); }
+    st.db().create_section(name).map_err(e)
+}
+
+#[tauri::command]
+async fn rename_section(st: State<'_, AppState>, id: String, name: String) -> Res<()> {
+    st.db().rename_section(&id, name.trim()).map_err(e)
+}
+
+#[tauri::command]
+async fn delete_section(st: State<'_, AppState>, id: String) -> Res<()> {
+    st.db().delete_section(&id).map_err(e)
+}
+
+/// Put a workspace in a section ("" takes it out).
+#[tauri::command]
+async fn set_section(st: State<'_, AppState>, id: String, section: String) -> Res<()> {
+    st.db().set_section(&id, &section).map_err(e)
 }
 
 /// Link workspaces that got the same task (a bake-off).
@@ -1534,7 +1563,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
@@ -1557,7 +1586,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
         };
         let env = workspace_env(&repo, &ws);
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();

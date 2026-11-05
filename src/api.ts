@@ -61,7 +61,11 @@ export type Workspace = {
   status: WsStatus;
   /** Shared by the workspaces of one bake-off (same task, different agents). */
   pair_id: string;
+  /** Sidebar section, or "" for none. */
+  section_id: string;
 };
+
+export type Section = { id: string; name: string; sort: number };
 
 export type Agent = "claude" | "codex";
 export type PermissionMode = "plan" | "default" | "acceptEdits" | "bypassPermissions";
@@ -160,6 +164,11 @@ export const api = {
   setPair: (ids: string[]) => invoke<string>("set_pair", { ids }),
   workspaceStats: (id: string) => invoke<{ agent: Agent | ""; turns: number; errors: number; duration_ms: number; cost_usd: number }>("workspace_stats", { id }),
   usageSummary: () => invoke<{ today: number; week: number; by_agent: Record<string, number> }>("usage_summary"),
+  sections: () => invoke<Section[]>("sections"),
+  createSection: (name: string) => invoke<Section>("create_section", { name }),
+  renameSection: (id: string, name: string) => invoke<void>("rename_section", { id, name }),
+  deleteSection: (id: string) => invoke<void>("delete_section", { id }),
+  setSection: (id: string, section: string) => invoke<void>("set_section", { id, section }),
   modelCatalog: () => invoke<ModelCatalog>("model_catalog"),
   mcpList: (id: string, agent: Agent) => invoke<string>("mcp_list", { id, agent }),
   slashCommands: (id: string) => invoke<[string, string][]>("slash_commands", { id }),

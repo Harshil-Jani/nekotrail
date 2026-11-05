@@ -71,6 +71,9 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Repo preferences as JSON: prompts, files to copy into new workspaces, env vars.
     // Bake-offs: two workspaces given the same task by different agents share a pair id.
     add("workspaces", "pair_id", "TEXT NOT NULL DEFAULT ''")?;
+    // Sidebar sections the user makes ("Today", "Waiting on review"...); empty means none.
+    add("workspaces", "section_id", "TEXT NOT NULL DEFAULT ''")?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);")?;
     add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
     add("sessions", "effort", "TEXT")?;
     add("sessions", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
@@ -151,6 +154,15 @@ pub struct Workspace {
     pub status: String,
     #[serde(default)]
     pub pair_id: String,
+    #[serde(default)]
+    pub section_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Section {
+    pub id: String,
+    pub name: String,
+    pub sort: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -203,9 +215,10 @@ fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
         title: r.get(12)?,
         status: r.get(13)?,
         pair_id: r.get(14)?,
+        section_id: r.get(15)?,
     })
 }
-const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id";
+const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id";
 
 fn session_from(r: &Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -298,8 +311,8 @@ impl Store {
 
     pub fn insert_workspace(&self, w: &Workspace) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"),
-            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id],
+            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)"),
+            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id],
         )?;
         Ok(())
     }
@@ -364,6 +377,36 @@ impl Store {
 
     pub fn set_status(&self, id: &str, status: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET status=?2 WHERE id=?1", params![id, status])?;
+        Ok(())
+    }
+
+    pub fn sections(&self) -> Result<Vec<Section>> {
+        let mut st = self.conn.prepare("SELECT id, name, sort FROM sections ORDER BY sort, name")?;
+        let rows = st.query_map([], |r| Ok(Section { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    pub fn create_section(&self, name: &str) -> Result<Section> {
+        let sort: i64 = self.conn.query_row("SELECT COALESCE(MAX(sort), 0) + 1 FROM sections", [], |r| r.get(0))?;
+        let sec = Section { id: new_id(), name: name.to_string(), sort };
+        self.conn.execute("INSERT INTO sections (id, name, sort) VALUES (?1, ?2, ?3)", params![sec.id, sec.name, sec.sort])?;
+        Ok(sec)
+    }
+
+    pub fn rename_section(&self, id: &str, name: &str) -> Result<()> {
+        self.conn.execute("UPDATE sections SET name=?2 WHERE id=?1", params![id, name])?;
+        Ok(())
+    }
+
+    /// Delete a section; its workspaces go back to their project groups.
+    pub fn delete_section(&self, id: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET section_id='' WHERE section_id=?1", [id])?;
+        self.conn.execute("DELETE FROM sections WHERE id=?1", [id])?;
+        Ok(())
+    }
+
+    pub fn set_section(&self, workspace_id: &str, section_id: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET section_id=?2 WHERE id=?1", params![workspace_id, section_id])?;
         Ok(())
     }
 
@@ -547,8 +590,15 @@ mod tests {
             title: String::new(),
             status: String::new(),
             pair_id: String::new(),
+            section_id: String::new(),
         };
         s.insert_workspace(&w).unwrap();
+        let sec = s.create_section("Today").unwrap();
+        s.set_section(&w.id, &sec.id).unwrap();
+        assert_eq!(s.workspace(&w.id).unwrap().section_id, sec.id);
+        s.delete_section(&sec.id).unwrap();
+        assert_eq!(s.workspace(&w.id).unwrap().section_id, "");
+        assert!(s.sections().unwrap().is_empty());
         s.set_pair(std::slice::from_ref(&w.id), "p1").unwrap();
         assert_eq!(s.workspace(&w.id).unwrap().pair_id, "p1");
         s.set_title(&w.id, "Gateway fix").unwrap();

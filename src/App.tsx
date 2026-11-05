@@ -4,8 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, Crown, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type GithubUser, type Repo, type Sky, type Star, type Workspace, type WsStatus } from "./api";
+import { Archive, ArchiveRestore, Check, Crown, Kanban, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -19,6 +19,7 @@ import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
 import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
+import { Board } from "./components/Board";
 import { Settings } from "./components/Settings";
 import { chime, getSettings, saveSettings } from "./settings";
 
@@ -56,7 +57,8 @@ export default function App() {
   // Deep link: ?ws=<id>&tab=<tab>&view=sky (used by workspace links and the preview page).
   const params = new URLSearchParams(window.location.search);
   const [selected, setSelected] = useState<string | null>(params.get("ws"));
-  const [view, setView] = useState<"workspace" | "sky">(params.get("view") === "sky" ? "sky" : "workspace");
+  const [view, setView] = useState<"workspace" | "sky" | "board">((params.get("view") as "sky" | "board") || "workspace");
+  const [sections, setSections] = useState<Section[]>([]);
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
@@ -170,6 +172,7 @@ export default function App() {
     setRepos(s.repos);
     setWorkspaces(s.workspaces);
     setCosts(s.costs ?? {});
+    api.sections().then(setSections).catch(() => {});
     setRunningSessions(new Set(s.running));
     setRunningWs(new Set(s.running_workspaces));
     setLit(new Set(s.lit));
@@ -405,26 +408,26 @@ export default function App() {
     }
   };
 
-  const archive = async (opts?: { auto?: boolean }) => {
-    if (!ws) return;
-    const name = displayName(sky, ws);
-    const target = ws;
+  const archive = async (opts?: { auto?: boolean; id?: string }) => {
+    const target = opts?.id ? workspaces.find((w) => w.id === opts.id) : ws;
+    if (!target) return;
+    const name = displayName(sky, target);
     try {
-      await api.archiveWorkspace(ws.id);
+      await api.archiveWorkspace(target.id);
     } catch (e) {
       if (errText(e) !== "DIRTY") return say(errText(e), true);
       if (opts?.auto) return say(`${name} merged, but it has uncommitted changes, so it stays open.`);
-      if (!confirm(`${name} has uncommitted changes. Archive anyway? The branch ${ws.branch} is kept, but uncommitted work in the folder is lost.`)) return;
+      if (!confirm(`${name} has uncommitted changes. Archive anyway? The branch ${target.branch} is kept, but uncommitted work in the folder is lost.`)) return;
       try {
-        await api.archiveWorkspace(ws.id, true);
+        await api.archiveWorkspace(target.id, true);
       } catch (e2) {
         return say(errText(e2), true);
       }
     }
-    setLeaving(ws.id);
+    setLeaving(target.id);
     await new Promise((r) => setTimeout(r, 320));
     setLeaving(null);
-    setSelected(null);
+    if (selected === target.id) setSelected(null);
     await refresh();
     say(`Archived ${name}. Branch ${target.branch} is kept.`, false, {
       label: "Undo",
@@ -525,6 +528,8 @@ export default function App() {
     }
     c.push(
       { id: "next", group: "Go", label: "Next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "board", group: "Go", label: "Board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
+      { id: "new-section", group: "Create", label: "New sidebar section", keywords: "group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
       { id: "sky", group: "Go", label: "Night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
       { id: "settings", group: "App", label: "Settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
@@ -547,6 +552,7 @@ export default function App() {
       const k = e.key.toLowerCase();
       const go = (fn: () => void) => { e.preventDefault(); fn(); };
       if (k === "k" && !e.shiftKey) return go(() => setPalette((p) => !p));
+      if (k === "k" && e.shiftKey) return go(() => setView((v) => (v === "board" ? "workspace" : "board")));
       if (k === ",") return go(() => setSettingsOpen(true));
       if (k === "b" && !e.shiftKey && !e.altKey) return go(() => setSidebarHidden((h) => !h));
       if (k === "n") return go(() => openNew(e.shiftKey ? "pr" : "task"));
@@ -601,6 +607,11 @@ export default function App() {
         prStates={prStates}
         lines={lines}
         usage={usage}
+        sections={sections}
+        onChanged={refresh}
+        onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(w.title || displayName(sky, w)); }}
+        onArchive={(id) => archive({ id })}
+        onBoard={() => setView("board")}
       />
       <div
         className="sidebar-resizer"
@@ -612,7 +623,16 @@ export default function App() {
         onDoubleClick={() => { setSidebarW(264); localStorage.removeItem("nekotrail.sidebar"); }}
       />
       <main className="main">
-        {!(view === "workspace" && ws) && <div className="titlebar-drag" data-tauri-drag-region />}
+        {view !== "board" && !(view === "workspace" && ws) && <div className="titlebar-drag" data-tauri-drag-region />}
+        {view === "board" && (
+          <Board
+            workspaces={workspaces} repos={repos} sky={sky} prStates={prStates} lines={lines} running={runningWs} costs={costs}
+            repoFilter={getSettings().repoFilter}
+            onOpen={select}
+            onSetStatus={(id, st) => api.setWorkspaceStatus(id, st).then(refresh)}
+            onNew={() => openNew()}
+          />
+        )}
         {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}
 
         {view === "workspace" && !ws && (

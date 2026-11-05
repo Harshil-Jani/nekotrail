@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Filter, FolderGit2, ListChecks, Pin, Plus, Search, Settings2, Star, X } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
-import { api, displayName, statusOf, STATUS_LABEL, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
+import { api, displayName, statusOf, STATUS_LABEL, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
 
@@ -32,7 +32,15 @@ type Props = {
   /** Lines added / removed per workspace id. */
   lines: Record<string, [number, number]>;
   usage: { today: number; week: number; by_agent: Record<string, number> } | null;
+  sections: Section[];
+  /** Reload workspaces and sections after a change made here. */
+  onChanged: () => void;
+  onRename: (id: string) => void;
+  onArchive: (id: string) => void;
+  onBoard: () => void;
 };
+
+const DRAG = "application/x-nekotrail-workspace";
 
 function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { repo: Repo; onNew: () => void; onSettings: () => void; collapsed: boolean; onToggle: () => void; count: number }) {
   const [gh, setGh] = useState<RepoGithub>(null);
@@ -78,6 +86,79 @@ export function Sidebar(p: Props) {
     const c = getSettings().collapsed;
     saveSettings({ ...getSettings(), collapsed: c.includes(id) ? c.filter((x) => x !== id) : [...c, id] });
   };
+  // Right-click menu, drag targets and section editing.
+  const [ctx, setCtx] = useState<{ w: Workspace; x: number; y: number } | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [over, setOver] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string | null; name: string } | null>(null);
+  const [secMenu, setSecMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ctx) return;
+    const close = () => { setCtx(null); setMoveOpen(false); };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("blur", close);
+    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("blur", close); };
+  }, [ctx]);
+  const act = async (fn: () => Promise<unknown>) => { setCtx(null); setMoveOpen(false); await fn(); p.onChanged(); };
+  /** Where a dropped workspace goes: "pinned", a section id, or "" (back to its project). */
+  const drop = (target: string) => ({
+    onDragOver: (e: React.DragEvent) => { if (e.dataTransfer.types.includes(DRAG)) { e.preventDefault(); setOver(target); } },
+    onDragLeave: () => setOver((o) => (o === target ? null : o)),
+    onDrop: async (e: React.DragEvent) => {
+      const id = e.dataTransfer.getData(DRAG);
+      setOver(null);
+      if (!id) return;
+      e.preventDefault();
+      if (target === "pinned") await api.setPinned(id, true);
+      else {
+        await api.setSection(id, target);
+        if (p.workspaces.find((w) => w.id === id)?.pinned) await api.setPinned(id, false);
+      }
+      p.onChanged();
+    },
+  });
+  const saveSection = async () => {
+    if (!editing) return;
+    const name = editing.name.trim();
+    const target = editing.id;
+    setEditing(null);
+    if (!name) return;
+    if (target) await api.renameSection(target, name);
+    else await api.createSection(name);
+    p.onChanged();
+  };
+  const sectionHead = (id: string, name: string, count: number, icon: React.ReactNode, menu?: boolean) => {
+    const folded = collapsed.includes(`sec:${id}`) && !q;
+    return (
+      <div className={`repo-head section-head ${over === id ? "drop" : ""}`} {...drop(id === "pinned" ? "pinned" : id)}>
+        <button className="fold" onClick={() => toggleCollapsed(`sec:${id}`)} aria-expanded={!folded} aria-label={folded ? `Show ${name}` : `Fold ${name}`}>
+          {folded ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+        </button>
+        {icon}
+        {editing?.id === id ? (
+          <input className="section-edit" autoFocus value={editing.name} onChange={(e) => setEditing({ id, name: e.target.value })}
+            onBlur={saveSection} onKeyDown={(e) => { if (e.key === "Enter") saveSection(); if (e.key === "Escape") setEditing(null); }} />
+        ) : (
+          <span className="repo-name" onClick={() => toggleCollapsed(`sec:${id}`)} onDoubleClick={() => menu && setEditing({ id, name })}>{name}</span>
+        )}
+        <span className="repo-meta num">{count || ""}</span>
+        {menu && (
+          <span className="repo-actions">
+            <span className="git-menu">
+              <button className="icon" aria-label={`${name} options`} onClick={() => setSecMenu((m) => (m === id ? null : id))}><Ellipsis size={14} /></button>
+              {secMenu === id && (
+                <span className="menu sec-menu" role="menu" onMouseLeave={() => setSecMenu(null)}>
+                  <button role="menuitem" onClick={() => { setSecMenu(null); setEditing({ id, name }); }}><Pencil size={14} /><span>Rename</span></button>
+                  <button role="menuitem" onClick={async () => { setSecMenu(null); await api.deleteSection(id); p.onChanged(); }}><Trash2 size={14} /><span>Delete section</span></button>
+                </span>
+              )}
+            </span>
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const shownRepos = p.repos.filter((r) => !filter.length || filter.includes(r.id));
   const inFilter = (w: Workspace) => !filter.length || filter.includes(w.repo_id);
   const q = query.trim().toLowerCase();
@@ -92,6 +173,9 @@ export function Sidebar(p: Props) {
         key={w.id}
         className={`ws ${p.selected === w.id ? "selected" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
         onClick={() => p.onSelect(w.id)}
+        draggable={w.state === "active"}
+        onDragStart={(e) => { e.dataTransfer.setData(DRAG, w.id); e.dataTransfer.effectAllowed = "move"; }}
+        onContextMenu={(e) => { e.preventDefault(); setCtx({ w, x: e.clientX, y: e.clientY }); }}
       >
         <span className="ws-mark">
           {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.unread ? <span className="unread" aria-label="Unread" /> : null}
@@ -111,9 +195,9 @@ export function Sidebar(p: Props) {
     <aside className="sidebar">
       <div className="sidebar-head" data-tauri-drag-region>
         <Mascot size={26} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
-        <span className="wordmark">nekotrail</span>
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
+        <button className="icon" onClick={p.onBoard} title="Board (⌘⇧K)" aria-label="Board"><Kanban size={16} /></button>
         <span className="filter-wrap">
           <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by project" aria-label="Filter by project" aria-expanded={filterOpen}>
             <Filter size={16} />
@@ -163,21 +247,53 @@ export function Sidebar(p: Props) {
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
         {p.groupBy === "repo" && (() => {
+          const live = p.workspaces.filter((w) => w.state === "active" && inFilter(w) && match(w));
+          const pinned = live.filter((w) => w.pinned);
           // Inbox: workspaces whose agent finished while you were elsewhere.
-          const news = p.workspaces.filter((w) => w.unread && w.state === "active" && inFilter(w) && match(w) && !p.running.has(w.id));
-          return news.length > 0 ? (
-            <section className="repo needs-you">
-              <div className="repo-head status-head"><span className="unread" /><span className="repo-name">Needs you</span><span className="repo-meta num">{news.length}</span></div>
-              {news.map(row)}
-            </section>
-          ) : null;
+          const news = live.filter((w) => w.unread && !p.running.has(w.id) && !w.pinned);
+          const folded = (id: string) => collapsed.includes(`sec:${id}`) && !q;
+          return (
+            <>
+              {(pinned.length > 0 || over === "pinned") && (
+                <section className="repo">
+                  {sectionHead("pinned", "Pinned", pinned.length, <Pin size={12} className="muted" />)}
+                  {!folded("pinned") && pinned.map(row)}
+                </section>
+              )}
+              {news.length > 0 && (
+                <section className="repo needs-you">
+                  <div className="repo-head status-head"><span className="unread" /><span className="repo-name">Needs you</span><span className="repo-meta num">{news.length}</span></div>
+                  {news.map(row)}
+                </section>
+              )}
+              {p.sections.map((sec) => {
+                const ws = live.filter((w) => w.section_id === sec.id && !w.pinned);
+                return (
+                  <section key={sec.id} className="repo">
+                    {sectionHead(sec.id, sec.name, ws.length, null, true)}
+                    {!folded(sec.id) && ws.map(row)}
+                    {!folded(sec.id) && ws.length === 0 && <div className={`drop-hint ${over === sec.id ? "drop" : ""}`} {...drop(sec.id)}>Drag a workspace here</div>}
+                  </section>
+                );
+              })}
+              {editing?.id === null ? (
+                <div className="repo-head section-head">
+                  <span className="check-space" />
+                  <input className="section-edit" autoFocus placeholder="Section name" value={editing.name} onChange={(e) => setEditing({ id: null, name: e.target.value })}
+                    onBlur={saveSection} onKeyDown={(e) => { if (e.key === "Enter") saveSection(); if (e.key === "Escape") setEditing(null); }} />
+                </div>
+              ) : (
+                <button className="ws-empty new-section" onClick={() => setEditing({ id: null, name: "" })}><Plus size={13} />New section</button>
+              )}
+            </>
+          );
         })()}
         {p.groupBy === "repo"
           ? shownRepos.map((r) => {
-              const ws = p.workspaces.filter((w) => w.repo_id === r.id && match(w));
+              const ws = p.workspaces.filter((w) => w.repo_id === r.id && match(w) && !(w.state === "active" && (w.pinned || (w.section_id && p.sections.some((s) => s.id === w.section_id)))));
               const folded = collapsed.includes(r.id) && !q;
               return (
-                <section key={r.id} className="repo">
+                <section key={r.id} className="repo" {...drop("")}>
                   <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} collapsed={folded} onToggle={() => toggleCollapsed(r.id)} count={ws.length} />
                   {!folded && ws.map(row)}
                   {!folded && ws.length === 0 && !q && <button className="ws-empty" onClick={() => p.onNewWorkspace(r.id)}><Plus size={13} />New workspace</button>}
@@ -213,6 +329,29 @@ export function Sidebar(p: Props) {
           {p.showArchived ? "Hide archived" : "Show archived"}
         </button>
       </div>
+      {ctx && (
+        <div className="menu ctx-menu" role="menu" style={{ left: Math.min(ctx.x, window.innerWidth - 240), top: Math.min(ctx.y, window.innerHeight - 260) }} onMouseDown={(e) => e.stopPropagation()}>
+          <button role="menuitem" onClick={() => act(() => api.setPinned(ctx.w.id, !ctx.w.pinned))}>{ctx.w.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{ctx.w.pinned ? "Unpin" : "Pin"}</span></button>
+          <button role="menuitem" onClick={() => setMoveOpen((o) => !o)} aria-expanded={moveOpen}><FolderInput size={14} /><span>Move to section</span><ChevronRight size={13} /></button>
+          {moveOpen && (
+            <div className="ctx-sub">
+              {p.sections.map((sec) => (
+                <button key={sec.id} role="menuitemradio" aria-checked={ctx.w.section_id === sec.id} onClick={() => act(() => api.setSection(ctx.w.id, sec.id))}>
+                  {ctx.w.section_id === sec.id ? <Check size={14} /> : <span className="check-space" />}<span>{sec.name}</span>
+                </button>
+              ))}
+              {ctx.w.section_id && <button role="menuitem" onClick={() => act(() => api.setSection(ctx.w.id, ""))}><span className="check-space" /><span>No section</span></button>}
+              <button role="menuitem" onClick={() => act(async () => { const name = prompt("New section name"); if (name?.trim()) { const sec = await api.createSection(name); await api.setSection(ctx.w.id, sec.id); } })}>
+                <Plus size={14} /><span>New section…</span>
+              </button>
+            </div>
+          )}
+          <button role="menuitem" onClick={() => act(() => api.setUnread(ctx.w.id, !ctx.w.unread))}>{ctx.w.unread ? <MailOpen size={14} /> : <Mail size={14} />}<span>{ctx.w.unread ? "Mark as read" : "Mark as unread"}</span></button>
+          <button role="menuitem" onClick={() => { setCtx(null); p.onRename(ctx.w.id); }}><Pencil size={14} /><span>Rename</span></button>
+          <div className="menu-sep" />
+          <button role="menuitem" onClick={() => { setCtx(null); p.onArchive(ctx.w.id); }}><Archive size={14} /><span>Archive</span></button>
+        </div>
+      )}
     </aside>
   );
 }
