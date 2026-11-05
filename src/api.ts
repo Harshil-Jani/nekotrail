@@ -20,6 +20,12 @@ export type RepoPrefs = {
   env: [string, string][];
 };
 
+export type AppSettings = {
+  caffeinate: "on" | "off"; auto_branch: "on" | "off"; home: string;
+  claude_model: string; claude_effort: string; claude_mode: string;
+  codex_model: string; codex_effort: string; codex_mode: string;
+};
+
 export type WsStatus = "" | "backlog" | "in_progress" | "in_review" | "done";
 export type Effort = "" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -138,8 +144,8 @@ export const api = {
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),
   hideSession: (id: string) => invoke<void>("hide_session", { id }),
-  appSettings: () => invoke<{ caffeinate: "on" | "off"; auto_branch: "on" | "off"; home: string }>("app_settings"),
-  setAppSetting: (key: "caffeinate" | "auto_branch", value: "on" | "off") => invoke<void>("set_app_setting", { key, value }),
+  appSettings: () => invoke<AppSettings>("app_settings"),
+  setAppSetting: (key: Exclude<keyof AppSettings, "home">, value: string) => invoke<void>("set_app_setting", { key, value }),
   commitPush: (id: string, message = "") => invoke<string>("commit_push", { id, message }),
   pullTarget: (id: string) => invoke<"up-to-date" | "merged" | "conflicts">("pull_target", { id }),
   mergePr: (id: string, method: "squash" | "merge" | "rebase") => invoke<void>("merge_pr", { id, method }),
@@ -156,7 +162,10 @@ export const api = {
   readFile: (id: string, path: string) => invoke<string>("read_file", { id, path }),
   writeFile: (id: string, path: string, content: string) => invoke<void>("write_file", { id, path, content }),
   prReviewComments: (id: string) => invoke<import("./components/Diff").GhComment[]>("pr_review_comments", { id }),
-  openIn: (id: string, app: "finder" | "vscode" | "cursor" | "terminal") => invoke<void>("open_in", { id, app }),
+  openIn: (id: string, app: string) => invoke<void>("open_in", { id, app }),
+  openInTargets: () => invoke<{ id: string; name: string }[]>("open_in_targets"),
+  lineCounts: () => invoke<Record<string, [number, number]>>("line_counts"),
+  prStates: () => invoke<Record<string, "OPEN" | "MERGED" | "CLOSED">>("pr_states"),
   prStatus: (id: string) => invoke<Pr>("pr_status", { id }),
   createPr: (id: string, title: string, body: string, draft: boolean) =>
     invoke<string>("create_pr", { id, title, body, draft }),

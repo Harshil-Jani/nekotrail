@@ -31,8 +31,9 @@ nekotrail is an open-source, local-first desktop app for running Claude Code and
 | Checkpoints | Every message snapshots the workspace first. Hover a message and click **Rewind files to here** to undo everything the agent did from that point, commits included. |
 | Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line and send all your comments to the agent as one review. |
 | Terminal | A real login shell in the workspace folder. |
-| PRs | Push and open a PR from the app. See the author, reviewers, CI checks, comments and line counts. One click asks the agent to fix failing CI or resolve conflicts. |
-| Scripts | Setup, run and archive scripts per repo. Commit a `nekotrail.json` to share them with your team. |
+| PRs | One button for the next step: the agent opens the PR, fixes failing checks from their logs, or resolves conflicts; then squash and merge. Also commit and push, pull latest, agent review, and GitHub review comments shown in the diff. Start a workspace from any open PR. |
+| Scripts | Setup, run and archive scripts per repo, each in its own terminal tab. Commit a `nekotrail.json` to share them with your team. Every workspace gets its own ports (`NEKOTRAIL_PORT` and the next 9). |
+| Repo settings | Instructions for every chat, review and PR prompts, `.env` files copied into new workspaces, environment variables. |
 | GitHub | Your avatar and name, repo owner avatars and stars, PR authors and reviewers, all through your `gh` login. |
 | Night sky | 50 stars in 8 cat constellations. Workspaces light stars, merged PRs make them shine and draw the lines. |
 
@@ -67,16 +68,21 @@ bun run tauri dev
 
 ## Keyboard
 
+The shortcuts match Conductor's, so muscle memory carries over. The full list is in Settings (⌘,).
+
 | Keys | Action |
 |---|---|
 | ⌘K | Command palette: jump to any workspace, run any action |
-| ⌘N | New workspace: type the task, Enter starts the agent |
-| ⌘J | Next workspace with news |
-| ⌘1 to ⌘4 | Chat, Changes, Terminal, Notes |
-| ⌘↵ | Send message |
-| ⌘O | Open the workspace in your editor (pick it in Settings) |
-| ⌘, | Settings: notifications, chime, editor |
-| ⌘+ / ⌘- / ⌘0 | Zoom |
+| ⌘N / ⌘⇧N | New workspace / from a pull request or branch |
+| ⌘1 to ⌘9, ⌘⌥↑ / ⌘⌥↓ | Switch workspace |
+| ⌘⌥L | Next workspace with news |
+| ⌘L / ⌘⇧D / ⌘J | Chat / Changes / Terminal |
+| ⌘⇧P / ⌘⇧Y / ⌘⇧M | Create PR / commit and push / merge |
+| ⌘⇧R / ⌘⇧X / ⌘⇧L | Agent review / fix failing checks / pull latest |
+| ⌘R / ⌘⇧B | Run or stop the app / open localhost |
+| ⌘P | Open any file (and edit it) |
+| ⌘F | Search the chat |
+| ⌘⇧↵ | Approve the agent's plan |
 
 ## Sharing scripts with `nekotrail.json`
 

@@ -5,15 +5,17 @@ export type Settings = {
   /** A soft chime when an agent finishes. Off by default. */
   sound: boolean;
   /** Where ⌘O opens the current workspace. */
-  editor: "cursor" | "vscode" | "finder" | "terminal";
+  editor: string;
   /** Which key sends a message; the other one adds a new line. */
   sendKey: "enter" | "cmd-enter";
   /** Archive a workspace by itself once its PR merges. */
   archiveOnMerge: boolean;
+  /** Sidebar grouping. */
+  groupBy: "repo" | "status";
 };
 
 const KEY = "nekotrail.settings";
-const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: false };
+const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: false, groupBy: "repo" };
 
 export function getSettings(): Settings {
   try {

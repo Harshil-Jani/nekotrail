@@ -1,32 +1,49 @@
 import { useEffect, useState } from "react";
 import { Volume2 } from "lucide-react";
-import { api } from "../api";
+import { api, type AppSettings } from "../api";
 import { chime, getSettings, saveSettings, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
   ["⌘K", "Jump anywhere, run any command"],
-  ["⌘N", "New workspace"],
-  ["⌘J", "Next workspace with news"],
-  ["⌘1 to ⌘4", "Chat, Changes, Terminal, Notes"],
+  ["⌘N / ⌘⇧N", "New workspace / from a pull request"],
+  ["⌘1 to ⌘9", "Go to a workspace in the sidebar"],
+  ["⌘⌥↑ / ⌘⌥↓", "Previous / next workspace"],
+  ["⌘⌥L", "Next workspace with news"],
+  ["⌘L / ⌘⇧D / ⌘J", "Chat / Changes / Terminal"],
+  ["⌘T", "New chat or terminal tab"],
+  ["⌘F / ⌘G", "Search this chat / next match"],
   ["↵ or ⌘↵", "Send message (pick which above)"],
-  ["⌘⇧P / ⌘⇧Y / ⌘⇧M", "Create PR, commit and push, merge"],
-  ["⌘⇧L / ⌘⇧R / ⌘⇧X", "Pull latest, review, fix failing checks"],
+  ["⌘⇧↵", "Approve the agent's plan"],
+  ["⌘⇧⌫", "Stop the agent"],
+  ["Ctrl O", "Show every tool call's output"],
+  ["⌘⇧P / ⌘⇧Y / ⌘⇧M", "Create PR / commit and push / merge"],
+  ["⌘⇧L / ⌘⇧R / ⌘⇧X", "Pull latest / review / fix failing checks"],
+  ["⌘⇧G", "Open the PR on GitHub"],
+  ["⌘P", "Open any file"],
+  ["⌘⌥U", "Changes: all or uncommitted"],
+  ["⌘R / ⌘⇧B", "Run or stop / open localhost"],
   ["⌘O", "Open workspace in your editor"],
+  ["⌘⇧A", "Archive workspace"],
+  ["⌘B", "Hide or show the sidebar"],
   ["⌘+ / ⌘- / ⌘0", "Zoom"],
   ["⌘,", "Settings"],
-  ["@", "Mention a file in the composer"],
+  ["@ and /", "Mention a file, run a command"],
 ];
 
 /** ⌘, : a few preferences and the shortcut list. Changes save as you make them. */
 export function Settings({ onClose, home }: { onClose: () => void; home: string }) {
   const [s, setS] = useState<S>(getSettings);
-  const [backend, setBackend] = useState<{ caffeinate: "on" | "off"; auto_branch: "on" | "off" } | null>(null);
-  useEffect(() => { api.appSettings().then(setBackend).catch(() => {}); }, []);
-  const setB = (key: "caffeinate" | "auto_branch", on: boolean) => {
-    const v = on ? "on" : "off";
+  const [backend, setBackend] = useState<AppSettings | null>(null);
+  const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    api.appSettings().then(setBackend).catch(() => {});
+    api.openInTargets().then(setTargets).catch(() => {});
+  }, []);
+  const setRaw = (key: Exclude<keyof AppSettings, "home">, v: string) => {
     setBackend((b) => (b ? { ...b, [key]: v } : b));
     api.setAppSetting(key, v);
   };
+  const setB = (key: "caffeinate" | "auto_branch", on: boolean) => setRaw(key, on ? "on" : "off");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -88,17 +105,46 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
           </label>
           <label className="setting">
             <span>⌘O opens in</span>
-            <select value={s.editor} onChange={(e) => set("editor", e.target.value as S["editor"])}>
-              <option value="cursor">Cursor</option>
-              <option value="vscode">VS Code</option>
-              <option value="finder">Finder</option>
-              <option value="terminal">Terminal</option>
+            <select value={s.editor} onChange={(e) => set("editor", e.target.value)}>
+              {targets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </label>
           <div className="setting">
             <span>Folder</span>
-            <code className="muted">{home}</code>
+            <code className="muted">{backend?.home ? `${backend.home}/workspaces` : home}</code>
           </div>
+        </section>
+
+        <section>
+          <h3>New chats start with</h3>
+          {(["claude", "codex"] as const).map((a) => (
+            <div className="setting" key={a}>
+              <span>{a === "claude" ? "Claude" : "Codex"}</span>
+              <span className="row">
+                <input
+                  className="setting-model"
+                  placeholder="Default model"
+                  defaultValue={backend?.[`${a}_model`] ?? ""}
+                  key={`${a}-${backend ? "loaded" : "loading"}`}
+                  onBlur={(e) => setRaw(`${a}_model`, e.target.value.trim())}
+                  aria-label={`${a} default model`}
+                />
+                <select value={backend?.[`${a}_effort`] ?? ""} onChange={(e) => setRaw(`${a}_effort`, e.target.value)} aria-label={`${a} default effort`}>
+                  <option value="">Default effort</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="xhigh">Extra high</option>
+                  {a === "claude" && <option value="max">Max</option>}
+                </select>
+                <select value={backend?.[`${a}_mode`] || "acceptEdits"} onChange={(e) => setRaw(`${a}_mode`, e.target.value)} aria-label={`${a} default permissions`}>
+                  <option value="plan">Plan</option>
+                  <option value="acceptEdits">Auto-accept edits</option>
+                  <option value="bypassPermissions">Full auto</option>
+                </select>
+              </span>
+            </div>
+          ))}
         </section>
 
         <section>

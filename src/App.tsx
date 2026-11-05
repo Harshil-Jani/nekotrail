@@ -18,7 +18,7 @@ import { NewWorkspace, type NewWorkspaceRequest } from "./components/NewWorkspac
 import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
 import { Settings } from "./components/Settings";
-import { chime, getSettings } from "./settings";
+import { chime, getSettings, saveSettings } from "./settings";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
 
@@ -34,6 +34,7 @@ async function notify(title: string, body: string) {
 import "./App.css";
 
 type Tab = "chat" | "changes" | "terminal" | "notes";
+const TAB_KEYS: Record<Tab, string> = { chat: "⌘L", changes: "⌘⇧D", terminal: "⌘J", notes: "" };
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "changes", label: "Changes" },
@@ -94,6 +95,22 @@ export default function App() {
   const [worriedUntil, setWorriedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [costs, setCosts] = useState<Record<string, number>>({});
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [groupBy, setGroupBy] = useState<"repo" | "status">(() => getSettings().groupBy);
+  const [prStates, setPrStates] = useState<Record<string, string>>({});
+  const [lines, setLines] = useState<Record<string, [number, number]>>({});
+  const [openTargets, setOpenTargets] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => { api.openInTargets().then(setOpenTargets).catch(() => {}); }, []);
+  // Sidebar facts that cost a git or gh call per workspace: refreshed after turns and every 5 minutes.
+  useEffect(() => {
+    api.lineCounts().then(setLines).catch(() => {});
+  }, [refreshKey, workspaces.length]);
+  useEffect(() => {
+    const load = () => api.prStates().then(setPrStates).catch(() => {});
+    load();
+    const t = setInterval(load, 5 * 60_000);
+    return () => clearInterval(t);
+  }, [workspaces.length]);
   const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
   const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -390,10 +407,10 @@ export default function App() {
     if (ws && ws.state === "active") {
       const here = nameOf(ws);
       c.push(
-        { id: "tab-chat", group: here, label: "Chat", hint: "⌘1", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
-        { id: "tab-changes", group: here, label: "Changes", hint: "⌘2", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
-        { id: "tab-term", group: here, label: "Terminal", hint: "⌘3", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
-        { id: "tab-notes", group: here, label: "Notes", hint: "⌘4", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
+        { id: "tab-chat", group: here, label: "Chat", hint: "⌘L", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
+        { id: "tab-changes", group: here, label: "Changes", hint: "⌘⇧D", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
+        { id: "tab-term", group: here, label: "Terminal", hint: "⌘J", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "tab-notes", group: here, label: "Notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: runScript },
         { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
         { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
@@ -416,7 +433,7 @@ export default function App() {
       });
     }
     c.push(
-      { id: "next", group: "Go", label: "Next workspace with news", hint: "⌘J", icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "next", group: "Go", label: "Next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
       { id: "sky", group: "Go", label: "Night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
       { id: "settings", group: "App", label: "Settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
@@ -428,29 +445,46 @@ export default function App() {
     return c;
   };
 
-  // ⌘K palette, ⌘N new workspace, ⌘J next news, ⌘O editor, ⌘, settings, ⌘1-4 tabs.
+  // Conductor's shortcuts, so muscle memory carries over:
+  // ⌘K palette, ⌘N / ⌘⇧N new (from PR), ⌘1-9 workspaces, ⌘⌥↑/↓ previous/next, ⌘⌥L next with news,
+  // ⌘J terminal, ⌘⇧D changes, ⌘L chat, ⌘B sidebar, ⌘O open in, ⌘P files, ⌘R run, ⌘⇧A archive, ⌘, settings.
   useEffect(() => {
+    const sidebarRows = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws"));
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return;
-      if (e.key === "k") { e.preventDefault(); setPalette((p) => !p); return; }
-      if (e.key === ",") { e.preventDefault(); setSettingsOpen(true); return; }
-      if (e.key === "o" && ws) { e.preventDefault(); openInEditor(); return; }
-      if (e.key === "r" && !e.shiftKey && ws) { e.preventDefault(); runScript(); return; }
-      if (e.key.toLowerCase() === "b" && e.shiftKey && ws) { e.preventDefault(); openLocal(); return; }
-      if (e.key === "p" && !e.shiftKey && ws) { e.preventDefault(); api.workspaceFiles(ws.id).then(setQuickOpen).catch((er) => say(errText(er), true)); return; }
-      if (e.key.toLowerCase() === "n" && (ws || repos[0])) { e.preventDefault(); setNewSource(e.shiftKey ? "pr" : "task"); setNewFor(ws?.repo_id ?? repos[0].id); }
-      if (e.key === "j") { e.preventDefault(); nextUnread(); }
-      const i = Number(e.key) - 1;
-      if (ws && i >= 0 && i < TABS.length) { e.preventDefault(); setTab(TABS[i].id); }
+      const k = e.key.toLowerCase();
+      const go = (fn: () => void) => { e.preventDefault(); fn(); };
+      if (k === "k" && !e.shiftKey) return go(() => setPalette((p) => !p));
+      if (k === ",") return go(() => setSettingsOpen(true));
+      if (k === "b" && !e.shiftKey && !e.altKey) return go(() => setSidebarHidden((h) => !h));
+      if (k === "n" && (ws || repos[0])) return go(() => { setNewSource(e.shiftKey ? "pr" : "task"); setNewFor(ws?.repo_id ?? repos[0].id); });
+      if (e.altKey && e.code === "KeyL") return go(nextUnread);
+      if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) return go(() => {
+        const rows = sidebarRows();
+        const i = rows.findIndex((r) => r.classList.contains("selected"));
+        rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]?.click();
+      });
+      if (/^[1-9]$/.test(e.key) && !e.altKey && !e.shiftKey) return go(() => sidebarRows()[Number(e.key) - 1]?.click());
+      if (e.altKey && e.code === "KeyA") return go(addRepo);
+      if (!ws) return;
+      if (k === "j" && !e.shiftKey) return go(() => setTab((t) => (t === "terminal" ? "chat" : "terminal")));
+      if (k === "d" && e.shiftKey) return go(() => setTab("changes"));
+      if (k === "l" && !e.shiftKey && !e.altKey) return go(() => { setTab("chat"); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()); });
+      if (k === "a" && e.shiftKey) return go(archive);
+      if (e.key === "Backspace" && e.shiftKey) return go(() => { for (const id of runningSessions) api.stop(id); });
+      if (k === "o" && !e.shiftKey) return go(() => openInEditor());
+      if (k === "r" && !e.shiftKey) return go(runScript);
+      if (k === "b" && e.shiftKey) return go(openLocal);
+      if (k === "p" && !e.shiftKey) return go(() => api.workspaceFiles(ws.id).then(setQuickOpen).catch((er) => say(errText(er), true)));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls]);
+  }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls, runningSessions]);
 
   const settingsRepo = repos.find((r) => r.id === settingsFor);
 
   return (
-    <div className={`app ${resizing ? "resizing" : ""}`}>
+    <div className={`app ${resizing ? "resizing" : ""} ${sidebarHidden ? "no-sidebar" : ""}`}>
       <Sidebar
         repos={repos}
         workspaces={workspaces}
@@ -470,6 +504,10 @@ export default function App() {
         purring={purring}
         onPet={pet}
         leaving={leaving}
+        groupBy={groupBy}
+        onGroupBy={(g) => { setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); }}
+        prStates={prStates}
+        lines={lines}
       />
       <div
         className="sidebar-resizer"
@@ -489,7 +527,7 @@ export default function App() {
             <h1>{me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Hi there."}</h1>
             <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a pull request.</p>
             {repos.length > 0 ? (
-              <p className="muted">Pick a workspace on the left, press ⌘N to start a new one in {repos[0].name}, or ⌘J to jump to the next one with news.</p>
+              <p className="muted">Pick a workspace on the left, press ⌘N to start a new one in {repos[0].name}, or ⌘⌥L to jump to the next one with news. ⌘K finds everything else.</p>
             ) : (
             <ol className="steps">
               <li><b className="n">1</b><span>Add a repo with the <b>+</b> at the top left.</span></li>
@@ -566,12 +604,9 @@ export default function App() {
                     ) : (
                       <button onClick={runScript} title="Run the repo's run script (⌘R)"><Play size={14} />Run</button>
                     )}
-                    <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value as "finder").catch((er) => say(errText(er), true))}>
+                    <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value).catch((er) => say(errText(er), true))}>
                       <option value="">Open in…</option>
-                      <option value="cursor">Cursor</option>
-                      <option value="vscode">VS Code</option>
-                      <option value="finder">Finder</option>
-                      <option value="terminal">Terminal</option>
+                      {openTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                     <button className="icon" title={ws.pinned ? "Unpin" : "Pin to top"} aria-label={ws.pinned ? "Unpin" : "Pin"} onClick={() => api.setPinned(ws.id, !ws.pinned).then(refresh)}>
                       {ws.pinned ? <PinOff size={18} /> : <Pin size={18} />}
@@ -596,8 +631,8 @@ export default function App() {
 
             {ws.state === "active" && (
               <nav className="tabs" role="tablist" aria-label="Workspace">
-                {TABS.map((t, i) => (
-                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={`⌘${i + 1}`}>
+                {TABS.map((t) => (
+                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id]}>
                     {t.label}
                   </button>
                 ))}

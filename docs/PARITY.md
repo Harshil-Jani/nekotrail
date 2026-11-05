@@ -79,11 +79,11 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 
 | Status | Feature | Notes |
 |---|---|---|
-| ⬜ | Conductor's shortcuts, so muscle memory carries over | ⌘J terminal, ⌘⇧D diff, ⌘1-9 workspaces, ⌘⌥↑/↓, ⌘B sidebar |
-| ⬜ | Group sidebar by status | |
-| ⬜ | Changed-line counts in the sidebar | |
-| ⬜ | Default model and effort for new chats | |
-| ⬜ | More "open in" targets (Zed, Xcode, iTerm, Warp, Ghostty) | |
+| ✅ | Conductor's shortcuts, so muscle memory carries over | ⌘J terminal, ⌘⇧D diff, ⌘L chat, ⌘1-9 workspaces, ⌘⌥↑/↓, ⌘⌥L, ⌘B sidebar, ⌘⇧A, ⌘⇧⌫, ⌘⌥A |
+| ✅ | Group sidebar by status | PR states fetched with one `gh` call per repo |
+| ✅ | Changed-line counts in the sidebar | |
+| ✅ | Default model, effort and permissions for new chats | Per agent |
+| ✅ | More "open in" targets (Zed, Xcode, iTerm, Warp, Ghostty, JetBrains, Sublime, Windsurf) | Only installed apps are listed |
 
 ## Skipped
 

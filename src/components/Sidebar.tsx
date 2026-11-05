@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Pin, Plus, Search, Settings2, Star } from "lucide-react";
-import { api, displayName, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
+import { Archive, ArchiveRestore, FolderGit2, ListChecks, Pin, Plus, Search, Settings2, Star } from "lucide-react";
+import { api, displayName, statusOf, STATUS_LABEL, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
 
@@ -24,6 +24,12 @@ type Props = {
   onPet: () => void;
   /** Workspace being archived; its row animates off before it disappears. */
   leaving: string | null;
+  groupBy: "repo" | "status";
+  onGroupBy: (g: "repo" | "status") => void;
+  /** PR state per workspace id, for status grouping. */
+  prStates: Record<string, string>;
+  /** Lines added / removed per workspace id. */
+  lines: Record<string, [number, number]>;
 };
 
 function RepoHead({ repo, onNew, onSettings }: { repo: Repo; onNew: () => void; onSettings: () => void }) {
@@ -56,6 +62,28 @@ export function Sidebar(p: Props) {
   const label = (w: Workspace) => displayName(p.sky, w);
   const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
   const total = p.sky.stars.length;
+  const repoName = (id: string) => p.repos.find((r) => r.id === id)?.name ?? "";
+  const row = (w: Workspace) => {
+    const l = p.lines[w.id];
+    return (
+      <button
+        key={w.id}
+        className={`ws ${p.selected === w.id ? "selected" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
+        onClick={() => p.onSelect(w.id)}
+      >
+        <span className="ws-mark">
+          {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.unread ? <span className="unread" aria-label="Unread" /> : null}
+        </span>
+        <span className="ws-text">
+          <span className="ws-name">{label(w)}</span>
+          <span className="ws-branch">{p.groupBy === "status" ? `${repoName(w.repo_id)} · ` : ""}{w.branch}</span>
+        </span>
+        <span className="spacer" />
+        {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
+        {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}
+      </button>
+    );
+  };
   const pct = total ? Math.round((p.lit / total) * 100) : 0;
 
   return (
@@ -65,7 +93,15 @@ export function Sidebar(p: Props) {
         <span className="wordmark">nekotrail</span>
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
-        <button className="icon" onClick={p.onAddRepo} title="Add a local git repo" aria-label="Add repo"><Plus size={18} /></button>
+        <button
+          className="icon"
+          onClick={() => p.onGroupBy(p.groupBy === "repo" ? "status" : "repo")}
+          title={p.groupBy === "repo" ? "Group by status" : "Group by repo"}
+          aria-label={p.groupBy === "repo" ? "Group by status" : "Group by repo"}
+        >
+          {p.groupBy === "repo" ? <ListChecks size={17} /> : <FolderGit2 size={17} />}
+        </button>
+        <button className="icon" onClick={p.onAddRepo} title="Add a local git repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
       </div>
       <label className="search">
         <Search size={14} />
@@ -73,31 +109,23 @@ export function Sidebar(p: Props) {
       </label>
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
-        {p.repos.map((r) => {
-          const ws = p.workspaces.filter((w) => w.repo_id === r.id && match(w));
-          return (
-            <section key={r.id} className="repo">
-              <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} />
-              {ws.map((w) => (
-                <button
-                  key={w.id}
-                  className={`ws ${p.selected === w.id ? "selected" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
-                  onClick={() => p.onSelect(w.id)}
-                >
-                  <span className="ws-mark">
-                    {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.unread ? <span className="unread" aria-label="Unread" /> : null}
-                  </span>
-                  <span className="ws-text">
-                    <span className="ws-name">{label(w)}</span>
-                    <span className="ws-branch">{w.branch}</span>
-                  </span>
-                  <span className="spacer" />
-                  {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}
-                </button>
-              ))}
-            </section>
-          );
-        })}
+        {p.groupBy === "repo"
+          ? p.repos.map((r) => (
+              <section key={r.id} className="repo">
+                <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} />
+                {p.workspaces.filter((w) => w.repo_id === r.id && match(w)).map(row)}
+              </section>
+            ))
+          : (["in_progress", "in_review", "backlog", "done"] as const).map((st) => {
+              const ws = p.workspaces.filter((w) => w.state === "active" && match(w) && statusOf(w, p.prStates[w.id]) === st);
+              if (!ws.length) return null;
+              return (
+                <section key={st} className="repo">
+                  <div className="repo-head status-head"><span className={`status-dot st-${st}`} /><span className="repo-name">{STATUS_LABEL[st]}</span><span className="repo-meta num">{ws.length}</span></div>
+                  {ws.map(row)}
+                </section>
+              );
+            })}
       </div>
       <div className="sidebar-foot">
         <button className="me" onClick={p.onSky} title="Open your night sky">

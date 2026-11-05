@@ -509,3 +509,14 @@ button.good-btn:hover { background: #20d095; }
 .term-action { align-self: center; padding: 2px var(--s2); font-size: 12px; margin-right: var(--s2); }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px rgba(0, 186, 124, 0.2); }
 .terminal-wrap .terminal { height: 100%; box-sizing: border-box; }
+.setting-model { width: 130px; font-size: 12.5px; padding: 4px var(--s2); }
+.setting .row select { min-width: 0; font-size: 12.5px; }
+.app.no-sidebar { grid-template-columns: 0 0 1fr; }
+.app.no-sidebar .sidebar { display: none; }
+.status-head { cursor: default; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; margin: 0 6px; }
+.status-dot.st-in_progress { background: var(--wait); }
+.status-dot.st-in_review { background: var(--good); }
+.status-dot.st-backlog { background: var(--muted); }
+.status-dot.st-done { background: #c69cff; }
+.ws-lines { display: inline-flex; gap: 4px; font-size: 11px; opacity: 0.85; }

@@ -399,12 +399,18 @@ async fn hide_session(st: State<'_, AppState>, id: String) -> Res<()> {
 async fn app_settings(st: State<'_, AppState>) -> Res<Value> {
     let db = st.db();
     let get = |k: &str| db.setting(k).ok().flatten().unwrap_or_else(|| "on".into());
-    Ok(json!({"caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "home": st.home.to_string_lossy()}))
+    let raw = |k: &str| db.setting(k).ok().flatten().unwrap_or_default();
+    Ok(json!({
+        "caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "home": st.home.to_string_lossy(),
+        "claude_model": raw("claude_model"), "claude_effort": raw("claude_effort"), "claude_mode": raw("claude_mode"),
+        "codex_model": raw("codex_model"), "codex_effort": raw("codex_effort"), "codex_mode": raw("codex_mode"),
+    }))
 }
 
 #[tauri::command]
 async fn set_app_setting(st: State<'_, AppState>, key: String, value: String) -> Res<()> {
-    if !["caffeinate", "auto_branch"].contains(&key.as_str()) {
+    const KEYS: &[&str] = &["caffeinate", "auto_branch", "claude_model", "claude_effort", "claude_mode", "codex_model", "codex_effort", "codex_mode"];
+    if !KEYS.contains(&key.as_str()) {
         return Err(format!("unknown setting {key}"));
     }
     st.db().set_setting(&key, &value).map_err(e)
@@ -477,15 +483,79 @@ async fn pr_review_comments(st: State<'_, AppState>, id: String) -> Res<Value> {
 async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let mut c = Command::new("open");
-    match app.as_str() {
-        "finder" => c.arg(&ws.path),
-        "vscode" => c.args(["-a", "Visual Studio Code", &ws.path]),
-        "cursor" => c.args(["-a", "Cursor", &ws.path]),
-        "terminal" => c.args(["-a", "Terminal", &ws.path]),
-        other => return Err(format!("unknown app {other}")),
-    };
+    if app == "finder" {
+        c.arg(&ws.path);
+    } else {
+        let name = OPEN_IN.iter().find(|(k, _)| *k == app).map(|(_, n)| *n).ok_or(format!("unknown app {app}"))?;
+        c.args(["-a", name, &ws.path]);
+    }
     c.spawn().map_err(e)?;
     Ok(())
+}
+
+/// Apps a workspace can open in: (id, macOS app name).
+const OPEN_IN: &[(&str, &str)] = &[
+    ("cursor", "Cursor"), ("vscode", "Visual Studio Code"), ("zed", "Zed"), ("windsurf", "Windsurf"),
+    ("xcode", "Xcode"), ("intellij", "IntelliJ IDEA"), ("webstorm", "WebStorm"), ("sublime", "Sublime Text"),
+    ("terminal", "Terminal"), ("iterm", "iTerm"), ("warp", "Warp"), ("ghostty", "Ghostty"),
+];
+
+/// Which of those apps are installed, plus Finder.
+#[tauri::command]
+fn open_in_targets() -> Vec<Value> {
+    let installed = |name: &str| {
+        ["/Applications", "/System/Applications/Utilities", "/System/Applications"]
+            .iter()
+            .map(PathBuf::from)
+            .chain(dirs::home_dir().map(|h| h.join("Applications")))
+            .any(|d| d.join(format!("{name}.app")).exists())
+    };
+    let mut v: Vec<Value> = OPEN_IN.iter().filter(|(_, n)| installed(n)).map(|(k, n)| json!({"id": k, "name": n})).collect();
+    v.push(json!({"id": "finder", "name": "Finder"}));
+    v
+}
+
+/// PR state (OPEN / MERGED / CLOSED) per active workspace, one `gh` call per repo.
+/// Merged ones are recorded, so their stars shine even if you never opened them.
+#[tauri::command]
+async fn pr_states(st: State<'_, AppState>) -> Res<HashMap<String, String>> {
+    let (repos, wss) = {
+        let db = st.db();
+        (db.repos().map_err(e)?, db.workspaces(false).map_err(e)?)
+    };
+    let mut out = HashMap::new();
+    for r in repos {
+        if r.remote_url.is_none() || !wss.iter().any(|w| w.repo_id == r.id) {
+            continue;
+        }
+        let Ok(list) = gh(&r.root_path, &["pr", "list", "--state", "all", "--limit", "300", "--json", "headRefName,state"]) else { continue };
+        let prs: Vec<Value> = serde_json::from_str(&list).unwrap_or_default();
+        for w in wss.iter().filter(|w| w.repo_id == r.id) {
+            // gh lists newest first, so the first match is the current PR for that branch.
+            if let Some(state) = prs.iter().find(|p| p["headRefName"] == w.branch.as_str()).and_then(|p| p["state"].as_str()) {
+                if state == "MERGED" {
+                    let _ = st.db().set_merged(&w.id);
+                }
+                out.insert(w.id.clone(), state.to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Lines added and removed per active workspace versus its target branch (for the sidebar).
+/// Runs the git calls in parallel; a workspace that fails is just left out.
+#[tauri::command]
+async fn line_counts(st: State<'_, AppState>) -> Res<HashMap<String, (u32, u32)>> {
+    let wss = st.db().workspaces(false).map_err(e)?;
+    let handles: Vec<_> = wss
+        .into_iter()
+        .map(|w| std::thread::spawn(move || {
+            let c = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
+            Some((w.id, (c.iter().map(|f| f.additions).sum(), c.iter().map(|f| f.deletions).sum())))
+        }))
+        .collect();
+    Ok(handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect())
 }
 
 // ---------- pull requests (gh) ----------
@@ -681,15 +751,17 @@ async fn sessions(st: State<'_, AppState>, workspace_id: String) -> Res<Vec<Sess
 
 #[tauri::command]
 async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: String) -> Res<Session> {
+    let agent = if agent == "codex" { "codex" } else { "claude" };
+    let pref = |k: &str| st.db().setting(&format!("{agent}_{k}")).ok().flatten().filter(|v| !v.is_empty());
     let s = Session {
         id: new_id(),
         workspace_id,
-        agent: if agent == "codex" { "codex".into() } else { "claude".into() },
+        agent: agent.into(),
         agent_session_id: None,
         title: "New chat".into(),
-        model: None,
-        permission_mode: "acceptEdits".into(),
-        effort: None,
+        model: pref("model"),
+        permission_mode: pref("mode").unwrap_or_else(|| "acceptEdits".into()),
+        effort: pref("effort"),
     };
     st.db().insert_session(&s).map_err(e)?;
     Ok(s)
@@ -1128,7 +1200,7 @@ pub fn run() {
             restore_checkpoint, workspace_files, save_attachment,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
-            pty_run, pty_attach,
+            pty_run, pty_attach, open_in_targets, line_counts, pr_states,
             remove_queued, fork_session, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,

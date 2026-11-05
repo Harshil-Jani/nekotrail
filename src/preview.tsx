@@ -8,6 +8,8 @@ import ReactDOM from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
+if (new URLSearchParams(location.search).get("group") === "status") localStorage.setItem("nekotrail.settings", JSON.stringify({ groupBy: "status" }));
+
 // Sample review comments so the Changes tab shows them.
 localStorage.setItem("nekotrail.review.w1", JSON.stringify([
   { id: "c1", file: "internal/server/http.go", line: 21, side: "new", code: "IdleTimeout: 75 * time.Second,", text: "Read this from config instead, so ops can tune it per environment." },
@@ -105,6 +107,9 @@ mockIPC(
       case "read_file": return "package server\n\nfunc New(cfg Config) *http.Server {\n  return nil\n}\n";
       case "pty_open": return "\x1b[32m~/code/ws/mochi\x1b[0m on \x1b[35mharshil/fix-502-gateway\x1b[0m\r\n$ ";
       case "pty_attach": return String(args.id).endsWith(":run") ? "$ make dev\r\ngo run ./cmd/api\r\n2026/11/06 01:40:12 listening on http://localhost:41230\r\n" : null;
+      case "line_counts": return { w1: [38, 4], w2: [120, 31], w3: [12, 0], w4: [6, 2] };
+      case "pr_states": return { w1: "OPEN", w2: "OPEN", w4: "MERGED" };
+      case "open_in_targets": return [{ id: "cursor", name: "Cursor" }, { id: "vscode", name: "Visual Studio Code" }, { id: "zed", name: "Zed" }, { id: "ghostty", name: "Ghostty" }, { id: "finder", name: "Finder" }];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;
