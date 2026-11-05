@@ -1,10 +1,9 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
-import { MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
+import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { McpSheet } from "./McpSheet";
 import { getSettings } from "../settings";
@@ -112,6 +111,8 @@ type ChatCtxValue = {
   query: string;
   /** Start a fresh chat with the other agent (when one is missing or out of quota). */
   switchAgent: (to: Agent) => void | Promise<void>;
+  /** Start one workspace per plan step, in parallel. */
+  fanOut: (plan: string, steps: string[]) => void;
   /** Put `file:line` findings from a reply into the Changes tab as review comments. */
   addFindings: (f: Finding[]) => void;
 };
@@ -126,7 +127,7 @@ export function parseFindings(text: string): Finding[] {
   }
   return out;
 }
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {} });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {} });
 
 function FindingsButton({ text }: { text: string }) {
   const { addFindings } = useContext(RewindCtx);
@@ -183,16 +184,33 @@ const parseTodos = (input: string): Todo[] | null => {
 };
 
 /** The plan the agent proposes in plan mode, with a button to approve it. */
+/** Top-level steps of a plan: "1. Do X" lines (continuation lines stay with their step). */
+export function planSteps(plan: string): string[] {
+  const steps: string[] = [];
+  for (const line of plan.split("\n")) {
+    const m = /^(\d+)[.)]\s+(.*)$/.exec(line);
+    if (m) steps.push(m[2].trim());
+    else if (steps.length && /^\s{2,}\S/.test(line)) steps[steps.length - 1] += " " + line.trim();
+  }
+  return steps;
+}
+
 function PlanCard({ plan, latest }: { plan: string; latest: boolean }) {
-  const { approvePlan, disabled } = useContext(RewindCtx);
+  const { approvePlan, disabled, fanOut } = useContext(RewindCtx);
+  const steps = planSteps(plan);
   return (
     <div className="plan-card">
       <div className="plan-head"><ClipboardList size={15} /><b>Plan</b></div>
-      <div className="msg assistant"><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown></div>
+      <div className="msg assistant"><Markdown text={plan} /></div>
       {latest && (
         <div className="row">
           <span className="muted">Approving switches this chat to auto-accept edits.</span>
           <span className="spacer" />
+          {steps.length >= 2 && (
+            <button disabled={disabled} onClick={() => fanOut(plan, steps)} title="One workspace and agent per step, working in parallel">
+              <Split size={14} />Split into {steps.length} workspaces
+            </button>
+          )}
           <button className="accent" disabled={disabled} onClick={approvePlan} title="Approve and build (⌘⇧↵)"><Play size={14} />Approve and build</button>
         </div>
       )}
@@ -254,7 +272,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       if (r.fix) return <FixCard fix={r.fix} agent={r.agent ?? "claude"} text={r.text} />;
       return (
         <div className="msg assistant">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.text}</ReactMarkdown>
+          <Markdown text={r.text} />
           <FindingsButton text={r.text} />
         </div>
       );
@@ -398,6 +416,9 @@ export function Chat({
       await newChat(to);
       setDraft(`You're taking over this task from ${from}, which had to stop. The conversation so far (latest part):\n\n${transcript}\n\nContinue from where it stopped. Check \`git status\` and \`git diff\` first to see what is already done.`);
     },
+    fanOut: (plan: string, steps: string[]) => {
+      window.dispatchEvent(new CustomEvent("nekotrail-fanout", { detail: { workspaceId, agent: session?.agent ?? "claude", model: session?.model ?? null, effort: session?.effort ?? null, plan, steps } }));
+    },
     addFindings: (f: Finding[]) => {
       const key = `nekotrail.review.${workspaceId}`;
       const cur = JSON.parse(localStorage.getItem(key) || "[]");
@@ -539,6 +560,9 @@ export function Chat({
   const runSlash = async (text: string): Promise<boolean> => {
     const [cmd, ...rest] = text.split(/\s+/);
     const arg = rest.join(" ");
+    // Snippets expand into the chat box so you can edit before sending.
+    const sn = snippetFor(cmd);
+    if (sn) { setDraft(arg ? `${sn.text}\n\n${arg}` : sn.text); return true; }
     switch (cmd) {
       case "/clear": await newChat(session?.agent ?? "claude"); return true;
       case "/plan": await update({ permission_mode: "plan" }); return true;
@@ -639,7 +663,10 @@ export function Chat({
   ];
   const [custom, setCustom] = useState<[string, string][]>([]);
   useEffect(() => { api.slashCommands(workspaceId).then((c) => setCustom(c.map(([n, d]) => [`/${n}`, d || "Your command"]))).catch(() => {}); }, [workspaceId]);
-  const SLASH = [...BASE_SLASH, ...custom.filter(([c]) => !BASE_SLASH.some(([b]) => b === c))];
+  const snippets = getSettings().snippets;
+  const SNIP: [string, string][] = snippets.map((sn) => [`/${sn.name}`, `Snippet: ${sn.text.slice(0, 60)}${sn.text.length > 60 ? "…" : ""}`]);
+  const SLASH = [...BASE_SLASH, ...SNIP.filter(([c]) => !BASE_SLASH.some(([b]) => b === c)), ...custom.filter(([c]) => !BASE_SLASH.some(([b]) => b === c) && !SNIP.some(([n]) => n === c))];
+  const snippetFor = (cmd: string) => snippets.find((sn) => `/${sn.name}` === cmd);
   const [mcpOpen, setMcpOpen] = useState(() => new URLSearchParams(location.search).has("mcp"));
 
   const [slash, setSlash] = useState<{ items: [string, string][]; sel: number } | null>(null);
@@ -808,7 +835,7 @@ export function Chat({
             <div className="mention" role="listbox" aria-label="Commands">
               {slash.items.map(([c, d], i) => (
                 <button key={c} role="option" aria-selected={i === slash.sel} className={i === slash.sel ? "on" : ""}
-                  onMouseDown={(e) => { e.preventDefault(); setDraft(c + " "); setSlash(null); input.current?.focus(); }}>
+                  onMouseDown={(e) => { e.preventDefault(); setDraft(snippetFor(c)?.text ?? c + " "); setSlash(null); input.current?.focus(); }}>
                   <b>{c}</b><span className="muted">{d}</span>
                 </button>
               ))}
@@ -857,7 +884,8 @@ export function Chat({
                 }
                 if (e.key === "Tab" || (e.key === "Enter" && draft.trim() !== slash.items[slash.sel][0])) {
                   e.preventDefault();
-                  setDraft(slash.items[slash.sel][0] + " ");
+                  const pick = slash.items[slash.sel][0];
+                  setDraft(snippetFor(pick)?.text ?? pick + " ");
                   setSlash(null);
                   return;
                 }

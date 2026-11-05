@@ -16,6 +16,8 @@ export type Settings = {
   needsSound: boolean;
   needsNotify: boolean;
   needsBounce: boolean;
+  /** Saved prompts you insert with /name in the chat box. */
+  snippets: { name: string; text: string }[];
   /** Repo ids to show in the sidebar; empty shows every repo. */
   repoFilter: string[];
   /** Repo ids whose sidebar section is folded. */
@@ -23,7 +25,11 @@ export type Settings = {
 };
 
 const KEY = "nekotrail.settings";
-const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: true, groupBy: "repo", needsSound: true, needsNotify: true, needsBounce: true, repoFilter: [], collapsed: [] };
+const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sendKey: "enter", archiveOnMerge: true, groupBy: "repo", needsSound: true, needsNotify: true, needsBounce: true,
+  snippets: [
+    { name: "tests", text: "Write tests for what you just changed. Cover the edge cases, run them, and fix anything that fails." },
+    { name: "tidy", text: "Before I review: remove debug code and dead code, make names clear, and keep the diff as small as it can be." },
+  ], repoFilter: [], collapsed: [] };
 
 export function getSettings(): Settings {
   try {

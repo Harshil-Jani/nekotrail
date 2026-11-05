@@ -953,3 +953,14 @@ input.switch:focus-visible { box-shadow: var(--ring) !important; }
 html.native .repo-actions { background: none; }
 .repo-head:hover .repo-meta { visibility: hidden; }
 .pill.autopilot { height: 22px; border: none; box-shadow: none; background: var(--accent-soft); color: var(--accent-text); font-weight: 600; cursor: default; }
+.snippet-row { display: grid; grid-template-columns: 110px 1fr auto; gap: var(--s2); align-items: start; margin-bottom: 6px; }
+.snippet-row input { font-family: var(--mono); font-size: 12.5px; }
+.snippet-row textarea { font-size: 12.5px; resize: vertical; }
+.modal.scorecard { width: min(760px, calc(100vw - 48px)); border: none; }
+.score-grid { display: grid; gap: var(--s3); }
+.score-big { margin: 4px 0 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
+.score-big small { display: block; font-size: 12px; font-weight: 400; margin-top: 4px; }
+.mermaid-diagram { margin: var(--s2) 0; padding: var(--s3); border-radius: var(--r-md); background: var(--surface); overflow-x: auto; }
+.mermaid-diagram { text-align: center; }
+.mermaid-diagram svg { max-width: 100%; height: auto; }
+.mermaid-loading { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: var(--s3); }

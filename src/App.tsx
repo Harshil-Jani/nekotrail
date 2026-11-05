@@ -20,6 +20,7 @@ import { Palette, type Command } from "./components/Palette";
 import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
+import { Scorecard } from "./components/Scorecard";
 import { Settings } from "./components/Settings";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { UserAttentionType } from "@tauri-apps/api/window";
@@ -149,6 +150,33 @@ export default function App() {
     return () => window.removeEventListener("nekotrail-action", on);
   }, []);
 
+  // Split an approved plan: one new workspace (and agent) per step, all in the same repo, in parallel.
+  const fanOutRef = useRef<(d: { workspaceId: string; agent: Agent; model: string | null; effort: string | null; plan: string; steps: string[] }) => void>(() => {});
+  fanOutRef.current = async ({ workspaceId, agent, model, effort, plan, steps }) => {
+    const from = workspaces.find((w) => w.id === workspaceId);
+    if (!from) return;
+    say(`Starting ${steps.length} workspaces, one per step.`);
+    for (const [i, step] of steps.entries()) {
+      try {
+        const w = await api.createWorkspace(from.repo_id, from.target_branch);
+        await api.setWorkspaceTitle(w.id, `${i + 1}. ${step.replace(/[`*_]/g, "").slice(0, 60)}`);
+        const s = await api.newSession(w.id, agent);
+        await api.updateSession(s.id, "New chat", model, "acceptEdits");
+        if (effort) await api.setSessionEffort(s.id, effort);
+        // The first line names the branch, so it is the step itself.
+        await api.send(s.id, `${step.replace(/[`*_]/g, "")}\n\nThis is step ${i + 1} of ${steps.length} of a plan split across parallel workspaces. Do only this step; other agents are doing the others in their own branches.\n\nThe whole plan, for context:\n${plan}\n\nWhen your step is done and tested, commit it.`);
+      } catch (e) {
+        say(`Couldn't start step ${i + 1}: ${errText(e)}`, true);
+      }
+    }
+    await refresh();
+  };
+  useEffect(() => {
+    const on = (e: Event) => fanOutRef.current((e as CustomEvent).detail);
+    window.addEventListener("nekotrail-fanout", on);
+    return () => window.removeEventListener("nekotrail-fanout", on);
+  }, []);
+
   // "Run in terminal" requests switch to the Terminal tab; the panel types the command.
   useEffect(() => {
     const show = () => setTab("terminal");
@@ -220,6 +248,7 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [comparing, setComparing] = useState<string | null>(params.get("compare")); // pair id
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
@@ -624,6 +653,7 @@ export default function App() {
     c.push(
       { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
       { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
+      { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
       { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
@@ -909,6 +939,7 @@ export default function App() {
           {toast.action && <button className="toast-action" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}
         </div>
       )}
+      {scorecard && <Scorecard onClose={() => setScorecard(false)} />}
       {comparing && (
         <Compare
           workspaces={workspaces.filter((w) => w.pair_id === comparing && w.state === "active")}

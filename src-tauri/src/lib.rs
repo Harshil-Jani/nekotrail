@@ -916,6 +916,23 @@ async fn workspace_stats(st: State<'_, AppState>, id: String) -> Res<Value> {
     Ok(json!({"agent": agent, "turns": turns, "errors": errors, "duration_ms": ms, "cost_usd": cost}))
 }
 
+/// How each agent has done for you: turns, errors, time, cost and merged PRs.
+#[tauri::command]
+async fn agent_scorecard(st: State<'_, AppState>) -> Res<Vec<Value>> {
+    let db = st.db();
+    let costs: HashMap<String, f64> = {
+        let mut m = HashMap::new();
+        for (_, agent, c) in db.daily_costs(36500).map_err(e)? {
+            *m.entry(agent).or_default() += c;
+        }
+        m
+    };
+    Ok(db.agent_scorecard().map_err(e)?.into_iter().map(|(agent, turns, errors, ms, merged)| json!({
+        "agent": agent, "turns": turns, "errors": errors, "duration_ms": ms, "merged": merged,
+        "cost_usd": costs.get(&agent).copied().unwrap_or(0.0),
+    })).collect())
+}
+
 /// Spend per day and agent over the last 7 days (API-equivalent prices from the CLIs).
 #[tauri::command]
 async fn usage_summary(st: State<'_, AppState>) -> Res<Value> {
@@ -1926,7 +1943,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

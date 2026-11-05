@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Volume2 } from "lucide-react";
+import { Plus, Volume2, X } from "lucide-react";
 import { api, type AppSettings } from "../api";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -170,6 +170,21 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
               </span>
             </div>
           ))}
+        </section>
+
+        <section>
+          <h3>Snippets</h3>
+          <p className="muted setting-note">Saved prompts. Type /name in the chat box to insert one, then edit and send.</p>
+          {s.snippets.map((sn, i) => (
+            <div className="snippet-row" key={i}>
+              <input value={sn.name} aria-label="Snippet name" placeholder="name"
+                onChange={(e) => set("snippets", s.snippets.map((x, j) => (j === i ? { ...x, name: e.target.value.replace(/[^\w-]/g, "") } : x)))} />
+              <textarea rows={2} value={sn.text} aria-label="Snippet text" placeholder="What the agent should do"
+                onChange={(e) => set("snippets", s.snippets.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+              <button className="icon" aria-label={`Delete snippet ${sn.name}`} onClick={() => set("snippets", s.snippets.filter((_, j) => j !== i))}><X size={14} /></button>
+            </div>
+          ))}
+          <button className="quiet add-env" onClick={() => set("snippets", [...s.snippets, { name: "", text: "" }])}><Plus size={14} />Add snippet</button>
         </section>
 
         <section>

@@ -36,6 +36,7 @@ const planEvents = [
     { content: "Use it in the SLA timer", status: "in_progress", activeForm: "Wiring the calendar into the SLA timer" },
     { content: "Tests for weekends and holidays", status: "pending" },
   ]) },
+  { kind: "text", text: "How the SLA timer flows today:\n\n```mermaid\nflowchart LR\n  A[Ticket opened] --> B{Business hours?}\n  B -- yes --> C[Start 4h timer]\n  B -- no --> D[Wait for 9:00]\n  D --> C\n  C --> E[Breach alert]\n```" },
   { kind: "tool", id: "t3", name: "ExitPlanMode", input: "## Plan\n1. Add `BusinessHours` (9:00 to 18:00, Mon to Fri, holiday list from config).\n2. `slaDeadline` adds 4 business hours instead of 4 wall-clock hours.\n3. Table tests: Friday 17:00 rolls to Monday 12:00; holidays skip.\n\nNo schema changes." },
 ];
 
@@ -130,6 +131,10 @@ mockIPC(
       case "imported_outside": return location.search.includes("moveimport") ? ["w1", "w2", "w3"] : [];
       case "autopilot_status": return { w2: 1 };
       case "overlaps": return args.id === "w1" ? [{ workspace_id: "w2", files: ["internal/server/http.go"] }] : [];
+      case "agent_scorecard": return [
+        { agent: "claude", turns: 212, errors: 9, duration_ms: 212 * 96000, merged: 31, cost_usd: 148.2 },
+        { agent: "codex", turns: 87, errors: 6, duration_ms: 87 * 71000, merged: 11, cost_usd: 39.6 },
+      ];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;

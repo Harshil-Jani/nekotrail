@@ -165,6 +165,7 @@ export const api = {
   workspaceStats: (id: string) => invoke<{ agent: Agent | ""; turns: number; errors: number; duration_ms: number; cost_usd: number }>("workspace_stats", { id }),
   usageSummary: () => invoke<{ today: number; week: number; by_agent: Record<string, number> }>("usage_summary"),
   resourceUsage: () => invoke<{ total_mb: number; top: { name: string; mb: number }[] }>("resource_usage"),
+  agentScorecard: () => invoke<{ agent: string; turns: number; errors: number; duration_ms: number; merged: number; cost_usd: number }[]>("agent_scorecard"),
   setAutopilot: (id: string, on: boolean) => invoke<void>("set_autopilot", { id, on }),
   autopilotStatus: () => invoke<Record<string, number>>("autopilot_status"),
   overlaps: (id: string) => invoke<{ workspace_id: string; files: string[] }[]>("overlaps", { id }),

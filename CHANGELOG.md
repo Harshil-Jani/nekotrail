@@ -3,6 +3,18 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.6.0 (2026-11-06)
+
+**More done in parallel**
+- Split a plan into workspaces: when an agent proposes a numbered plan, one click starts a separate workspace and agent for each step, side by side. Each branch is named after its step.
+- Prompt snippets: save prompts you use often (two examples are included), then type /name in the chat box to drop one in and edit it. Manage them in Settings.
+
+**Know which agent works for you**
+- Agent scorecard (⌘K, "Open agent scorecard"): clean-finish rate, average turn time, spend per turn and merged workspaces for Claude and Codex, from your own history.
+
+**Richer answers**
+- Mermaid diagrams in chat render as real diagrams, in light and dark. The diagram library loads only when a chat has one.
+
 ## 0.5.0 (2026-11-06)
 
 **Agents that work as a team**

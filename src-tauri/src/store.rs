@@ -195,6 +195,9 @@ pub struct Session {
     pub effort: Option<String>,
 }
 
+/// (agent, finished turns, error turns, total turn time in ms, merged workspaces)
+pub type AgentScore = (String, i64, i64, i64, i64);
+
 pub struct Store {
     conn: Connection,
 }
@@ -460,6 +463,23 @@ impl Store {
         Ok(rows)
     }
 
+    /// Per agent: finished turns, turns that ended in an error, total turn time (ms), workspaces whose
+    /// PR merged. Only turns run in nekotrail count (imported history is skipped).
+    pub fn agent_scorecard(&self) -> Result<Vec<AgentScore>> {
+        let mut st = self.conn.prepare(
+            "SELECT s.agent,
+                    COUNT(*),
+                    SUM(CASE WHEN json_extract(m.event, '$.is_error') = 1 AND json_extract(m.event, '$.stopped') IS NULL THEN 1 ELSE 0 END),
+                    COALESCE(SUM(json_extract(m.event, '$.duration_ms')), 0),
+                    (SELECT COUNT(DISTINCT w.id) FROM workspaces w JOIN sessions s2 ON s2.workspace_id = w.id WHERE w.merged = 1 AND s2.agent = s.agent)
+             FROM messages m JOIN sessions s ON s.id = m.session_id
+             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.imported') IS NULL
+             GROUP BY s.agent",
+        )?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
     /// The last `limit` events of a chat, plus how many there are in all (big chats open fast).
     pub fn events_tail(&self, session_id: &str, limit: i64) -> Result<(Vec<serde_json::Value>, i64)> {
         let total: i64 = self.conn.query_row("SELECT COUNT(*) FROM messages WHERE session_id=?1", [session_id], |r| r.get(0))?;
@@ -688,7 +708,10 @@ mod tests {
 
         s.append_event(&sess.id, &serde_json::json!({"kind": "text", "text": "hi"})).unwrap();
         assert_eq!(s.events(&sess.id).unwrap().last().unwrap()["text"], "hi");
+        s.append_event(&sess.id, &serde_json::json!({"kind": "done", "is_error": true, "duration_ms": 1000})).unwrap();
+        let card = s.agent_scorecard().unwrap();
+        assert_eq!((card[0].0.as_str(), card[0].1, card[0].2, card[0].3), ("claude", 1, 1, 1000));
         let (tail, total) = s.events_tail(&sess.id, 1).unwrap();
-        assert_eq!((tail.len(), tail[0]["text"].as_str(), total), (1, Some("hi"), 2));
+        assert_eq!((tail.len(), tail[0]["is_error"].as_bool(), total), (1, Some(true), 3));
     }
 }
