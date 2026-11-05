@@ -69,6 +69,8 @@ fn migrate(conn: &Connection) -> Result<()> {
     // backlog | in_progress | in_review | done; empty means "derive from PR state".
     add("workspaces", "status", "TEXT NOT NULL DEFAULT ''")?;
     // Repo preferences as JSON: prompts, files to copy into new workspaces, env vars.
+    // Bake-offs: two workspaces given the same task by different agents share a pair id.
+    add("workspaces", "pair_id", "TEXT NOT NULL DEFAULT ''")?;
     add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
     add("sessions", "effort", "TEXT")?;
     add("sessions", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
@@ -136,6 +138,8 @@ pub struct Workspace {
     pub title: String,
     #[serde(default)]
     pub status: String,
+    #[serde(default)]
+    pub pair_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -187,9 +191,10 @@ fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
         created_at: r.get(11)?,
         title: r.get(12)?,
         status: r.get(13)?,
+        pair_id: r.get(14)?,
     })
 }
-const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status";
+const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id";
 
 fn session_from(r: &Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -282,8 +287,8 @@ impl Store {
 
     pub fn insert_workspace(&self, w: &Workspace) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"),
-            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status],
+            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"),
+            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id],
         )?;
         Ok(())
     }
@@ -349,6 +354,27 @@ impl Store {
     pub fn set_status(&self, id: &str, status: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET status=?2 WHERE id=?1", params![id, status])?;
         Ok(())
+    }
+
+    pub fn set_pair(&self, ids: &[String], pair: &str) -> Result<()> {
+        for id in ids {
+            self.conn.execute("UPDATE workspaces SET pair_id=?2 WHERE id=?1", params![id, pair])?;
+        }
+        Ok(())
+    }
+
+    /// Spend per day (YYYY-MM-DD, UTC) and agent over the last `days` days, from finished turns.
+    pub fn daily_costs(&self, days: i64) -> Result<Vec<(String, String, f64)>> {
+        let mut st = self.conn.prepare(
+            "SELECT substr(m.created_at, 1, 10) AS day, s.agent, SUM(json_extract(m.event, '$.cost_usd'))
+             FROM messages m JOIN sessions s ON s.id = m.session_id
+             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
+               AND m.created_at >= ?1
+             GROUP BY day, s.agent ORDER BY day",
+        )?;
+        let since = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+        let rows = st.query_map([since], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<f64>>(2)?.unwrap_or(0.0))))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
     }
 
     pub fn set_branch(&self, id: &str, branch: &str) -> Result<()> {
@@ -508,8 +534,11 @@ mod tests {
             created_at: now(),
             title: String::new(),
             status: String::new(),
+            pair_id: String::new(),
         };
         s.insert_workspace(&w).unwrap();
+        s.set_pair(std::slice::from_ref(&w.id), "p1").unwrap();
+        assert_eq!(s.workspace(&w.id).unwrap().pair_id, "p1");
         s.set_title(&w.id, "Gateway fix").unwrap();
         s.set_status(&w.id, "in_review").unwrap();
         let back = s.workspace(&w.id).unwrap();
@@ -541,6 +570,9 @@ mod tests {
         s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.5})).unwrap();
         s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.25})).unwrap();
         assert_eq!(s.workspace_costs().unwrap(), vec![(w.id.clone(), 0.75)]);
+        let daily = s.daily_costs(7).unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!((daily[0].1.as_str(), daily[0].2), ("claude", 0.75));
         s.set_agent_session_id(&sess.id, "abc").unwrap();
         assert_eq!(s.session(&sess.id).unwrap().agent_session_id.as_deref(), Some("abc"));
 

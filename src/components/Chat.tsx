@@ -2,7 +2,7 @@ import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, u
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
 import { getSettings } from "../settings";
@@ -125,8 +125,33 @@ type ChatCtxValue = {
   query: string;
   /** Start a fresh chat with the other agent (when one is missing or out of quota). */
   switchAgent: (to: Agent) => void;
+  /** Put `file:line` findings from a reply into the Changes tab as review comments. */
+  addFindings: (f: Finding[]) => void;
 };
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {} });
+
+export type Finding = { file: string; line: number; text: string };
+/** Lines like "- src/a.ts:42: problem" (or with backticks) in an agent's reply. */
+export function parseFindings(text: string): Finding[] {
+  const out: Finding[] = [];
+  for (const l of text.split("\n")) {
+    const m = /^\s*(?:[-*]|\d+[.)])\s+\**`?([\w@./-]+\.[\w]+):(\d+)(?:-\d+)?`?\**\s*[:\-]\s*(.+)$/.exec(l);
+    if (m) out.push({ file: m[1].replace(/^\.\//, ""), line: Number(m[2]), text: m[3].trim() });
+  }
+  return out;
+}
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {} });
+
+function FindingsButton({ text }: { text: string }) {
+  const { addFindings } = useContext(RewindCtx);
+  const found = useMemo(() => parseFindings(text), [text]);
+  const [added, setAdded] = useState(false);
+  if (found.length === 0) return null;
+  return (
+    <button className="findings-btn" disabled={added} onClick={() => { addFindings(found); setAdded(true); }}>
+      <MessageSquarePlus size={13} />{added ? `Added to Changes` : `Add ${found.length} ${found.length === 1 ? "finding" : "findings"} to review`}
+    </button>
+  );
+}
 
 const INSTALL: Record<Agent, string> = { claude: "npm install -g @anthropic-ai/claude-code", codex: "npm install -g @openai/codex" };
 
@@ -243,6 +268,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       return (
         <div className="msg assistant">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.text}</ReactMarkdown>
+          <FindingsButton text={r.text} />
         </div>
       );
     case "thinking":
@@ -362,6 +388,14 @@ export function Chat({
   };
   const rewindCtx = useMemo(() => ({
     switchAgent: (to: Agent) => { newChat(to); },
+    addFindings: (f: Finding[]) => {
+      const key = `nekotrail.review.${workspaceId}`;
+      const cur = JSON.parse(localStorage.getItem(key) || "[]");
+      const by = session?.agent === "codex" ? "Codex" : "Claude";
+      const add = f.map((x) => ({ id: crypto.randomUUID(), file: x.file, line: x.line, side: "new", code: "", text: `${by}: ${x.text}` }));
+      localStorage.setItem(key, JSON.stringify([...cur, ...add]));
+      window.dispatchEvent(new Event("nekotrail-review"));
+    },
     approvePlan,
     expandAll,
     query: (search ?? "").trim().toLowerCase(),
@@ -371,7 +405,7 @@ export function Chat({
       setError(null);
       try { await api.restoreCheckpoint(active, checkpoint); } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, active, expandAll, search, session]);
+  }), [anyBusy, active, expandAll, search, session, workspaceId]);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);

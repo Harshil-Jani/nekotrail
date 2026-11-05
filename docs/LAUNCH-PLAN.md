@@ -1,6 +1,6 @@
 # Launch plan
 
-Progress (2026-11-06): P0-2, P0-3, P0-5, P0-6, P0-7, P0-8, the import preview part of P0-4, P1-1, P1-2, P1-7, problems 3 and 5, and most of the cut list are done. P0-1 (signing) needs the founder's Apple Developer ID. Moving imported worktrees (P0-4) is not done yet.
+Progress (2026-11-06): P0-2, P0-3, P0-5, P0-6, P0-7, P0-8, the import preview part of P0-4, P1-1, P1-2, P1-3 (bake-off), P1-4 (spend today and 7 days, limit errors), P1-5 (second opinion into the diff), P1-7, problems 3 and 5, and most of the cut list are done. P0-1 (signing) needs the founder's Apple Developer ID. Moving imported worktrees (P0-4) is not done yet.
 
 2026-11-06. Effort: S < 2h, M < 1 day, L > 1 day.
 

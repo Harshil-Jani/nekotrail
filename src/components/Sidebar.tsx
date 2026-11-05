@@ -31,6 +31,7 @@ type Props = {
   prStates: Record<string, string>;
   /** Lines added / removed per workspace id. */
   lines: Record<string, [number, number]>;
+  usage: { today: number; week: number; by_agent: Record<string, number> } | null;
 };
 
 function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { repo: Repo; onNew: () => void; onSettings: () => void; collapsed: boolean; onToggle: () => void; count: number }) {
@@ -202,6 +203,11 @@ export function Sidebar(p: Props) {
             <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
           </span>
         </button>
+        {p.usage && p.usage.week > 0 && (
+          <div className="usage num" title={`API-equivalent prices reported by the CLIs. On a Claude or ChatGPT plan you aren't billed per token.\n7 days by agent: ${Object.entries(p.usage.by_agent).map(([a, c]) => `${a} $${c.toFixed(2)}`).join(", ")}`}>
+            Today ${p.usage.today.toFixed(2)} · 7 days ${p.usage.week.toFixed(2)}
+          </div>
+        )}
         <button className="quiet" onClick={p.onToggleArchived}>
           {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
           {p.showArchived ? "Hide archived" : "Show archived"}

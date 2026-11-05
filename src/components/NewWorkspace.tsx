@@ -10,7 +10,8 @@ const MODES: { value: PermissionMode; label: string }[] = [
 ];
 
 export type NewWorkspaceRequest = {
-  repoId: string; prompt: string; agent: Agent; model: string | null; mode: PermissionMode;
+  /** "both" runs a bake-off: the same task in two workspaces, one per agent. */
+  repoId: string; prompt: string; agent: Agent | "both"; model: string | null; mode: PermissionMode;
   /** "pr:123" or "branch:name" to start from existing work; empty for a fresh branch. */
   from?: string;
 };
@@ -40,7 +41,7 @@ export function NewWorkspace({
   const saved = JSON.parse(localStorage.getItem("nekotrail.new") || "{}");
   const [repoId, setRepoId] = useState(initialRepo);
   const [prompt, setPrompt] = useState("");
-  const [agent, setAgent] = useState<Agent>(saved.agent ?? "claude");
+  const [agent, setAgent] = useState<Agent | "both">(saved.agent ?? "claude");
   const [model, setModel] = useState<string>(saved.model ?? "");
   const [mode, setMode] = useState<PermissionMode>(saved.mode ?? "acceptEdits");
   const [busy, setBusy] = useState(false);
@@ -120,9 +121,10 @@ export function NewWorkspace({
           </label>
           <span className="spacer" />
           <div className="nw-agent" role="radiogroup" aria-label="Agent">
-            {(["claude", "codex"] as Agent[]).map((a) => (
-              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => setAgent(a)}>
-                {a === "claude" ? "Claude" : "Codex"}
+            {(["claude", "codex", "both"] as (Agent | "both")[]).map((a) => (
+              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => setAgent(a)}
+                title={a === "both" ? "Bake-off: Claude and Codex each get the task in their own workspace. Compare, keep the better one." : undefined}>
+                {a === "claude" ? "Claude" : a === "codex" ? "Codex" : "Both"}
               </button>
             ))}
           </div>

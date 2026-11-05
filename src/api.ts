@@ -55,6 +55,8 @@ export type Workspace = {
   title: string;
   /** Set by hand; empty means derived from the PR. */
   status: WsStatus;
+  /** Shared by the workspaces of one bake-off (same task, different agents). */
+  pair_id: string;
 };
 
 export type Agent = "claude" | "codex";
@@ -150,6 +152,10 @@ export const api = {
   renameBranch: (id: string, branch: string) => invoke<void>("rename_branch", { id, branch }),
   setRepoPrefs: (id: string, prefs: RepoPrefs) => invoke<void>("set_repo_prefs", { id, prefs }),
   setSessionEffort: (id: string, effort: Effort | null) => invoke<void>("set_session_effort", { id, effort }),
+  startChat: (id: string, agent: Agent, mode: PermissionMode, title: string, text: string) => invoke<string>("start_chat", { id, agent, mode, title, text }),
+  setPair: (ids: string[]) => invoke<string>("set_pair", { ids }),
+  workspaceStats: (id: string) => invoke<{ agent: Agent | ""; turns: number; errors: number; duration_ms: number; cost_usd: number }>("workspace_stats", { id }),
+  usageSummary: () => invoke<{ today: number; week: number; by_agent: Record<string, number> }>("usage_summary"),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),

@@ -322,6 +322,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         created_at: store::now(),
         title: String::new(),
         status: String::new(),
+        pair_id: String::new(),
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
     copy_into_workspace(&root, &path, &prefs.copy_files);
@@ -650,6 +651,61 @@ async fn repo_issues(st: State<'_, AppState>, id: String) -> Res<Value> {
     let me = st.branch_prefix.clone();
     v.sort_by_key(|i| !i["assignees"].as_array().is_some_and(|a| a.iter().any(|x| x["login"] == me.as_str())));
     Ok(Value::Array(v))
+}
+
+/// Start a new chat in a workspace with a chosen agent and mode, send it a prompt, and show it.
+#[tauri::command]
+async fn start_chat(app: AppHandle, st: State<'_, AppState>, id: String, agent: String, mode: String, title: String, text: String) -> Res<String> {
+    let s = Session {
+        id: new_id(), workspace_id: id.clone(), agent: if agent == "codex" { "codex".into() } else { "claude".into() },
+        agent_session_id: None, title, model: None, permission_mode: mode, effort: None,
+    };
+    st.db().insert_session(&s).map_err(e)?;
+    let _ = app.emit("focus-session", json!({"workspace_id": id, "session_id": s.id}));
+    send(app, st, s.id.clone(), text).await?;
+    Ok(s.id)
+}
+
+/// Link workspaces that got the same task (a bake-off).
+#[tauri::command]
+async fn set_pair(st: State<'_, AppState>, ids: Vec<String>) -> Res<String> {
+    let pair = new_id();
+    st.db().set_pair(&ids, &pair).map_err(e)?;
+    Ok(pair)
+}
+
+/// What a workspace's agents did, for comparing a bake-off: turns, time, cost, errors.
+#[tauri::command]
+async fn workspace_stats(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let db = st.db();
+    let (mut turns, mut errors, mut ms, mut cost) = (0u64, 0u64, 0u64, 0f64);
+    let mut agent = String::new();
+    for s in db.sessions(&id).map_err(e)? {
+        agent = s.agent.clone();
+        for ev in db.events(&s.id).map_err(e)? {
+            if ev["kind"] == "done" {
+                turns += 1;
+                if ev["is_error"].as_bool().unwrap_or(false) { errors += 1; }
+                ms += ev["duration_ms"].as_u64().unwrap_or(0);
+                cost += ev["cost_usd"].as_f64().unwrap_or(0.0);
+            }
+        }
+    }
+    Ok(json!({"agent": agent, "turns": turns, "errors": errors, "duration_ms": ms, "cost_usd": cost}))
+}
+
+/// Spend per day and agent over the last 7 days (API-equivalent prices from the CLIs).
+#[tauri::command]
+async fn usage_summary(st: State<'_, AppState>) -> Res<Value> {
+    let rows = st.db().daily_costs(7).map_err(e)?;
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let total: f64 = rows.iter().map(|r| r.2).sum();
+    let today_total: f64 = rows.iter().filter(|r| r.0 == today).map(|r| r.2).sum();
+    let mut by_agent: HashMap<String, f64> = HashMap::new();
+    for (_, a, c) in &rows {
+        *by_agent.entry(a.clone()).or_default() += c;
+    }
+    Ok(json!({"today": today_total, "week": total, "by_agent": by_agent, "days": rows.iter().map(|r| json!({"day": r.0, "agent": r.1, "cost": r.2})).collect::<Vec<_>>()}))
 }
 
 /// Commit everything and push. An empty message uses the chat's first task as the subject.
@@ -1374,7 +1430,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
@@ -1397,7 +1453,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(),
         };
         let env = workspace_env(&repo, &ws);
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();

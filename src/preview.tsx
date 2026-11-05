@@ -21,8 +21,9 @@ const repos = [
   { id: "r1", name: "sage-backend", root_path: "/code/sage-backend", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null },
   { id: "r2", name: "website", root_path: "/code/website", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null },
 ];
+const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
-  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", status: "", ...extra,
+  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", status: "", pair_id: pairOf(id), ...extra,
 });
 const planEvents = [
   { kind: "user", checkpoint: "c1", text: "Tickets should breach SLA after 4 business hours, not 4 hours. Plan it first." },
@@ -54,6 +55,7 @@ const events = [
   { kind: "tool_result", id: "t3", output: "", is_error: false },
   { kind: "tool", id: "t4", name: "Bash", input: "go test ./internal/server/..." },
   { kind: "tool_result", id: "t4", output: "ok  \tsage/internal/server\t0.412s", is_error: false },
+  { kind: "text", text: "Review of the branch:\n- internal/server/http.go:22: 75s is right for the ALB, but the gRPC port sits behind an NLB with a 350s timeout. Fix: make it configurable.\n- internal/server/http_test.go:14: the test sleeps 61s. Fix: inject a clock.\n\nOtherwise ready to merge." },
   { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18, context_tokens: 128000, context_window: 200000 },
 ];
 const pr = {
@@ -115,6 +117,8 @@ mockIPC(
       case "open_in_targets": return [{ id: "cursor", name: "Cursor" }, { id: "vscode", name: "Visual Studio Code" }, { id: "zed", name: "Zed" }, { id: "ghostty", name: "Ghostty" }, { id: "finder", name: "Finder" }];
       case "doctor": return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: !location.search.includes("fresh"), login: location.search.includes("fresh") ? null : "Harshil-Jani" }, claude: { ok: true, version: "2.4.1 (Claude Code)" }, codex: { ok: false, version: "" } };
       case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
+      case "usage_summary": return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
+      case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;

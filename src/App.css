@@ -576,3 +576,17 @@ button.good-btn:hover { background: #20d095; }
 .cmd .icon { padding: 4px; }
 .start-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0; }
 .palette.clone small { margin-left: var(--s2); font-weight: 400; }
+.modal.compare { width: min(900px, calc(100vw - 48px)); border: 1px solid var(--line); }
+.compare-grid { display: grid; gap: var(--s3); }
+.compare-col { border: 1px solid var(--line); background: var(--surface); padding: var(--s4); display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.compare-col h3 { margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compare-col code { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-tag { align-self: flex-start; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.compare-col dl { margin: var(--s2) 0; display: flex; flex-direction: column; gap: 6px; }
+.compare-col dl div { display: flex; justify-content: space-between; font-size: 13px; }
+.compare-col dt { color: var(--muted); }
+.compare-col dd { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+.compare-col .win { color: var(--wait); }
+.compare-col .row button { flex: 1; justify-content: center; }
+.findings-btn { margin-top: var(--s2); font-size: 12px; color: var(--accent); border-color: rgba(255, 154, 77, 0.45); }
+.usage { font-size: 11.5px; color: var(--muted); padding: 2px 4px 4px; cursor: default; }

@@ -198,6 +198,7 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
             created_at: crate::store::now(),
             title: String::new(),
             status: String::new(),
+            pair_id: String::new(),
         };
         store.insert_workspace(&ws)?;
         report.workspaces += 1;

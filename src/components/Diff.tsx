@@ -159,7 +159,7 @@ function SplitLines({ lines, file }: { lines: Line[]; file: string }) {
 
 /** Turn review comments into one message the agent can act on. */
 export function reviewPrompt(comments: ReviewComment[]): string {
-  const lines = comments.map((c, i) => `${i + 1}. ${c.file}:${c.line}${c.side === "old" ? " (removed line)" : ""}\n   \`${c.code.slice(0, 120)}\`\n   ${c.text}`);
+  const lines = comments.map((c, i) => `${i + 1}. ${c.file}:${c.line}${c.side === "old" ? " (removed line)" : ""}${c.code ? `\n   \`${c.code.slice(0, 120)}\`` : ""}\n   ${c.text}`);
   return `Please address these review comments on your changes:\n\n${lines.join("\n\n")}`;
 }
 
@@ -242,7 +242,12 @@ export function Diff({
   // Draft comments survive tab switches and restarts until they are sent.
   const key = `nekotrail.review.${workspaceId}`;
   const [comments, setComments] = useState<ReviewComment[]>(() => JSON.parse(localStorage.getItem(key) || "[]"));
-  useEffect(() => setComments(JSON.parse(localStorage.getItem(key) || "[]")), [key]);
+  useEffect(() => {
+    const load = () => setComments(JSON.parse(localStorage.getItem(key) || "[]"));
+    load();
+    window.addEventListener("nekotrail-review", load);
+    return () => window.removeEventListener("nekotrail-review", load);
+  }, [key]);
   const saveComments = (c: ReviewComment[]) => { setComments(c); localStorage.setItem(key, JSON.stringify(c)); };
   // "Viewed" ticks reset when a file changes again (its +/- counts move).
   const vkey = `nekotrail.viewed.${workspaceId}`;

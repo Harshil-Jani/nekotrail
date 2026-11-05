@@ -1,0 +1,75 @@
+import { useEffect, useState } from "react";
+import { Crown, X } from "lucide-react";
+import { api, type Workspace } from "../api";
+
+type Stats = Awaited<ReturnType<typeof api.workspaceStats>>;
+
+/** Bake-off results: the same task done by different agents, side by side. Keep one, archive the rest. */
+export function Compare({
+  workspaces, names, lines, prStates, onOpen, onKeep, onClose,
+}: {
+  workspaces: Workspace[];
+  names: (w: Workspace) => string;
+  lines: Record<string, [number, number]>;
+  prStates: Record<string, string>;
+  onOpen: (id: string) => void;
+  onKeep: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [stats, setStats] = useState<Record<string, Stats>>({});
+  const [files, setFiles] = useState<Record<string, number>>({});
+  useEffect(() => {
+    for (const w of workspaces) {
+      api.workspaceStats(w.id).then((s) => setStats((x) => ({ ...x, [w.id]: s }))).catch(() => {});
+      api.changes(w.id).then((c) => setFiles((x) => ({ ...x, [w.id]: c.length }))).catch(() => {});
+    }
+  }, [workspaces.map((w) => w.id).join()]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Cheapest and fastest get a quiet marker; the human decides.
+  const done = workspaces.filter((w) => stats[w.id]?.turns);
+  const best = (f: (s: Stats) => number) => done.length > 1 ? done.reduce((a, b) => (f(stats[a.id]) <= f(stats[b.id]) ? a : b)).id : null;
+  const cheapest = best((s) => s.cost_usd || Infinity);
+  const fastest = best((s) => s.duration_ms || Infinity);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal compare" role="dialog" aria-modal="true" aria-label="Compare agents" onClick={(e) => e.stopPropagation()}>
+        <div className="row">
+          <h2>Bake-off</h2>
+          <span className="spacer" />
+          <button className="icon" aria-label="Close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <p className="muted">Same task, different agents. Open each to read the diff, then keep the one you like. The other is archived and its branch is kept.</p>
+        <div className="compare-grid" style={{ gridTemplateColumns: `repeat(${workspaces.length}, 1fr)` }}>
+          {workspaces.map((w) => {
+            const s = stats[w.id];
+            const l = lines[w.id];
+            return (
+              <section key={w.id} className="compare-col">
+                <span className="agent-tag">{s?.agent === "codex" ? "Codex" : s?.agent === "claude" ? "Claude" : "Agent"}</span>
+                <h3>{names(w)}</h3>
+                <code className="muted">{w.branch}</code>
+                <dl>
+                  <div><dt>Changes</dt><dd className="num">{files[w.id] ?? "…"} files {l && <><span className="add">+{l[0]}</span> <span className="del">-{l[1]}</span></>}</dd></div>
+                  <div><dt>Turns</dt><dd className="num">{s ? `${s.turns}${s.errors ? `, ${s.errors} with errors` : ""}` : "…"}</dd></div>
+                  <div><dt>Time</dt><dd className="num">{s ? `${Math.round(s.duration_ms / 1000)}s` : "…"}{fastest === w.id && <Crown size={12} className="win" aria-label="fastest" />}</dd></div>
+                  <div><dt>Cost</dt><dd className="num">{s ? `$${s.cost_usd.toFixed(2)}` : "…"}{cheapest === w.id && <Crown size={12} className="win" aria-label="cheapest" />}</dd></div>
+                  <div><dt>PR</dt><dd>{prStates[w.id] ? prStates[w.id].toLowerCase() : "none yet"}</dd></div>
+                </dl>
+                <div className="row">
+                  <button onClick={() => onOpen(w.id)}>Open</button>
+                  <button className="primary" onClick={() => onKeep(w.id)}>Keep this one</button>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

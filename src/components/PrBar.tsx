@@ -38,6 +38,11 @@ Reply with the PR link.${repo?.prefs?.pr_prompt ? `\n\n${repo.prefs.pr_prompt}` 
   review: (ws: Workspace, repo?: Repo) =>
     `Review the changes on this branch against origin/${ws.target_branch}: run \`git fetch origin ${ws.target_branch}\` and \`git diff origin/${ws.target_branch}...HEAD\`, and check uncommitted files too. Do not change any code.
 List real problems first (bugs, security, missing tests), each with file:line and a suggested fix. Then smaller nits. End with whether it is ready to merge.${repo?.prefs?.review_prompt ? `\n\n${repo.prefs.review_prompt}` : ""}`,
+  secondOpinion: (ws: Workspace, repo?: Repo) =>
+    `Another agent wrote the changes on this branch. Review them against origin/${ws.target_branch}: run \`git fetch origin ${ws.target_branch}\` and \`git diff origin/${ws.target_branch}...HEAD\`, and look at uncommitted files. Do not change any code.
+Report each real problem on its own line in exactly this form, most important first:
+- path/to/file.ext:LINE: the problem, and the fix
+Then one line saying whether it is ready to merge.${repo?.prefs?.review_prompt ? `\n\n${repo.prefs.review_prompt}` : ""}`,
   fixErrors: (prNumber: number, logs: string) =>
     `CI is failing on PR #${prNumber}. Failing logs:\n\n\`\`\`\n${logs.slice(-12000)}\n\`\`\`\n\nFind the cause, fix it, run the relevant tests locally, then commit and push.`,
   conflicts: (ws: Workspace) =>
@@ -142,6 +147,15 @@ export function PrBar({
       }),
     },
     review: { id: "review", label: "Review changes", keys: "⌘⇧R", icon: <ScanSearch size={15} />, run: () => onSendAgent(agentPrompts.review(ws, repo)) },
+    second: {
+      id: "second", label: "Second opinion from the other agent", keys: "", icon: <ScanSearch size={15} />,
+      run: () => task("second", async () => {
+        const last = (await api.sessions(ws.id)).pop();
+        const other = last?.agent === "codex" ? "claude" : "codex";
+        await api.startChat(ws.id, other, "plan", `Review by ${other === "codex" ? "Codex" : "Claude"}`, agentPrompts.secondOpinion(ws, repo));
+        onSay(`${other === "codex" ? "Codex" : "Claude"} is reviewing in a new chat (read-only). Add its findings to your review with one click.`);
+      }),
+    },
     fix: {
       id: "fix", label: "Fix failing checks", keys: "⌘⇧X", icon: <Sparkles size={15} />, disabled: !(open && checks?.cls === "bad"),
       run: () => task("fix", async () => onSendAgent(agentPrompts.fixErrors(pr!.number, await api.failingLogs(ws.id)))),

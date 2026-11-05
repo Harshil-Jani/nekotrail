@@ -29,6 +29,8 @@ nekotrail is an open-source, local-first desktop app for running Claude Code and
 | Start | Open a local repo, clone one of your GitHub repos, or import from Conductor (it shows what it will bring over first). Start a workspace from a task, a GitHub issue, an open PR or a branch. |
 | Workspaces | One git worktree and branch per task, named after the task. Archive removes the folder and keeps the branch; restore brings it back. |
 | Chat | Claude Code or Codex, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
+| Bake-off | Pick "Both" and Claude and Codex each get the same task in their own workspace. Compare files, turns, time and cost side by side, keep the better one. |
+| Second opinion | One click asks the other agent to review the branch read-only. Its `file:line` findings become review comments in Changes, ready to send back. |
 | Checkpoints | Every message snapshots the workspace first. Hover a message and click **Rewind files to here** to undo everything the agent did from that point, commits included. |
 | Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line and send all your comments to the agent as one review. |
 | Terminal | A real login shell in the workspace folder. |

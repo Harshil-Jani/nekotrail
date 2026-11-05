@@ -4,8 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type GithubUser, type Repo, type Sky, type Star, type Workspace, type WsStatus } from "./api";
+import { Archive, ArchiveRestore, Check, Crown, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type GithubUser, type Repo, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -18,6 +18,7 @@ import { NewWorkspace, type NewWorkspaceRequest } from "./components/NewWorkspac
 import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
 import { CloneSheet, Welcome } from "./components/Welcome";
+import { Compare } from "./components/Compare";
 import { Settings } from "./components/Settings";
 import { chime, getSettings, saveSettings } from "./settings";
 
@@ -131,8 +132,10 @@ export default function App() {
   const [openTargets, setOpenTargets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.openInTargets().then(setOpenTargets).catch(() => {}); }, []);
   // Sidebar facts that cost a git or gh call per workspace: refreshed after turns and every 5 minutes.
+  const [usage, setUsage] = useState<Awaited<ReturnType<typeof api.usageSummary>> | null>(null);
   useEffect(() => {
     api.lineCounts().then(setLines).catch(() => {});
+    api.usageSummary().then(setUsage).catch(() => {});
   }, [refreshKey, workspaces.length]);
   useEffect(() => {
     const load = () => api.prStates().then(setPrStates).catch(() => {});
@@ -145,6 +148,7 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [comparing, setComparing] = useState<string | null>(params.get("compare")); // pair id
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
 
@@ -337,13 +341,30 @@ export default function App() {
     }
   };
 
-  const newWorkspace = async ({ repoId, prompt, agent, model, mode, from }: NewWorkspaceRequest) => {
+  const newWorkspace = async (req: NewWorkspaceRequest) => {
+    const { repoId, prompt, agent, model, mode, from } = req;
     try {
-      const w = await api.createWorkspace(repoId, undefined, undefined, from);
-      const session = prompt ? await api.newSession(w.id, agent) : null;
-      if (session) await api.updateSession(session.id, "New chat", model, mode);
+      // A bake-off makes one workspace per agent, linked so they can be compared.
+      const agents: Agent[] = agent === "both" ? ["claude", "codex"] : [agent];
+      const made: Workspace[] = [];
+      for (let i = 0; i < agents.length; i++) made.push(await api.createWorkspace(repoId, undefined, undefined, from));
+      if (made.length > 1) {
+        await api.setPair(made.map((w) => w.id));
+        if (prompt) {
+          const base = prompt.split("\n")[0].slice(0, 40);
+          await Promise.all(made.map((w, i) => api.setWorkspaceTitle(w.id, `${base} (${agents[i] === "claude" ? "Claude" : "Codex"})`)));
+        }
+      }
+      const sessions = prompt
+        ? await Promise.all(made.map(async (w, i) => {
+            const s = await api.newSession(w.id, agents[i]);
+            await api.updateSession(s.id, "New chat", agents[i] === agent ? model : null, mode);
+            return s;
+          }))
+        : [];
       setNewFor(null);
       await refresh();
+      const w = made[0];
       select(w.id);
       // Celebrate the first star of each constellation only, so it stays special.
       const found = starFor(sky, w.name);
@@ -351,18 +372,20 @@ export default function App() {
         setDiscovery({ star: found, kind: "lit" });
         setTimeout(() => setDiscovery(null), 7000);
       }
+      if (made.length > 1) say("Claude and Codex are both on it, each in its own workspace. Press Compare when they finish.");
       const scripts = await api.workspaceScripts(w.id);
-      if (scripts.setup) {
-        // Setup (installs, .env) first, so the agent's first test run has what it needs.
-        const done = waitForExit(`${w.id}:setup`);
-        await startPty(`${w.id}:setup`, w.path, scripts.setup, "setup");
-        if (session) {
-          setTab("chat");
-          say("Setup is running in the Terminal tab. The agent starts as soon as it finishes.");
-          await done;
-        } else setTab("terminal");
-      } else setTab("chat");
-      if (session) await api.send(session.id, prompt);
+      await Promise.all(made.map(async (mw, i) => {
+        if (scripts.setup) {
+          // Setup (installs, .env) first, so the agent's first test run has what it needs.
+          const done = waitForExit(`${mw.id}:setup`);
+          await startPty(`${mw.id}:setup`, mw.path, scripts.setup, "setup");
+          if (sessions[i]) {
+            if (i === 0) { setTab("chat"); if (made.length === 1) say("Setup is running in the Terminal tab. The agent starts as soon as it finishes."); }
+            await done;
+          } else setTab("terminal");
+        } else if (i === 0) setTab("chat");
+        if (sessions[i]) await api.send(sessions[i].id, prompt);
+      }));
     } catch (e) {
       say(`Couldn't create the workspace. ${errText(e)}`, true);
     }
@@ -563,6 +586,7 @@ export default function App() {
         onGroupBy={(g) => { setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); }}
         prStates={prStates}
         lines={lines}
+        usage={usage}
       />
       <div
         className="sidebar-resizer"
@@ -623,6 +647,9 @@ export default function App() {
                   <>
                     {localUrls[ws.id] && livePtys.has(`${ws.id}:run`) && (
                       <button className="quiet" onClick={openLocal} title="Open in the browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
+                    )}
+                    {ws.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1 && (
+                      <button className="accent" onClick={() => setComparing(ws.pair_id)} title="Compare the agents that got this task"><Crown size={14} />Compare</button>
                     )}
                     {livePtys.has(`${ws.id}:run`) ? (
                       <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
@@ -735,6 +762,24 @@ export default function App() {
           {toast.text}
           {toast.action && <button className="toast-action" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}
         </div>
+      )}
+      {comparing && (
+        <Compare
+          workspaces={workspaces.filter((w) => w.pair_id === comparing && w.state === "active")}
+          names={(w) => displayName(sky, w)}
+          lines={lines}
+          prStates={prStates}
+          onOpen={(id) => { setComparing(null); select(id); setTab("changes"); }}
+          onKeep={async (id) => {
+            const others = workspaces.filter((w) => w.pair_id === comparing && w.id !== id && w.state === "active");
+            for (const o of others) await api.archiveWorkspace(o.id, true).catch((e) => say(errText(e), true));
+            setComparing(null);
+            await refresh();
+            select(id);
+            say(`Kept ${displayName(sky, workspaces.find((w) => w.id === id)!)}. The other branch is archived and kept.`);
+          }}
+          onClose={() => setComparing(null)}
+        />
       )}
       {cloning && (
         <CloneSheet
