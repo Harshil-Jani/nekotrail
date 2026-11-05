@@ -331,6 +331,23 @@ impl Store {
         Ok(())
     }
 
+    /// Append many events in one transaction (history import).
+    pub fn append_events(&self, session_id: &str, events: &[serde_json::Value], at: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut st = tx.prepare("INSERT INTO messages (session_id, event, created_at) VALUES (?1,?2,?3)")?;
+            for ev in events {
+                st.execute(params![session_id, ev.to_string(), at])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn has_events(&self, session_id: &str) -> Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS(SELECT 1 FROM messages WHERE session_id=?1)", [session_id], |r| r.get(0))?)
+    }
+
     pub fn events(&self, session_id: &str) -> Result<Vec<serde_json::Value>> {
         let mut st = self.conn.prepare("SELECT event FROM messages WHERE session_id=?1 ORDER BY id")?;
         let rows = st

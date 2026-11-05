@@ -41,7 +41,7 @@ export function Diff({ workspaceId, refreshKey }: { workspaceId: string; refresh
   if (files.length === 0)
     return (
       <div className="empty">
-        <Mascot size={80} mood="sleep" />
+        <Mascot size={64} mood="sleep" />
         <h2>Nothing changed yet</h2>
         <p>Edits the agent makes in this workspace show up here, compared with the target branch.</p>
       </div>

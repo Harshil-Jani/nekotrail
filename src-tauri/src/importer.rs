@@ -23,6 +23,8 @@ pub struct Report {
     pub sessions: usize,
     /// Workspaces skipped because their folder no longer exists or was already imported.
     pub skipped: usize,
+    /// Chats whose message history was copied in.
+    pub chats_with_history: usize,
 }
 
 struct SrcWorkspace {
@@ -34,6 +36,62 @@ struct SrcWorkspace {
     target: String,
     pinned: bool,
     notes: String,
+}
+
+/// Convert one Conductor chat into nekotrail events. Conductor stores what you typed as
+/// plain text and the agent's side as the raw CLI stream, line by line.
+pub fn history_events(src: &Connection, conductor_session: &str, agent: &str) -> Result<Vec<serde_json::Value>> {
+    let mut st = src.prepare(
+        "SELECT role, COALESCE(content,'') FROM session_messages
+         WHERE session_id = ?1 AND cancelled_at IS NULL ORDER BY created_at, rowid",
+    )?;
+    let rows = st.query_map([conductor_session], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (role, content) = row?;
+        if role == "user" {
+            if !content.trim().is_empty() {
+                out.push(serde_json::json!({"kind": "user", "text": content}));
+            }
+        } else {
+            out.extend(crate::agent::parse(agent, &content).into_iter().filter(|e| e["kind"] != "session"));
+        }
+    }
+    Ok(out)
+}
+
+/// Fill in chat history for imported chats that have none yet. Matches by the agent's
+/// session id, or by workspace folder and chat title when there is none. Returns chats filled.
+pub fn backfill_history(store: &Store, db: &Path) -> Result<usize> {
+    let src = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let mut filled = 0;
+    for ws in store.workspaces(true)?.into_iter().filter(|w| w.imported_from.as_deref() == Some("conductor")) {
+        for s in store.sessions(&ws.id)? {
+            if store.has_events(&s.id)? {
+                continue;
+            }
+            let found: Option<String> = match &s.agent_session_id {
+                Some(sid) => src
+                    .query_row("SELECT id FROM sessions WHERE claude_session_id = ?1 LIMIT 1", [sid], |r| r.get(0))
+                    .ok(),
+                None => src
+                    .query_row(
+                        "SELECT s.id FROM sessions s JOIN workspaces w ON w.id = s.workspace_id
+                         WHERE w.workspace_path = ?1 AND COALESCE(s.title,'Imported chat') = ?2 LIMIT 1",
+                        [&ws.path, &s.title],
+                        |r| r.get(0),
+                    )
+                    .ok(),
+            };
+            let Some(cid) = found else { continue };
+            let events = history_events(&src, &cid, &s.agent)?;
+            if !events.is_empty() {
+                store.append_events(&s.id, &events, &crate::store::now())?;
+                filled += 1;
+            }
+        }
+    }
+    Ok(filled)
 }
 
 pub fn import(store: &Store, db: &Path) -> Result<Report> {
@@ -141,6 +199,7 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
             report.sessions += 1;
         }
     }
+    report.chats_with_history = backfill_history(store, db)?;
     Ok(report)
 }
 
@@ -159,7 +218,8 @@ mod tests {
                                       branch TEXT, workspace_path TEXT, intended_target_branch TEXT,
                                       initialization_parent_branch TEXT, pinned_at TEXT, notes TEXT, state TEXT);
              CREATE TABLE sessions (id TEXT, workspace_id TEXT, agent_type TEXT, claude_session_id TEXT,
-                                    title TEXT, is_hidden INTEGER, created_at TEXT);",
+                                    title TEXT, is_hidden INTEGER, created_at TEXT);
+             CREATE TABLE session_messages (session_id TEXT, role TEXT, content TEXT, created_at TEXT, cancelled_at TEXT);",
         )
         .unwrap();
         c.execute(
@@ -180,6 +240,12 @@ mod tests {
                                          ('s3','w1','claude',NULL,'hidden',1,'3');",
         )
         .unwrap();
+        c.execute(
+            "INSERT INTO session_messages VALUES ('s1','user','Fix the bug','1',NULL), ('s1','assistant',?1,'2',NULL),
+                                                 ('s1','user','ignored, cancelled','3','4')",
+            [r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed."}]}}"#],
+        )
+        .unwrap();
         db
     }
 
@@ -194,17 +260,21 @@ mod tests {
 
         let store = Store::in_memory().unwrap();
         let r = import(&store, &db).unwrap();
-        assert_eq!(r, Report { repos: 1, workspaces: 1, sessions: 2, skipped: 1 });
+        assert_eq!(r, Report { repos: 1, workspaces: 1, sessions: 2, skipped: 1, chats_with_history: 1 });
 
         let w = &store.workspaces(false).unwrap()[0];
         assert_eq!((w.name.as_str(), w.branch.as_str(), w.pinned, w.notes.as_str()), ("tunis", "me/fix", true, "todo"));
         let s = store.sessions(&w.id).unwrap();
         assert_eq!(s[0].agent_session_id.as_deref(), Some("sid-1"));
+        let ev = store.events(&s[0].id).unwrap();
+        assert_eq!(ev.len(), 2, "{ev:?}");
+        assert_eq!((ev[0]["kind"].as_str(), ev[1]["text"].as_str()), (Some("user"), Some("Fixed.")));
         assert_eq!(s[1].agent, "codex");
         assert_eq!(store.repos().unwrap()[0].setup_script.as_deref(), Some("bun install"));
 
         // Running it again adds nothing.
         let again = import(&store, &db).unwrap();
-        assert_eq!(again, Report { repos: 0, workspaces: 0, sessions: 0, skipped: 2 });
+        assert_eq!(again, Report { repos: 0, workspaces: 0, sessions: 0, skipped: 2, chats_with_history: 0 });
+        assert_eq!(store.events(&s[0].id).unwrap().len(), 2, "history is not copied twice");
     }
 }

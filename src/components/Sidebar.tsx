@@ -61,14 +61,14 @@ export function Sidebar(p: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <Mascot size={32} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
+        <Mascot size={26} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
         <span className="wordmark">nekotrail</span>
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
-        <button className="icon" onClick={p.onAddRepo} title="Add a local git repo" aria-label="Add repo"><Plus size={20} /></button>
+        <button className="icon" onClick={p.onAddRepo} title="Add a local git repo" aria-label="Add repo"><Plus size={18} /></button>
       </div>
       <label className="search">
-        <Search size={16} />
+        <Search size={14} />
         <input placeholder="Search workspaces" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Search workspaces (⌘K)" />
       </label>
       <div className="sidebar-scroll">
@@ -101,7 +101,7 @@ export function Sidebar(p: Props) {
       </div>
       <div className="sidebar-foot">
         <button className="me" onClick={p.onSky} title="Open your night sky">
-          {p.me ? <Avatar src={p.me.avatar_url} size={40} label={p.me.login} /> : <Mascot size={40} />}
+          {p.me ? <Avatar src={p.me.avatar_url} size={28} label={p.me.login} /> : <Mascot size={28} />}
           <span className="me-text">
             <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to gh"}</span>
             <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>

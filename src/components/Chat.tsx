@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Brain, Check, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { AlertCircle, Brain, Check, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
 
@@ -73,6 +73,7 @@ export function Chat({
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+  const [menu, setMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const session = sessions.find((s) => s.id === active) ?? null;
@@ -157,14 +158,21 @@ export function Chat({
             {s.agent === "codex" ? "Codex · " : ""}{s.title}
           </button>
         ))}
-        <button className="chat-tab quiet" onClick={() => newChat("claude")}>New Claude chat</button>
-        <button className="chat-tab quiet" onClick={() => newChat("codex")}>New Codex chat</button>
+        <span className="newchat">
+          <button className="icon" title="New chat" aria-label="New chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
+          {menu && (
+            <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
+              <button role="menuitem" onClick={() => { setMenu(false); newChat("claude"); }}>New Claude chat</button>
+              <button role="menuitem" onClick={() => { setMenu(false); newChat("codex"); }}>New Codex chat</button>
+            </span>
+          )}
+        </span>
       </div>
 
       <div className="messages" ref={scroller}>
         {rows.length === 0 && (
           <div className="empty">
-            <Mascot size={96} mood="sleep" />
+            <Mascot size={64} mood="sleep" />
             <h2>{session?.agent_session_id ? "Pick up where you left off" : "What should we build?"}</h2>
             <p>
               {session?.agent_session_id
