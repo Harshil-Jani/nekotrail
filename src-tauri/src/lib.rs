@@ -601,11 +601,10 @@ pub fn run() {
     let store = Store::open(&data.join("nekotrail.db")).expect("open database");
     let branch_prefix = github_login().unwrap_or_else(|| "purr".into());
     // Chats imported before history import existed get their messages now (once; skips filled chats).
-    if let Some(db) = importer::default_db_path() {
-        if let Err(err) = importer::backfill_history(&store, &db) {
+    if let Some(db) = importer::default_db_path()
+        && let Err(err) = importer::backfill_history(&store, &db) {
             eprintln!("could not copy Conductor chat history: {err}");
         }
-    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
