@@ -69,7 +69,7 @@ export function Sidebar(p: Props) {
       </div>
       <label className="search">
         <Search size={14} />
-        <input placeholder="Search workspaces" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Search workspaces (⌘K)" />
+        <input placeholder="Search workspaces" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
       </label>
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}

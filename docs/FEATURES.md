@@ -20,20 +20,20 @@ This list was built from Conductor's public changelog (about 150 entries, July 2
 | Conductor importer | Repos, active workspaces, chats. Read-only. |
 | Notifications and Dock badge | When an agent finishes while you're elsewhere. |
 | Night sky and cat moods | Workspaces light stars, merged PRs make them shine; mascot moods map to real state. |
-| Keyboard | ⌘N, ⌘J, ⌘K, ⌘1-4, ⌘↵. |
+| Checkpoints | Snapshot before every message; rewind files (and commits) to any message. |
+| Review comments | Comment on diff lines, send them to the agent as one message. |
+| @-mentions and attachments | Fuzzy file picker in the composer; pasted screenshots are saved in a git-ignored folder. |
+| Command palette and settings | ⌘K for everything, ⌘, for notifications, chime and editor. |
+| Keyboard | ⌘K, ⌘N, ⌘J, ⌘O, ⌘1-4, ⌘↵, ⌘,. |
 
 ## Next (ranked)
 
-1. **Checkpoints:** snapshot the worktree before each turn and roll back one turn.
-2. **Inline review comments:** comment on diff lines and send them to the agent as one message.
-3. **Edit files in the diff view.**
-4. **Create a workspace from a PR, a GitHub issue or a Linear issue.**
-5. **Mid-turn tool approval** (needs Claude Code's streaming input mode).
-6. **Attachments and @file mentions** in the composer.
-7. **Sounds**, off by default, with a mute setting.
-8. **Browser preview and port forwarding** for web apps.
-9. **Command palette** for every action.
-10. **Workspace links** (`nekotrail://ws/<id>`) to share in chat.
+1. **Create a workspace from a PR, a GitHub issue or a Linear issue.**
+2. **Edit files in the diff view.**
+3. **Mid-turn tool approval** (needs Claude Code's streaming input mode).
+4. **Notarized builds and auto-update.**
+5. **Browser preview and port forwarding** for web apps.
+6. **Workspace links** (`nekotrail://ws/<id>`) to share in chat.
 
 ## Skipping for now
 

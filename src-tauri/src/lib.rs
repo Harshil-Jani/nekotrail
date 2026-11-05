@@ -28,6 +28,8 @@ struct Runs {
     running: HashMap<String, u32>,
     /// session id -> prompts waiting for the current turn to finish
     queued: HashMap<String, VecDeque<String>>,
+    /// session id -> context the agent must hear before the next prompt (e.g. "files were rewound")
+    notes: HashMap<String, String>,
 }
 
 pub struct AppState {
@@ -422,6 +424,65 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
     Ok(())
 }
 
+/// Undo every file change made since `checkpoint` (taken before one of this chat's messages).
+/// The agent is told on its next turn, so it does not assume its old edits still exist.
+#[tauri::command]
+async fn restore_checkpoint(app: AppHandle, st: State<'_, AppState>, id: String, checkpoint: String) -> Res<()> {
+    let ws = {
+        let db = st.db();
+        let s = db.session(&id).map_err(e)?;
+        db.workspace(&s.workspace_id).map_err(e)?
+    };
+    {
+        let runs = st.runs.lock().unwrap();
+        let busy = st.db().sessions(&ws.id).map_err(e)?.iter().any(|s| runs.running.contains_key(&s.id));
+        if busy {
+            return Err("An agent is still working in this workspace. Stop it first.".into());
+        }
+    }
+    // Keep a checkpoint of the current state too, so a rewind can itself be undone from the terminal.
+    let _ = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id));
+    git::restore_checkpoint(Path::new(&ws.path), &checkpoint).map_err(e)?;
+    let ev = json!({"kind": "note", "text": "Files rewound to before this point. Later changes were undone."});
+    st.db().append_event(&id, &ev).map_err(e)?;
+    emit_event(&app, &id, &ev);
+    st.runs.lock().unwrap().notes.insert(
+        id,
+        "[Note from nekotrail: the user rewound the workspace files to an earlier point in this chat. \
+         Edits you made after that point no longer exist. Re-read files before changing them.]".into(),
+    );
+    Ok(())
+}
+
+/// Files in a workspace, for @-mentions in the composer.
+#[tauri::command]
+async fn workspace_files(st: State<'_, AppState>, id: String) -> Res<Vec<String>> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    git::files(Path::new(&ws.path)).map_err(e)
+}
+
+/// Save a pasted or dropped file inside the workspace (in a git-ignored folder) and return the
+/// relative path, so the agent can open it like any other file.
+#[tauri::command]
+async fn save_attachment(st: State<'_, AppState>, id: String, name: String, bytes: Vec<u8>) -> Res<String> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let root = Path::new(&ws.path);
+    if let Ok(common) = git::git(root, &["rev-parse", "--path-format=absolute", "--git-common-dir"]) {
+        let exclude = Path::new(&common).join("info").join("exclude");
+        let cur = std::fs::read_to_string(&exclude).unwrap_or_default();
+        if !cur.lines().any(|l| l.trim() == ".nekotrail/") {
+            let _ = std::fs::create_dir_all(exclude.parent().unwrap());
+            let _ = std::fs::write(&exclude, format!("{cur}{}.nekotrail/\n", if cur.is_empty() || cur.ends_with('\n') { "" } else { "\n" }));
+        }
+    }
+    let safe: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' }).collect();
+    let rel = format!(".nekotrail/attachments/{}-{}", chrono::Local::now().format("%H%M%S"), safe);
+    let full = root.join(&rel);
+    std::fs::create_dir_all(full.parent().unwrap()).map_err(e)?;
+    std::fs::write(&full, bytes).map_err(e)?;
+    Ok(rel)
+}
+
 fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
     let _ = app.emit("agent", json!({"session_id": session_id, "event": ev}));
 }
@@ -437,13 +498,19 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }
         (s, ws)
     };
-    let user = json!({"kind": "user", "text": text});
+    // Snapshot the worktree first, so this turn can be undone with one click.
+    let checkpoint = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id)).ok();
+    let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
     st.db().append_event(&id, &user).map_err(e)?;
     emit_event(&app, &id, &user);
+    let prompt = match st.runs.lock().unwrap().notes.remove(&id) {
+        Some(note) => format!("{note}\n\n{text}"),
+        None => text.clone(),
+    };
 
     let mut cmd = agent::command(&agent::TurnSpec {
         agent: &session.agent,
-        prompt: &text,
+        prompt: &prompt,
         agent_session_id: session.agent_session_id.as_deref(),
         model: session.model.as_deref(),
         permission_mode: &session.permission_mode,
@@ -619,6 +686,7 @@ pub fn run() {
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
+            restore_checkpoint, workspace_files, save_attachment,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
         ])

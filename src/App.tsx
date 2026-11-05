@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, FolderOpen, Pin, PinOff, Play } from "lucide-react";
+import { Archive, ArchiveRestore, Cat, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, ZoomIn } from "lucide-react";
 import { api, constellationOf, errText, starFor, type GithubUser, type Repo, type Sky, type Star, type Workspace } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -15,6 +15,9 @@ import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
 import { NewWorkspace, type NewWorkspaceRequest } from "./components/NewWorkspace";
 import { Mascot, type Mood } from "./components/Mascot";
+import { Palette, type Command } from "./components/Palette";
+import { Settings } from "./components/Settings";
+import { chime, getSettings } from "./settings";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
 
@@ -69,6 +72,8 @@ export default function App() {
   const [lastActive, setLastActive] = useState(Date.now());
   const [worriedUntil, setWorriedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [palette, setPalette] = useState(params.has("palette"));
+  const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
 
   const refresh = useCallback(async () => {
     const s = await api.snapshot(showArchived);
@@ -104,9 +109,11 @@ export default function App() {
       setLastActive(Date.now());
       if (payload.running || !payload.workspace_id || payload.more_queued) return;
       if (payload.ok === false) setWorriedUntil(Date.now() + 15_000);
+      const prefs = getSettings();
+      if (prefs.sound) chime(payload.ok !== false);
       // The cat brings you something: tell the user when they're looking elsewhere.
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
-      if (away) {
+      if (prefs.notify === "always" || (prefs.notify === "away" && away)) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
         const name = (w && starFor(skyRef.current, w.name)?.name) || w?.name || "A workspace";
         notify(payload.ok === false ? `${name} needs you` : `${name} is done`, payload.title || "The agent finished its turn.");
@@ -322,21 +329,71 @@ export default function App() {
     }
   };
 
-  // ⌘N new workspace, ⌘K search, ⌘1-4 tabs.
+  const nextUnread = () => {
+    const list = workspaces.filter((w) => w.state === "active");
+    const start = list.findIndex((w) => w.id === selected);
+    const next = [...list.slice(start + 1), ...list.slice(0, start + 1)].find((w) => w.unread);
+    if (next) select(next.id);
+    else say("Nothing new. Every cat is asleep or still working.");
+  };
+  const openInEditor = (app = getSettings().editor) => {
+    if (ws) api.openIn(ws.id, app).catch((er) => say(errText(er), true));
+  };
+
+  // Everything the palette can do. Built on open, so it always reflects the current state.
+  const commands = (): Command[] => {
+    const c: Command[] = [];
+    const nameOf = (w: Workspace) => starFor(sky, w.name)?.name ?? w.name;
+    if (ws && ws.state === "active") {
+      const here = nameOf(ws);
+      c.push(
+        { id: "tab-chat", group: here, label: "Chat", hint: "⌘1", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
+        { id: "tab-changes", group: here, label: "Changes", hint: "⌘2", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
+        { id: "tab-term", group: here, label: "Terminal", hint: "⌘3", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "tab-notes", group: here, label: "Notes", hint: "⌘4", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
+        { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: runScript },
+        { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
+        { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
+        { id: "pr", group: here, label: "Pull request", keywords: "github pr create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
+        { id: "pin", group: here, label: ws.pinned ? "Unpin" : "Pin to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
+        { id: "archive", group: here, label: "Archive workspace", keywords: "close done remove", icon: <Archive size={15} />, run: archive },
+      );
+    }
+    c.push(
+      { id: "new", group: "Create", label: "New workspace", hint: "⌘N", keywords: "worktree branch task", icon: <Plus size={15} />, run: () => { const r = ws?.repo_id ?? repos[0]?.id; if (r) setNewFor(r); else addRepo(); } },
+      { id: "add-repo", group: "Create", label: "Add a repo", icon: <FolderOpen size={15} />, run: addRepo },
+    );
+    const active = workspaces.filter((w) => w.state === "active");
+    for (const w of [...active].sort((a, b) => Number(b.unread) - Number(a.unread))) {
+      const r = repos.find((x) => x.id === w.repo_id);
+      c.push({
+        id: `ws-${w.id}`, group: "Workspaces", label: nameOf(w), keywords: `${w.branch} ${r?.name ?? ""}`,
+        hint: `${r?.name ?? ""}${w.unread ? " · new" : runningWs.has(w.id) ? " · working" : ""}`,
+        icon: runningWs.has(w.id) ? <span className="spinner" /> : <Sparkles size={15} />, run: () => select(w.id),
+      });
+    }
+    c.push(
+      { id: "next", group: "Go", label: "Next workspace with news", hint: "⌘J", icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "sky", group: "Go", label: "Night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
+      { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
+      { id: "settings", group: "App", label: "Settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
+      { id: "pet", group: "App", label: "Pet the cat", icon: <Cat size={15} />, run: pet },
+      { id: "zoom-reset", group: "App", label: "Reset zoom", hint: "⌘0", icon: <ZoomIn size={15} />, run: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", metaKey: true })) },
+    );
+    for (const r of repos) c.push({ id: `scripts-${r.id}`, group: "App", label: `${r.name}: setup and run scripts`, icon: <Gear size={15} />, run: () => setSettingsFor(r.id) });
+    if (canImport) c.push({ id: "import", group: "App", label: "Import from Conductor", icon: <Download size={15} />, run: importConductor });
+    return c;
+  };
+
+  // ⌘K palette, ⌘N new workspace, ⌘J next news, ⌘O editor, ⌘, settings, ⌘1-4 tabs.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return;
-      if (e.key === "k") { e.preventDefault(); document.getElementById("workspace-search")?.focus(); }
+      if (e.key === "k") { e.preventDefault(); setPalette((p) => !p); return; }
+      if (e.key === ",") { e.preventDefault(); setSettingsOpen(true); return; }
+      if (e.key === "o" && ws) { e.preventDefault(); openInEditor(); return; }
       if (e.key === "n" && (ws || repos[0])) { e.preventDefault(); setNewFor(ws?.repo_id ?? repos[0].id); }
-      if (e.key === "j") {
-        // Next workspace with news, wrapping around.
-        e.preventDefault();
-        const list = workspaces.filter((w) => w.state === "active");
-        const start = list.findIndex((w) => w.id === selected);
-        const next = [...list.slice(start + 1), ...list.slice(0, start + 1)].find((w) => w.unread);
-        if (next) select(next.id);
-        else say("Nothing new. Every cat is asleep or still working.");
-      }
+      if (e.key === "j") { e.preventDefault(); nextUnread(); }
       const i = Number(e.key) - 1;
       if (ws && i >= 0 && i < TABS.length) { e.preventDefault(); setTab(TABS[i].id); }
     };
@@ -472,7 +529,7 @@ export default function App() {
                     <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
-                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} />}
+                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
                     <Terminal key={ws.id} ptyId={`${ws.id}:term`} cwd={ws.path} run={run} />
@@ -499,6 +556,8 @@ export default function App() {
         <NewWorkspace repos={repos} initialRepo={newFor} onCreate={newWorkspace} onClose={() => setNewFor(null)} />
       )}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
+      {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} />}
       {toast && <div role="status" className={`toast ${toast.error ? "error" : ""}`}>{toast.text}</div>}
       {discovery && (
         <div className="discovery" role="status">

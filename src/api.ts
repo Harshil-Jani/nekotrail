@@ -40,7 +40,8 @@ export type Session = {
 };
 
 export type ChatEvent =
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; checkpoint?: string | null }
+  | { kind: "note"; text: string }
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool"; id: string; name: string; input: string }
@@ -117,6 +118,10 @@ export const api = {
   clearQueue: (id: string) => invoke<void>("clear_queue", { id }),
   send: (id: string, text: string) => invoke<void>("send", { id, text }),
   stop: (id: string) => invoke<void>("stop", { id }),
+  restoreCheckpoint: (id: string, checkpoint: string) => invoke<void>("restore_checkpoint", { id, checkpoint }),
+  workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),
+  saveAttachment: async (id: string, file: File) =>
+    invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
   ptyOpen: (id: string, cwd: string, cols: number, rows: number) => invoke<void>("pty_open", { id, cwd, cols, rows }),
   ptyWrite: (id: string, data: string) => invoke<void>("pty_write", { id, data }),
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),

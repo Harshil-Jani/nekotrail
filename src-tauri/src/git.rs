@@ -160,6 +160,95 @@ pub fn branches(repo: &Path) -> Result<Vec<String>> {
     Ok(v)
 }
 
+/// Run git with a private index file, so snapshots never touch the user's staging area.
+fn git_idx(dir: &Path, index: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_INDEX_FILE", index)
+        .output()
+        .with_context(|| format!("running git {}", args.join(" ")))?;
+    if !out.status.success() {
+        bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
+}
+
+struct TempIndex(PathBuf);
+impl TempIndex {
+    fn new() -> Self {
+        TempIndex(std::env::temp_dir().join(format!("nekotrail-index-{}", uuid::Uuid::new_v4())))
+    }
+}
+impl Drop for TempIndex {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Snapshot every tracked and untracked (not ignored) file plus HEAD, as a commit kept alive under
+/// `refname`. Returns the checkpoint commit id.
+pub fn checkpoint(ws: &Path, refname: &str) -> Result<String> {
+    let idx = TempIndex::new();
+    // Start from a copy of the real index: its stat cache means `add -A` only re-hashes files
+    // that changed, which keeps snapshots fast in large repos.
+    let real = git(ws, &["rev-parse", "--path-format=absolute", "--git-path", "index"])?;
+    if std::fs::copy(&real, &idx.0).is_err() {
+        git_idx(ws, &idx.0, &["read-tree", "HEAD"])?;
+    }
+    git_idx(ws, &idx.0, &["add", "-A", "."])?;
+    let tree = git_idx(ws, &idx.0, &["write-tree"])?;
+    let head = git(ws, &["rev-parse", "HEAD"])?;
+    let mut args = vec!["commit-tree", tree.as_str(), "-p", head.as_str()];
+    let prev = git(ws, &["rev-parse", "--verify", "--quiet", refname]).ok();
+    if let Some(p) = prev.as_deref() {
+        args.extend(["-p", p]);
+    }
+    args.extend(["-m", "nekotrail checkpoint"]);
+    let commit = Command::new("git")
+        .arg("-C")
+        .arg(ws)
+        .args(&args)
+        .env("GIT_AUTHOR_NAME", "nekotrail")
+        .env("GIT_AUTHOR_EMAIL", "nekotrail@localhost")
+        .env("GIT_COMMITTER_NAME", "nekotrail")
+        .env("GIT_COMMITTER_EMAIL", "nekotrail@localhost")
+        .output()?;
+    if !commit.status.success() {
+        bail!("git commit-tree failed: {}", String::from_utf8_lossy(&commit.stderr).trim());
+    }
+    let commit = String::from_utf8_lossy(&commit.stdout).trim().to_string();
+    git(ws, &["update-ref", refname, &commit])?;
+    Ok(commit)
+}
+
+/// Put the worktree back exactly as it was at `checkpoint`: same files, same contents, same HEAD.
+/// Files created since are deleted; ignored files (build output, node_modules) are left alone.
+pub fn restore_checkpoint(ws: &Path, checkpoint: &str) -> Result<()> {
+    let tree = format!("{checkpoint}^{{tree}}");
+    let head = git(ws, &["rev-parse", &format!("{checkpoint}^1")])?;
+    let keep: std::collections::HashSet<String> =
+        git(ws, &["ls-tree", "-r", "--name-only", &tree])?.lines().map(String::from).collect();
+    let now = git(ws, &["ls-files", "-co", "--exclude-standard"])?;
+    for f in now.lines().filter(|f| !f.is_empty() && !keep.contains(*f)) {
+        let _ = std::fs::remove_file(ws.join(f));
+    }
+    let idx = TempIndex::new();
+    git_idx(ws, &idx.0, &["read-tree", &tree])?;
+    git_idx(ws, &idx.0, &["checkout-index", "-a", "-f"])?;
+    // If the agent committed since, move the branch back too. The worktree already matches.
+    if git(ws, &["rev-parse", "HEAD"])? != head {
+        git(ws, &["reset", "-q", "--mixed", &head])?;
+    }
+    Ok(())
+}
+
+/// Tracked and untracked (not ignored) files, for @-mentions.
+pub fn files(ws: &Path) -> Result<Vec<String>> {
+    Ok(git(ws, &["ls-files", "-co", "--exclude-standard"])?.lines().map(String::from).collect())
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -174,6 +263,39 @@ pub mod tests {
         git(p, &["add", "."]).unwrap();
         git(p, &["commit", "-qm", "init"]).unwrap();
         d
+    }
+
+    #[test]
+    fn checkpoint_round_trip() {
+        let repo = init_repo();
+        let r = repo.path();
+        std::fs::write(r.join("a.txt"), "user edit\n").unwrap();
+        std::fs::write(r.join("draft.txt"), "untracked\n").unwrap();
+        git(r, &["add", "a.txt"]).unwrap(); // something staged, to prove the real index is untouched
+        let staged_before = git(r, &["diff", "--cached", "--name-only"]).unwrap();
+        let head_before = git(r, &["rev-parse", "HEAD"]).unwrap();
+
+        let cp = checkpoint(r, "refs/nekotrail/test").unwrap();
+        assert_eq!(git(r, &["diff", "--cached", "--name-only"]).unwrap(), staged_before);
+
+        // The "agent" edits, deletes, creates and commits.
+        std::fs::write(r.join("a.txt"), "agent edit\n").unwrap();
+        std::fs::remove_file(r.join("draft.txt")).unwrap();
+        std::fs::write(r.join("new.rs"), "fn main() {}\n").unwrap();
+        git(r, &["add", "-A"]).unwrap();
+        git(r, &["commit", "-qm", "agent"]).unwrap();
+        std::fs::write(r.join("later.txt"), "x\n").unwrap();
+
+        restore_checkpoint(r, &cp).unwrap();
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "user edit\n");
+        assert_eq!(std::fs::read_to_string(r.join("draft.txt")).unwrap(), "untracked\n");
+        assert!(!r.join("new.rs").exists());
+        assert!(!r.join("later.txt").exists());
+        assert_eq!(git(r, &["rev-parse", "HEAD"]).unwrap(), head_before);
+
+        // A second checkpoint chains onto the first, so both stay reachable.
+        let cp2 = checkpoint(r, "refs/nekotrail/test").unwrap();
+        assert!(git(r, &["merge-base", "--is-ancestor", &cp, &cp2]).is_ok());
     }
 
     #[test]

@@ -27,8 +27,9 @@ nekotrail is an open-source, local-first desktop app for running Claude Code and
 | | |
 |---|---|
 | Workspaces | One git worktree and branch per task. Archive removes the folder and keeps the branch; restore brings it back. |
-| Chat | Claude Code or Codex, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. |
-| Changes | Everything the agent changed versus the target branch, including uncommitted and new files. |
+| Chat | Claude Code or Codex, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
+| Checkpoints | Every message snapshots the workspace first. Hover a message and click **Rewind files to here** to undo everything the agent did from that point, commits included. |
+| Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line and send all your comments to the agent as one review. |
 | Terminal | A real login shell in the workspace folder. |
 | PRs | Push and open a PR from the app. See the author, reviewers, CI checks, comments and line counts. One click asks the agent to fix failing CI or resolve conflicts. |
 | Scripts | Setup, run and archive scripts per repo. Commit a `nekotrail.json` to share them with your team. |
@@ -44,12 +45,16 @@ The cat reflects the real state of your work, so its moods carry information:
 - **Worried:** CI is failing or a turn ended in an error.
 - **Happy:** a PR was merged. Its star starts to shine, and the cat offers to archive the workspace.
 - **Brings you something:** when an agent finishes while you're elsewhere, you get a macOS notification and a Dock badge. Press ⌘J to jump to the next workspace with news.
-- Its eyes follow your cursor. Click it and it purrs a fact about one of your breeds.
+- Its eyes follow your cursor. Click it and it purrs the story of one of your constellations.
 - Archiving a workspace knocks it off the table.
 
 ## Install
 
+Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so on first launch right-click it and choose **Open**.
+
 Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code) or [`codex`](https://github.com/openai/codex).
+
+To build it yourself:
 
 ```sh
 git clone https://github.com/Harshil-Jani/nekotrail
@@ -64,11 +69,14 @@ bun run tauri dev
 
 | Keys | Action |
 |---|---|
+| ⌘K | Command palette: jump to any workspace, run any action |
 | ⌘N | New workspace: type the task, Enter starts the agent |
 | ⌘J | Next workspace with news |
-| ⌘K | Search workspaces |
 | ⌘1 to ⌘4 | Chat, Changes, Terminal, Notes |
 | ⌘↵ | Send message |
+| ⌘O | Open the workspace in your editor (pick it in Settings) |
+| ⌘, | Settings: notifications, chime, editor |
+| ⌘+ / ⌘- / ⌘0 | Zoom |
 
 ## Sharing scripts with `nekotrail.json`
 

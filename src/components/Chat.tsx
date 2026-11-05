@@ -1,10 +1,34 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Brain, Check, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { AlertCircle, Brain, Check, History, Paperclip, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
+
+/** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
+export function matchFiles(files: string[], q: string, max = 8): string[] {
+  const query = q.toLowerCase();
+  const scored: [number, string][] = [];
+  for (const f of files) {
+    const lower = f.toLowerCase();
+    const base = lower.slice(lower.lastIndexOf("/") + 1);
+    let score: number;
+    if (!query) score = 3;
+    else if (base.startsWith(query)) score = 0;
+    else if (base.includes(query)) score = 1;
+    else if (lower.includes(query)) score = 2;
+    else {
+      // Subsequence match ("srvhttp" finds server/http.go).
+      let i = 0;
+      for (const ch of lower) if (ch === query[i]) i++;
+      if (i < query.length) continue;
+      score = 3;
+    }
+    scored.push([score * 1000 + f.length, f]);
+  }
+  return scored.sort((a, b) => a[0] - b[0]).slice(0, max).map(([, f]) => f);
+}
 
 const TOOL_ICON: Record<string, typeof Wrench> = {
   Bash: SquareTerminal, Read: FileText, Write: FilePen, Edit: FilePen, MultiEdit: FilePen, NotebookEdit: FilePen,
@@ -24,7 +48,8 @@ const MODELS: Record<Agent, string[]> = {
 };
 
 type Row =
-  | { type: "user" | "text" | "thinking" | "error"; text: string }
+  | { type: "user"; text: string; checkpoint?: string | null }
+  | { type: "text" | "thinking" | "error" | "note"; text: string }
   | { type: "tool"; name: string; input: string; output?: string; is_error?: boolean; pending: boolean }
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> };
 
@@ -49,6 +74,9 @@ function toRows(events: ChatEvent[]): Row[] {
       case "done":
         rows.push({ type: "done", ev });
         break;
+      case "user":
+        rows.push({ type: "user", text: ev.text, checkpoint: ev.checkpoint });
+        break;
       default:
         rows.push({ type: ev.kind, text: ev.text });
     }
@@ -56,11 +84,51 @@ function toRows(events: ChatEvent[]): Row[] {
   return rows;
 }
 
+/** Rewind handler shared through context, so memoized rows don't re-render when it changes. */
+const RewindCtx = createContext<{ rewind: (checkpoint: string) => Promise<void>; disabled: boolean }>({
+  rewind: async () => {},
+  disabled: true,
+});
+
+/** Two-step button: the first click arms it, the second (within 4s) rewinds. No modal needed. */
+function RewindButton({ checkpoint }: { checkpoint: string }) {
+  const { rewind, disabled } = useContext(RewindCtx);
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      className={`rewind ${armed ? "armed" : ""}`}
+      disabled={disabled || busy}
+      title={disabled ? "Stop the agent to rewind" : "Undo every file change made from this message on"}
+      onClick={async () => {
+        if (!armed) return setArmed(true);
+        setBusy(true);
+        try { await rewind(checkpoint); } finally { setBusy(false); setArmed(false); }
+      }}
+    >
+      <History size={13} />
+      {armed ? "Click again to undo the changes" : "Rewind files to here"}
+    </button>
+  );
+}
+
 /** One chat row. Memoized: a new message renders only the new row, not the whole history. */
 const RowView = memo(function RowView({ r, pendingSpin }: { r: Row; pendingSpin: boolean }) {
   switch (r.type) {
     case "user":
-      return <div className="msg user">{r.text}</div>;
+      return (
+        <div className="msg-user-wrap">
+          <div className="msg user">{r.text}</div>
+          {r.checkpoint && <RewindButton checkpoint={r.checkpoint} />}
+        </div>
+      );
+    case "note":
+      return <div className="msg note"><History size={14} />{r.text}</div>;
     case "text":
       return (
         <div className="msg assistant">
@@ -128,8 +196,58 @@ export function Chat({
   const [menu, setMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const session = sessions.find((s) => s.id === active) ?? null;
   const busy = !!active && running.has(active);
+  const anyBusy = sessions.some((s) => running.has(s.id));
+
+  // @-mentions: the file list loads the first time "@" is typed in this workspace.
+  const files = useRef<string[] | null>(null);
+  useEffect(() => { files.current = null; }, [workspaceId]);
+  const [mention, setMention] = useState<{ q: string; start: number; items: string[]; sel: number } | null>(null);
+  const updateMention = async (text: string, caret: number) => {
+    const m = /(^|\s)@([^\s@]*)$/.exec(text.slice(0, caret));
+    if (!m) return setMention(null);
+    if (!files.current) files.current = await api.workspaceFiles(workspaceId).catch(() => []);
+    const items = matchFiles(files.current, m[2]);
+    setMention(items.length ? { q: m[2], start: caret - m[2].length - 1, items, sel: 0 } : null);
+  };
+  const pickMention = (path: string) => {
+    if (!mention) return;
+    const el = input.current;
+    const end = mention.start + 1 + mention.q.length;
+    const next = `${draft.slice(0, mention.start)}@${path} ${draft.slice(end)}`;
+    setDraft(next);
+    setMention(null);
+    const caret = mention.start + path.length + 2;
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(caret, caret); });
+  };
+
+  const insertAtCaret = (text: string) => {
+    const el = input.current;
+    const at = el?.selectionStart ?? draft.length;
+    const pad = at > 0 && !/\s$/.test(draft.slice(0, at)) ? " " : "";
+    setDraft(draft.slice(0, at) + pad + text + " " + draft.slice(at));
+  };
+  const attach = async (list: FileList | File[]) => {
+    for (const f of Array.from(list)) {
+      try {
+        const rel = await api.saveAttachment(workspaceId, f);
+        insertAtCaret(`@${rel}`);
+      } catch (e) {
+        setError(errText(e));
+      }
+    }
+  };
+
+  const rewindCtx = useMemo(() => ({
+    disabled: anyBusy,
+    rewind: async (checkpoint: string) => {
+      if (!active) return;
+      setError(null);
+      try { await api.restoreCheckpoint(active, checkpoint); } catch (e) { setError(errText(e)); }
+    },
+  }), [anyBusy, active]);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);
@@ -259,6 +377,7 @@ export function Chat({
             </p>
           </div>
         )}
+        <RewindCtx.Provider value={rewindCtx}>
         <div className="thread">
           {hidden > 0 && (
             <button className="quiet earlier" onClick={showEarlier}>
@@ -269,6 +388,7 @@ export function Chat({
             <RowView key={hidden + k} r={r} pendingSpin={busy && hidden + k === rows.length - 1} />
           ))}
         </div>
+        </RewindCtx.Provider>
       </div>
 
       {queue.length > 0 && (
@@ -282,12 +402,58 @@ export function Chat({
 
       <div className="composer">
         <div className="composer-box">
+          {mention && (
+            <div className="mention" role="listbox" aria-label="Files">
+              {mention.items.map((f, i) => {
+                const cut = f.lastIndexOf("/") + 1;
+                return (
+                  <button
+                    key={f}
+                    role="option"
+                    aria-selected={i === mention.sel}
+                    className={i === mention.sel ? "on" : ""}
+                    onMouseDown={(e) => { e.preventDefault(); pickMention(f); }}
+                  >
+                    <FileText size={13} />
+                    <b>{f.slice(cut)}</b>
+                    <span className="muted">{f.slice(0, cut)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <textarea
+            ref={input}
             value={draft}
             aria-label="Message"
-            placeholder={busy ? "Working… anything you send now runs next." : "Ask for a change, a fix or a plan"}
-            onChange={(e) => setDraft(e.target.value)}
+            placeholder={busy ? "Working… anything you send now runs next." : "Ask for a change, a fix or a plan. @ to mention a file, paste a screenshot."}
+            onChange={(e) => { setDraft(e.target.value); updateMention(e.target.value, e.target.selectionStart); }}
+            onBlur={() => setMention(null)}
+            onPaste={(e) => {
+              if (e.clipboardData.files.length) {
+                e.preventDefault();
+                attach(e.clipboardData.files);
+              }
+            }}
             onKeyDown={(e) => {
+              if (mention) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const d = e.key === "ArrowDown" ? 1 : -1;
+                  setMention({ ...mention, sel: (mention.sel + d + mention.items.length) % mention.items.length });
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  pickMention(mention.items[mention.sel]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setMention(null);
+                  return;
+                }
+              }
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 submit();
@@ -322,6 +488,10 @@ export function Chat({
                 </select>
               </>
             )}
+            <label className="icon attach" title="Attach files (or paste a screenshot)">
+              <Paperclip size={15} />
+              <input type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
+            </label>
             <span className="spacer" />
             <span className="muted" style={{ fontSize: 13 }}>⌘↵</span>
             {busy && <button className="danger" onClick={() => active && api.stop(active)}><Square size={14} />Stop</button>}

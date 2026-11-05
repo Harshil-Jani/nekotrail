@@ -8,6 +8,11 @@ import ReactDOM from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
+// Sample review comments so the Changes tab shows them.
+localStorage.setItem("nekotrail.review.w1", JSON.stringify([
+  { id: "c1", file: "internal/server/http.go", line: 21, side: "new", code: "IdleTimeout: 75 * time.Second,", text: "Read this from config instead, so ops can tune it per environment." },
+]));
+
 const repos = [
   { id: "r1", name: "sage-backend", root_path: "/code/sage-backend", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null },
   { id: "r2", name: "website", root_path: "/code/website", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null },
@@ -23,7 +28,7 @@ const workspaces = [
   ws("w5", "r2", "pip", "harshil/blog-rss"),
 ];
 const events = [
-  { kind: "user", text: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it." },
+  { kind: "user", checkpoint: "abc123", text: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it." },
   { kind: "tool", id: "t1", name: "Bash", input: "aws logs tail /ecs/sage-backend --since 30m | grep -i 502" },
   { kind: "tool_result", id: "t1", output: "2026-11-05T09:12:44Z http: proxy error: read tcp 10.0.3.14:43120->10.0.7.2:8080: connection reset by peer", is_error: false },
   { kind: "tool", id: "t2", name: "Read", input: "internal/server/http.go" },
@@ -76,6 +81,7 @@ mockIPC(
         { path: "internal/server/http_test.go", status: "A", additions: 35, deletions: 0 },
       ] : [];
       case "file_diff": return diff;
+      case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;
     }
