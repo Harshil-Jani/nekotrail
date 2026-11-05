@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, FolderOpen, Pin, PinOff, Play } from "lucide-react";
 import { api, constellationOf, errText, starFor, type GithubUser, type Repo, type Sky, type Star, type Workspace } from "./api";
@@ -60,6 +61,8 @@ export default function App() {
   const [run, setRun] = useState<{ cmd: string; nonce: number } | undefined>();
   const [notes, setNotes] = useState("");
   const [leaving, setLeaving] = useState<string | null>(null);
+  const [sidebarW, setSidebarW] = useState(() => Number(localStorage.getItem("nekotrail.sidebar")) || 264);
+  const [resizing, setResizing] = useState(false);
   const [newFor, setNewFor] = useState<string | null>(params.get("new")); // repo id the new-workspace panel opens on
   const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
@@ -119,6 +122,56 @@ export default function App() {
   selectedRef.current = selected;
   workspacesRef.current = workspaces;
   skyRef.current = sky;
+
+  // ⌘+ / ⌘- / ⌘0 zoom the whole app, remembered between launches.
+  useEffect(() => {
+    let zoom = Number(localStorage.getItem("nekotrail.zoom")) || 1;
+    const apply = () => {
+      localStorage.setItem("nekotrail.zoom", String(zoom));
+      try {
+        getCurrentWebview().setZoom(zoom).catch(() => {});
+      } catch {
+        document.documentElement.style.zoom = String(zoom); // preview in a browser
+      }
+    };
+    if (zoom !== 1) apply();
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const step = e.key === "=" || e.key === "+" ? 0.1 : e.key === "-" ? -0.1 : 0;
+      if (step) zoom = Math.round(Math.min(2, Math.max(0.6, zoom + step)) * 10) / 10;
+      else if (e.key === "0") zoom = 1;
+      else return;
+      e.preventDefault();
+      apply();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Drag the sidebar's edge to resize it; double-click the edge to reset.
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setResizing(true);
+    const startX = e.clientX;
+    const startW = sidebarW;
+    let w = startW;
+    const move = (ev: PointerEvent) => {
+      w = Math.min(520, Math.max(200, startW + ev.clientX - startX));
+      document.documentElement.style.setProperty("--sidebar-w", `${w}px`); // no React render per pixel
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setResizing(false);
+      setSidebarW(w);
+      localStorage.setItem("nekotrail.sidebar", String(w));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-w", `${sidebarW}px`);
+  }, [sidebarW]);
 
   // Dock badge: how many workspaces have news you haven't looked at.
   useEffect(() => {
@@ -294,7 +347,7 @@ export default function App() {
   const settingsRepo = repos.find((r) => r.id === settingsFor);
 
   return (
-    <div className="app">
+    <div className={`app ${resizing ? "resizing" : ""}`}>
       <Sidebar
         repos={repos}
         workspaces={workspaces}
@@ -314,6 +367,15 @@ export default function App() {
         purring={purring}
         onPet={pet}
         leaving={leaving}
+      />
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        title="Drag to resize, double-click to reset"
+        onPointerDown={startResize}
+        onDoubleClick={() => { setSidebarW(264); localStorage.removeItem("nekotrail.sidebar"); }}
       />
       <main className="main">
         {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}

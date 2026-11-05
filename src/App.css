@@ -81,7 +81,11 @@ code, pre { font-family: var(--mono); font-size: 13px; }
 .avatar-fallback { display: inline-flex; align-items: center; justify-content: center; color: var(--text); font-weight: 700; }
 .num { font-variant-numeric: tabular-nums; }
 
-.app { display: grid; grid-template-columns: 264px 1fr; height: 100vh; }
+.app { display: grid; grid-template-columns: var(--sidebar-w, 264px) 0 1fr; height: 100vh; }
+.app.resizing, .app.resizing * { cursor: col-resize !important; user-select: none; }
+.sidebar-resizer { position: relative; z-index: 4; width: 9px; margin-left: -5px; cursor: col-resize; }
+.sidebar-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; transition: background-color 0.15s var(--ease); }
+.sidebar-resizer:hover::after, .app.resizing .sidebar-resizer::after { background: var(--accent); width: 2px; left: 3px; }
 
 /* ---------- sidebar ---------- */
 .sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: #08090a; }
@@ -235,9 +239,10 @@ code, pre { font-family: var(--mono); font-size: 13px; }
 .sky-head p { margin: var(--s1) 0 0; max-width: 72ch; }
 .sky { display: block; width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--line); background: radial-gradient(ellipse at 50% 120%, #0b1220 0%, #000 60%); }
 .sky-line.shipped { stroke: var(--accent); stroke-width: 1.6; opacity: 0.9; }
-.sky-line.hinted { stroke: #3a4048; stroke-width: 1; stroke-dasharray: 3 5; }
+.sky-line.hinted { stroke: #6b737c; stroke-width: 1; stroke-dasharray: 3 5; }
+.sky-line.ghost { stroke: #2c3137; stroke-width: 1; stroke-dasharray: 2 6; }
 .sky-star circle:nth-child(3) { transition: r 0.4s var(--ease); }
-.sky-star.dark circle:nth-child(3) { fill: #3a4048; }
+.sky-star.dark circle:nth-child(3) { fill: #000; stroke: #6b737c; stroke-width: 1.2; }
 .sky-star.lit circle:nth-child(3) { fill: var(--text); }
 .sky-star.shining circle:nth-child(3) { fill: var(--accent); animation: twinkle 3.2s ease-in-out infinite; }
 .sky-star text { fill: var(--muted); font-size: 12px; font-weight: 600; pointer-events: none; }
@@ -245,7 +250,7 @@ code, pre { font-family: var(--mono); font-size: 13px; }
 .sky-star.openable { cursor: pointer; }
 .sky-star.openable:hover circle:nth-child(3), .sky-star.openable:focus-visible circle:nth-child(3) { r: 7; }
 .sky-star:focus-visible { outline: none; }
-.sky-label { fill: #5d646c; font-size: 13px; font-weight: 700; }
+.sky-label { fill: #8b9096; font-size: 12px; font-weight: 600; }
 .sky-label.complete { fill: var(--accent); }
 @keyframes twinkle { 50% { opacity: 0.55; } }
 .constellations { max-width: 1200px; margin: var(--s5) auto 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s3); }
@@ -335,3 +340,5 @@ button.accent:disabled { background: var(--raised); color: var(--muted); border-
 .newchat { position: relative; display: flex; align-items: center; }
 .newchat-menu { position: absolute; top: 100%; left: 0; z-index: 5; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: flex; flex-direction: column; min-width: 160px; }
 .newchat-menu button { border: none; justify-content: flex-start; padding: 6px var(--s3); font-weight: 500; }
+
+.earlier { align-self: center; font-size: 12px; }

@@ -84,7 +84,7 @@ struct Snapshot {
 }
 
 #[tauri::command]
-fn snapshot(st: State<AppState>, include_archived: bool) -> Res<Snapshot> {
+async fn snapshot(st: State<'_, AppState>, include_archived: bool) -> Res<Snapshot> {
     let db = st.db();
     let running: Vec<String> = st.runs.lock().unwrap().running.keys().cloned().collect();
     let mut running_workspaces: Vec<String> =
@@ -104,7 +104,7 @@ fn snapshot(st: State<AppState>, include_archived: bool) -> Res<Snapshot> {
 // ---------- repos ----------
 
 #[tauri::command]
-fn add_repo(st: State<AppState>, path: String) -> Res<Repo> {
+async fn add_repo(st: State<'_, AppState>, path: String) -> Res<Repo> {
     let root = git::toplevel(Path::new(&path)).map_err(|_| format!("{path} is not inside a git repo"))?;
     let root_s = root.to_string_lossy().to_string();
     let db = st.db();
@@ -126,12 +126,12 @@ fn add_repo(st: State<AppState>, path: String) -> Res<Repo> {
 }
 
 #[tauri::command]
-fn save_repo_scripts(st: State<AppState>, id: String, setup: Option<String>, run: Option<String>, archive: Option<String>) -> Res<()> {
+async fn save_repo_scripts(st: State<'_, AppState>, id: String, setup: Option<String>, run: Option<String>, archive: Option<String>) -> Res<()> {
     st.db().update_repo_scripts(&id, setup.as_deref(), run.as_deref(), archive.as_deref()).map_err(e)
 }
 
 #[tauri::command]
-fn repo_branches(st: State<AppState>, id: String) -> Res<Vec<String>> {
+async fn repo_branches(st: State<'_, AppState>, id: String) -> Res<Vec<String>> {
     let r = st.db().repo(&id).map_err(e)?;
     git::branches(Path::new(&r.root_path)).map_err(e)
 }
@@ -145,7 +145,7 @@ fn scripts_for(st: &AppState, ws: &Workspace) -> Res<config::Scripts> {
 }
 
 #[tauri::command]
-fn workspace_scripts(st: State<AppState>, id: String) -> Res<config::Scripts> {
+async fn workspace_scripts(st: State<'_, AppState>, id: String) -> Res<config::Scripts> {
     let ws = st.db().workspace(&id).map_err(e)?;
     scripts_for(&st, &ws)
 }
@@ -153,7 +153,7 @@ fn workspace_scripts(st: State<AppState>, id: String) -> Res<config::Scripts> {
 // ---------- workspaces ----------
 
 #[tauri::command]
-fn create_workspace(st: State<AppState>, repo_id: String, base: Option<String>, name: Option<String>) -> Res<Workspace> {
+async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>) -> Res<Workspace> {
     let (repo, taken) = {
         let db = st.db();
         let repo = db.repo(&repo_id).map_err(e)?;
@@ -191,7 +191,7 @@ fn create_workspace(st: State<AppState>, repo_id: String, base: Option<String>, 
 /// Runs the archive script, removes the worktree folder and keeps the branch.
 /// Refuses when there is uncommitted work unless `force` is set.
 #[tauri::command]
-fn archive_workspace(st: State<AppState>, id: String, force: bool) -> Res<()> {
+async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let path = Path::new(&ws.path);
     if path.exists() {
@@ -212,7 +212,7 @@ fn archive_workspace(st: State<AppState>, id: String, force: bool) -> Res<()> {
 }
 
 #[tauri::command]
-fn restore_workspace(st: State<AppState>, id: String) -> Res<()> {
+async fn restore_workspace(st: State<'_, AppState>, id: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let repo = st.db().repo(&ws.repo_id).map_err(e)?;
     if !Path::new(&ws.path).exists() {
@@ -222,36 +222,36 @@ fn restore_workspace(st: State<AppState>, id: String) -> Res<()> {
 }
 
 #[tauri::command]
-fn set_pinned(st: State<AppState>, id: String, pinned: bool) -> Res<()> {
+async fn set_pinned(st: State<'_, AppState>, id: String, pinned: bool) -> Res<()> {
     st.db().set_pinned(&id, pinned).map_err(e)
 }
 #[tauri::command]
-fn set_unread(st: State<AppState>, id: String, unread: bool) -> Res<()> {
+async fn set_unread(st: State<'_, AppState>, id: String, unread: bool) -> Res<()> {
     st.db().set_unread(&id, unread).map_err(e)
 }
 #[tauri::command]
-fn set_notes(st: State<AppState>, id: String, notes: String) -> Res<()> {
+async fn set_notes(st: State<'_, AppState>, id: String, notes: String) -> Res<()> {
     st.db().set_notes(&id, &notes).map_err(e)
 }
 #[tauri::command]
-fn set_target_branch(st: State<AppState>, id: String, branch: String) -> Res<()> {
+async fn set_target_branch(st: State<'_, AppState>, id: String, branch: String) -> Res<()> {
     st.db().set_target_branch(&id, &branch).map_err(e)
 }
 
 #[tauri::command]
-fn changes(st: State<AppState>, id: String) -> Res<Vec<git::FileChange>> {
+async fn changes(st: State<'_, AppState>, id: String) -> Res<Vec<git::FileChange>> {
     let ws = st.db().workspace(&id).map_err(e)?;
     git::changes(Path::new(&ws.path), &ws.target_branch).map_err(e)
 }
 
 #[tauri::command]
-fn file_diff(st: State<AppState>, id: String, file: String) -> Res<String> {
+async fn file_diff(st: State<'_, AppState>, id: String, file: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     git::file_diff(Path::new(&ws.path), &ws.target_branch, &file).map_err(e)
 }
 
 #[tauri::command]
-fn open_in(st: State<AppState>, id: String, app: String) -> Res<()> {
+async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let mut c = Command::new("open");
     match app.as_str() {
@@ -278,7 +278,7 @@ fn gh(dir: &str, args: &[&str]) -> Res<String> {
 /// PR for the workspace branch (open, merged or closed), or null when there is none yet.
 /// `gh pr list --head` also finds PRs opened from a fork, which `gh pr view <branch>` misses.
 #[tauri::command]
-fn pr_status(st: State<AppState>, id: String) -> Res<Value> {
+async fn pr_status(st: State<'_, AppState>, id: String) -> Res<Value> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let out = gh(&ws.path, &[
         "pr", "list", "--head", &ws.branch, "--state", "all", "--limit", "1", "--json",
@@ -293,7 +293,7 @@ fn pr_status(st: State<AppState>, id: String) -> Res<Value> {
 }
 
 #[tauri::command]
-fn create_pr(st: State<AppState>, id: String, title: String, body: String, draft: bool) -> Res<String> {
+async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: String, draft: bool) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     git::git(Path::new(&ws.path), &["push", "-u", "origin", &ws.branch]).map_err(e)?;
     let mut args = vec!["pr", "create", "--head", &ws.branch, "--base", &ws.target_branch, "--title", &title, "--body", &body];
@@ -307,8 +307,8 @@ fn create_pr(st: State<AppState>, id: String, title: String, body: String, draft
 
 /// The signed-in GitHub user (`gh auth`), or null when gh is not logged in.
 #[tauri::command]
-fn github_profile(st: State<AppState>) -> Value {
-    st.github.lock().unwrap().get_or_insert_with(|| {
+async fn github_profile(st: State<'_, AppState>) -> Res<Value> {
+    Ok(st.github.lock().unwrap().get_or_insert_with(|| {
         Command::new("gh")
             .args(["api", "user"])
             .output()
@@ -320,15 +320,15 @@ fn github_profile(st: State<AppState>) -> Value {
                 "html_url": u["html_url"], "public_repos": u["public_repos"], "followers": u["followers"],
             }))
             .unwrap_or(Value::Null)
-    }).clone()
+    }).clone())
 }
 
 /// GitHub facts for a repo: owner avatar, description, stars, default branch.
 #[tauri::command]
-fn repo_github(st: State<AppState>, id: String) -> Value {
-    let Ok(r) = st.db().repo(&id) else { return Value::Null };
+async fn repo_github(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let Ok(r) = st.db().repo(&id) else { return Ok(Value::Null) };
     if let Some(v) = st.repo_meta.lock().unwrap().get(&id) {
-        return v.clone();
+        return Ok(v.clone());
     }
     let v = gh(&r.root_path, &["repo", "view", "--json", "nameWithOwner,description,stargazerCount,url,owner,isPrivate"])
         .ok()
@@ -340,7 +340,7 @@ fn repo_github(st: State<AppState>, id: String) -> Value {
         })
         .unwrap_or(Value::Null);
     st.repo_meta.lock().unwrap().insert(id, v.clone());
-    v
+    Ok(v)
 }
 
 #[derive(Serialize)]
@@ -357,12 +357,12 @@ fn sky() -> Sky {
 // ---------- chats ----------
 
 #[tauri::command]
-fn sessions(st: State<AppState>, workspace_id: String) -> Res<Vec<Session>> {
+async fn sessions(st: State<'_, AppState>, workspace_id: String) -> Res<Vec<Session>> {
     st.db().sessions(&workspace_id).map_err(e)
 }
 
 #[tauri::command]
-fn new_session(st: State<AppState>, workspace_id: String, agent: String) -> Res<Session> {
+async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: String) -> Res<Session> {
     let s = Session {
         id: new_id(),
         workspace_id,
@@ -377,29 +377,30 @@ fn new_session(st: State<AppState>, workspace_id: String, agent: String) -> Res<
 }
 
 #[tauri::command]
-fn update_session(st: State<AppState>, id: String, title: String, model: Option<String>, permission_mode: String) -> Res<()> {
+async fn update_session(st: State<'_, AppState>, id: String, title: String, model: Option<String>, permission_mode: String) -> Res<()> {
     st.db().update_session_settings(&id, &title, model.as_deref().filter(|m| !m.is_empty()), &permission_mode).map_err(e)
 }
 
 #[tauri::command]
-fn session_events(st: State<AppState>, id: String) -> Res<Vec<Value>> {
+async fn session_events(st: State<'_, AppState>, id: String) -> Res<Vec<Value>> {
     st.db().events(&id).map_err(e)
 }
 
 #[tauri::command]
-fn queued(st: State<AppState>, id: String) -> Vec<String> {
-    st.runs.lock().unwrap().queued.get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
+async fn queued(st: State<'_, AppState>, id: String) -> Res<Vec<String>> {
+    Ok(st.runs.lock().unwrap().queued.get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default())
 }
 
 #[tauri::command]
-fn clear_queue(app: AppHandle, st: State<AppState>, id: String) {
+async fn clear_queue(app: AppHandle, st: State<'_, AppState>, id: String) -> Res<()> {
     st.runs.lock().unwrap().queued.remove(&id);
     let _ = app.emit("queue", json!({"session_id": id, "queued": []}));
+    Ok(())
 }
 
 /// Send a prompt. If the agent is busy, the prompt waits in the queue and runs next.
 #[tauri::command]
-fn send(app: AppHandle, st: State<AppState>, id: String, text: String) -> Res<()> {
+async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<()> {
     {
         let mut runs = st.runs.lock().unwrap();
         if runs.running.contains_key(&id) {
@@ -413,11 +414,12 @@ fn send(app: AppHandle, st: State<AppState>, id: String, text: String) -> Res<()
 }
 
 #[tauri::command]
-fn stop(st: State<AppState>, id: String) {
+async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
     let runs = st.runs.lock().unwrap();
     if let Some(pid) = runs.running.get(&id) {
         let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
     }
+    Ok(())
 }
 
 fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
@@ -533,7 +535,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
 // ---------- terminals ----------
 
 #[tauri::command]
-fn pty_open(app: AppHandle, st: State<AppState>, id: String, cwd: String, cols: u16, rows: u16) -> Res<()> {
+async fn pty_open(app: AppHandle, st: State<'_, AppState>, id: String, cwd: String, cols: u16, rows: u16) -> Res<()> {
     if st.ptys.is_open(&id) {
         return Ok(());
     }
@@ -555,18 +557,19 @@ fn pty_open(app: AppHandle, st: State<AppState>, id: String, cwd: String, cols: 
 }
 
 #[tauri::command]
-fn pty_write(st: State<AppState>, id: String, data: String) -> Res<()> {
+async fn pty_write(st: State<'_, AppState>, id: String, data: String) -> Res<()> {
     st.ptys.write(&id, &data).map_err(e)
 }
 
 #[tauri::command]
-fn pty_resize(st: State<AppState>, id: String, cols: u16, rows: u16) -> Res<()> {
+async fn pty_resize(st: State<'_, AppState>, id: String, cols: u16, rows: u16) -> Res<()> {
     st.ptys.resize(&id, cols, rows).map_err(e)
 }
 
 #[tauri::command]
-fn pty_close(st: State<AppState>, id: String) {
+async fn pty_close(st: State<'_, AppState>, id: String) -> Res<()> {
     st.ptys.close(&id);
+    Ok(())
 }
 
 // ---------- import ----------
@@ -577,7 +580,7 @@ fn conductor_available() -> bool {
 }
 
 #[tauri::command]
-fn import_conductor(st: State<AppState>) -> Res<importer::Report> {
+async fn import_conductor(st: State<'_, AppState>) -> Res<importer::Report> {
     let db = importer::default_db_path().ok_or("No Conductor data found on this Mac")?;
     importer::import(&st.db(), &db).map_err(e)
 }

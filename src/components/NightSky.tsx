@@ -72,21 +72,16 @@ export function NightSky({
             const A = pos.get(a)!, B = pos.get(b)!;
             const both = shining.has(a) && shining.has(b);
             const seen = lit.has(a) && lit.has(b);
-            if (!both && !seen) return null;
-            return (
-              <line
-                key={`${a}-${b}`}
-                x1={A.x} y1={A.y} x2={B.x} y2={B.y}
-                className={both ? "sky-line shipped" : "sky-line hinted"}
-              />
-            );
+            // Every cat's outline is faintly visible from the start, so you can see what you're working toward.
+            const cls = both ? "shipped" : seen ? "hinted" : "ghost";
+            return <line key={`${a}-${b}`} x1={A.x} y1={A.y} x2={B.x} y2={B.y} className={`sky-line ${cls}`} />;
           }),
         )}
 
         {sky.stars.map((s, i) => {
           const w = wsByStar.get(s.slug);
           const state = shining.has(s.slug) ? "shining" : lit.has(s.slug) ? "lit" : "dark";
-          const r = state === "shining" ? 5.5 : state === "lit" ? 4 : 2;
+          const r = state === "shining" ? 5.5 : state === "lit" ? 4 : 3;
           const label = `${s.name}: ${state === "dark" ? "not lit yet" : state === "lit" ? "lit, PR not merged yet" : "shining, PR merged"}${w ? ` (${w.branch})` : ""}`;
           const open = w && w.state === "active" ? () => onOpen(w.id) : undefined;
           return (

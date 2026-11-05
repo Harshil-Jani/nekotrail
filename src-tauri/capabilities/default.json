@@ -10,6 +10,7 @@
     "opener:default",
     "dialog:default",
     "notification:default",
-    "core:window:allow-set-badge-count"
+    "core:window:allow-set-badge-count",
+    "core:webview:allow-set-webview-zoom"
   ]
 }

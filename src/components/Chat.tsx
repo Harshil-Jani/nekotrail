@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { listen } from "@tauri-apps/api/event";
@@ -55,6 +55,58 @@ function toRows(events: ChatEvent[]): Row[] {
   }
   return rows;
 }
+
+/** One chat row. Memoized: a new message renders only the new row, not the whole history. */
+const RowView = memo(function RowView({ r, pendingSpin }: { r: Row; pendingSpin: boolean }) {
+  switch (r.type) {
+    case "user":
+      return <div className="msg user">{r.text}</div>;
+    case "text":
+      return (
+        <div className="msg assistant">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.text}</ReactMarkdown>
+        </div>
+      );
+    case "thinking":
+      return (
+        <details className="step">
+          <summary><Brain size={16} /><b>Thinking</b></summary>
+          <div className="body">{r.text}</div>
+        </details>
+      );
+    case "tool": {
+      const Icon = r.is_error ? AlertCircle : TOOL_ICON[r.name] ?? Wrench;
+      return (
+        <details className={`step ${r.is_error ? "failed" : ""}`}>
+          <summary>
+            {r.pending && pendingSpin ? <span className="spinner" /> : <Icon size={16} />}
+            <b>{r.name}</b> <code>{r.input}</code>
+          </summary>
+          {r.output ? <pre>{r.output}</pre> : null}
+        </details>
+      );
+    }
+    case "error":
+      return <div className="msg error">{r.text}</div>;
+    case "done":
+      return (
+        <div className="msg done num">
+          {r.ev.stopped ? <Square size={14} /> : r.ev.is_error ? <X size={14} /> : <Check size={14} />}
+          {r.ev.stopped ? "Stopped" : r.ev.is_error ? "Ended with an error" : "Done"}
+          {r.ev.duration_ms ? ` · ${(r.ev.duration_ms / 1000).toFixed(1)}s` : ""}
+          {r.ev.cost_usd ? ` · $${r.ev.cost_usd.toFixed(2)}` : ""}
+        </div>
+      );
+  }
+}, (a, b) => {
+  // Rows are rebuilt on every new event; compare their fields so unchanged rows skip rendering.
+  if (a.pendingSpin !== b.pendingSpin) return false;
+  const x = a.r as Record<string, unknown>, y = b.r as Record<string, unknown>;
+  const keys = Object.keys(x);
+  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
+});
+
+const PAGE = 150; // rows rendered at a time; older rows load on demand
 
 export function Chat({
   workspaceId,
@@ -113,16 +165,35 @@ export function Chat({
     };
   }, [active]);
 
+  const stick = useRef(true); // follow new output only while the reader is at the bottom
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [events.length]);
+  useEffect(() => { stick.current = true; }, [active]);
 
   useEffect(() => {
     if (inject?.text) setDraft(inject.text);
   }, [inject?.nonce]);
 
   const rows = useMemo(() => toRows(events), [events]);
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [active]);
+  const hidden = Math.max(0, rows.length - limit);
+  const visible = useMemo(() => rows.slice(hidden), [rows, hidden]);
+  // Keep the reader's place when older rows are added above.
+  const anchor = useRef<number | null>(null);
+  const showEarlier = () => {
+    anchor.current = scroller.current ? scroller.current.scrollHeight - scroller.current.scrollTop : null;
+    setLimit((l) => l + PAGE);
+  };
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && anchor.current !== null) {
+      el.scrollTop = el.scrollHeight - anchor.current;
+      anchor.current = null;
+    }
+  }, [limit]);
 
   const submit = async () => {
     const text = draft.trim();
@@ -169,7 +240,14 @@ export function Chat({
         </span>
       </div>
 
-      <div className="messages" ref={scroller}>
+      <div
+        className="messages"
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
         {rows.length === 0 && (
           <div className="empty">
             <Mascot size={64} mood="sleep" />
@@ -182,48 +260,14 @@ export function Chat({
           </div>
         )}
         <div className="thread">
-          {rows.map((r, i) => {
-            switch (r.type) {
-              case "user":
-                return <div key={i} className="msg user">{r.text}</div>;
-              case "text":
-                return (
-                  <div key={i} className="msg assistant">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.text}</ReactMarkdown>
-                  </div>
-                );
-              case "thinking":
-                return (
-                  <details key={i} className="step">
-                    <summary><Brain size={16} /><b>Thinking</b></summary>
-                    <div className="body">{r.text}</div>
-                  </details>
-                );
-              case "tool": {
-                const Icon = r.is_error ? AlertCircle : TOOL_ICON[r.name] ?? Wrench;
-                return (
-                  <details key={i} className={`step ${r.is_error ? "failed" : ""}`}>
-                    <summary>
-                      {r.pending && busy ? <span className="spinner" /> : <Icon size={16} />}
-                      <b>{r.name}</b> <code>{r.input}</code>
-                    </summary>
-                    {r.output ? <pre>{r.output}</pre> : null}
-                  </details>
-                );
-              }
-              case "error":
-                return <div key={i} className="msg error">{r.text}</div>;
-              case "done":
-                return (
-                  <div key={i} className="msg done num">
-                    {r.ev.stopped ? <Square size={14} /> : r.ev.is_error ? <X size={14} /> : <Check size={14} />}
-                    {r.ev.stopped ? "Stopped" : r.ev.is_error ? "Ended with an error" : "Done"}
-                    {r.ev.duration_ms ? ` · ${(r.ev.duration_ms / 1000).toFixed(1)}s` : ""}
-                    {r.ev.cost_usd ? ` · $${r.ev.cost_usd.toFixed(2)}` : ""}
-                  </div>
-                );
-            }
-          })}
+          {hidden > 0 && (
+            <button className="quiet earlier" onClick={showEarlier}>
+              Show {Math.min(PAGE, hidden)} earlier ({hidden} hidden)
+            </button>
+          )}
+          {visible.map((r, k) => (
+            <RowView key={hidden + k} r={r} pendingSpin={busy && hidden + k === rows.length - 1} />
+          ))}
         </div>
       </div>
 
