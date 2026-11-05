@@ -10,6 +10,7 @@ import App from "./App";
 import catalog from "../src-tauri/src/models.json";
 
 if (new URLSearchParams(location.search).get("filter")) localStorage.setItem("nekotrail.settings", JSON.stringify({ repoFilter: ["r1"], collapsed: [] }));
+localStorage.setItem("nekotrail.sidebarHidden", new URLSearchParams(location.search).has("nosidebar") ? "1" : "0");
 if (new URLSearchParams(location.search).get("split")) localStorage.setItem("nekotrail.split", "1");
 if (new URLSearchParams(location.search).get("group") === "status") localStorage.setItem("nekotrail.settings", JSON.stringify({ groupBy: "status" }));
 

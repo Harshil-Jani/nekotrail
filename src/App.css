@@ -922,3 +922,13 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 input.switch { width: 32px; height: 18px; flex-shrink: 0; border-radius: 9px; background: var(--press); box-shadow: inset 0 0 0 0.5px var(--line-strong); padding: 0; margin: 0; }
 input.switch:checked { background: var(--accent); box-shadow: none; }
 input.switch:focus-visible { box-shadow: var(--ring) !important; }
+
+/* Collapsible sidebar: toggle sits right after the traffic lights, in both states */
+.sidebar-head { padding-left: 78px; }
+.sidebar-toggle { color: var(--muted); }
+.sidebar-toggle.floating { position: fixed; top: 13px; left: 78px; z-index: 30; }
+.app.no-sidebar .ws-header, .app.no-sidebar .board-head, .app.no-sidebar .sky-title { padding-left: 118px; }
+.ram { white-space: nowrap; flex-shrink: 0; }
+.sidebar-head .spacer { min-width: 0; }
+.app.no-sidebar .sidebar { display: flex; visibility: hidden; overflow: hidden; min-width: 0; border: none; }
+.app.no-sidebar .sidebar-resizer { visibility: hidden; pointer-events: none; }

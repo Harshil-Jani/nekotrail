@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, MemoryStick, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { api, displayName, statusOf, STATUS_LABEL, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
@@ -43,6 +43,7 @@ type Props = {
   canForward: boolean;
   onBack: () => void;
   onForward: () => void;
+  onToggleSidebar: () => void;
 };
 
 const DRAG = "application/x-nekotrail-workspace";
@@ -208,7 +209,8 @@ export function Sidebar(p: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head" data-tauri-drag-region>
-        <Mascot size={26} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
+        <button className="icon sidebar-toggle" onClick={p.onToggleSidebar} title="Hide sidebar (⌘B)" aria-label="Hide sidebar"><PanelLeft size={16} /></button>
+        <Mascot size={22} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
         {p.ram && (

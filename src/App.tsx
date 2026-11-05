@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, Crown, Kanban, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
+import { Archive, ArchiveRestore, Check, Crown, Kanban, PanelLeft, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
 import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -143,7 +143,7 @@ export default function App() {
   };
   const [notes, setNotes] = useState("");
   const [leaving, setLeaving] = useState<string | null>(null);
-  const [sidebarW, setSidebarW] = useState(() => Number(localStorage.getItem("nekotrail.sidebar")) || 264);
+  const [sidebarW, setSidebarW] = useState(() => Math.max(244, Number(localStorage.getItem("nekotrail.sidebar")) || 264));
   const [resizing, setResizing] = useState(false);
   const [newFor, setNewFor] = useState<string | null>(params.get("new"));
   const [newSource, setNewSource] = useState<"task" | "pr" | "branch" | "issue">((params.get("from") as "pr") || "task"); // repo id the new-workspace panel opens on
@@ -175,7 +175,10 @@ export default function App() {
     setTab(next.tab);
     setNavTick((t) => t + 1);
   };
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  // ⌘B or the sidebar button next to the traffic lights; remembered between launches.
+  const [sidebarHidden, setSidebarHiddenState] = useState(() => localStorage.getItem("nekotrail.sidebarHidden") === "1");
+  const setSidebarHidden = (f: (h: boolean) => boolean) =>
+    setSidebarHiddenState((h) => { const n = f(h); localStorage.setItem("nekotrail.sidebarHidden", n ? "1" : "0"); return n; });
   const [groupBy, setGroupBy] = useState<"repo" | "status">(() => getSettings().groupBy);
   const [prStates, setPrStates] = useState<Record<string, string>>({});
   const [lines, setLines] = useState<Record<string, [number, number]>>({});
@@ -311,7 +314,7 @@ export default function App() {
     const startW = sidebarW;
     let w = startW;
     const move = (ev: PointerEvent) => {
-      w = Math.min(520, Math.max(200, startW + ev.clientX - startX));
+      w = Math.min(520, Math.max(244, startW + ev.clientX - startX));
       document.documentElement.style.setProperty("--sidebar-w", `${w}px`); // no React render per pixel
     };
     const up = () => {
@@ -673,7 +676,13 @@ export default function App() {
         canForward={history.current.at < history.current.stack.length - 1}
         onBack={() => goHistory(-1)}
         onForward={() => goHistory(1)}
+        onToggleSidebar={() => setSidebarHidden((h) => !h)}
       />
+      {sidebarHidden && (
+        <button className="icon sidebar-toggle floating" onClick={() => setSidebarHidden(() => false)} title="Show sidebar (⌘B)" aria-label="Show sidebar">
+          <PanelLeft size={16} />
+        </button>
+      )}
       <div
         className="sidebar-resizer"
         role="separator"
