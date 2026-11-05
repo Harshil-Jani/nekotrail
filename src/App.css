@@ -964,3 +964,7 @@ html.native .repo-actions { background: none; }
 .mermaid-diagram { text-align: center; }
 .mermaid-diagram svg { max-width: 100%; height: auto; }
 .mermaid-loading { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: var(--s3); }
+.approval-card { border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.approval-input { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
+.approval-done code { font-size: 11.5px; color: var(--muted); }
+.approval-done.denied { color: var(--bad); }

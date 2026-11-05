@@ -68,7 +68,7 @@ export type Workspace = {
 export type Section = { id: string; name: string; sort: number };
 
 export type Agent = "claude" | "codex";
-export type PermissionMode = "plan" | "default" | "acceptEdits" | "bypassPermissions";
+export type PermissionMode = "plan" | "default" | "ask" | "acceptEdits" | "bypassPermissions";
 
 export type Session = {
   id: string;
@@ -84,6 +84,8 @@ export type Session = {
 export type ChatEvent =
   | { kind: "user"; text: string; checkpoint?: string | null }
   | { kind: "note"; text: string }
+  | { kind: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean }
+  | { kind: "approval_answer"; request_id: string; allow: boolean; always: boolean }
   | { kind: "text"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { kind: "thinking"; text: string }
   | { kind: "tool"; id: string; name: string; input: string }
@@ -165,6 +167,7 @@ export const api = {
   workspaceStats: (id: string) => invoke<{ agent: Agent | ""; turns: number; errors: number; duration_ms: number; cost_usd: number }>("workspace_stats", { id }),
   usageSummary: () => invoke<{ today: number; week: number; by_agent: Record<string, number> }>("usage_summary"),
   resourceUsage: () => invoke<{ total_mb: number; top: { name: string; mb: number }[] }>("resource_usage"),
+  answerApproval: (requestId: string, allow: boolean, always = false) => invoke<void>("answer_approval", { requestId, allow, always }),
   agentScorecard: () => invoke<{ agent: string; turns: number; errors: number; duration_ms: number; merged: number; cost_usd: number }[]>("agent_scorecard"),
   setAutopilot: (id: string, on: boolean) => invoke<void>("set_autopilot", { id, on }),
   autopilotStatus: () => invoke<Record<string, number>>("autopilot_status"),

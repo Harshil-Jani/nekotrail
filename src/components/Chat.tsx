@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
@@ -39,6 +39,7 @@ const TOOL_ICON: Record<string, typeof Wrench> = {
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
+  { value: "ask", label: "Ask before changes" },
   { value: "acceptEdits", label: "Auto-accept edits" },
   { value: "bypassPermissions", label: "Full auto" },
 ];
@@ -66,12 +67,14 @@ type Row =
   | { type: "user"; text: string; checkpoint?: string | null }
   | { type: "text" | "thinking" | "error" | "note"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { type: "tool"; name: string; input: string; output?: string; is_error?: boolean; pending: boolean }
-  | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> };
+  | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> }
+  | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" };
 
 /** Pair each tool call with its result so one row shows both. */
 function toRows(events: ChatEvent[]): Row[] {
   const rows: Row[] = [];
   const toolIdx = new Map<string, number>();
+  const approvalIdx = new Map<string, number>();
   for (const ev of events) {
     switch (ev.kind) {
       case "tool":
@@ -89,6 +92,15 @@ function toRows(events: ChatEvent[]): Row[] {
       case "done":
         rows.push({ type: "done", ev });
         break;
+      case "approval":
+        approvalIdx.set(ev.request_id, rows.length);
+        rows.push({ type: "approval", request_id: ev.request_id, tool: ev.tool, input: ev.input, description: ev.description, can_always: ev.can_always });
+        break;
+      case "approval_answer": {
+        const i = approvalIdx.get(ev.request_id);
+        if (i !== undefined) rows[i] = { ...(rows[i] as Extract<Row, { type: "approval" }>), answer: ev.allow ? (ev.always ? "always" : "allow") : "deny" };
+        break;
+      }
       case "user":
         rows.push({ type: "user", text: ev.text, checkpoint: ev.checkpoint });
         break;
@@ -218,6 +230,42 @@ function PlanCard({ plan, latest }: { plan: string; latest: boolean }) {
   );
 }
 
+/** A tool call waiting for the user's OK ("Ask before changes" mode). ↵ allows, ⌫ denies. */
+function ApprovalCard({ r }: { r: Extract<Row, { type: "approval" }> }) {
+  // "disabled" in the chat context means an agent is running, which is when a request can be answered.
+  const live = useContext(RewindCtx).disabled;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const answer = async (allow: boolean, always = false) => {
+    setBusy(true);
+    try { await api.answerApproval(r.request_id, allow, always); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+  };
+  if (r.answer) {
+    return (
+      <div className={`msg done approval-done ${r.answer === "deny" ? "denied" : ""}`}>
+        {r.answer === "deny" ? <X size={14} /> : <Check size={14} />}
+        {r.answer === "deny" ? "Denied" : r.answer === "always" ? "Allowed for this chat" : "Allowed"}: {r.tool} <code>{r.input}</code>
+      </div>
+    );
+  }
+  return (
+    <div className="approval-card" data-approval={live ? r.request_id : undefined}>
+      <div className="plan-head"><ShieldQuestion size={15} /><b>{r.tool} wants your OK</b></div>
+      <pre className="approval-input">{r.input}</pre>
+      {error && <p className="muted">{error}</p>}
+      {live && (
+        <div className="row">
+          <button className="danger" disabled={busy} onClick={() => answer(false)} title="Deny (⌫)">Deny</button>
+          <span className="spacer" />
+          {r.can_always && <button disabled={busy} onClick={() => answer(true, true)} title="Allow this and similar changes for the rest of this chat">Allow for this chat</button>}
+          <button className="accent" disabled={busy} onClick={() => answer(true)} title="Allow (↵)"><Check size={14} />Allow</button>
+        </div>
+      )}
+      {!live && <p className="muted">The turn ended before this was answered.</p>}
+    </div>
+  );
+}
+
 /** Two-step button: the first click arms it, the second (within 4s) rewinds. No modal needed. */
 function RewindButton({ checkpoint }: { checkpoint: string }) {
   const { rewind, disabled } = useContext(RewindCtx);
@@ -259,6 +307,8 @@ const RowView = memo(function RowView({ r, pendingSpin, latestPlan }: { r: Row; 
 
 function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: boolean) {
   switch (r.type) {
+    case "approval":
+      return <ApprovalCard r={r} />;
     case "user":
       return (
         <div className="msg-user-wrap">
@@ -684,6 +734,12 @@ export function Chat({
     const onKey = (e: KeyboardEvent) => {
       if (scroller.current?.closest(".pane")?.hasAttribute("hidden")) return; // Chat tab not showing
       if (e.ctrlKey && !e.metaKey && e.key === "o") { e.preventDefault(); setExpandAll((x) => !x); return; }
+      // ↵ allows and ⌫ denies the waiting tool call, unless you're typing.
+      if ((e.key === "Enter" || e.key === "Backspace") && !e.metaKey && !e.shiftKey && !(e.target as HTMLElement).closest("input, textarea, select")) {
+        const cards = scroller.current?.querySelectorAll<HTMLElement>("[data-approval]");
+        const card = cards?.[cards.length - 1];
+        if (card) { e.preventDefault(); api.answerApproval(card.dataset.approval!, e.key === "Enter"); return; }
+      }
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
       if (k === "t" && !e.shiftKey) { e.preventDefault(); keys.current.newChat(keys.current.agent ?? "claude"); }
@@ -933,7 +989,7 @@ export function Chat({
                   aria-label="Permissions"
                   title="What the agent may do without asking"
                 >
-                  {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  {MODES.filter((m) => m.value !== "ask" || session.agent === "claude").map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
                 {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>

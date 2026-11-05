@@ -30,6 +30,10 @@ struct Runs {
     queued: HashMap<String, VecDeque<String>>,
     /// session id -> context the agent must hear before the next prompt (e.g. "files were rewound")
     notes: HashMap<String, String>,
+    /// stdin of interactive turns ("ask before changes"), for answering permission requests.
+    stdins: HashMap<String, std::process::ChildStdin>,
+    /// Open permission requests: request id -> (session id, tool input, CLI suggestions).
+    approvals: HashMap<String, (String, Value, Value)>,
     /// Chats whose next turn should fork the agent's conversation instead of continuing it.
     forks: std::collections::HashSet<String>,
 }
@@ -1400,6 +1404,27 @@ async fn clear_queue(app: AppHandle, st: State<'_, AppState>, id: String) -> Res
     Ok(())
 }
 
+/// Answer a permission request from an "ask before changes" turn.
+#[tauri::command]
+async fn answer_approval(app: AppHandle, st: State<'_, AppState>, request_id: String, allow: bool, always: bool) -> Res<()> {
+    let (sid, line) = {
+        let mut runs = st.runs.lock().unwrap();
+        let (sid, input, suggestions) = runs.approvals.remove(&request_id).ok_or("This request was already answered, or the turn ended.")?;
+        (sid, agent::approval_response(&request_id, allow, &input, &suggestions, always))
+    };
+    {
+        use std::io::Write;
+        let mut runs = st.runs.lock().unwrap();
+        let stdin = runs.stdins.get_mut(&sid).ok_or("The agent isn't waiting any more.")?;
+        stdin.write_all(line.as_bytes()).map_err(e)?;
+        stdin.flush().map_err(e)?;
+    }
+    let ev = json!({"kind": "approval_answer", "request_id": request_id, "allow": allow, "always": always});
+    st.db().append_event(&sid, &ev).map_err(e)?;
+    emit_event(&app, &sid, &ev);
+    Ok(())
+}
+
 /// Drop one queued message (by position). Returns the remaining queue.
 #[tauri::command]
 async fn remove_queued(app: AppHandle, st: State<'_, AppState>, id: String, index: usize) -> Res<Vec<String>> {
@@ -1679,6 +1704,13 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }
     };
     st.runs.lock().unwrap().running.insert(id.clone(), child.id());
+    if session.agent == "claude" && session.permission_mode == "ask"
+        && let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(agent::user_message(&prompt).as_bytes());
+            let _ = stdin.flush();
+            st.runs.lock().unwrap().stdins.insert(id.clone(), stdin);
+        }
     // Keep the Mac awake while the agent works (ends by itself when the agent exits).
     if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
         let _ = Command::new("caffeinate").args(["-i", "-w", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
@@ -1710,6 +1742,29 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let mut needs: Option<String> = None;
         let mut user_stopped = false;
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            // Interactive turns: permission requests and the end of the turn arrive here first.
+            if (line.contains("\"control_request\"") || line.contains("\"type\":\"result\""))
+                && let Ok(j) = serde_json::from_str::<Value>(&line) {
+                    if j["type"] == "control_request" && j["request"]["subtype"] == "can_use_tool" {
+                        let req = &j["request"];
+                        let rid = j["request_id"].as_str().unwrap_or("").to_string();
+                        let tool = req["tool_name"].as_str().unwrap_or("tool").to_string();
+                        st.runs.lock().unwrap().approvals.insert(rid.clone(), (id.clone(), req["input"].clone(), req["permission_suggestions"].clone()));
+                        let ev = json!({
+                            "kind": "approval", "request_id": rid, "tool": tool,
+                            "input": agent::summarize_input(&tool, &req["input"]),
+                            "description": req["description"], "can_always": req["permission_suggestions"].is_array(),
+                        });
+                        let _ = st.db().append_event(&id, &ev);
+                        emit_event(&app, &id, &ev);
+                        let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{tool}: {}", ev["input"].as_str().unwrap_or(""))}));
+                        continue;
+                    }
+                    if j["type"] == "result" {
+                        // The turn is over: close stdin so the CLI exits.
+                        st.runs.lock().unwrap().stdins.remove(&id);
+                    }
+            }
             for mut ev in agent::parse(&agent_name, &line) {
                 if ev["kind"] == "usage" {
                     context_tokens = ev["context_tokens"].as_u64();
@@ -1777,6 +1832,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let next = {
             let mut runs = st.runs.lock().unwrap();
             runs.running.remove(&id);
+            runs.stdins.remove(&id);
+            runs.approvals.retain(|_, (sid, _, _)| sid != &id);
             let next = runs.queued.get_mut(&id).and_then(|q| q.pop_front());
             let rest: Vec<String> = runs.queued.get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default();
             let _ = app.emit("queue", json!({"session_id": id, "queued": rest}));
@@ -1943,7 +2000,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

@@ -21,7 +21,7 @@ fn clip(s: &str) -> String {
 }
 
 /// One-line summary of a tool call's input, for the collapsed tool row.
-fn summarize_input(name: &str, input: &Value) -> String {
+pub fn summarize_input(name: &str, input: &Value) -> String {
     let pick = |k: &str| input.get(k).and_then(Value::as_str).map(str::to_string);
     let s = match name {
         "Bash" => pick("command"),
@@ -203,8 +203,15 @@ pub fn command(spec: &TurnSpec) -> Command {
         };
     } else {
         c = Command::new("claude");
-        c.args(["-p", spec.prompt, "--output-format", "stream-json", "--verbose"]);
-        c.args(["--permission-mode", spec.permission_mode]);
+        if interactive(spec) {
+            // "Ask before changes": the prompt goes in on stdin, and every permission prompt comes
+            // back to nekotrail as a `can_use_tool` control request for the user to answer.
+            c.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]);
+            c.args(["--permission-mode", "default", "--permission-prompts", "host", "--permission-prompt-tool", "stdio"]);
+        } else {
+            c.args(["-p", spec.prompt, "--output-format", "stream-json", "--verbose"]);
+            c.args(["--permission-mode", spec.permission_mode]);
+        }
         if let Some(m) = spec.model {
             c.args(["--model", m]);
         }
@@ -226,8 +233,33 @@ pub fn command(spec: &TurnSpec) -> Command {
     }
     c.envs(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
     c.current_dir(spec.cwd);
-    c.stdin(std::process::Stdio::null());
+    c.stdin(if interactive(spec) { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     c
+}
+
+/// Turns where the user approves each risky tool call (Claude's "ask before changes" mode).
+pub fn interactive(spec: &TurnSpec) -> bool {
+    spec.agent == "claude" && spec.permission_mode == "ask"
+}
+
+/// The first message of an interactive turn, as a stream-json line for stdin.
+pub fn user_message(prompt: &str) -> String {
+    json!({"type": "user", "message": {"role": "user", "content": prompt}}).to_string() + "\n"
+}
+
+/// The answer to a `can_use_tool` request. `always` also applies the CLI's own suggestion (for
+/// edits: accept edits for the rest of this chat).
+pub fn approval_response(request_id: &str, allow: bool, input: &Value, suggestions: &Value, always: bool) -> String {
+    let response = if allow {
+        let mut r = json!({"behavior": "allow", "updatedInput": input});
+        if always && suggestions.is_array() {
+            r["updatedPermissions"] = suggestions.clone();
+        }
+        r
+    } else {
+        json!({"behavior": "deny", "message": "The user said no. Don't retry this; ask what they want instead."})
+    };
+    json!({"type": "control_response", "response": {"subtype": "success", "request_id": request_id, "response": response}}).to_string() + "\n"
 }
 
 pub fn parse(agent: &str, line: &str) -> Vec<Value> {
@@ -277,6 +309,23 @@ mod tests {
         let s = "é".repeat(3000);
         let c = clip(&s);
         assert!(c.contains("more bytes"));
+    }
+
+    #[test]
+    fn ask_mode_uses_the_control_channel() {
+        let cwd = Path::new("/tmp");
+        let spec = TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: None, model: None, permission_mode: "ask", cwd, effort: None, instructions: None, env: &[], dirs: &[] };
+        assert!(interactive(&spec));
+        let args: Vec<_> = command(&spec).get_args().map(|a| a.to_string_lossy().to_string()).collect();
+        assert!(args.windows(2).any(|w| w == ["--permission-prompt-tool", "stdio"]));
+        assert!(args.windows(2).any(|w| w == ["--permission-mode", "default"]));
+        assert!(!args.contains(&"hi".to_string()), "the prompt goes in on stdin");
+        let ok: Value = serde_json::from_str(&approval_response("r1", true, &json!({"a": 1}), &json!([{"type": "setMode"}]), true)).unwrap();
+        assert_eq!(ok["response"]["request_id"], "r1");
+        assert_eq!(ok["response"]["response"]["behavior"], "allow");
+        assert_eq!(ok["response"]["response"]["updatedPermissions"][0]["type"], "setMode");
+        let no: Value = serde_json::from_str(&approval_response("r2", false, &json!({}), &Value::Null, false)).unwrap();
+        assert_eq!(no["response"]["response"]["behavior"], "deny");
     }
 
     #[test]

@@ -6,6 +6,7 @@ import type { Agent, PermissionMode, Repo } from "../api";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
+  { value: "ask", label: "Ask before changes" },
   { value: "acceptEdits", label: "Auto-accept edits" },
   { value: "bypassPermissions", label: "Full auto" },
 ];
@@ -195,7 +196,7 @@ export function NewWorkspace({
             compact
           />
           <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)} aria-label="Permissions">
-            {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {MODES.filter((m) => m.value !== "ask" || agent === "claude").map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">⇧↵ new line · Esc to close</span>

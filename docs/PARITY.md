@@ -53,7 +53,7 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 | ✅ | Chat tabs: ⌘T new, close button | ⌘W stays the window shortcut |
 | ✅ | Todo list from the agent | `TodoWrite` |
 | ✅ | Expand all tool calls (Ctrl+O) | |
-| ⬜ | Tool approvals mid-turn | Needs Claude's streaming input; later |
+| ✅ | Tool approvals mid-turn (Ask before changes) | Claude's `can_use_tool` control channel; tested against the real CLI |
 
 ## Round 4: diff and review
 

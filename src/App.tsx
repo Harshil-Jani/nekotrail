@@ -301,6 +301,7 @@ export default function App() {
           limit: "hit its usage limit",
           install: "can't find its agent CLI",
           error: "stopped with an error",
+          approval: "wants your OK",
         };
         if (prefs.needsSound) ting();
         if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, payload.title || "Open nekotrail to continue.");
@@ -318,7 +319,20 @@ export default function App() {
         notify(payload.ok === false ? `${name} needs you` : `${name} is done`, payload.title || "The agent finished its turn.");
       }
     });
-    return () => { un.then((f) => f()); };
+    // Mid-turn requests (approve a tool call) arrive while the turn is still running.
+    const unNeeds = listen<{ workspace_id: string; needs: string; title?: string }>("needs", ({ payload }) => {
+      const prefs = getSettings();
+      const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
+      const name = w ? displayName(skyRef.current, w) : "A workspace";
+      refresh();
+      if (prefs.needsSound) ting();
+      const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
+      if (prefs.needsNotify && away) notify(`${name} wants your OK`, payload.title || "Open nekotrail to allow or deny.");
+      if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
+        try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
+      }
+    });
+    return () => { un.then((f) => f()); unNeeds.then((f) => f()); };
   }, [refresh]);
 
   // Refs so the event listener above always sees current state.

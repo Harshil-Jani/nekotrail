@@ -37,6 +37,7 @@ const planEvents = [
     { content: "Tests for weekends and holidays", status: "pending" },
   ]) },
   { kind: "text", text: "How the SLA timer flows today:\n\n```mermaid\nflowchart LR\n  A[Ticket opened] --> B{Business hours?}\n  B -- yes --> C[Start 4h timer]\n  B -- no --> D[Wait for 9:00]\n  D --> C\n  C --> E[Breach alert]\n```" },
+  { kind: "approval", request_id: "a1", tool: "Bash", input: "go test ./internal/tickets/... -run TestBusinessHours", description: "Run the SLA tests", can_always: true },
   { kind: "tool", id: "t3", name: "ExitPlanMode", input: "## Plan\n1. Add `BusinessHours` (9:00 to 18:00, Mon to Fri, holiday list from config).\n2. `slaDeadline` adds 4 business hours instead of 4 wall-clock hours.\n3. Table tests: Friday 17:00 rolls to Monday 12:00; holidays skip.\n\nNo schema changes." },
 ];
 

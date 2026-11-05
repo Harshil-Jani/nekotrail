@@ -3,6 +3,12 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.7.0 (2026-11-06)
+
+**Ask before changes** (Claude)
+- A new permission mode: the agent stops before each edit or command and shows you exactly what it wants to run. Allow (↵), Deny (⌫), or "Allow for this chat". You get the ting, a notification and a Dock bounce when it asks, so you can work elsewhere. Tested end to end against the real Claude Code CLI.
+- Plan, Ask before changes, Auto-accept edits and Full auto are now the four modes, in the chat box and when you create a workspace. Codex keeps the three it supports.
+
 ## 0.6.0 (2026-11-06)
 
 **More done in parallel**
