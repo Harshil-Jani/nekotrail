@@ -11,6 +11,7 @@
     "dialog:default",
     "notification:default",
     "core:window:allow-set-badge-count",
-    "core:webview:allow-set-webview-zoom"
+    "core:webview:allow-set-webview-zoom",
+    "core:window:allow-start-dragging"
   ]
 }

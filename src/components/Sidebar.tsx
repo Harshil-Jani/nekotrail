@@ -109,7 +109,7 @@ export function Sidebar(p: Props) {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-head">
+      <div className="sidebar-head" data-tauri-drag-region>
         <Mascot size={26} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
         <span className="wordmark">nekotrail</span>
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}

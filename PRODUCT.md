@@ -44,7 +44,7 @@ nekotrail runs many coding agents in parallel on your own Mac. Every task gets i
 - Mascot: an original cute cat. It must not resemble any existing product's mascot, including Meta's Muse or Conductor's art.
 - Launch and GTM should run as a character-led launch (mascot-first), with the night-sky quest as the hook. Planned, not yet done.
 - Voice: plain, friendly, short. Cat puns allowed in small doses, never in errors.
-- Visual standing preference (2026-11-05, user's words): "as aesthetic as conductor.build", taking X (Twitter) dark theme's design system as the reference. Convention is the commitment: true-black ground, hairline dividers, white text, one accent, executed at full craft. Square corners everywhere (user rejected rounded corners on 2026-11-05); only avatars and status dots are round. Borrow the system, never X's or Conductor's logos, names, icons or illustrations.
+- Visual system (2026-11-06, replaces the X-dark look): Apple's macOS Human Interface Guidelines, so nekotrail feels like a native Mac app. The user asked for it ("apple ki design system") and chose Apple rounded corners and light and dark following the system. System font, semantic label colours, hairline separators, vibrancy sidebar with the traffic lights inside it, segmented controls, pop-up menus. The cat orange is the one accent. Tokens and rules live in DESIGN.md.
 - User preferences: simple layouts, a consistent spacing scale, contrast checked numerically.
 
 ## Evidence on Hand

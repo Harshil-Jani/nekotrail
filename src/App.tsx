@@ -102,6 +102,19 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Slash commands that change the view: /run, /diff, /terminal.
+  const actionRef = useRef<(a: string) => void>(() => {});
+  actionRef.current = (a: string) => {
+    if (a === "run") runScript();
+    else if (a === "diff") setTab("changes");
+    else if (a === "terminal") setTab("terminal");
+  };
+  useEffect(() => {
+    const on = (e: Event) => actionRef.current((e as CustomEvent<string>).detail);
+    window.addEventListener("nekotrail-action", on);
+    return () => window.removeEventListener("nekotrail-action", on);
+  }, []);
+
   // "Run in terminal" requests switch to the Terminal tab; the panel types the command.
   useEffect(() => {
     const show = () => setTab("terminal");
@@ -342,7 +355,7 @@ export default function App() {
   };
 
   const newWorkspace = async (req: NewWorkspaceRequest) => {
-    const { repoId, prompt, agent, model, mode, from } = req;
+    const { repoId, prompt, agent, model, effort, mode, from } = req;
     try {
       // A bake-off makes one workspace per agent, linked so they can be compared.
       const agents: Agent[] = agent === "both" ? ["claude", "codex"] : [agent];
@@ -359,6 +372,7 @@ export default function App() {
         ? await Promise.all(made.map(async (w, i) => {
             const s = await api.newSession(w.id, agents[i]);
             await api.updateSession(s.id, "New chat", agents[i] === agent ? model : null, mode);
+            if (effort && agents[i] === agent) await api.setSessionEffort(s.id, effort);
             return s;
           }))
         : [];
@@ -598,6 +612,7 @@ export default function App() {
         onDoubleClick={() => { setSidebarW(264); localStorage.removeItem("nekotrail.sidebar"); }}
       />
       <main className="main">
+        {!(view === "workspace" && ws) && <div className="titlebar-drag" data-tauri-drag-region />}
         {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}
 
         {view === "workspace" && !ws && (
@@ -610,8 +625,8 @@ export default function App() {
 
         {view === "workspace" && ws && (
           <>
-            <header className="ws-header">
-              <div className="ws-title">
+            <header className="ws-header" data-tauri-drag-region>
+              <div className="ws-title" data-tauri-drag-region>
                 {editingTitle !== null ? (
                   <input
                     className="title-edit"

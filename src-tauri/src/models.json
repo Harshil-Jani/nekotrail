@@ -1,0 +1,321 @@
+{
+ "claude": {
+  "label": "Claude Code",
+  "effort_label": "Effort",
+  "effort_names": {
+   "low": "Low",
+   "medium": "Medium",
+   "high": "High",
+   "xhigh": "Extra high",
+   "max": "Max"
+  },
+  "default_model": "claude-opus-5[1m]",
+  "models": [
+   {
+    "id": "claude-fable-5-1",
+    "label": "Fable 5.1",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": true
+   },
+   {
+    "id": "claude-fable-5",
+    "label": "Fable 5",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-opus-5-5[1m]",
+    "label": "Opus 5.5",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": true
+   },
+   {
+    "id": "claude-opus-5[1m]",
+    "label": "Opus 5",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-opus-4-8[1m]",
+    "label": "Opus 4.8 1M",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-opus-4-7[1m]",
+    "label": "Opus 4.7 1M",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-opus-4-6[1m]",
+    "label": "Opus 4.6 1M",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-sonnet-5-5[1m]",
+    "label": "Sonnet 5.5",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": true
+   },
+   {
+    "id": "claude-sonnet-5[1m]",
+    "label": "Sonnet 5 1M",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-sonnet-4-6[1m]",
+    "label": "Sonnet 4.6 1M",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-sonnet-4-6",
+    "label": "Sonnet 4.6",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "claude-haiku-5-5[1m]",
+    "label": "Haiku 5.5",
+    "efforts": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": true
+   },
+   {
+    "id": "claude-haiku-4-5",
+    "label": "Haiku 4.5",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "codex": {
+  "label": "Codex",
+  "effort_label": "Thinking",
+  "effort_names": {
+   "none": "Off",
+   "low": "Low",
+   "medium": "Medium",
+   "high": "High",
+   "xhigh": "Extra high",
+   "max": "Max",
+   "ultra": "Ultra"
+  },
+  "default_model": "gpt-6.1-sol",
+  "models": [
+   {
+    "id": "gpt-6.1-sol",
+    "label": "GPT-6.1 Sol",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ],
+    "default_effort": "high",
+    "new": true
+   },
+   {
+    "id": "gpt-6.1-terra",
+    "label": "GPT-6.1 Terra",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-6-sol",
+    "label": "GPT-6 Sol",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-6-luna",
+    "label": "GPT-6 Luna",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-5.6-sol",
+    "label": "GPT-5.6 Sol",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-5.6-terra",
+    "label": "GPT-5.6 Terra",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-5.6-luna",
+    "label": "GPT-5.6 Luna",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-5.5",
+    "label": "GPT-5.5",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh"
+    ],
+    "default_effort": "high",
+    "new": false
+   },
+   {
+    "id": "gpt-5.4",
+    "label": "GPT-5.4",
+    "efforts": [
+     "none",
+     "low",
+     "medium",
+     "high",
+     "xhigh"
+    ],
+    "default_effort": "high",
+    "new": false
+   }
+  ]
+ }
+}

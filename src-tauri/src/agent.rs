@@ -192,7 +192,8 @@ pub fn command(spec: &TurnSpec) -> Command {
             c.args(["--add-dir", d]);
         }
         if let Some(e) = spec.effort {
-            let e = match e { "max" | "xhigh" => "xhigh", "low" => "low", "medium" => "medium", _ => "high" };
+            // The model catalog only offers levels the chosen model supports, so pass them through.
+            let e = if e.chars().all(|ch| ch.is_ascii_lowercase()) { e } else { "high" };
             c.args(["-c", &format!("model_reasoning_effort=\"{e}\"")]);
         }
         // Codex has no flag for extra instructions, so they lead the first message of a chat.

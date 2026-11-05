@@ -29,6 +29,10 @@ export type Doctor = {
 };
 export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number };
 
+export type CatalogModel = { id: string; label: string; efforts: string[]; default_effort?: string | null; new?: boolean };
+export type AgentCatalog = { label: string; effort_label: string; effort_names: Record<string, string>; default_model: string; models: CatalogModel[] };
+export type ModelCatalog = Record<Agent, AgentCatalog>;
+
 export type AppSettings = {
   caffeinate: "on" | "off"; auto_branch: "on" | "off"; home: string;
   claude_model: string; claude_effort: string; claude_mode: string;
@@ -36,7 +40,7 @@ export type AppSettings = {
 };
 
 export type WsStatus = "" | "backlog" | "in_progress" | "in_review" | "done";
-export type Effort = "" | "low" | "medium" | "high" | "xhigh" | "max";
+export type Effort = string;
 
 export type Workspace = {
   id: string;
@@ -156,6 +160,9 @@ export const api = {
   setPair: (ids: string[]) => invoke<string>("set_pair", { ids }),
   workspaceStats: (id: string) => invoke<{ agent: Agent | ""; turns: number; errors: number; duration_ms: number; cost_usd: number }>("workspace_stats", { id }),
   usageSummary: () => invoke<{ today: number; week: number; by_agent: Record<string, number> }>("usage_summary"),
+  modelCatalog: () => invoke<ModelCatalog>("model_catalog"),
+  mcpList: (id: string, agent: Agent) => invoke<string>("mcp_list", { id, agent }),
+  slashCommands: (id: string) => invoke<[string, string][]>("slash_commands", { id }),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),

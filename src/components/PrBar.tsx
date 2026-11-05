@@ -201,8 +201,17 @@ export function PrBar({
       e.preventDefault();
       if (!a.disabled) a.run();
     };
+    // Slash commands from the chat (/pr, /review...) run the same actions.
+    const slash: Record<string, string> = { pr: "createPr", review: "review", "second-opinion": "second", merge: "merge", pull: "pull", "fix-ci": "fix" };
+    const onAction = (e: Event) => {
+      const a = ref.current[slash[(e as CustomEvent<string>).detail]];
+      if (!a) return;
+      if (a.disabled) onSay(a.id === "merge" ? "This PR can't be merged yet. The PR bar says why." : `${a.label} isn't available right now.`);
+      else a.run();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("nekotrail-action", onAction);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("nekotrail-action", onAction); };
   }, []);
 
   const renameBranch = async () => {

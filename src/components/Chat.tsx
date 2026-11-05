@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import { MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
+import { ModelPicker } from "./ModelPicker";
+import { McpSheet } from "./McpSheet";
 import { getSettings } from "../settings";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
@@ -42,16 +44,6 @@ const MODES: { value: PermissionMode; label: string }[] = [
   { value: "bypassPermissions", label: "Full auto" },
 ];
 
-const EFFORTS: Record<Agent, { value: Effort; label: string }[]> = {
-  claude: [
-    { value: "", label: "Effort: default" }, { value: "low", label: "Low effort" }, { value: "medium", label: "Medium effort" },
-    { value: "high", label: "High effort" }, { value: "xhigh", label: "Extra high effort" }, { value: "max", label: "Max effort" },
-  ],
-  codex: [
-    { value: "", label: "Reasoning: default" }, { value: "low", label: "Low reasoning" }, { value: "medium", label: "Medium reasoning" },
-    { value: "high", label: "High reasoning" }, { value: "xhigh", label: "Extra high reasoning" },
-  ],
-};
 
 /** Ring that fills as the conversation uses up the model's context window. */
 function ContextMeter({ tokens, window }: { tokens: number; window: number }) {
@@ -70,11 +62,6 @@ function ContextMeter({ tokens, window }: { tokens: number; window: number }) {
   );
 }
 
-// Suggestions only: any model id the CLI accepts can be typed in.
-const MODELS: Record<Agent, string[]> = {
-  claude: ["opus", "sonnet", "haiku"],
-  codex: [],
-};
 
 type Row =
   | { type: "user"; text: string; checkpoint?: string | null }
@@ -532,8 +519,15 @@ export function Chat({
       case "/plan": await update({ permission_mode: "plan" }); return true;
       case "/auto": await update({ permission_mode: "acceptEdits" }); return true;
       case "/fork": await fork(); return true;
-      case "/model": await update({ model: arg || null }); return true;
-      case "/effort": await update({ effort: (arg || null) as Effort | null }); return true;
+      case "/model":
+        if (arg) await update({ model: arg });
+        else window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", metaKey: true }));
+        return true;
+      case "/effort": case "/intelligence": await update({ effort: (arg || null) as Effort | null }); return true;
+      case "/mcp": setMcpOpen(true); return true;
+      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/run": case "/diff": case "/terminal":
+        window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: cmd.slice(1) }));
+        return true;
       case "/add-dir": {
         if (!active || !arg) { setError("Usage: /add-dir ~/code/other-repo"); return true; }
         try {
@@ -565,7 +559,7 @@ export function Chat({
     if (!session) return;
     const next = { ...session, ...patch };
     if ("effort" in patch) await api.setSessionEffort(next.id, next.effort || null);
-    else await api.updateSession(next.id, next.title, next.model, next.permission_mode);
+    if ("model" in patch || "permission_mode" in patch || "title" in patch || !("effort" in patch)) await api.updateSession(next.id, next.title, next.model, next.permission_mode);
     setSessions((ss) => ss.map((s) => (s.id === next.id ? next : s)));
   };
 
@@ -605,12 +599,24 @@ export function Chat({
   useEffect(() => { if (note) { const t = setTimeout(() => setNote(null), 5000); return () => clearTimeout(t); } }, [note]);
 
   // Slash commands: typed at the start of the composer.
-  const SLASH: [string, string][] = [
-    ["/clear", "Start a fresh chat"], ["/plan", "Plan only, no edits"], ["/auto", "Auto-accept edits"],
-    ["/fork", "Copy this chat into a new tab"], ["/compact", "Summarise the chat to free up context"],
-    ["/add-dir", "Let the agent use another folder, e.g. /add-dir ~/code/api"],
-    ["/model", "Set the model, e.g. /model sonnet"], ["/effort", "Set effort: low, medium, high, xhigh, max"],
+  // Slash commands: nekotrail's own actions first, then the repo's and your own .claude/commands.
+  const BASE_SLASH: [string, string][] = [
+    ["/mcp", "MCP servers this agent can use"],
+    ["/model", "Pick the model and intelligence (⌘/)"],
+    ["/intelligence", "Set how hard it thinks: /intelligence high"],
+    ["/plan", "Plan only, no edits"], ["/auto", "Auto-accept edits"],
+    ["/review", "Agent reviews the branch (⌘⇧R)"], ["/second-opinion", "The other agent reviews it, read-only"],
+    ["/pr", "Commit, push and open the PR (⌘⇧P)"], ["/merge", "Merge the PR (⌘⇧M)"], ["/pull", "Merge the latest target branch (⌘⇧L)"],
+    ["/fix-ci", "Fix failing checks from their logs (⌘⇧X)"],
+    ["/run", "Run or stop the app (⌘R)"], ["/diff", "Show the changes (⌘⇧D)"], ["/terminal", "Open the terminal (⌘J)"],
+    ["/fork", "Copy this chat into a new tab"], ["/clear", "Start a fresh chat"], ["/compact", "Summarise the chat to free up context"],
+    ["/add-dir", "Let the agent use another folder: /add-dir ~/code/api"],
   ];
+  const [custom, setCustom] = useState<[string, string][]>([]);
+  useEffect(() => { api.slashCommands(workspaceId).then((c) => setCustom(c.map(([n, d]) => [`/${n}`, d || "Your command"]))).catch(() => {}); }, [workspaceId]);
+  const SLASH = [...BASE_SLASH, ...custom.filter(([c]) => !BASE_SLASH.some(([b]) => b === c))];
+  const [mcpOpen, setMcpOpen] = useState(() => new URLSearchParams(location.search).has("mcp"));
+
   const [slash, setSlash] = useState<{ items: [string, string][]; sel: number } | null>(null);
   const updateSlash = (text: string) => {
     const m = /^\/(\S*)$/.exec(text);
@@ -766,6 +772,7 @@ export function Chat({
       )}
       {error && <div className="banner error">{error}</div>}
       {note && <div className="banner">{note}</div>}
+      {mcpOpen && session && <McpSheet workspaceId={workspaceId} agent={session.agent} onClose={() => setMcpOpen(false)} />}
 
       <div className="composer">
         <div className="composer-box">
@@ -858,19 +865,12 @@ export function Chat({
             {session && (
               <>
                 <span className="agent-badge">{session.agent === "codex" ? "Codex" : "Claude"}</span>
-                <input
-                  className="model"
-                  list={`models-${session.agent}`}
-                  placeholder="Default model"
-                  defaultValue={session.model ?? ""}
-                  key={session.id}
-                  onBlur={(e) => update({ model: e.target.value.trim() || null })}
-                  aria-label="Model"
-                  title="Model (blank uses the CLI's default)"
+                <ModelPicker
+                  agent={session.agent}
+                  model={session.model}
+                  effort={session.effort}
+                  onChange={(next) => update(next)}
                 />
-                <datalist id={`models-${session.agent}`}>
-                  {MODELS[session.agent].map((m) => <option key={m} value={m} />)}
-                </datalist>
                 <select
                   value={session.permission_mode}
                   onChange={(e) => update({ permission_mode: e.target.value as PermissionMode })}
@@ -878,14 +878,6 @@ export function Chat({
                   title="What the agent may do without asking"
                 >
                   {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-                <select
-                  value={session.effort ?? ""}
-                  onChange={(e) => update({ effort: (e.target.value || null) as Effort | null })}
-                  aria-label="Effort"
-                  title="How hard the model thinks. Higher is slower and costs more."
-                >
-                  {EFFORTS[session.agent].map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
                 {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>

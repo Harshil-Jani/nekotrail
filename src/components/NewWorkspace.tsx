@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api as backend } from "../api";
+import { ModelPicker } from "./ModelPicker";
 import { ChevronDown, CornerDownLeft } from "lucide-react";
 import type { Agent, PermissionMode, Repo } from "../api";
 
@@ -11,7 +12,7 @@ const MODES: { value: PermissionMode; label: string }[] = [
 
 export type NewWorkspaceRequest = {
   /** "both" runs a bake-off: the same task in two workspaces, one per agent. */
-  repoId: string; prompt: string; agent: Agent | "both"; model: string | null; mode: PermissionMode;
+  repoId: string; prompt: string; agent: Agent | "both"; model: string | null; effort?: string | null; mode: PermissionMode;
   /** "pr:123" or "branch:name" to start from existing work; empty for a fresh branch. */
   from?: string;
 };
@@ -43,6 +44,7 @@ export function NewWorkspace({
   const [prompt, setPrompt] = useState("");
   const [agent, setAgent] = useState<Agent | "both">(saved.agent ?? "claude");
   const [model, setModel] = useState<string>(saved.model ?? "");
+  const [effort, setEffort] = useState<string | null>(saved.effort ?? null);
   const [mode, setMode] = useState<PermissionMode>(saved.mode ?? "acceptEdits");
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState<Source>(initialSource);
@@ -72,10 +74,10 @@ export function NewWorkspace({
   const submit = async () => {
     if (busy) return;
     setBusy(true);
-    localStorage.setItem("nekotrail.new", JSON.stringify({ agent, model, mode }));
+    localStorage.setItem("nekotrail.new", JSON.stringify({ agent, model, mode, effort }));
     try {
       const from = source === "pr" && prPick ? `pr:${prPick}` : source === "branch" && branch.trim() ? `branch:${branch.trim()}` : undefined;
-      await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, mode, from });
+      await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode, from });
     } finally {
       setBusy(false);
     }
@@ -185,17 +187,13 @@ export function NewWorkspace({
           aria-label="Task for the agent"
         />
         <div className="nw-foot">
-          <input
-            className="nw-model"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="Default model"
-            aria-label="Model"
-            list="nw-models"
+          <ModelPicker
+            agent={agent === "codex" ? "codex" : "claude"}
+            model={model || null}
+            effort={effort}
+            onChange={(n) => { setModel(n.model ?? ""); setEffort(n.effort); }}
+            compact
           />
-          <datalist id="nw-models">
-            {agent === "claude" && ["opus", "sonnet", "haiku"].map((m) => <option key={m} value={m} />)}
-          </datalist>
           <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)} aria-label="Permissions">
             {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>

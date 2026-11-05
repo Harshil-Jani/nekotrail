@@ -708,6 +708,73 @@ async fn usage_summary(st: State<'_, AppState>) -> Res<Value> {
     Ok(json!({"today": today_total, "week": total, "by_agent": by_agent, "days": rows.iter().map(|r| json!({"day": r.0, "agent": r.1, "cost": r.2})).collect::<Vec<_>>()}))
 }
 
+/// Models and intelligence (effort) levels per agent. Built in, and refreshed from a local Conductor
+/// install's model catalog when there is one, since that one is updated as new models ship.
+#[tauri::command]
+fn model_catalog() -> Value {
+    let mut cat: Value = serde_json::from_str(include_str!("models.json")).unwrap_or(Value::Null);
+    let fresh = importer::default_db_path().and_then(|db| {
+        let c = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+        let raw: String = c.query_row("SELECT value FROM settings WHERE key='model_catalog_cache'", [], |r| r.get(0)).ok()?;
+        serde_json::from_str::<Value>(&raw).ok()
+    });
+    if let Some(h) = fresh.as_ref().map(|f| &f["catalog"]["harnesses"]) {
+        for agent in ["claude", "codex"] {
+            let Some(cfg) = h[agent]["configs"].as_array().and_then(|c| c.last()) else { continue };
+            let allowed: &[&str] = if agent == "claude" { &["low", "medium", "high", "xhigh", "max"] } else { &["none", "low", "medium", "high", "xhigh", "max", "ultra"] };
+            let models: Vec<Value> = cfg["models"].as_array().into_iter().flatten()
+                .filter(|m| m["status"] == "picker" && m["wireName"].is_string())
+                .map(|m| json!({
+                    "id": m["wireName"], "label": m["label"], "new": m["isNew"].as_bool().unwrap_or(false),
+                    "default_effort": m["defaultEffortLevel"],
+                    "efforts": m["effortLevels"].as_array().into_iter().flatten().filter(|e| e.as_str().is_some_and(|e| allowed.contains(&e))).cloned().collect::<Vec<_>>(),
+                }))
+                .collect();
+            if !models.is_empty() {
+                let def = cfg["models"].as_array().into_iter().flatten().find(|m| m["id"] == cfg["defaultModel"]).map(|m| m["wireName"].clone());
+                cat[agent]["models"] = json!(models);
+                if let Some(d) = def { cat[agent]["default_model"] = d; }
+            }
+        }
+    }
+    cat
+}
+
+/// MCP servers the agent can use here, as the CLI reports them (`claude mcp list` / `codex mcp list`).
+#[tauri::command]
+async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<String> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let bin = if agent == "codex" { "codex" } else { "claude" };
+    let out = Command::new(bin).args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Could not run {bin}: {err}"))?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    Ok(text.trim().to_string())
+}
+
+/// Custom slash commands: `.claude/commands/*.md` in the workspace and in ~/.claude, with their descriptions.
+#[tauri::command]
+async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String, String)>> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let mut out = vec![];
+    let dirs = [Some(Path::new(&ws.path).join(".claude/commands")), dirs::home_dir().map(|h| h.join(".claude/commands"))];
+    for dir in dirs.into_iter().flatten() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some("md") { continue; }
+            let name = p.file_stem().unwrap().to_string_lossy().to_string();
+            let body = std::fs::read_to_string(&p).unwrap_or_default();
+            let desc = body.lines().find_map(|l| l.strip_prefix("description:")).map(|d| d.trim().trim_matches('"').to_string())
+                .or_else(|| body.lines().find(|l| !l.trim().is_empty() && !l.starts_with("---")).map(|l| l.trim_start_matches('#').trim().chars().take(80).collect()))
+                .unwrap_or_default();
+            if !out.iter().any(|(n, _): &(String, String)| *n == name) {
+                out.push((name, desc));
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 /// Commit everything and push. An empty message uses the chat's first task as the subject.
 #[tauri::command]
 async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
@@ -1430,7 +1497,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky

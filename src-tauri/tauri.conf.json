@@ -16,12 +16,26 @@
         "width": 1400,
         "height": 900,
         "minWidth": 900,
-        "minHeight": 560
+        "minHeight": 560,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "transparent": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 24
+        },
+        "windowEffects": {
+          "effects": [
+            "sidebar"
+          ],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

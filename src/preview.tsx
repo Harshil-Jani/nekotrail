@@ -7,6 +7,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import catalog from "../src-tauri/src/models.json";
 
 if (new URLSearchParams(location.search).get("filter")) localStorage.setItem("nekotrail.settings", JSON.stringify({ repoFilter: ["r1"], collapsed: [] }));
 if (new URLSearchParams(location.search).get("split")) localStorage.setItem("nekotrail.split", "1");
@@ -119,6 +120,9 @@ mockIPC(
       case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
       case "usage_summary": return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
+      case "model_catalog": return catalog;
+      case "mcp_list": return "Checking MCP server health…\n\ngithub: https://api.githubcopilot.com/mcp - ✔ Connected\nlinear: https://mcp.linear.app/sse - ✔ Connected\npostgres: npx -y @modelcontextprotocol/server-postgres - ✗ Failed to connect";
+      case "slash_commands": return [["ship", "Run tests, bump the version and open the release PR"], ["triage", "Label and prioritise new issues"]];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
       default: return null;
