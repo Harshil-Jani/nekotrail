@@ -1,0 +1,422 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { Archive, ArchiveRestore, FolderOpen, Pin, PinOff, Play } from "lucide-react";
+import { api, breedFor, errText, type Breed, type GithubUser, type Repo, type Workspace } from "./api";
+import { Sidebar } from "./components/Sidebar";
+import { Chat } from "./components/Chat";
+import { Diff } from "./components/Diff";
+import { Terminal } from "./components/Terminal";
+import { PrBar } from "./components/PrBar";
+import { RepoSettings } from "./components/RepoSettings";
+import { Breedex } from "./components/Breedex";
+import { Mascot, type Mood } from "./components/Mascot";
+
+const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
+
+async function notify(title: string, body: string) {
+  try {
+    let ok = await isPermissionGranted();
+    if (!ok) ok = (await requestPermission()) === "granted";
+    if (ok) sendNotification({ title, body });
+  } catch {
+    /* not in Tauri (preview) */
+  }
+}
+import "./App.css";
+
+type Tab = "chat" | "changes" | "terminal" | "notes";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "chat", label: "Chat" },
+  { id: "changes", label: "Changes" },
+  { id: "terminal", label: "Terminal" },
+  { id: "notes", label: "Notes" },
+];
+
+export default function App() {
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [runningSessions, setRunningSessions] = useState<Set<string>>(new Set());
+  const [runningWs, setRunningWs] = useState<Set<string>>(new Set());
+  const [discovered, setDiscovered] = useState<Set<string>>(new Set());
+  const [breeds, setBreeds] = useState<Breed[]>([]);
+  const [me, setMe] = useState<GithubUser>(null);
+  // Deep link: ?ws=<id>&tab=<tab>&view=breedex (used by workspace links and the preview page).
+  const params = new URLSearchParams(window.location.search);
+  const [selected, setSelected] = useState<string | null>(params.get("ws"));
+  const [view, setView] = useState<"workspace" | "breedex">(params.get("view") === "breedex" ? "breedex" : "workspace");
+  const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
+  const [showArchived, setShowArchived] = useState(false);
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const [discovery, setDiscovery] = useState<Breed | null>(null);
+  const [canImport, setCanImport] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [inject, setInject] = useState<{ text: string; nonce: number } | undefined>();
+  const [run, setRun] = useState<{ cmd: string; nonce: number } | undefined>();
+  const [notes, setNotes] = useState("");
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const [purring, setPurring] = useState(false);
+  const [lastActive, setLastActive] = useState(Date.now());
+  const [worriedUntil, setWorriedUntil] = useState(0);
+  const [now, setNow] = useState(Date.now());
+
+  const refresh = useCallback(async () => {
+    const s = await api.snapshot(showArchived);
+    setRepos(s.repos);
+    setWorkspaces(s.workspaces);
+    setRunningSessions(new Set(s.running));
+    setRunningWs(new Set(s.running_workspaces));
+    setDiscovered(new Set(s.discovered));
+  }, [showArchived]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    api.conductorAvailable().then(setCanImport);
+    api.breeds().then(setBreeds);
+    api.githubProfile().then(setMe);
+  }, []);
+
+  useEffect(() => {
+    const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean }>("running", ({ payload }) => {
+      refresh();
+      setRefreshKey((k) => k + 1); // a turn ended: reload changes and PR state
+      setLastActive(Date.now());
+      if (payload.running || !payload.workspace_id || payload.more_queued) return;
+      if (payload.ok === false) setWorriedUntil(Date.now() + 15_000);
+      // The cat brings you something: tell the user when they're looking elsewhere.
+      const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
+      if (away) {
+        const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
+        const name = (w && breedFor(breedsRef.current, w.name)?.name) || w?.name || "A workspace";
+        notify(payload.ok === false ? `${name} needs you` : `${name} is done`, payload.title || "The agent finished its turn.");
+      }
+    });
+    return () => { un.then((f) => f()); };
+  }, [refresh]);
+
+  // Refs so the event listener above always sees current state.
+  const selectedRef = useRef(selected);
+  const workspacesRef = useRef(workspaces);
+  const breedsRef = useRef(breeds);
+  selectedRef.current = selected;
+  workspacesRef.current = workspaces;
+  breedsRef.current = breeds;
+
+  // Dock badge: how many workspaces have news you haven't looked at.
+  useEffect(() => {
+    const n = workspaces.filter((w) => w.unread && w.state === "active").length;
+    try {
+      getCurrentWindow().setBadgeCount(n || undefined).catch(() => {});
+    } catch {
+      /* no native window (preview) */
+    }
+  }, [workspaces]);
+
+  // Clock for the nap and worried moods.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (worriedUntil > Date.now()) {
+      const t = setTimeout(() => setNow(Date.now()), worriedUntil - Date.now() + 50);
+      return () => clearTimeout(t);
+    }
+  }, [worriedUntil]);
+  useEffect(() => {
+    const wake = () => setLastActive(Date.now());
+    window.addEventListener("keydown", wake);
+    window.addEventListener("pointerdown", wake);
+    return () => { window.removeEventListener("keydown", wake); window.removeEventListener("pointerdown", wake); };
+  }, []);
+
+  const mood: Mood =
+    runningWs.size > 0 ? "working" : worriedUntil > now ? "worried" : now - lastActive > NAP_AFTER_MS ? "sleep" : "idle";
+
+  const pet = () => {
+    setPurring(true);
+    setTimeout(() => setPurring(false), 1000);
+    const known = breeds.filter((b) => discovered.has(b.slug));
+    const b = known.length ? known[Math.floor(Math.random() * known.length)] : breeds[0];
+    if (b) say(`Purr. ${b.name}: ${b.fact}`);
+  };
+
+  const ws = workspaces.find((w) => w.id === selected) ?? null;
+  const breed = ws ? breedFor(breeds, ws.name) : null;
+  const repo = ws ? repos.find((r) => r.id === ws.repo_id) : null;
+
+  useEffect(() => {
+    if (!ws) return;
+    setNotes(ws.notes);
+    if (ws.unread) api.setUnread(ws.id, false).then(refresh);
+  }, [ws?.id]);
+
+  const say = (text: string, error = false) => {
+    setToast({ text, error });
+    setTimeout(() => setToast(null), error ? 8000 : 4000);
+  };
+
+  const select = (id: string) => {
+    setSelected(id);
+    setView("workspace");
+  };
+
+  const addRepo = async () => {
+    const dir = await openDialog({ directory: true, title: "Choose a git repo" });
+    if (typeof dir !== "string") return;
+    try {
+      await api.addRepo(dir);
+      await refresh();
+    } catch (e) {
+      say(errText(e), true);
+    }
+  };
+
+  const newWorkspace = async (repoId: string) => {
+    try {
+      const w = await api.createWorkspace(repoId);
+      const isNew = !discovered.has(w.name.replace(/-\d+$/, ""));
+      await refresh();
+      select(w.id);
+      const found = breedFor(breeds, w.name);
+      if (found && isNew) {
+        setDiscovery(found);
+        setTimeout(() => setDiscovery(null), 7000);
+      }
+      const scripts = await api.workspaceScripts(w.id);
+      if (scripts.setup) {
+        setTab("terminal");
+        setRun({ cmd: scripts.setup, nonce: Date.now() });
+      } else {
+        setTab("chat");
+      }
+    } catch (e) {
+      say(`Couldn't create the workspace. ${errText(e)}`, true);
+    }
+  };
+
+  const archive = async () => {
+    if (!ws) return;
+    const name = breed?.name ?? ws.name;
+    try {
+      await api.archiveWorkspace(ws.id);
+    } catch (e) {
+      if (errText(e) !== "DIRTY") return say(errText(e), true);
+      if (!confirm(`${name} has uncommitted changes. Archive anyway? The branch ${ws.branch} is kept, but uncommitted work in the folder is lost.`)) return;
+      try {
+        await api.archiveWorkspace(ws.id, true);
+      } catch (e2) {
+        return say(errText(e2), true);
+      }
+    }
+    setLeaving(ws.id);
+    await new Promise((r) => setTimeout(r, 320));
+    setLeaving(null);
+    setSelected(null);
+    await refresh();
+    say(`Archived ${name}. Branch ${ws.branch} is kept.`);
+  };
+
+  const runScript = async () => {
+    if (!ws) return;
+    const s = await api.workspaceScripts(ws.id);
+    if (!s.run) return setSettingsFor(ws.repo_id);
+    setTab("terminal");
+    setRun({ cmd: s.run, nonce: Date.now() });
+  };
+
+  const importConductor = async () => {
+    try {
+      const r = await api.importConductor();
+      await refresh();
+      say(`Imported ${r.repos} repos, ${r.workspaces} workspaces and ${r.sessions} chats${r.skipped ? `. Skipped ${r.skipped} already here or missing on disk` : ""}.`);
+    } catch (e) {
+      say(errText(e), true);
+    }
+  };
+
+  // ⌘N new workspace, ⌘K search, ⌘1-4 tabs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey) return;
+      if (e.key === "k") { e.preventDefault(); document.getElementById("workspace-search")?.focus(); }
+      if (e.key === "n" && (ws || repos[0])) { e.preventDefault(); newWorkspace(ws?.repo_id ?? repos[0].id); }
+      if (e.key === "j") {
+        // Next workspace with news, wrapping around.
+        e.preventDefault();
+        const list = workspaces.filter((w) => w.state === "active");
+        const start = list.findIndex((w) => w.id === selected);
+        const next = [...list.slice(start + 1), ...list.slice(0, start + 1)].find((w) => w.unread);
+        if (next) select(next.id);
+        else say("Nothing new. Every cat is asleep or still working.");
+      }
+      const i = Number(e.key) - 1;
+      if (ws && i >= 0 && i < TABS.length) { e.preventDefault(); setTab(TABS[i].id); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ws, repos, discovered, breeds, workspaces, selected]);
+
+  const settingsRepo = repos.find((r) => r.id === settingsFor);
+
+  return (
+    <div className="app">
+      <Sidebar
+        repos={repos}
+        workspaces={workspaces}
+        breeds={breeds}
+        discovered={discovered.size}
+        me={me}
+        running={runningWs}
+        selected={view === "workspace" ? selected : null}
+        showArchived={showArchived}
+        onSelect={select}
+        onNewWorkspace={newWorkspace}
+        onAddRepo={addRepo}
+        onRepoSettings={setSettingsFor}
+        onToggleArchived={() => setShowArchived((v) => !v)}
+        onBreedex={() => setView("breedex")}
+        mood={mood}
+        purring={purring}
+        onPet={pet}
+        leaving={leaving}
+      />
+      <main className="main">
+        {view === "breedex" && <Breedex breeds={breeds} discovered={discovered} />}
+
+        {view === "workspace" && !ws && (
+          <div className="welcome">
+            <Mascot size={112} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={pet} title="Pet the cat" />
+            <h1>{me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Hi there."}</h1>
+            <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a pull request.</p>
+            {repos.length > 0 ? (
+              <p className="muted">Pick a workspace on the left, press ⌘N to start a new one in {repos[0].name}, or ⌘J to jump to the next one with news.</p>
+            ) : (
+            <ol className="steps">
+              <li><b className="n">1</b><span>Add a repo with the <b>+</b> at the top left.</span></li>
+              <li><b className="n">2</b><span>Press <b>+</b> next to the repo, or ⌘N, to start a workspace. Each one is named after a cat breed you haven't met yet.</span></li>
+              <li><b className="n">3</b><span>Tell Claude or Codex what to build, check the changes, open the PR.</span></li>
+            </ol>
+            )}
+            {repos.length === 0 && (
+              <button className="primary" onClick={addRepo}><FolderOpen size={16} />Add a repo</button>
+            )}
+            {canImport && !workspaces.some((w) => w.imported_from === "conductor") && (
+              <div className="import-card" style={{ marginTop: 24 }}>
+                <h2>Coming from Conductor?</h2>
+                <p>Bring over your repos, active workspaces and chats. purrfectpr only reads Conductor's data; nothing is moved or deleted.</p>
+                <button className="accent" onClick={importConductor}>Import from Conductor</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === "workspace" && ws && (
+          <>
+            <header className="ws-header">
+              <div className="ws-title">
+                <h1>
+                  {breed?.name ?? ws.name}
+                  {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
+                </h1>
+                <div className="ws-sub">
+                  {repo?.name}
+                  {breed ? ` · ${breed.origin} · ${breed.fact}` : ws.imported_from ? " · imported from Conductor" : ""}
+                </div>
+              </div>
+              <span className="spacer" />
+              <div className="ws-actions">
+                {ws.state === "archived" ? (
+                  <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
+                    <ArchiveRestore size={16} />Restore
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={runScript} title="Run the repo's run script in the terminal"><Play size={14} />Run</button>
+                    <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value as "finder").catch((er) => say(errText(er), true))}>
+                      <option value="">Open in…</option>
+                      <option value="cursor">Cursor</option>
+                      <option value="vscode">VS Code</option>
+                      <option value="finder">Finder</option>
+                      <option value="terminal">Terminal</option>
+                    </select>
+                    <button className="icon" title={ws.pinned ? "Unpin" : "Pin to top"} aria-label={ws.pinned ? "Unpin" : "Pin"} onClick={() => api.setPinned(ws.id, !ws.pinned).then(refresh)}>
+                      {ws.pinned ? <PinOff size={18} /> : <Pin size={18} />}
+                    </button>
+                    <button className="icon" title="Archive (keeps the branch)" aria-label="Archive" onClick={archive}><Archive size={18} /></button>
+                  </>
+                )}
+              </div>
+            </header>
+
+            {ws.state === "active" && (
+              <PrBar ws={ws} name={breed?.name ?? ws.name} refreshKey={refreshKey} onArchive={archive} onAskAgent={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />
+            )}
+
+            {ws.state === "active" && (
+              <nav className="tabs" role="tablist" aria-label="Workspace">
+                {TABS.map((t, i) => (
+                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={`⌘${i + 1}`}>
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
+            )}
+
+            <div className="panel">
+              {ws.state === "archived" ? (
+                <div className="empty">
+                  <Mascot size={88} mood="sleep" />
+                  <h2>Archived</h2>
+                  <p>Restore it to bring the folder back on branch {ws.branch}.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="pane" hidden={tab !== "chat"}>
+                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} />
+                  </div>
+                  <div className="pane" hidden={tab !== "changes"}>
+                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} />}
+                  </div>
+                  <div className="pane" hidden={tab !== "terminal"}>
+                    <Terminal key={ws.id} ptyId={`${ws.id}:term`} cwd={ws.path} run={run} />
+                  </div>
+                  <div className="pane" hidden={tab !== "notes"}>
+                    <textarea
+                      className="notes"
+                      aria-label="Workspace notes"
+                      placeholder="Plan, links, what's left. Saved when you click away."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      onBlur={() => api.setNotes(ws.id, notes).then(refresh)}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+      </main>
+
+      {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
+      {toast && <div role="status" className={`toast ${toast.error ? "error" : ""}`}>{toast.text}</div>}
+      {discovery && (
+        <div className="discovery" role="status">
+          <Mascot size={56} mood="happy" />
+          <div>
+            <span className="origin">New breed · {discovery.origin}</span>
+            <h3>You met the {discovery.name}</h3>
+          </div>
+          <p>{discovery.fact} <span className="num">({discovered.size}/{breeds.length} found)</span></p>
+        </div>
+      )}
+    </div>
+  );
+}

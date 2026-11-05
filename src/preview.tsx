@@ -1,0 +1,110 @@
+/**
+ * Sample data for rendering the real UI in a plain browser (no Tauri backend).
+ * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, notes; ?view=breedex).
+ * All names, numbers and PRs here are made up for screenshots.
+ */
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { mockIPC } from "@tauri-apps/api/mocks";
+import App from "./App";
+
+const repos = [
+  { id: "r1", name: "sage-backend", root_path: "/code/sage-backend", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null },
+  { id: "r2", name: "website", root_path: "/code/website", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null },
+];
+const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
+  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", ...extra,
+});
+const workspaces = [
+  ws("w1", "r1", "bengal", "harshil/fix-502-gateway", { pinned: true }),
+  ws("w2", "r1", "korat", "harshil/ticket-sla", { unread: true }),
+  ws("w3", "r1", "manx", "harshil/rate-limit"),
+  ws("w4", "r2", "sokoke", "harshil/pricing-page"),
+  ws("w5", "r2", "chartreux", "harshil/blog-rss"),
+];
+const events = [
+  { kind: "user", text: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it." },
+  { kind: "tool", id: "t1", name: "Bash", input: "aws logs tail /ecs/sage-backend --since 30m | grep -i 502" },
+  { kind: "tool_result", id: "t1", output: "2026-11-05T09:12:44Z http: proxy error: read tcp 10.0.3.14:43120->10.0.7.2:8080: connection reset by peer", is_error: false },
+  { kind: "tool", id: "t2", name: "Read", input: "internal/server/http.go" },
+  { kind: "tool_result", id: "t2", output: "srv := &http.Server{\n  Addr: \":8080\",\n  IdleTimeout: 30 * time.Second,\n}", is_error: false },
+  { kind: "text", text: "Found it. The server closes idle keep-alive connections after **30s**, but the load balancer keeps them for **60s**. After a quiet minute the balancer reuses a connection the server already closed, and the client gets a 502.\n\nI raised `IdleTimeout` to 75s so the server always outlives the balancer, and added a test that fails on the old value." },
+  { kind: "tool", id: "t3", name: "Edit", input: "internal/server/http.go" },
+  { kind: "tool_result", id: "t3", output: "", is_error: false },
+  { kind: "tool", id: "t4", name: "Bash", input: "go test ./internal/server/..." },
+  { kind: "tool_result", id: "t4", output: "ok  \tsage/internal/server\t0.412s", is_error: false },
+  { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18 },
+];
+const pr = {
+  number: 482, url: "https://github.com", state: "OPEN", title: "Fix 502s after deploy: outlive the ALB idle timeout", isDraft: false,
+  reviewDecision: "REVIEW_REQUIRED", mergeable: "MERGEABLE", additions: 38, deletions: 4, comments: [{}, {}],
+  author: { login: "Harshil-Jani" },
+  latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }],
+  reviewRequests: [{ login: "hubot" }],
+  statusCheckRollup: Array.from({ length: 12 }, (_, i) => ({ name: `check-${i}`, conclusion: "SUCCESS" })),
+};
+const diff = `diff --git a/internal/server/http.go b/internal/server/http.go
+@@ -18,7 +18,9 @@ func New(cfg Config) *http.Server {
+ 	srv := &http.Server{
+ 		Addr:    ":8080",
+-		IdleTimeout: 30 * time.Second,
++		// Must outlive the ALB idle timeout (60s), or the ALB reuses
++		// connections we already closed and clients see 502s.
++		IdleTimeout: 75 * time.Second,
+ 	}`;
+
+mockIPC(
+  (cmd, args: any) => {
+    switch (cmd) {
+      case "snapshot": return { repos, workspaces, running: [], running_workspaces: ["w3"], discovered: ["bengal", "korat", "manx", "sokoke", "chartreux", "siamese", "persian", "sphynx", "maine-coon", "ragdoll", "bombay", "toyger", "lykoi", "savannah"] };
+      case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
+      case "repo_github": return { nameWithOwner: "nactore/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "https://github.com/github.png?size=64", isPrivate: false };
+      case "breeds": return BREEDS;
+      case "conductor_available": return true;
+      case "sessions": return args.workspaceId === "w1"
+        ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits" }]
+        : [{ id: "s9", workspace_id: args.workspaceId, agent: "claude", agent_session_id: null, title: "New chat", model: null, permission_mode: "acceptEdits" }];
+      case "session_events": return args.id === "s1" ? events : [];
+      case "queued": return [];
+      case "pr_status":
+        if (args.id === "w1") return pr;
+        if (args.id === "w2") return { ...pr, number: 479, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };
+        if (args.id === "w4") return { ...pr, number: 471, state: "MERGED", latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }], reviewRequests: [] };
+        return null;
+      case "changes": return args.id === "w1" ? [
+        { path: "internal/server/http.go", status: "M", additions: 3, deletions: 1 },
+        { path: "internal/server/http_test.go", status: "A", additions: 35, deletions: 0 },
+      ] : [];
+      case "file_diff": return diff;
+      case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
+      default: return null;
+    }
+  },
+  { shouldMockEvents: true },
+);
+
+// Keep in sync with src-tauri/src/names.rs (subset is fine for previews).
+const BREEDS = [
+  ["bengal", "Bengal", "USA", "Developed by crossing domestic cats with the Asian leopard cat."],
+  ["korat", "Korat", "Thailand", "A silver-blue cat seen as a sign of good luck in Thailand."],
+  ["manx", "Manx", "Isle of Man", "Many Manx cats are born with no tail at all."],
+  ["sokoke", "Sokoke", "Kenya", "Comes from the Arabuko-Sokoke Forest on Kenya's coast."],
+  ["chartreux", "Chartreux", "France", "A French blue cat linked in legend to the Carthusian monks."],
+  ["siamese", "Siamese", "Thailand", "Its darker points grow where the body is coolest: ears, face, paws and tail."],
+  ["persian", "Persian", "Iran", "Brought to Europe from Persia in the 1600s."],
+  ["sphynx", "Sphynx", "Canada", "Not truly hairless: most have a fine peach-fuzz coat."],
+  ["maine-coon", "Maine Coon", "USA", "The official state cat of Maine."],
+  ["ragdoll", "Ragdoll", "USA", "Named for the way many go limp when picked up."],
+  ["bombay", "Bombay", "USA", "Bred in Kentucky in the 1950s to look like a miniature black panther."],
+  ["toyger", "Toyger", "USA", "Bred to look like a tiny tiger."],
+  ["lykoi", "Lykoi", "USA", "Its patchy coat gives it a werewolf look; the name comes from the Greek for wolf."],
+  ["savannah", "Savannah", "USA", "A cross between a domestic cat and the African serval."],
+  ["norwegian-forest", "Norwegian Forest Cat", "Norway", "Has a water-resistant double coat built for Scandinavian winters."],
+  ["turkish-van", "Turkish Van", "Turkey", "Known as the swimming cat; it comes from the Lake Van region."],
+].map(([slug, name, origin, fact]) => ({ slug, name, origin, fact }));
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);

@@ -1,0 +1,8 @@
+{"type":"system","subtype":"hook_started","session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555","model":"claude-haiku"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"cat a.txt","description":"Show file"}}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"rate_limit_event","session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"hi","is_error":false}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"DONE"}]},"session_id":"11111111-2222-3333-4444-555555555555"}
+{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.0072,"duration_ms":6512,"num_turns":2,"result":"DONE","session_id":"11111111-2222-3333-4444-555555555555"}
