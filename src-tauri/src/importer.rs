@@ -94,6 +94,24 @@ pub fn backfill_history(store: &Store, db: &Path) -> Result<usize> {
     Ok(filled)
 }
 
+/// Custom prompts and copied-file globs from a Conductor repo. Missing columns (older Conductor
+/// versions) just mean empty preferences.
+fn conductor_prefs(src: &Connection, repo_id: &str) -> crate::store::RepoPrefs {
+    let get = |col: &str| -> String {
+        src.query_row(&format!("SELECT COALESCE({col}, '') FROM repos WHERE id = ?1"), [repo_id], |r| r.get(0))
+            .unwrap_or_default()
+    };
+    let globs = get("file_include_globs");
+    crate::store::RepoPrefs {
+        general_prompt: get("custom_prompt_general"),
+        review_prompt: get("custom_prompt_code_review"),
+        pr_prompt: get("custom_prompt_create_pr"),
+        copy_files: serde_json::from_str::<Vec<String>>(&globs)
+            .unwrap_or_else(|_| globs.split([',', '\n']).map(|g| g.trim().to_string()).filter(|g| !g.is_empty()).collect()),
+        env: vec![],
+    }
+}
+
 pub fn import(store: &Store, db: &Path) -> Result<Report> {
     let src = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let mut report = Report::default();
@@ -115,6 +133,7 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
                 setup_script: r.get(5)?,
                 run_script: r.get(6)?,
                 archive_script: r.get(7)?,
+                prefs: Default::default(),
             },
         ))
     })?;
@@ -126,6 +145,8 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
         let id = match store.repo_by_path(&repo.root_path)? {
             Some(existing) => existing.id,
             None => {
+                let mut repo = repo.clone();
+                repo.prefs = conductor_prefs(&src, &src_id);
                 store.insert_repo(&repo)?;
                 report.repos += 1;
                 repo.id.clone()
@@ -174,6 +195,8 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
             notes: w.notes,
             imported_from: Some("conductor".into()),
             created_at: crate::store::now(),
+            title: String::new(),
+            status: String::new(),
         };
         store.insert_workspace(&ws)?;
         report.workspaces += 1;
@@ -195,6 +218,7 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
                 title,
                 model: None,
                 permission_mode: "acceptEdits".into(),
+                effort: None,
             })?;
             report.sessions += 1;
         }

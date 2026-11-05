@@ -17,10 +17,12 @@ pub struct Ptys(Arc<Mutex<HashMap<String, Pty>>>);
 
 impl Ptys {
     /// Start a login shell in `cwd`. `on_data` gets output chunks; `on_exit` fires once when it ends.
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         &self,
         id: &str,
         cwd: &str,
+        env: &[(String, String)],
         cols: u16,
         rows: u16,
         on_data: impl Fn(String) + Send + 'static,
@@ -33,6 +35,9 @@ impl Ptys {
         cmd.arg("-l");
         cmd.cwd(cwd);
         cmd.env("TERM", "xterm-256color");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader()?;
@@ -100,7 +105,7 @@ mod tests {
         std::fs::write(d.path().join("marker-file"), "").unwrap();
         let ptys = Ptys::default();
         let (tx, rx) = mpsc::channel::<String>();
-        ptys.open("t", d.path().to_str().unwrap(), 80, 24, move |s| { let _ = tx.send(s); }, || {}).unwrap();
+        ptys.open("t", d.path().to_str().unwrap(), &[("NEKO".into(), "1".into())], 80, 24, move |s| { let _ = tx.send(s); }, || {}).unwrap();
         ptys.write("t", "ls; exit\n").unwrap();
         let mut out = String::new();
         while let Ok(s) = rx.recv_timeout(Duration::from_secs(10)) {

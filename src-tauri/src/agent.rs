@@ -46,6 +46,15 @@ pub fn parse_claude(line: &str) -> Vec<Value> {
             }
         }
         Some("assistant") => {
+            // Tokens in the model's context right now: what this request read plus what it wrote.
+            let u = &j["message"]["usage"];
+            if u.is_object() {
+                let n = |k: &str| u[k].as_u64().unwrap_or(0);
+                let tokens = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens") + n("output_tokens");
+                if tokens > 0 {
+                    out.push(json!({"kind": "usage", "context_tokens": tokens}));
+                }
+            }
             for c in j["message"]["content"].as_array().into_iter().flatten() {
                 match c["type"].as_str() {
                     Some("text") => out.push(json!({"kind": "text", "text": c["text"]})),
@@ -84,12 +93,18 @@ pub fn parse_claude(line: &str) -> Vec<Value> {
                 }
             }
         }
-        Some("result") => out.push(json!({
-            "kind": "done",
-            "is_error": j["is_error"].as_bool().unwrap_or(false),
-            "cost_usd": j["total_cost_usd"],
-            "duration_ms": j["duration_ms"],
-        })),
+        Some("result") => {
+            let window = j["modelUsage"]
+                .as_object()
+                .and_then(|m| m.values().filter_map(|v| v["contextWindow"].as_u64()).max());
+            out.push(json!({
+                "kind": "done",
+                "is_error": j["is_error"].as_bool().unwrap_or(false),
+                "cost_usd": j["total_cost_usd"],
+                "duration_ms": j["duration_ms"],
+                "context_window": window,
+            }))
+        }
         _ => {}
     }
     out
@@ -140,6 +155,12 @@ pub struct TurnSpec<'a> {
     /// `plan`, `default`, `acceptEdits` or `bypassPermissions` (Claude Code names).
     pub permission_mode: &'a str,
     pub cwd: &'a Path,
+    /// low | medium | high | xhigh | max (Claude); Codex gets the closest reasoning effort.
+    pub effort: Option<&'a str>,
+    /// Repo-wide instructions added to the agent's system prompt.
+    pub instructions: Option<&'a str>,
+    /// Extra environment variables from the repo's settings.
+    pub env: &'a [(String, String)],
 }
 
 /// Build the CLI command for one turn.
@@ -160,7 +181,15 @@ pub fn command(spec: &TurnSpec) -> Command {
         if let Some(m) = spec.model {
             c.args(["-m", m]);
         }
-        c.arg(spec.prompt);
+        if let Some(e) = spec.effort {
+            let e = match e { "max" | "xhigh" => "xhigh", "low" => "low", "medium" => "medium", _ => "high" };
+            c.args(["-c", &format!("model_reasoning_effort=\"{e}\"")]);
+        }
+        // Codex has no flag for extra instructions, so they lead the first message of a chat.
+        match spec.instructions.filter(|_| spec.agent_session_id.is_none()) {
+            Some(i) => c.arg(format!("{i}\n\n{}", spec.prompt)),
+            None => c.arg(spec.prompt),
+        };
     } else {
         c = Command::new("claude");
         c.args(["-p", spec.prompt, "--output-format", "stream-json", "--verbose"]);
@@ -171,7 +200,14 @@ pub fn command(spec: &TurnSpec) -> Command {
         if let Some(id) = spec.agent_session_id {
             c.args(["--resume", id]);
         }
+        if let Some(e) = spec.effort {
+            c.args(["--effort", e]);
+        }
+        if let Some(i) = spec.instructions {
+            c.args(["--append-system-prompt", i]);
+        }
     }
+    c.envs(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
     c.current_dir(spec.cwd);
     c.stdin(std::process::Stdio::null());
     c
@@ -195,6 +231,7 @@ mod tests {
     #[test]
     fn claude_stream() {
         let evs: Vec<Value> = CLAUDE.lines().flat_map(parse_claude).collect();
+        let evs: Vec<Value> = evs.into_iter().filter(|e| e["kind"] != "usage").collect();
         assert_eq!(kinds(&evs), ["session", "tool", "tool_result", "text", "done"]);
         assert_eq!(evs[0]["agent_session_id"], "11111111-2222-3333-4444-555555555555");
         assert_eq!(evs[1]["input"], "cat a.txt");
@@ -228,15 +265,17 @@ mod tests {
     #[test]
     fn commands() {
         let cwd = Path::new("/tmp");
-        let c = command(&TurnSpec { agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd });
+        let c = command(&TurnSpec { agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[] });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
+        assert!(args.windows(2).any(|w| w == ["--effort", "high"]));
+        assert!(args.windows(2).any(|w| w == ["--append-system-prompt", "Use pnpm."]));
         assert!(args.windows(2).any(|w| w == ["--resume", "s1"]));
         assert!(args.windows(2).any(|w| w == ["--permission-mode", "plan"]));
 
-        let c = command(&TurnSpec { agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd });
+        let c = command(&TurnSpec { agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[] });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(&args[..3], ["exec", "resume", "t1"]);
         assert!(args.contains(&"sandbox_mode=\"read-only\"".to_string()));
-        assert_eq!(args.last().unwrap(), "hi");
+        assert_eq!(args.last().unwrap(), "hi", "instructions only lead a chat's first message");
     }
 }

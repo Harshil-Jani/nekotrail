@@ -52,13 +52,27 @@ CREATE INDEX IF NOT EXISTS messages_by_session ON messages(session_id, id);
 
 /// Columns added after v0.1. Each is idempotent.
 fn migrate(conn: &Connection) -> Result<()> {
-    let has = |col: &str| -> rusqlite::Result<bool> {
-        conn.query_row("SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name=?1", [col], |r| r.get::<_, i64>(0))
-            .map(|n| n > 0)
+    let add = |table: &str, col: &str, def: &str| -> Result<()> {
+        let n: i64 = conn.query_row(
+            &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name=?1"),
+            [col],
+            |r| r.get(0),
+        )?;
+        if n == 0 {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {def};"))?;
+        }
+        Ok(())
     };
-    if !has("merged")? {
-        conn.execute_batch("ALTER TABLE workspaces ADD COLUMN merged INTEGER NOT NULL DEFAULT 0;")?;
-    }
+    add("workspaces", "merged", "INTEGER NOT NULL DEFAULT 0")?;
+    // A name the user typed; the star name is used when empty.
+    add("workspaces", "title", "TEXT NOT NULL DEFAULT ''")?;
+    // backlog | in_progress | in_review | done; empty means "derive from PR state".
+    add("workspaces", "status", "TEXT NOT NULL DEFAULT ''")?;
+    // Repo preferences as JSON: prompts, files to copy into new workspaces, env vars.
+    add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
+    add("sessions", "effort", "TEXT")?;
+    add("sessions", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
     Ok(())
 }
 
@@ -80,6 +94,24 @@ pub struct Repo {
     pub setup_script: Option<String>,
     pub run_script: Option<String>,
     pub archive_script: Option<String>,
+    #[serde(default)]
+    pub prefs: RepoPrefs,
+}
+
+/// Per-repo preferences. Every field is optional so old rows and partial JSON still load.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RepoPrefs {
+    /// Added to every agent's instructions in this repo.
+    pub general_prompt: String,
+    /// Used by "Review" (the agent reviews its own diff).
+    pub review_prompt: String,
+    /// Used by "Create PR" (the agent writes the title and description).
+    pub pr_prompt: String,
+    /// Git-ignored files copied from the main checkout into each new workspace, as globs.
+    pub copy_files: Vec<String>,
+    /// Extra environment variables for agents, scripts and terminals in this repo.
+    pub env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,6 +128,10 @@ pub struct Workspace {
     pub notes: String,
     pub imported_from: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -107,6 +143,8 @@ pub struct Session {
     pub title: String,
     pub model: Option<String>,
     pub permission_mode: String,
+    #[serde(default)]
+    pub effort: Option<String>,
 }
 
 pub struct Store {
@@ -123,10 +161,11 @@ fn repo_from(r: &Row) -> rusqlite::Result<Repo> {
         setup_script: r.get(5)?,
         run_script: r.get(6)?,
         archive_script: r.get(7)?,
+        prefs: serde_json::from_str(&r.get::<_, String>(8)?).unwrap_or_default(),
     })
 }
 const REPO_COLS: &str =
-    "id, name, root_path, default_branch, remote_url, setup_script, run_script, archive_script";
+    "id, name, root_path, default_branch, remote_url, setup_script, run_script, archive_script, prefs";
 
 fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
     Ok(Workspace {
@@ -142,9 +181,11 @@ fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
         notes: r.get(9)?,
         imported_from: r.get(10)?,
         created_at: r.get(11)?,
+        title: r.get(12)?,
+        status: r.get(13)?,
     })
 }
-const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at";
+const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status";
 
 fn session_from(r: &Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -155,10 +196,11 @@ fn session_from(r: &Row) -> rusqlite::Result<Session> {
         title: r.get(4)?,
         model: r.get(5)?,
         permission_mode: r.get(6)?,
+        effort: r.get(7)?,
     })
 }
 const SESSION_COLS: &str =
-    "id, workspace_id, agent, agent_session_id, title, model, permission_mode";
+    "id, workspace_id, agent, agent_session_id, title, model, permission_mode, effort";
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
@@ -184,8 +226,8 @@ impl Store {
 
     pub fn insert_repo(&self, r: &Repo) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO repos ({REPO_COLS}, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"),
-            params![r.id, r.name, r.root_path, r.default_branch, r.remote_url, r.setup_script, r.run_script, r.archive_script, now()],
+            &format!("INSERT INTO repos ({REPO_COLS}, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"),
+            params![r.id, r.name, r.root_path, r.default_branch, r.remote_url, r.setup_script, r.run_script, r.archive_script, serde_json::to_string(&r.prefs)?, now()],
         )?;
         Ok(())
     }
@@ -194,6 +236,23 @@ impl Store {
         self.conn.execute(
             "UPDATE repos SET setup_script=?2, run_script=?3, archive_script=?4 WHERE id=?1",
             params![id, setup, run, archive],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_repo_prefs(&self, id: &str, prefs: &RepoPrefs) -> Result<()> {
+        self.conn.execute("UPDATE repos SET prefs=?2 WHERE id=?1", params![id, serde_json::to_string(prefs)?])?;
+        Ok(())
+    }
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self.conn.query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
         )?;
         Ok(())
     }
@@ -219,8 +278,8 @@ impl Store {
 
     pub fn insert_workspace(&self, w: &Workspace) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"),
-            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at],
+            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"),
+            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status],
         )?;
         Ok(())
     }
@@ -278,6 +337,43 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn set_title(&self, id: &str, title: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET title=?2 WHERE id=?1", params![id, title])?;
+        Ok(())
+    }
+
+    pub fn set_status(&self, id: &str, status: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET status=?2 WHERE id=?1", params![id, status])?;
+        Ok(())
+    }
+
+    pub fn set_branch(&self, id: &str, branch: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET branch=?2 WHERE id=?1", params![id, branch])?;
+        Ok(())
+    }
+
+    pub fn set_session_hidden(&self, id: &str, hidden: bool) -> Result<()> {
+        self.conn.execute("UPDATE sessions SET hidden=?2 WHERE id=?1", params![id, hidden])?;
+        Ok(())
+    }
+
+    pub fn set_session_effort(&self, id: &str, effort: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE sessions SET effort=?2 WHERE id=?1", params![id, effort])?;
+        Ok(())
+    }
+
+    /// Total agent cost (USD) per workspace, summed from finished turns.
+    pub fn workspace_costs(&self) -> Result<Vec<(String, f64)>> {
+        let mut st = self.conn.prepare(
+            "SELECT s.workspace_id, SUM(json_extract(m.event, '$.cost_usd')) FROM messages m
+             JOIN sessions s ON s.id = m.session_id
+             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.cost_usd') IS NOT NULL
+             GROUP BY s.workspace_id",
+        )?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get::<_, Option<f64>>(1)?.unwrap_or(0.0))))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
     pub fn set_target_branch(&self, id: &str, branch: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET target_branch=?2 WHERE id=?1", params![id, branch])?;
         Ok(())
@@ -287,15 +383,15 @@ impl Store {
 
     pub fn insert_session(&self, s: &Session) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO sessions ({SESSION_COLS}, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"),
-            params![s.id, s.workspace_id, s.agent, s.agent_session_id, s.title, s.model, s.permission_mode, now()],
+            &format!("INSERT INTO sessions ({SESSION_COLS}, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"),
+            params![s.id, s.workspace_id, s.agent, s.agent_session_id, s.title, s.model, s.permission_mode, s.effort, now()],
         )?;
         Ok(())
     }
 
     pub fn sessions(&self, workspace_id: &str) -> Result<Vec<Session>> {
         let mut st = self.conn.prepare(&format!(
-            "SELECT {SESSION_COLS} FROM sessions WHERE workspace_id=?1 ORDER BY created_at"
+            "SELECT {SESSION_COLS} FROM sessions WHERE workspace_id=?1 AND hidden=0 ORDER BY created_at"
         ))?;
         let rows = st.query_map([workspace_id], session_from)?.collect::<rusqlite::Result<_>>()?;
         Ok(rows)
@@ -372,6 +468,7 @@ mod tests {
             setup_script: Some("bun install".into()),
             run_script: None,
             archive_script: None,
+            prefs: RepoPrefs { general_prompt: "Use bun.".into(), copy_files: vec![".env*".into()], ..Default::default() },
         }
     }
 
@@ -395,8 +492,17 @@ mod tests {
             notes: String::new(),
             imported_from: None,
             created_at: now(),
+            title: String::new(),
+            status: String::new(),
         };
         s.insert_workspace(&w).unwrap();
+        s.set_title(&w.id, "Gateway fix").unwrap();
+        s.set_status(&w.id, "in_review").unwrap();
+        let back = s.workspace(&w.id).unwrap();
+        assert_eq!((back.title.as_str(), back.status.as_str()), ("Gateway fix", "in_review"));
+        s.set_setting("caffeinate", "off").unwrap();
+        s.set_setting("caffeinate", "on").unwrap();
+        assert_eq!(s.setting("caffeinate").unwrap().as_deref(), Some("on"));
         s.set_pinned(&w.id, true).unwrap();
         assert!(s.workspace(&w.id).unwrap().pinned);
 
@@ -415,12 +521,16 @@ mod tests {
             title: "New chat".into(),
             model: None,
             permission_mode: "acceptEdits".into(),
+            effort: Some("high".into()),
         };
         s.insert_session(&sess).unwrap();
+        s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.5})).unwrap();
+        s.append_event(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.25})).unwrap();
+        assert_eq!(s.workspace_costs().unwrap(), vec![(w.id.clone(), 0.75)]);
         s.set_agent_session_id(&sess.id, "abc").unwrap();
         assert_eq!(s.session(&sess.id).unwrap().agent_session_id.as_deref(), Some("abc"));
 
         s.append_event(&sess.id, &serde_json::json!({"kind": "text", "text": "hi"})).unwrap();
-        assert_eq!(s.events(&sess.id).unwrap()[0]["text"], "hi");
+        assert_eq!(s.events(&sess.id).unwrap().last().unwrap()["text"], "hi");
     }
 }

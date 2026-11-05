@@ -83,6 +83,8 @@ struct Snapshot {
     lit: Vec<String>,
     /// Star slugs that shine (their PR merged).
     shining: Vec<String>,
+    /// Total agent spend per workspace id, in USD.
+    costs: HashMap<String, f64>,
 }
 
 #[tauri::command]
@@ -100,7 +102,8 @@ async fn snapshot(st: State<'_, AppState>, include_archived: bool) -> Res<Snapsh
     };
     let lit = stars(db.workspaces(true).map_err(e)?.into_iter().map(|w| w.name).collect());
     let shining = stars(db.merged_names().map_err(e)?);
-    Ok(Snapshot { repos: db.repos().map_err(e)?, workspaces: db.workspaces(include_archived).map_err(e)?, running, running_workspaces, lit, shining })
+    let costs = db.workspace_costs().map_err(e)?.into_iter().collect();
+    Ok(Snapshot { repos: db.repos().map_err(e)?, workspaces: db.workspaces(include_archived).map_err(e)?, running, running_workspaces, lit, shining, costs })
 }
 
 // ---------- repos ----------
@@ -122,6 +125,8 @@ async fn add_repo(st: State<'_, AppState>, path: String) -> Res<Repo> {
         setup_script: None,
         run_script: None,
         archive_script: None,
+        // .env files are git-ignored, so a fresh worktree would not have them.
+        prefs: store::RepoPrefs { copy_files: vec![".env*".into()], ..Default::default() },
     };
     db.insert_repo(&r).map_err(e)?;
     Ok(r)
@@ -154,6 +159,67 @@ async fn workspace_scripts(st: State<'_, AppState>, id: String) -> Res<config::S
 
 // ---------- workspaces ----------
 
+/// `*` matches any run of characters within one path segment.
+fn glob_match(pat: &str, name: &str) -> bool {
+    let parts: Vec<&str> = pat.split('*').collect();
+    if parts.len() == 1 {
+        return pat == name;
+    }
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    if !name.starts_with(first) || !name[first.len()..].ends_with(last) || name.len() < first.len() + last.len() {
+        return false;
+    }
+    let mut rest = &name[first.len()..name.len() - last.len()];
+    for mid in &parts[1..parts.len() - 1] {
+        match rest.find(mid) {
+            Some(i) => rest = &rest[i + mid.len()..],
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Copy files like `.env` (git-ignored, so not in the new worktree) from the main checkout.
+/// Each glob may have a folder part (`apps/web/.env*`); the wildcard works in the file name.
+fn copy_into_workspace(root: &Path, ws: &Path, globs: &[String]) -> usize {
+    let mut n = 0;
+    for g in globs.iter().map(|g| g.trim()).filter(|g| !g.is_empty() && !g.contains("..")) {
+        let (dir, pat) = g.rsplit_once('/').unwrap_or(("", g));
+        let Ok(entries) = std::fs::read_dir(root.join(dir)) else { continue };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !entry.path().is_file() || !glob_match(pat, &name) {
+                continue;
+            }
+            let to = ws.join(dir).join(&name);
+            if !to.exists() {
+                let _ = std::fs::create_dir_all(to.parent().unwrap());
+                if std::fs::copy(entry.path(), &to).is_ok() {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+/// A short branch name from the first message: "Fix the 502 after deploy" -> "fix-502-after-deploy".
+fn branch_slug(text: &str) -> String {
+    const SKIP: &[&str] = &["a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "is", "it", "this", "that", "please", "can", "you", "we", "i", "me", "my", "with", "be", "should", "could", "would"];
+    let words: Vec<String> = text
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .map(|w| w.to_ascii_lowercase())
+        .filter(|w| !w.is_empty() && !SKIP.contains(&w.as_str()))
+        .take(5)
+        .collect();
+    let mut s = words.join("-");
+    s.truncate(40);
+    s.trim_end_matches('-').to_string()
+}
+
 #[tauri::command]
 async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>) -> Res<Workspace> {
     let (repo, taken) = {
@@ -185,7 +251,11 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         notes: String::new(),
         imported_from: None,
         created_at: store::now(),
+        title: String::new(),
+        status: String::new(),
     };
+    let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
+    copy_into_workspace(&root, &path, &prefs.copy_files);
     st.db().insert_workspace(&ws).map_err(e)?;
     Ok(ws)
 }
@@ -235,6 +305,68 @@ async fn set_unread(st: State<'_, AppState>, id: String, unread: bool) -> Res<()
 async fn set_notes(st: State<'_, AppState>, id: String, notes: String) -> Res<()> {
     st.db().set_notes(&id, &notes).map_err(e)
 }
+#[tauri::command]
+async fn set_workspace_title(st: State<'_, AppState>, id: String, title: String) -> Res<()> {
+    st.db().set_title(&id, title.trim()).map_err(e)
+}
+
+#[tauri::command]
+async fn set_workspace_status(st: State<'_, AppState>, id: String, status: String) -> Res<()> {
+    st.db().set_status(&id, &status).map_err(e)
+}
+
+/// Rename the workspace's branch (only before it has been pushed).
+#[tauri::command]
+async fn rename_branch(st: State<'_, AppState>, id: String, branch: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let dir = Path::new(&ws.path);
+    let branch = branch.trim().to_string();
+    if branch.is_empty() || branch == ws.branch {
+        return Ok(());
+    }
+    if git::git(dir, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", ws.branch)]).is_ok() {
+        return Err("This branch is already pushed. Renaming it would break the PR.".into());
+    }
+    git::git(dir, &["check-ref-format", "--branch", &branch]).map_err(|_| format!("\"{branch}\" is not a valid branch name"))?;
+    git::git(dir, &["branch", "-m", &ws.branch, &branch]).map_err(e)?;
+    st.db().set_branch(&id, &branch).map_err(e)
+}
+
+#[tauri::command]
+async fn set_repo_prefs(st: State<'_, AppState>, id: String, prefs: store::RepoPrefs) -> Res<()> {
+    st.db().set_repo_prefs(&id, &prefs).map_err(e)
+}
+
+#[tauri::command]
+async fn set_session_effort(st: State<'_, AppState>, id: String, effort: Option<String>) -> Res<()> {
+    st.db().set_session_effort(&id, effort.as_deref().filter(|e| !e.is_empty())).map_err(e)
+}
+
+/// Close a chat tab. Its history stays in the database.
+#[tauri::command]
+async fn hide_session(st: State<'_, AppState>, id: String) -> Res<()> {
+    if st.runs.lock().unwrap().running.contains_key(&id) {
+        return Err("Stop the agent before closing this chat.".into());
+    }
+    st.db().set_session_hidden(&id, true).map_err(e)
+}
+
+/// Backend settings: `caffeinate` and `auto_branch` ("on" / "off").
+#[tauri::command]
+async fn app_settings(st: State<'_, AppState>) -> Res<Value> {
+    let db = st.db();
+    let get = |k: &str| db.setting(k).ok().flatten().unwrap_or_else(|| "on".into());
+    Ok(json!({"caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "home": st.home.to_string_lossy()}))
+}
+
+#[tauri::command]
+async fn set_app_setting(st: State<'_, AppState>, key: String, value: String) -> Res<()> {
+    if !["caffeinate", "auto_branch"].contains(&key.as_str()) {
+        return Err(format!("unknown setting {key}"));
+    }
+    st.db().set_setting(&key, &value).map_err(e)
+}
+
 #[tauri::command]
 async fn set_target_branch(st: State<'_, AppState>, id: String, branch: String) -> Res<()> {
     st.db().set_target_branch(&id, &branch).map_err(e)
@@ -373,6 +505,7 @@ async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: Strin
         title: "New chat".into(),
         model: None,
         permission_mode: "acceptEdits".into(),
+        effort: None,
     };
     st.db().insert_session(&s).map_err(e)?;
     Ok(s)
@@ -487,17 +620,46 @@ fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
     let _ = app.emit("agent", json!({"session_id": session_id, "event": ev}));
 }
 
+/// Rename a fresh workspace's branch after its first task, while nothing has been pushed:
+/// `me/mochi` becomes `me/fix-502-after-deploy`, which reads better in PRs.
+fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) -> Workspace {
+    let placeholder = format!("{}/{}", st.branch_prefix, ws.name);
+    if ws.branch != placeholder || ws.imported_from.is_some() || st.db().setting("auto_branch").ok().flatten().as_deref() == Some("off") {
+        return ws;
+    }
+    let slug = branch_slug(text);
+    if slug.len() < 3 {
+        return ws;
+    }
+    let dir = Path::new(&ws.path);
+    let mut name = format!("{}/{slug}", st.branch_prefix);
+    let mut n = 2;
+    while git::branch_exists(dir, &name) {
+        name = format!("{}/{slug}-{n}", st.branch_prefix);
+        n += 1;
+    }
+    let pushed = git::git(dir, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", ws.branch)]).is_ok();
+    if pushed || git::git(dir, &["branch", "-m", &ws.branch, &name]).is_err() {
+        return ws;
+    }
+    let _ = st.db().set_branch(&ws.id, &name);
+    let _ = app.emit("workspaces-changed", json!({}));
+    Workspace { branch: name, ..ws }
+}
+
 fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()> {
-    let (session, ws) = {
+    let (session, ws, prefs) = {
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
         let ws = db.workspace(&s.workspace_id).map_err(e)?;
+        let prefs = db.repo(&ws.repo_id).map(|r| r.prefs).unwrap_or_default();
         if s.title == "New chat" {
             let t: String = text.lines().next().unwrap_or("").chars().take(48).collect();
             db.update_session_settings(&id, if t.is_empty() { "New chat" } else { &t }, s.model.as_deref(), &s.permission_mode).map_err(e)?;
         }
-        (s, ws)
+        (s, ws, prefs)
     };
+    let ws = maybe_name_branch(&app, st, ws, &text);
     // Snapshot the worktree first, so this turn can be undone with one click.
     let checkpoint = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id)).ok();
     let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
@@ -515,6 +677,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         model: session.model.as_deref(),
         permission_mode: &session.permission_mode,
         cwd: Path::new(&ws.path),
+        effort: session.effort.as_deref(),
+        instructions: Some(prefs.general_prompt.trim()).filter(|p| !p.is_empty()),
+        env: &prefs.env,
     });
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
@@ -527,6 +692,10 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }
     };
     st.runs.lock().unwrap().running.insert(id.clone(), child.id());
+    // Keep the Mac awake while the agent works (ends by itself when the agent exits).
+    if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
+        let _ = Command::new("caffeinate").args(["-i", "-w", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    }
     let _ = app.emit("running", json!({"session_id": id, "running": true}));
 
     let stdout = child.stdout.take().unwrap();
@@ -549,8 +718,17 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let st = app.state::<AppState>();
         let mut saw_done = false;
         let mut ok = true;
+        let mut context_tokens: Option<u64> = None;
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            for ev in agent::parse(&agent_name, &line) {
+            for mut ev in agent::parse(&agent_name, &line) {
+                if ev["kind"] == "usage" {
+                    context_tokens = ev["context_tokens"].as_u64();
+                    let _ = app.emit("usage", json!({"session_id": id, "context_tokens": context_tokens}));
+                    continue;
+                }
+                if ev["kind"] == "done" && context_tokens.is_some() {
+                    ev["context_tokens"] = json!(context_tokens);
+                }
                 if ev["kind"] == "session" {
                     if let Some(sid) = ev["agent_session_id"].as_str() {
                         let _ = st.db().set_agent_session_id(&id, sid);
@@ -606,11 +784,20 @@ async fn pty_open(app: AppHandle, st: State<'_, AppState>, id: String, cwd: Stri
     if st.ptys.is_open(&id) {
         return Ok(());
     }
+    // Terminals get the repo's extra environment variables too.
+    let env = id
+        .split(':')
+        .next()
+        .and_then(|ws_id| st.db().workspace(ws_id).ok())
+        .and_then(|w| st.db().repo(&w.repo_id).ok())
+        .map(|r| r.prefs.env)
+        .unwrap_or_default();
     let (a1, a2, id1, id2) = (app.clone(), app, id.clone(), id.clone());
     st.ptys
         .open(
             &id,
             &cwd,
+            &env,
             cols,
             rows,
             move |data| { let _ = a1.emit("pty", json!({"id": id1, "data": data})); },
@@ -687,9 +874,49 @@ pub fn run() {
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
             restore_checkpoint, workspace_files, save_attachment,
+            set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
+            app_settings, set_app_setting,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn globs() {
+        assert!(glob_match(".env*", ".env"));
+        assert!(glob_match(".env*", ".env.local"));
+        assert!(!glob_match(".env*", "env"));
+        assert!(glob_match("*.local.json", "app.local.json"));
+        assert!(glob_match("a*b*c", "aXbYc"));
+        assert!(!glob_match("a*b*c", "aXcYb"));
+    }
+
+    #[test]
+    fn copies_ignored_files_into_new_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join(".env"), "SECRET=1").unwrap();
+        std::fs::write(root.path().join(".env.local"), "X=2").unwrap();
+        std::fs::create_dir_all(root.path().join("apps/web")).unwrap();
+        std::fs::write(root.path().join("apps/web/.env"), "Y=3").unwrap();
+        std::fs::write(root.path().join("README.md"), "no").unwrap();
+        let n = copy_into_workspace(root.path(), ws.path(), &[".env*".into(), "apps/web/.env".into(), "../etc/passwd".into()]);
+        assert_eq!(n, 3);
+        assert!(ws.path().join(".env.local").exists());
+        assert!(ws.path().join("apps/web/.env").exists());
+        assert!(!ws.path().join("README.md").exists());
+    }
+
+    #[test]
+    fn branch_names_from_first_message() {
+        assert_eq!(branch_slug("Fix the 502 on /v1/tickets after a deploy"), "fix-502-v1-tickets-after");
+        assert_eq!(branch_slug("Can you please add dark mode?\nmore text"), "add-dark-mode");
+        assert_eq!(branch_slug("!!!"), "");
+    }
 }
