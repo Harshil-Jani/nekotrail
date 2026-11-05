@@ -614,11 +614,14 @@ async fn pr_states(st: State<'_, AppState>) -> Res<HashMap<String, String>> {
         if r.remote_url.is_none() || !wss.iter().any(|w| w.repo_id == r.id) {
             continue;
         }
-        let Ok(list) = gh(&r.root_path, &["pr", "list", "--state", "all", "--limit", "300", "--json", "headRefName,state"]) else { continue };
+        let Ok(list) = gh(&r.root_path, &["pr", "list", "--state", "all", "--limit", "300", "--json", "headRefName,state,isDraft"]) else { continue };
         let prs: Vec<Value> = serde_json::from_str(&list).unwrap_or_default();
         for w in wss.iter().filter(|w| w.repo_id == r.id) {
             // gh lists newest first, so the first match is the current PR for that branch.
-            if let Some(state) = prs.iter().find(|p| p["headRefName"] == w.branch.as_str()).and_then(|p| p["state"].as_str()) {
+            let pr = prs.iter().find(|p| p["headRefName"] == w.branch.as_str());
+            // Drafts are their own state, so the sidebar can tell them from PRs ready for review.
+            let state = pr.and_then(|p| if p["isDraft"].as_bool() == Some(true) && p["state"] == "OPEN" { Some("DRAFT") } else { p["state"].as_str() });
+            if let Some(state) = state {
                 if state == "MERGED" {
                     let _ = st.db().set_merged(&w.id);
                 }
@@ -732,6 +735,58 @@ async fn delete_section(st: State<'_, AppState>, id: String) -> Res<()> {
 #[tauri::command]
 async fn set_section(st: State<'_, AppState>, id: String, section: String) -> Res<()> {
     st.db().set_section(&id, &section).map_err(e)
+}
+
+/// Memory used by nekotrail and everything it started (agents, terminals, dev servers), from `ps`.
+/// Returns the total in MB and the biggest processes, for the toolbar's RAM meter.
+#[tauri::command]
+async fn resource_usage() -> Res<Value> {
+    let out = Command::new("ps").args(["-A", "-o", "pid=,ppid=,rss=,comm="]).output().map_err(e)?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<(u32, u32, u64, String)> = text
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let pid = it.next()?.parse().ok()?;
+            let ppid = it.next()?.parse().ok()?;
+            let rss = it.next()?.parse().ok()?;
+            let comm = it.collect::<Vec<_>>().join(" ");
+            Some((pid, ppid, rss, comm))
+        })
+        .collect();
+    Ok(tree_usage(std::process::id(), &rows))
+}
+
+/// Sum resident memory over `root` and all its descendants. The web view's WebKit helper processes
+/// are started by macOS outside this tree, so they are not counted.
+fn tree_usage(root: u32, rows: &[(u32, u32, u64, String)]) -> Value {
+    let mut ours = std::collections::HashSet::from([root]);
+    loop {
+        let before = ours.len();
+        for (pid, ppid, _, _) in rows {
+            if ours.contains(ppid) {
+                ours.insert(*pid);
+            }
+        }
+        if ours.len() == before {
+            break;
+        }
+    }
+    let mut by_name: HashMap<String, u64> = HashMap::new();
+    let mut total_kb = 0;
+    for (pid, _, rss, comm) in rows {
+        if ours.contains(pid) {
+            total_kb += rss;
+            let name = comm.rsplit('/').next().unwrap_or(comm).to_string();
+            *by_name.entry(name).or_default() += rss;
+        }
+    }
+    let mut top: Vec<(String, u64)> = by_name.into_iter().collect();
+    top.sort_by_key(|t| std::cmp::Reverse(t.1));
+    json!({
+        "total_mb": total_kb / 1024,
+        "top": top.into_iter().take(6).map(|(n, kb)| json!({"name": n, "mb": kb / 1024})).collect::<Vec<_>>(),
+    })
 }
 
 /// Link workspaces that got the same task (a bake-off).
@@ -1563,7 +1618,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
@@ -1624,6 +1679,20 @@ mod tests {
         assert!(untracked.contains(".env.example"), "{untracked}");
         let ex = std::fs::read_to_string(r.join(".git/info/exclude")).unwrap();
         assert_eq!(ex.matches(".env.local").count(), 1);
+    }
+
+    #[test]
+    fn memory_counts_the_whole_process_tree() {
+        let rows = vec![
+            (10, 1, 100 * 1024, "/Applications/nekotrail".to_string()),
+            (11, 10, 300 * 1024, "claude".to_string()),
+            (12, 11, 50 * 1024, "node".to_string()),
+            (13, 10, 20 * 1024, "zsh".to_string()),
+            (99, 1, 900 * 1024, "Safari".to_string()),
+        ];
+        let u = tree_usage(10, &rows);
+        assert_eq!(u["total_mb"], 470);
+        assert_eq!(u["top"][0]["name"], "claude");
     }
 
     #[test]

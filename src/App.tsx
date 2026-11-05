@@ -59,7 +59,19 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(params.get("ws"));
   const [view, setView] = useState<"workspace" | "sky" | "board">((params.get("view") as "sky" | "board") || "workspace");
   const [sections, setSections] = useState<Section[]>([]);
+  const [ram, setRam] = useState<Awaited<ReturnType<typeof api.resourceUsage>> | null>(null);
+  useEffect(() => {
+    const load = () => { if (!document.hidden) api.resourceUsage().then(setRam).catch(() => {}); };
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, []);
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
+  const navRef = useRef<(d: -1 | 1) => void>(() => {});
+  // Back / forward through places you've been (workspace, view, tab), like a browser. ⌘[ and ⌘].
+  type Place = { view: "workspace" | "sky" | "board"; selected: string | null; tab: Tab };
+  const history = useRef<{ stack: Place[]; at: number; moving: boolean }>({ stack: [], at: -1, moving: false });
+  const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
@@ -140,6 +152,28 @@ export default function App() {
   const [worriedUntil, setWorriedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [costs, setCosts] = useState<Record<string, number>>({});
+  navRef.current = (d) => goHistory(d);
+  useEffect(() => {
+    const h = history.current;
+    const here: Place = { view, selected, tab };
+    if (h.moving) { h.moving = false; return; }
+    const cur = h.stack[h.at];
+    if (cur && cur.view === here.view && cur.selected === here.selected && cur.tab === here.tab) return;
+    h.stack = [...h.stack.slice(0, h.at + 1), here].slice(-50);
+    h.at = h.stack.length - 1;
+    setNavTick((t) => t + 1);
+  }, [view, selected, tab]);
+  const goHistory = (d: -1 | 1) => {
+    const h = history.current;
+    const next = h.stack[h.at + d];
+    if (!next) return;
+    h.at += d;
+    h.moving = true;
+    setView(next.view);
+    setSelected(next.selected);
+    setTab(next.tab);
+    setNavTick((t) => t + 1);
+  };
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [groupBy, setGroupBy] = useState<"repo" | "status">(() => getSettings().groupBy);
   const [prStates, setPrStates] = useState<Record<string, string>>({});
@@ -553,6 +587,8 @@ export default function App() {
       const go = (fn: () => void) => { e.preventDefault(); fn(); };
       if (k === "k" && !e.shiftKey) return go(() => setPalette((p) => !p));
       if (k === "k" && e.shiftKey) return go(() => setView((v) => (v === "board" ? "workspace" : "board")));
+      if (e.key === "[" && !e.shiftKey) return go(() => navRef.current(-1));
+      if (e.key === "]" && !e.shiftKey) return go(() => navRef.current(1));
       if (k === ",") return go(() => setSettingsOpen(true));
       if (k === "b" && !e.shiftKey && !e.altKey) return go(() => setSidebarHidden((h) => !h));
       if (k === "n") return go(() => openNew(e.shiftKey ? "pr" : "task"));
@@ -612,6 +648,11 @@ export default function App() {
         onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(w.title || displayName(sky, w)); }}
         onArchive={(id) => archive({ id })}
         onBoard={() => setView("board")}
+        ram={ram}
+        canBack={history.current.at > 0}
+        canForward={history.current.at < history.current.stack.length - 1}
+        onBack={() => goHistory(-1)}
+        onForward={() => goHistory(1)}
       />
       <div
         className="sidebar-resizer"

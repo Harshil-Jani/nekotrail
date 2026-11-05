@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, MemoryStick, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { api, displayName, statusOf, STATUS_LABEL, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
@@ -38,9 +38,25 @@ type Props = {
   onRename: (id: string) => void;
   onArchive: (id: string) => void;
   onBoard: () => void;
+  ram: { total_mb: number; top: { name: string; mb: number }[] } | null;
+  canBack: boolean;
+  canForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
 };
 
 const DRAG = "application/x-nekotrail-workspace";
+
+/** The workspace's PR at a glance: branch only, draft, open, merged or closed. */
+function PrIcon({ state }: { state?: string }) {
+  switch (state) {
+    case "OPEN": return <GitPullRequest size={15} className="pr-open" aria-label="PR open" />;
+    case "DRAFT": return <GitPullRequestDraft size={15} className="pr-draft" aria-label="Draft PR" />;
+    case "MERGED": return <GitMerge size={15} className="pr-merged" aria-label="PR merged" />;
+    case "CLOSED": return <GitPullRequestClosed size={15} className="pr-closed" aria-label="PR closed" />;
+    default: return <GitBranch size={15} className="pr-none" aria-label="No PR yet" />;
+  }
+}
 
 function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { repo: Repo; onNew: () => void; onSettings: () => void; collapsed: boolean; onToggle: () => void; count: number }) {
   const [gh, setGh] = useState<RepoGithub>(null);
@@ -178,12 +194,10 @@ export function Sidebar(p: Props) {
         onContextMenu={(e) => { e.preventDefault(); setCtx({ w, x: e.clientX, y: e.clientY }); }}
       >
         <span className="ws-mark">
-          {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.unread ? <span className="unread" aria-label="Unread" /> : null}
+          {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : <PrIcon state={p.prStates[w.id]} />}
+          {w.unread && !p.running.has(w.id) && <span className="unread badge" aria-label="Unread" />}
         </span>
-        <span className="ws-text">
-          <span className="ws-name">{label(w)}</span>
-          <span className="ws-branch">{p.groupBy === "status" ? `${repoName(w.repo_id)} · ` : ""}{w.branch}</span>
-        </span>
+        <span className="ws-name" title={`${label(w)}\n${repoName(w.repo_id)} · ${w.branch}`}>{label(w)}</span>
         <span className="spacer" />
         {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
         {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}
@@ -197,6 +211,28 @@ export function Sidebar(p: Props) {
         <Mascot size={26} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
+        {p.ram && (
+          <span className="ram num" title={`Memory used by nekotrail, its agents, terminals and dev servers:\n${p.ram.top.map((t) => `${t.name}  ${t.mb} MB`).join("\n")}`}>
+            <MemoryStick size={13} />{p.ram.total_mb >= 1024 ? `${(p.ram.total_mb / 1024).toFixed(2)} GB` : `${p.ram.total_mb} MB`}
+          </span>
+        )}
+        <button className="icon" onClick={p.onBack} disabled={!p.canBack} title="Back (⌘[)" aria-label="Back"><ArrowLeft size={16} /></button>
+        <button className="icon" onClick={p.onForward} disabled={!p.canForward} title="Forward (⌘])" aria-label="Forward"><ArrowRight size={16} /></button>
+      </div>
+      {filter.length > 0 && (
+        <div className="filter-chips">
+          {filter.map((id) => {
+            const r = p.repos.find((x) => x.id === id);
+            return r ? <button key={id} className="chip" onClick={() => setFilter(filter.filter((x) => x !== id))} aria-label={`Stop filtering by ${r.name}`}>{r.name}<X size={11} /></button> : null;
+          })}
+          <button className="quiet chip-clear" onClick={() => setFilter([])}>Show all</button>
+        </div>
+      )}
+      <div className="search-row">
+        <label className="search">
+          <Search size={14} />
+          <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
+        </label>
         <button className="icon" onClick={p.onBoard} title="Board (⌘⇧K)" aria-label="Board"><Kanban size={16} /></button>
         <span className="filter-wrap">
           <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by project" aria-label="Filter by project" aria-expanded={filterOpen}>
@@ -231,19 +267,6 @@ export function Sidebar(p: Props) {
         </button>
         <button className="icon" onClick={p.onAddRepo} title="Add a local git repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
       </div>
-      {filter.length > 0 && (
-        <div className="filter-chips">
-          {filter.map((id) => {
-            const r = p.repos.find((x) => x.id === id);
-            return r ? <button key={id} className="chip" onClick={() => setFilter(filter.filter((x) => x !== id))} aria-label={`Stop filtering by ${r.name}`}>{r.name}<X size={11} /></button> : null;
-          })}
-          <button className="quiet chip-clear" onClick={() => setFilter([])}>Show all</button>
-        </div>
-      )}
-      <label className="search">
-        <Search size={14} />
-        <input placeholder="Search workspaces" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
-      </label>
       <div className="sidebar-scroll">
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
         {p.groupBy === "repo" && (() => {
@@ -290,7 +313,7 @@ export function Sidebar(p: Props) {
         })()}
         {p.groupBy === "repo"
           ? shownRepos.map((r) => {
-              const ws = p.workspaces.filter((w) => w.repo_id === r.id && match(w) && !(w.state === "active" && (w.pinned || (w.section_id && p.sections.some((s) => s.id === w.section_id)))));
+              const ws = p.workspaces.filter((w) => w.repo_id === r.id && w.state === "active" && match(w) && !(w.pinned || (w.section_id && p.sections.some((s) => s.id === w.section_id))));
               const folded = collapsed.includes(r.id) && !q;
               return (
                 <section key={r.id} className="repo" {...drop("")}>
@@ -310,6 +333,16 @@ export function Sidebar(p: Props) {
                 </section>
               );
             })}
+        {p.showArchived && (() => {
+          const archived = p.workspaces.filter((w) => w.state === "archived" && inFilter(w) && match(w));
+          return (
+            <section className="repo archived-group">
+              <div className="repo-head status-head"><Archive size={12} className="muted" /><span className="repo-name">Archived</span><span className="repo-meta num">{archived.length || ""}</span></div>
+              {archived.map(row)}
+              {archived.length === 0 && <p className="muted archived-empty">Nothing archived yet. Archiving removes a workspace's folder and keeps its branch, so you can restore it here.</p>}
+            </section>
+          );
+        })()}
       </div>
       <div className="sidebar-foot">
         <button className="me" onClick={p.onSky} title="Open your night sky">
@@ -324,7 +357,7 @@ export function Sidebar(p: Props) {
             Today ${p.usage.today.toFixed(2)} · 7 days ${p.usage.week.toFixed(2)}
           </div>
         )}
-        <button className="quiet" onClick={p.onToggleArchived}>
+        <button className={`quiet ${p.showArchived ? "on" : ""}`} onClick={p.onToggleArchived} aria-pressed={p.showArchived}>
           {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
           {p.showArchived ? "Hide archived" : "Show archived"}
         </button>
