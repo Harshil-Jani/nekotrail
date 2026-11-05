@@ -16,7 +16,7 @@ Their job: hand a task to an agent, keep working on other tasks while it runs, r
 
 ## Product Purpose
 
-purrfectpr runs many coding agents in parallel on your own Mac. Every task gets its own workspace: a git worktree on its own branch, a chat with Claude Code or Codex, a diff view against the target branch, a real terminal, notes, and a PR bar showing GitHub status and CI checks. Success is a developer shipping several reviewed PRs in the time one used to take.
+nekotrail runs many coding agents in parallel on your own Mac. Every task gets its own workspace: a git worktree on its own branch, a chat with Claude Code or Codex, a diff view against the target branch, a real terminal, notes, and a PR bar showing GitHub status and CI checks. Success is a developer shipping several reviewed PRs in the time one used to take.
 
 ## Positioning
 
@@ -29,20 +29,20 @@ purrfectpr runs many coding agents in parallel on your own Mac. Every task gets 
 - Lives next to the terminal, editor (Cursor, VS Code) and GitHub in a developer's day.
 - Uses the user's existing git, `gh` login and agent CLI logins; nothing to sign up for.
 - Long-running agent turns: users switch between workspaces while agents work, then come back to unread results.
-- Workspaces are named after cat breeds from around the world (the "discover" theme): each new workspace reveals a breed card with its origin and one true fact, and is added to the user's Breedex collection.
+- The quest is a night sky: every workspace is named after a star in one of 8 original cat constellations (50 stars). Creating a workspace lights its star; a merged PR makes it shine; a line between two stars appears only when both have shipped. Felis honours Lalande's real 1799 cat constellation.
 
 ## Capabilities and Constraints
 
-- v0.1 shipped: repos, workspaces as git worktrees, Claude/Codex chat with queueing and stop, plan / auto-accept / full-auto permission modes, diff view incl. untracked files, terminal per workspace, notes, pin, unread, archive (keeps branch) and restore, setup/run/archive scripts (`purrfectpr.json` overrides app settings), PR creation and status via `gh`, "fix failing CI" and "resolve conflicts" prompts, Conductor importer.
+- v0.1 shipped: repos, workspaces as git worktrees, Claude/Codex chat with queueing and stop, plan / auto-accept / full-auto permission modes, diff view incl. untracked files, terminal per workspace, notes, pin, unread, archive (keeps branch) and restore, setup/run/archive scripts (`nekotrail.json` overrides app settings), PR creation and status via `gh`, "fix failing CI" and "resolve conflicts" prompts, Conductor importer, notifications and Dock badge, night-sky quest.
 - GitHub details come from the user's `gh` login: avatar, name, login, PR authors and reviewers.
 - Headless agent turns cannot ask for permission mid-turn, so there is no "ask before each edit" mode yet.
 - Not built yet: checkpoints, inline review comments, Linear, browser preview, port forwarding, cloud, mobile, multiplayer.
 
 ## Brand Commitments
 
-- Name: **purrfectpr** (lowercase in the product). purrfectpr.com and purrfectpr.dev were unregistered on 2026-11-05.
+- Name: **nekotrail** (lowercase in the product; neko is Japanese for cat). Renamed from purrfectpr on 2026-11-05 because the user disliked it. nekotrail.com, .dev and .app were unregistered that day.
 - Mascot: an original cute cat. It must not resemble any existing product's mascot, including Meta's Muse or Conductor's art.
-- Launch and GTM should run as a character-led launch (mascot-first), with the discovery theme as the hook. Planned, not yet done.
+- Launch and GTM should run as a character-led launch (mascot-first), with the night-sky quest as the hook. Planned, not yet done.
 - Voice: plain, friendly, short. Cat puns allowed in small doses, never in errors.
 - Visual standing preference (2026-11-05, user's words): "as aesthetic as conductor.build", taking X (Twitter) dark theme's design system as the reference. Convention is the commitment: true-black ground, hairline dividers, white text, one accent, executed at full craft. Square corners everywhere (user rejected rounded corners on 2026-11-05); only avatars and status dots are round. Borrow the system, never X's or Conductor's logos, names, icons or illustrations.
 - User preferences: simple layouts, a consistent spacing scale, contrast checked numerically.
@@ -57,4 +57,4 @@ purrfectpr runs many coding agents in parallel on your own Mac. Every task gets 
 1. The agent's work is the content; chrome stays out of the way.
 2. Never lose work: archive keeps branches, imports are read-only, destructive actions confirm.
 3. Your tools, your accounts: reuse the user's CLIs and logins, never proxy them.
-4. Delight lives in the breed discovery and the mascot, not in the working surfaces.
+4. Delight lives in the night sky and the mascot, not in the working surfaces.

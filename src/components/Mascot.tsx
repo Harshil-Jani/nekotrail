@@ -1,5 +1,5 @@
 /**
- * purrfectpr's mascot: a marmalade loaf cat whose tail ends in a git merge
+ * nekotrail's mascot: a marmalade loaf cat whose tail ends in a git merge
  * (two branches joining at a commit dot). Original artwork, drawn here as SVG.
  */
 import { useEffect, useRef, useState } from "react";
@@ -56,7 +56,7 @@ function Eyes({ mood, look }: { mood: Mood; look: { x: number; y: number } }) {
 export function Mascot({
   size = 48,
   mood = "idle",
-  title = "purrfectpr cat",
+  title = "nekotrail cat",
   follow = false,
   purring = false,
   onClick,

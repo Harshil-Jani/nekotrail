@@ -1,6 +1,6 @@
 # Features: keep, next, skip
 
-This list was built from Conductor's public changelog (about 150 entries, July 2025 to November 2026) and from daily use. It holds only feature ideas. purrfectpr's code and design are original.
+This list was built from Conductor's public changelog (about 150 entries, July 2025 to November 2026) and from daily use. It holds only feature ideas. nekotrail's code and design are original.
 
 ## In v0.1
 
@@ -13,13 +13,13 @@ This list was built from Conductor's public changelog (about 150 entries, July 2
 | Diff vs target branch | Includes uncommitted and untracked files. |
 | Terminal per workspace | Real PTY login shell. |
 | Notes, pin, unread, search | |
-| Setup / run / archive scripts | Saved per repo, or committed as `purrfectpr.json`. |
+| Setup / run / archive scripts | Saved per repo, or committed as `nekotrail.json`. |
 | PR create and status | Author, reviewers, CI, comments, +/- lines, via `gh`. Works for fork PRs. |
 | Fix CI / resolve conflicts | Drafts the prompt for the agent; you review and send. |
 | GitHub identity | Avatar, name, repo owners, stars. |
 | Conductor importer | Repos, active workspaces, chats. Read-only. |
 | Notifications and Dock badge | When an agent finishes while you're elsewhere. |
-| Breedex and cat moods | Discovery naming; mascot moods map to real state. |
+| Night sky and cat moods | Workspaces light stars, merged PRs make them shine; mascot moods map to real state. |
 | Keyboard | ⌘N, ⌘J, ⌘K, ⌘1-4, ⌘↵. |
 
 ## Next (ranked)
@@ -33,10 +33,10 @@ This list was built from Conductor's public changelog (about 150 entries, July 2
 7. **Sounds**, off by default, with a mute setting.
 8. **Browser preview and port forwarding** for web apps.
 9. **Command palette** for every action.
-10. **Workspace links** (`purrfectpr://ws/<id>`) to share in chat.
+10. **Workspace links** (`nekotrail://ws/<id>`) to share in chat.
 
 ## Skipping for now
 
-- Hosted cloud workspaces, mobile apps, multiplayer and dispatchers. They need a server, and purrfectpr stays local.
-- Per-model launch announcements. The CLIs already ship new models; purrfectpr passes the model name through.
+- Hosted cloud workspaces, mobile apps, multiplayer and dispatchers. They need a server, and nekotrail stays local.
+- Per-model launch announcements. The CLIs already ship new models; nekotrail passes the model name through.
 - Year-in-review style "Wrapped" screens.

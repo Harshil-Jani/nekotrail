@@ -70,23 +70,26 @@ export type Pr = {
 
 export type GithubUser = { login: string; name: string | null; avatar_url: string; html_url: string; public_repos: number; followers: number } | null;
 export type RepoGithub = { nameWithOwner: string; description: string; stargazerCount: number; url: string; owner_avatar: string; isPrivate: boolean } | null;
-export type Breed = { slug: string; name: string; origin: string; fact: string };
+export type Star = { slug: string; name: string; constellation: string; x: number; y: number };
+export type Constellation = { slug: string; name: string; story: string; lines: [string, string][] };
+export type Sky = { stars: Star[]; constellations: Constellation[] };
 
 /** GitHub avatar for any login, at the size we draw it (2x for retina). */
 export const avatar = (login: string, px = 24) => `https://github.com/${login}.png?size=${px * 2}`;
 
-/** The breed behind a workspace name like `bengal` or `bengal-2`; imported workspaces have none. */
-export const breedFor = (breeds: Breed[], name: string) => {
+/** The star behind a workspace name like `mochi` or `mochi-2`; imported workspaces have none. */
+export const starFor = (sky: Sky, name: string) => {
   const base = name.replace(/-\d+$/, "");
-  return breeds.find((b) => b.slug === base) ?? null;
+  return sky.stars.find((s) => s.slug === base) ?? null;
 };
+export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find((c) => c.slug === star.constellation)!;
 
 export const api = {
   githubProfile: () => invoke<GithubUser>("github_profile"),
   repoGithub: (id: string) => invoke<RepoGithub>("repo_github", { id }),
-  breeds: () => invoke<Breed[]>("breeds"),
+  sky: () => invoke<Sky>("sky"),
   snapshot: (includeArchived = false) =>
-    invoke<{ repos: Repo[]; workspaces: Workspace[]; running: string[]; running_workspaces: string[]; discovered: string[] }>("snapshot", { includeArchived }),
+    invoke<{ repos: Repo[]; workspaces: Workspace[]; running: string[]; running_workspaces: string[]; lit: string[]; shining: string[] }>("snapshot", { includeArchived }),
   addRepo: (path: string) => invoke<Repo>("add_repo", { path }),
   saveRepoScripts: (id: string, s: Scripts) => invoke<void>("save_repo_scripts", { id, ...s }),
   repoBranches: (id: string) => invoke<string[]>("repo_branches", { id }),

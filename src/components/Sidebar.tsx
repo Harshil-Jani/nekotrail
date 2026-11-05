@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, Pin, Plus, Search, Settings2, Star } from "lucide-react";
-import { api, breedFor, type Breed, type GithubUser, type Repo, type RepoGithub, type Workspace } from "../api";
+import { api, starFor, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
+import { Avatar } from "./Avatar";
 
 type Props = {
   repos: Repo[];
   workspaces: Workspace[];
-  breeds: Breed[];
-  discovered: number;
+  sky: Sky;
+  lit: number;
   me: GithubUser;
   running: Set<string>; // workspace ids with a running agent
   selected: string | null;
@@ -17,7 +18,7 @@ type Props = {
   onAddRepo: () => void;
   onRepoSettings: (repoId: string) => void;
   onToggleArchived: () => void;
-  onBreedex: () => void;
+  onSky: () => void;
   mood: Mood;
   purring: boolean;
   onPet: () => void;
@@ -31,7 +32,7 @@ function RepoHead({ repo, onNew, onSettings }: { repo: Repo; onNew: () => void; 
   return (
     <div className="repo-head">
       {gh?.owner_avatar ? (
-        <img className="avatar" src={gh.owner_avatar} width={20} height={20} alt="" />
+        <Avatar src={gh.owner_avatar} size={20} label={gh.nameWithOwner} />
       ) : (
         <span className="avatar" style={{ width: 20, height: 20 }} />
       )}
@@ -52,15 +53,16 @@ function RepoHead({ repo, onNew, onSettings }: { repo: Repo; onNew: () => void; 
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const label = (w: Workspace) => breedFor(p.breeds, w.name)?.name ?? w.name;
+  const label = (w: Workspace) => starFor(p.sky, w.name)?.name ?? w.name;
   const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
-  const pct = p.breeds.length ? Math.round((p.discovered / p.breeds.length) * 100) : 0;
+  const total = p.sky.stars.length;
+  const pct = total ? Math.round((p.lit / total) * 100) : 0;
 
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
         <Mascot size={32} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
-        <span className="wordmark">purrfectpr</span>
+        <span className="wordmark">nekotrail</span>
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
         <button className="icon" onClick={p.onAddRepo} title="Add a local git repo" aria-label="Add repo"><Plus size={20} /></button>
@@ -98,14 +100,14 @@ export function Sidebar(p: Props) {
         })}
       </div>
       <div className="sidebar-foot">
-        <button className="me" onClick={p.onBreedex} title="Open your Breedex">
-          {p.me ? <img className="avatar" src={p.me.avatar_url} width={40} height={40} alt="" /> : <Mascot size={40} />}
+        <button className="me" onClick={p.onSky} title="Open your night sky">
+          {p.me ? <Avatar src={p.me.avatar_url} size={40} label={p.me.login} /> : <Mascot size={40} />}
           <span className="me-text">
             <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to gh"}</span>
-            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.discovered}/{p.breeds.length} breeds</span>
+            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
           </span>
         </button>
-        <div className="breedex-bar" aria-label={`${pct}% of breeds discovered`}><span style={{ width: `${pct}%` }} /></div>
+        <div className="progress-bar" aria-label={`${pct}% of stars lit`}><span style={{ width: `${pct}%` }} /></div>
         <button className="quiet" onClick={p.onToggleArchived}>
           {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
           {p.showArchived ? "Hide archived" : "Show archived"}

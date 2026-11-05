@@ -24,7 +24,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{repo.name} scripts</h2>
         <p className="muted">
-          Run in each workspace folder. A <code>purrfectpr.json</code> committed in the repo overrides these, so your team can share one setup.
+          Run in each workspace folder. A <code>nekotrail.json</code> committed in the repo overrides these, so your team can share one setup.
         </p>
         {field("setup", "Setup: runs when a workspace is created", "bun install && cp ../.env .env")}
         {field("run", "Run: the Run button", "bun dev")}

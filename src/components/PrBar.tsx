@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { CircleCheck, CircleDashed, CircleX, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, Sparkles } from "lucide-react";
 import { api, avatar, errText, type Pr, type Workspace } from "../api";
 import { Mascot } from "./Mascot";
+import { Avatar } from "./Avatar";
 
 type Checks = { cls: "good" | "bad" | "wait"; text: string; names: string[] };
 
@@ -88,7 +89,7 @@ export function PrBar({
       {pr === undefined && <span className="muted">Looking for a PR…</span>}
       {pr && (
         <>
-          <img className="avatar" src={avatar(pr.author.login)} width={24} height={24} alt="" title={`Opened by @${pr.author.login}`} />
+          <Avatar src={avatar(pr.author.login)} size={24} label={pr.author.login} title={`Opened by @${pr.author.login}`} />
           <PrState pr={pr} />
           <button className="link num" onClick={() => openUrl(pr.url)} title={pr.title}>#{pr.number}</button>
           <span className="num"><span className="add">+{pr.additions}</span> <span className="del">-{pr.deletions}</span></span>
@@ -97,7 +98,7 @@ export function PrBar({
             <span className="reviewers" aria-label="Reviewers">
               {reviewers.map((r) => (
                 <span key={r.login} className={`rv rv-${r.state}`} title={`@${r.login}: ${r.state.toLowerCase().replace("_", " ")}`}>
-                  <img className="avatar" src={avatar(r.login)} width={24} height={24} alt={r.login} />
+                  <Avatar src={avatar(r.login)} size={24} label={r.login} />
                   <i />
                 </span>
               ))}

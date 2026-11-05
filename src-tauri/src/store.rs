@@ -50,6 +50,18 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_by_session ON messages(session_id, id);
 "#;
 
+/// Columns added after v0.1. Each is idempotent.
+fn migrate(conn: &Connection) -> Result<()> {
+    let has = |col: &str| -> rusqlite::Result<bool> {
+        conn.query_row("SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name=?1", [col], |r| r.get::<_, i64>(0))
+            .map(|n| n > 0)
+    };
+    if !has("merged")? {
+        conn.execute_batch("ALTER TABLE workspaces ADD COLUMN merged INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    Ok(())
+}
+
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
@@ -156,6 +168,7 @@ impl Store {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA)?;
+        migrate(&conn)?;
         Ok(Self { conn })
     }
 
@@ -163,6 +176,7 @@ impl Store {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA)?;
+        migrate(&conn)?;
         Ok(Self { conn })
     }
 
@@ -249,6 +263,19 @@ impl Store {
     pub fn set_notes(&self, id: &str, notes: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET notes=?2 WHERE id=?1", params![id, notes])?;
         Ok(())
+    }
+
+    /// Mark a workspace's PR as merged; its star shines from now on.
+    pub fn set_merged(&self, id: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET merged=1 WHERE id=?1", [id])?;
+        Ok(())
+    }
+
+    /// Workspace names whose PR has merged (archived ones included).
+    pub fn merged_names(&self) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare("SELECT name FROM workspaces WHERE merged=1")?;
+        let rows = st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
     }
 
     pub fn set_target_branch(&self, id: &str, branch: &str) -> Result<()> {
@@ -355,6 +382,9 @@ mod tests {
         s.insert_workspace(&w).unwrap();
         s.set_pinned(&w.id, true).unwrap();
         assert!(s.workspace(&w.id).unwrap().pinned);
+
+        s.set_merged(&w.id).unwrap();
+        assert_eq!(s.merged_names().unwrap(), vec!["mittens".to_string()]);
 
         s.set_workspace_state(&w.id, "archived").unwrap();
         assert!(s.workspaces(false).unwrap().is_empty());

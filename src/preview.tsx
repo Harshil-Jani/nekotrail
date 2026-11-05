@@ -1,6 +1,6 @@
 /**
  * Sample data for rendering the real UI in a plain browser (no Tauri backend).
- * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, notes; ?view=breedex).
+ * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, notes; ?view=sky).
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -16,11 +16,11 @@ const ws = (id: string, repo_id: string, name: string, branch: string, extra = {
   id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", ...extra,
 });
 const workspaces = [
-  ws("w1", "r1", "bengal", "harshil/fix-502-gateway", { pinned: true }),
-  ws("w2", "r1", "korat", "harshil/ticket-sla", { unread: true }),
-  ws("w3", "r1", "manx", "harshil/rate-limit"),
-  ws("w4", "r2", "sokoke", "harshil/pricing-page"),
-  ws("w5", "r2", "chartreux", "harshil/blog-rss"),
+  ws("w1", "r1", "mochi", "harshil/fix-502-gateway", { pinned: true }),
+  ws("w2", "r1", "comet", "harshil/ticket-sla", { unread: true }),
+  ws("w3", "r1", "dash", "harshil/rate-limit"),
+  ws("w4", "r2", "ziggy", "harshil/pricing-page"),
+  ws("w5", "r2", "pip", "harshil/blog-rss"),
 ];
 const events = [
   { kind: "user", text: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it." },
@@ -56,10 +56,10 @@ const diff = `diff --git a/internal/server/http.go b/internal/server/http.go
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
-      case "snapshot": return { repos, workspaces, running: [], running_workspaces: ["w3"], discovered: ["bengal", "korat", "manx", "sokoke", "chartreux", "siamese", "persian", "sphynx", "maine-coon", "ragdoll", "bombay", "toyger", "lykoi", "savannah"] };
+      case "snapshot": return { repos, workspaces, running: [], running_workspaces: ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"] };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       case "repo_github": return { nameWithOwner: "nactore/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "https://github.com/github.png?size=64", isPrivate: false };
-      case "breeds": return BREEDS;
+      case "sky": return SKY;
       case "conductor_available": return true;
       case "sessions": return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits" }]
@@ -83,25 +83,22 @@ mockIPC(
   { shouldMockEvents: true },
 );
 
-// Keep in sync with src-tauri/src/names.rs (subset is fine for previews).
-const BREEDS = [
-  ["bengal", "Bengal", "USA", "Developed by crossing domestic cats with the Asian leopard cat."],
-  ["korat", "Korat", "Thailand", "A silver-blue cat seen as a sign of good luck in Thailand."],
-  ["manx", "Manx", "Isle of Man", "Many Manx cats are born with no tail at all."],
-  ["sokoke", "Sokoke", "Kenya", "Comes from the Arabuko-Sokoke Forest on Kenya's coast."],
-  ["chartreux", "Chartreux", "France", "A French blue cat linked in legend to the Carthusian monks."],
-  ["siamese", "Siamese", "Thailand", "Its darker points grow where the body is coolest: ears, face, paws and tail."],
-  ["persian", "Persian", "Iran", "Brought to Europe from Persia in the 1600s."],
-  ["sphynx", "Sphynx", "Canada", "Not truly hairless: most have a fine peach-fuzz coat."],
-  ["maine-coon", "Maine Coon", "USA", "The official state cat of Maine."],
-  ["ragdoll", "Ragdoll", "USA", "Named for the way many go limp when picked up."],
-  ["bombay", "Bombay", "USA", "Bred in Kentucky in the 1950s to look like a miniature black panther."],
-  ["toyger", "Toyger", "USA", "Bred to look like a tiny tiger."],
-  ["lykoi", "Lykoi", "USA", "Its patchy coat gives it a werewolf look; the name comes from the Greek for wolf."],
-  ["savannah", "Savannah", "USA", "A cross between a domestic cat and the African serval."],
-  ["norwegian-forest", "Norwegian Forest Cat", "Norway", "Has a water-resistant double coat built for Scandinavian winters."],
-  ["turkish-van", "Turkish Van", "Turkey", "Known as the swimming cat; it comes from the Lake Van region."],
-].map(([slug, name, origin, fact]) => ({ slug, name, origin, fact }));
+// A small slice of the sky from src-tauri/src/names.rs, enough for screenshots.
+const SKY = {
+  stars: [
+    ["mochi", "Mochi", "loaf", 90, 120], ["biscuit", "Biscuit", "loaf", 130, 70], ["tofu", "Tofu", "loaf", 175, 115],
+    ["dumpling", "Dumpling", "loaf", 270, 120], ["pudding", "Pudding", "loaf", 270, 210], ["muffin", "Muffin", "loaf", 90, 210],
+    ["ziggy", "Ziggy", "pounce", 380, 200], ["comet", "Comet", "pounce", 430, 140], ["dash", "Dash", "pounce", 500, 110],
+    ["pepper", "Pepper", "pounce", 575, 80], ["rocket", "Rocket", "pounce", 540, 170], ["flick", "Flick", "pounce", 340, 120],
+    ["pip", "Pip", "kitten", 430, 350], ["button", "Button", "kitten", 470, 320], ["bean", "Bean", "kitten", 510, 350],
+    ["peanut", "Peanut", "kitten", 510, 410], ["pebble", "Pebble", "kitten", 430, 410], ["tiny", "Tiny", "kitten", 470, 450],
+  ].map(([slug, name, constellation, x, y]) => ({ slug, name, constellation, x, y })),
+  constellations: [
+    { slug: "loaf", name: "The Loaf", story: "A cat tucked into a perfect rectangle, paws hidden.", lines: [["biscuit", "mochi"], ["biscuit", "tofu"], ["tofu", "dumpling"], ["dumpling", "pudding"], ["pudding", "muffin"], ["muffin", "mochi"]] },
+    { slug: "pounce", name: "The Pounce", story: "Mid-leap, front paws out, eyes on a bug in the code.", lines: [["flick", "ziggy"], ["ziggy", "comet"], ["comet", "dash"], ["dash", "pepper"], ["dash", "rocket"]] },
+    { slug: "kitten", name: "The Kitten", story: "Small, round and mostly head.", lines: [["pip", "button"], ["button", "bean"], ["bean", "peanut"], ["peanut", "tiny"], ["tiny", "pebble"], ["pebble", "pip"]] },
+  ],
+};
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

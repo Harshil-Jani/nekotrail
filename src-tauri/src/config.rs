@@ -1,4 +1,4 @@
-//! Per-repo scripts. A `purrfectpr.json` committed in the repo wins over the
+//! Per-repo scripts. A `nekotrail.json` committed in the repo wins over the
 //! scripts saved in the app, so the whole team shares one setup.
 //!
 //! ```json
@@ -22,7 +22,7 @@ struct File {
 }
 
 pub fn from_file(dir: &Path) -> Option<Scripts> {
-    let text = std::fs::read_to_string(dir.join("purrfectpr.json")).ok()?;
+    let text = std::fs::read_to_string(dir.join("nekotrail.json")).ok()?;
     serde_json::from_str::<File>(&text).ok().map(|f| f.scripts)
 }
 
@@ -44,7 +44,7 @@ mod tests {
     #[test]
     fn file_wins_and_saved_fills_gaps() {
         let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join("purrfectpr.json"), r#"{"scripts":{"setup":"bun install","run":""}}"#).unwrap();
+        std::fs::write(d.path().join("nekotrail.json"), r#"{"scripts":{"setup":"bun install","run":""}}"#).unwrap();
         let saved = Scripts { setup: Some("npm i".into()), run: Some("npm start".into()), archive: None };
         assert_eq!(
             resolve(d.path(), saved),
@@ -57,7 +57,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let saved = Scripts { setup: Some("make".into()), ..Default::default() };
         assert_eq!(resolve(d.path(), saved.clone()), saved);
-        std::fs::write(d.path().join("purrfectpr.json"), "{oops").unwrap();
+        std::fs::write(d.path().join("nekotrail.json"), "{oops").unwrap();
         assert_eq!(resolve(d.path(), saved.clone()), saved);
     }
 }

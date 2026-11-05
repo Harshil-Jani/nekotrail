@@ -77,8 +77,10 @@ struct Snapshot {
     running: Vec<String>,
     /// Workspace ids that own a running session.
     running_workspaces: Vec<String>,
-    /// Breed slugs found so far, across every workspace ever made (archived included).
-    discovered: Vec<String>,
+    /// Star slugs lit so far (a workspace was made), archived included.
+    lit: Vec<String>,
+    /// Star slugs that shine (their PR merged).
+    shining: Vec<String>,
 }
 
 #[tauri::command]
@@ -88,15 +90,15 @@ fn snapshot(st: State<AppState>, include_archived: bool) -> Res<Snapshot> {
     let mut running_workspaces: Vec<String> =
         running.iter().filter_map(|id| db.session(id).ok().map(|s| s.workspace_id)).collect();
     running_workspaces.dedup();
-    let mut discovered: Vec<String> = db
-        .workspaces(true)
-        .map_err(e)?
-        .iter()
-        .filter_map(|w| names::breed_for(&w.name).map(|b| b.slug.to_string()))
-        .collect();
-    discovered.sort();
-    discovered.dedup();
-    Ok(Snapshot { repos: db.repos().map_err(e)?, workspaces: db.workspaces(include_archived).map_err(e)?, running, running_workspaces, discovered })
+    let stars = |names: Vec<String>| {
+        let mut v: Vec<String> = names.iter().filter_map(|n| names::star_for(n).map(|s| s.slug.to_string())).collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let lit = stars(db.workspaces(true).map_err(e)?.into_iter().map(|w| w.name).collect());
+    let shining = stars(db.merged_names().map_err(e)?);
+    Ok(Snapshot { repos: db.repos().map_err(e)?, workspaces: db.workspaces(include_archived).map_err(e)?, running, running_workspaces, lit, shining })
 }
 
 // ---------- repos ----------
@@ -283,7 +285,11 @@ fn pr_status(st: State<AppState>, id: String) -> Res<Value> {
         "number,url,state,title,isDraft,reviewDecision,mergeable,statusCheckRollup,author,latestReviews,reviewRequests,additions,deletions,comments",
     ])?;
     let list: Value = serde_json::from_str(&out).map_err(e)?;
-    Ok(list.get(0).cloned().unwrap_or(Value::Null))
+    let pr = list.get(0).cloned().unwrap_or(Value::Null);
+    if pr["state"] == "MERGED" {
+        st.db().set_merged(&id).map_err(e)?;
+    }
+    Ok(pr)
 }
 
 #[tauri::command]
@@ -337,9 +343,15 @@ fn repo_github(st: State<AppState>, id: String) -> Value {
     v
 }
 
+#[derive(Serialize)]
+struct Sky {
+    stars: &'static [names::Star],
+    constellations: &'static [names::Constellation],
+}
+
 #[tauri::command]
-fn breeds() -> &'static [names::Breed] {
-    names::BREEDS
+fn sky() -> Sky {
+    Sky { stars: names::STARS, constellations: names::CONSTELLATIONS }
 }
 
 // ---------- chats ----------
@@ -570,12 +582,23 @@ fn import_conductor(st: State<AppState>) -> Res<importer::Report> {
     importer::import(&st.db(), &db).map_err(e)
 }
 
+/// The app was called purrfectpr before v0.2. Carry its database over once.
+fn migrate_old_data(data: &Path) {
+    let old = dirs::data_dir().map(|d| d.join("dev.purrfectpr.app").join("purrfectpr.db"));
+    let new = data.join("nekotrail.db");
+    if let Some(old) = old.filter(|o| o.exists() && !new.exists()) {
+        let _ = std::fs::create_dir_all(data);
+        let _ = std::fs::copy(&old, &new);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     load_login_env();
-    let home = dirs::home_dir().expect("home dir").join("purrfectpr");
-    let data = dirs::data_dir().expect("data dir").join("dev.purrfectpr.app");
-    let store = Store::open(&data.join("purrfectpr.db")).expect("open database");
+    let home = dirs::home_dir().expect("home dir").join("nekotrail");
+    let data = dirs::data_dir().expect("data dir").join("dev.nekotrail.app");
+    migrate_old_data(&data);
+    let store = Store::open(&data.join("nekotrail.db")).expect("open database");
     let branch_prefix = github_login().unwrap_or_else(|| "purr".into());
 
     tauri::Builder::default()
@@ -589,8 +612,8 @@ pub fn run() {
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
-            github_profile, repo_github, breeds
+            github_profile, repo_github, sky
         ])
         .run(tauri::generate_context!())
-        .expect("error while running purrfectpr");
+        .expect("error while running nekotrail");
 }

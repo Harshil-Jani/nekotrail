@@ -4,14 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, FolderOpen, Pin, PinOff, Play } from "lucide-react";
-import { api, breedFor, errText, type Breed, type GithubUser, type Repo, type Workspace } from "./api";
+import { api, constellationOf, errText, starFor, type GithubUser, type Repo, type Sky, type Star, type Workspace } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
 import { Terminal } from "./components/Terminal";
 import { PrBar } from "./components/PrBar";
 import { RepoSettings } from "./components/RepoSettings";
-import { Breedex } from "./components/Breedex";
+import { NightSky } from "./components/NightSky";
 import { Mascot, type Mood } from "./components/Mascot";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
@@ -40,24 +40,26 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [runningSessions, setRunningSessions] = useState<Set<string>>(new Set());
   const [runningWs, setRunningWs] = useState<Set<string>>(new Set());
-  const [discovered, setDiscovered] = useState<Set<string>>(new Set());
-  const [breeds, setBreeds] = useState<Breed[]>([]);
+  const [lit, setLit] = useState<Set<string>>(new Set());
+  const [shining, setShining] = useState<Set<string>>(new Set());
+  const [sky, setSky] = useState<Sky>({ stars: [], constellations: [] });
   const [me, setMe] = useState<GithubUser>(null);
-  // Deep link: ?ws=<id>&tab=<tab>&view=breedex (used by workspace links and the preview page).
+  // Deep link: ?ws=<id>&tab=<tab>&view=sky (used by workspace links and the preview page).
   const params = new URLSearchParams(window.location.search);
   const [selected, setSelected] = useState<string | null>(params.get("ws"));
-  const [view, setView] = useState<"workspace" | "breedex">(params.get("view") === "breedex" ? "breedex" : "workspace");
+  const [view, setView] = useState<"workspace" | "sky">(params.get("view") === "sky" ? "sky" : "workspace");
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
-  const [discovery, setDiscovery] = useState<Breed | null>(null);
+  const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inject, setInject] = useState<{ text: string; nonce: number } | undefined>();
   const [run, setRun] = useState<{ cmd: string; nonce: number } | undefined>();
   const [notes, setNotes] = useState("");
   const [leaving, setLeaving] = useState<string | null>(null);
+  const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
   const [lastActive, setLastActive] = useState(Date.now());
   const [worriedUntil, setWorriedUntil] = useState(0);
@@ -69,7 +71,15 @@ export default function App() {
     setWorkspaces(s.workspaces);
     setRunningSessions(new Set(s.running));
     setRunningWs(new Set(s.running_workspaces));
-    setDiscovered(new Set(s.discovered));
+    setLit(new Set(s.lit));
+    setShining((prev) => {
+      const next = new Set(s.shining);
+      // A PR merged since we last looked: that star starts to shine.
+      const newly = [...next].filter((x) => !prev.has(x));
+      if (prev.size + newly.length > 0 && newly.length === 1 && shiningLoaded.current) celebrate(newly[0]);
+      shiningLoaded.current = true;
+      return next;
+    });
   }, [showArchived]);
 
   useEffect(() => {
@@ -78,7 +88,7 @@ export default function App() {
 
   useEffect(() => {
     api.conductorAvailable().then(setCanImport);
-    api.breeds().then(setBreeds);
+    api.sky().then(setSky);
     api.githubProfile().then(setMe);
   }, []);
 
@@ -93,7 +103,7 @@ export default function App() {
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
       if (away) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-        const name = (w && breedFor(breedsRef.current, w.name)?.name) || w?.name || "A workspace";
+        const name = (w && starFor(skyRef.current, w.name)?.name) || w?.name || "A workspace";
         notify(payload.ok === false ? `${name} needs you` : `${name} is done`, payload.title || "The agent finished its turn.");
       }
     });
@@ -103,10 +113,10 @@ export default function App() {
   // Refs so the event listener above always sees current state.
   const selectedRef = useRef(selected);
   const workspacesRef = useRef(workspaces);
-  const breedsRef = useRef(breeds);
+  const skyRef = useRef(sky);
   selectedRef.current = selected;
   workspacesRef.current = workspaces;
-  breedsRef.current = breeds;
+  skyRef.current = sky;
 
   // Dock badge: how many workspaces have news you haven't looked at.
   useEffect(() => {
@@ -139,16 +149,29 @@ export default function App() {
   const mood: Mood =
     runningWs.size > 0 ? "working" : worriedUntil > now ? "worried" : now - lastActive > NAP_AFTER_MS ? "sleep" : "idle";
 
+  function celebrate(slug: string) {
+    const st = skyRef.current.stars.find((x) => x.slug === slug);
+    if (!st) return;
+    setDiscovery({ star: st, kind: "shining" });
+    setTimeout(() => setDiscovery(null), 8000);
+  }
+
   const pet = () => {
     setPurring(true);
     setTimeout(() => setPurring(false), 1000);
-    const known = breeds.filter((b) => discovered.has(b.slug));
-    const b = known.length ? known[Math.floor(Math.random() * known.length)] : breeds[0];
-    if (b) say(`Purr. ${b.name}: ${b.fact}`);
+    const mine = sky.constellations.filter((c) => sky.stars.some((x) => x.constellation === c.slug && lit.has(x.slug)));
+    const pool = mine.length ? mine : sky.constellations;
+    const c = pool[Math.floor(Math.random() * pool.length)];
+    if (c) say(`Purr. ${c.name}: ${c.story}`);
   };
 
   const ws = workspaces.find((w) => w.id === selected) ?? null;
-  const breed = ws ? breedFor(breeds, ws.name) : null;
+  const star = ws ? starFor(sky, ws.name) : null;
+  const starLine = (st: Star) => {
+    const c = constellationOf(sky, st);
+    const all = sky.stars.filter((x) => x.constellation === c.slug);
+    return `${c.name} · ${all.filter((x) => lit.has(x.slug)).length} of ${all.length} stars lit`;
+  };
   const repo = ws ? repos.find((r) => r.id === ws.repo_id) : null;
 
   useEffect(() => {
@@ -181,12 +204,12 @@ export default function App() {
   const newWorkspace = async (repoId: string) => {
     try {
       const w = await api.createWorkspace(repoId);
-      const isNew = !discovered.has(w.name.replace(/-\d+$/, ""));
+      const isNew = !lit.has(w.name.replace(/-\d+$/, ""));
       await refresh();
       select(w.id);
-      const found = breedFor(breeds, w.name);
+      const found = starFor(sky, w.name);
       if (found && isNew) {
-        setDiscovery(found);
+        setDiscovery({ star: found, kind: "lit" });
         setTimeout(() => setDiscovery(null), 7000);
       }
       const scripts = await api.workspaceScripts(w.id);
@@ -203,7 +226,7 @@ export default function App() {
 
   const archive = async () => {
     if (!ws) return;
-    const name = breed?.name ?? ws.name;
+    const name = star?.name ?? ws.name;
     try {
       await api.archiveWorkspace(ws.id);
     } catch (e) {
@@ -261,7 +284,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ws, repos, discovered, breeds, workspaces, selected]);
+  }, [ws, repos, lit, sky, workspaces, selected]);
 
   const settingsRepo = repos.find((r) => r.id === settingsFor);
 
@@ -270,8 +293,8 @@ export default function App() {
       <Sidebar
         repos={repos}
         workspaces={workspaces}
-        breeds={breeds}
-        discovered={discovered.size}
+        sky={sky}
+        lit={lit.size}
         me={me}
         running={runningWs}
         selected={view === "workspace" ? selected : null}
@@ -281,14 +304,14 @@ export default function App() {
         onAddRepo={addRepo}
         onRepoSettings={setSettingsFor}
         onToggleArchived={() => setShowArchived((v) => !v)}
-        onBreedex={() => setView("breedex")}
+        onSky={() => setView("sky")}
         mood={mood}
         purring={purring}
         onPet={pet}
         leaving={leaving}
       />
       <main className="main">
-        {view === "breedex" && <Breedex breeds={breeds} discovered={discovered} />}
+        {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}
 
         {view === "workspace" && !ws && (
           <div className="welcome">
@@ -300,7 +323,7 @@ export default function App() {
             ) : (
             <ol className="steps">
               <li><b className="n">1</b><span>Add a repo with the <b>+</b> at the top left.</span></li>
-              <li><b className="n">2</b><span>Press <b>+</b> next to the repo, or ⌘N, to start a workspace. Each one is named after a cat breed you haven't met yet.</span></li>
+              <li><b className="n">2</b><span>Press <b>+</b> next to the repo, or ⌘N, to start a workspace. Each one lights a star in a cat constellation; merged PRs make it shine.</span></li>
               <li><b className="n">3</b><span>Tell Claude or Codex what to build, check the changes, open the PR.</span></li>
             </ol>
             )}
@@ -310,7 +333,7 @@ export default function App() {
             {canImport && !workspaces.some((w) => w.imported_from === "conductor") && (
               <div className="import-card" style={{ marginTop: 24 }}>
                 <h2>Coming from Conductor?</h2>
-                <p>Bring over your repos, active workspaces and chats. purrfectpr only reads Conductor's data; nothing is moved or deleted.</p>
+                <p>Bring over your repos, active workspaces and chats. nekotrail only reads Conductor's data; nothing is moved or deleted.</p>
                 <button className="accent" onClick={importConductor}>Import from Conductor</button>
               </div>
             )}
@@ -322,12 +345,12 @@ export default function App() {
             <header className="ws-header">
               <div className="ws-title">
                 <h1>
-                  {breed?.name ?? ws.name}
+                  {star?.name ?? ws.name}
                   {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                 </h1>
                 <div className="ws-sub">
                   {repo?.name}
-                  {breed ? ` · ${breed.origin} · ${breed.fact}` : ws.imported_from ? " · imported from Conductor" : ""}
+                  {star ? ` · ${starLine(star)}` : ws.imported_from ? " · imported from Conductor" : ""}
                 </div>
               </div>
               <span className="spacer" />
@@ -356,7 +379,7 @@ export default function App() {
             </header>
 
             {ws.state === "active" && (
-              <PrBar ws={ws} name={breed?.name ?? ws.name} refreshKey={refreshKey} onArchive={archive} onAskAgent={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />
+              <PrBar ws={ws} name={star?.name ?? ws.name} refreshKey={refreshKey} onArchive={archive} onAskAgent={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />
             )}
 
             {ws.state === "active" && (
@@ -411,10 +434,15 @@ export default function App() {
         <div className="discovery" role="status">
           <Mascot size={56} mood="happy" />
           <div>
-            <span className="origin">New breed · {discovery.origin}</span>
-            <h3>You met the {discovery.name}</h3>
+            <span className="origin">{constellationOf(sky, discovery.star).name}</span>
+            <h3>{discovery.kind === "lit" ? `You lit ${discovery.star.name}` : `${discovery.star.name} shines`}</h3>
           </div>
-          <p>{discovery.fact} <span className="num">({discovered.size}/{breeds.length} found)</span></p>
+          <p>
+            {discovery.kind === "lit"
+              ? "Merge this workspace's PR to make the star shine and join it to its neighbours."
+              : "Its PR merged. Lines to neighbouring shipped stars are drawn on your night sky."}{" "}
+            <span className="num">({starLine(discovery.star)})</span>
+          </p>
         </div>
       )}
     </div>
