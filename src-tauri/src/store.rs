@@ -307,6 +307,17 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_setting(&self, key: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM settings WHERE key=?1", [key])?;
+        Ok(())
+    }
+
+    pub fn settings_with_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>> {
+        let mut st = self.conn.prepare("SELECT key, value FROM settings WHERE substr(key, 1, length(?1)) = ?1")?;
+        let rows = st.query_map([prefix], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
     pub fn repos(&self) -> Result<Vec<Repo>> {
         let mut st = self.conn.prepare(&format!("SELECT {REPO_COLS} FROM repos ORDER BY name"))?;
         let rows = st.query_map([], repo_from)?.collect::<rusqlite::Result<_>>()?;

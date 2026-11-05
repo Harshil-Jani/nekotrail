@@ -60,6 +60,25 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(params.get("ws"));
   const [view, setView] = useState<"workspace" | "sky" | "board">((params.get("view") as "sky" | "board") || "workspace");
   const [sections, setSections] = useState<Section[]>([]);
+  const [autopilot, setAutopilotMap] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const load = () => api.autopilotStatus().then(setAutopilotMap).catch(() => {});
+    load();
+    // Autopilot finished or needs you: same alerts as an agent that needs you.
+    const un = listen<{ workspace_id: string; state: string; detail?: string }>("autopilot", ({ payload }) => {
+      load();
+      const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
+      const name = w ? displayName(skyRef.current, w) : "A workspace";
+      if (payload.state === "ready" || payload.state === "gave_up") {
+        const prefs = getSettings();
+        const title = payload.state === "ready" ? `${name} is ready to merge` : `Autopilot needs you on ${name}`;
+        if (prefs.needsSound) ting();
+        if (prefs.needsNotify) notify(title, payload.detail ?? "");
+        say(`${title}. ${payload.detail ?? ""}`);
+      }
+    });
+    return () => { un.then((f) => f()); };
+  }, []);
   const [ram, setRam] = useState<Awaited<ReturnType<typeof api.resourceUsage>> | null>(null);
   useEffect(() => {
     const load = () => { if (!document.hidden) api.resourceUsage().then(setRam).catch(() => {}); };
@@ -816,6 +835,8 @@ export default function App() {
                 refreshKey={refreshKey}
                 onArchive={(auto) => archive({ auto })}
                 onSay={say}
+                autopilot={autopilot[ws.id]}
+                nameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; }}
                 onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
               />
             )}

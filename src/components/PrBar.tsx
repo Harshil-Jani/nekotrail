@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, ScanSearch, Sparkles, Upload } from "lucide-react";
+import { Bot, TriangleAlert, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, ScanSearch, Sparkles, Upload } from "lucide-react";
 import { api, avatar, errText, type Pr, type Repo, type Workspace } from "../api";
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
@@ -62,6 +62,8 @@ export function PrBar({
   onSendAgent,
   onArchive,
   onSay,
+  autopilot,
+  nameOf,
 }: {
   ws: Workspace;
   repo?: Repo;
@@ -72,6 +74,9 @@ export function PrBar({
   /** `auto` is true when archiving by itself after a merge. */
   onArchive: (auto?: boolean) => void;
   onSay: (text: string, error?: boolean) => void;
+  /** Agent turns autopilot has used on this PR; undefined when it's off. */
+  autopilot?: number;
+  nameOf: (workspaceId: string) => string;
 }) {
   const [pr, setPr] = useState<Pr | undefined>(undefined);
   const [form, setForm] = useState<{ title: string; body: string; draft: boolean } | null>(null);
@@ -79,6 +84,8 @@ export function PrBar({
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [overlap, setOverlap] = useState<{ workspace_id: string; files: string[] }[]>([]);
+  useEffect(() => { setOverlap([]); api.overlaps(ws.id).then(setOverlap).catch(() => {}); }, [ws.id, refreshKey]);
 
   const load = () =>
     api.prStatus(ws.id).then((p) => { setPr(p); setError(null); }).catch((e) => { setPr(null); setError(errText(e)); });
@@ -172,6 +179,16 @@ export function PrBar({
       disabled: !open || !!pr?.isDraft || conflicting || checks?.cls !== "wait",
       run: () => task("merge", async () => { await api.mergePr(ws.id, true); onSay(`GitHub will merge #${pr!.number} when its checks pass.`); }),
     },
+    autopilot: {
+      id: "autopilot", label: autopilot !== undefined ? "Turn off autopilot" : "Autopilot: get this PR to green", keys: "", icon: <Bot size={15} />,
+      disabled: !open,
+      run: () => task("autopilot", async () => {
+        await api.setAutopilot(ws.id, autopilot === undefined);
+        onSay(autopilot === undefined
+          ? "Autopilot is on. It fixes failing checks, conflicts and requested changes, up to 3 agent turns, and pings you when the PR is green."
+          : "Autopilot is off.");
+      }),
+    },
     openPr: { id: "openPr", label: "Open on GitHub", keys: "⌘⇧G", icon: <ExternalLink size={15} />, disabled: !pr, run: () => pr && openUrl(pr.url) },
   };
   // The one button you most likely want next.
@@ -238,6 +255,11 @@ export function PrBar({
           <GitBranch size={14} />{ws.branch} → {ws.target_branch}
         </button>
       )}
+      {overlap.length > 0 && (
+        <span className="pill wait" title={overlap.map((o) => `${nameOf(o.workspace_id)}: ${o.files.join(", ")}`).join("\n")}>
+          <TriangleAlert size={13} />Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}
+        </span>
+      )}
       <span className="spacer" />
       {pr === undefined && <span className="muted">Looking for a PR…</span>}
       {pr && (
@@ -258,7 +280,12 @@ export function PrBar({
             </span>
           )}
           {checks && <span className={`pill ${checks.cls}`} title={checks.names.join(", ")}><CheckIcon size={14} />CI {checks.text}</span>}
-          {open && checks?.cls === "bad" && <Mascot size={28} mood="worried" title="CI is failing" />}
+          {open && checks?.cls === "bad" && autopilot === undefined && <Mascot size={28} mood="worried" title="CI is failing" />}
+          {autopilot !== undefined && (
+            <button className="pill autopilot" onClick={() => actions.autopilot.run()} title="Autopilot keeps this PR moving. Click to turn it off.">
+              <Bot size={13} />Autopilot · {autopilot} of 3 tries
+            </button>
+          )}
         </>
       )}
       {pr !== undefined && pr?.state !== "MERGED" && (

@@ -111,7 +111,7 @@ type ChatCtxValue = {
   /** Row index of the current search match, and the query to highlight. */
   query: string;
   /** Start a fresh chat with the other agent (when one is missing or out of quota). */
-  switchAgent: (to: Agent) => void;
+  switchAgent: (to: Agent) => void | Promise<void>;
   /** Put `file:line` findings from a reply into the Changes tab as review comments. */
   addFindings: (f: Finding[]) => void;
 };
@@ -166,7 +166,7 @@ function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; age
         {fix === "login" && <button className="accent" onClick={() => runInTerminal(agent === "codex" ? "codex login" : "claude /login")}><SquareTerminal size={13} />Sign in from terminal</button>}
         {fix === "limit" && <span className="muted">The limit resets on its own. Your chat is kept.</span>}
         <span className="spacer" />
-        <button className="quiet" onClick={() => switchAgent(other)}>Use {other === "codex" ? "Codex" : "Claude"} instead</button>
+        <button className={fix === "limit" ? "accent" : "quiet"} onClick={() => switchAgent(other)}>Continue in {other === "codex" ? "Codex" : "Claude"}</button>
       </div>
     </div>
   );
@@ -385,7 +385,19 @@ export function Chat({
     onRunningChange();
   };
   const rewindCtx = useMemo(() => ({
-    switchAgent: (to: Agent) => { newChat(to); },
+    // Hand the task to the other agent with the conversation so far, ready to send.
+    switchAgent: async (to: Agent) => {
+      const from = session?.agent === "codex" ? "Codex" : "Claude";
+      const lines: string[] = [];
+      for (const ev of events) {
+        if (ev.kind === "user") lines.push(`User: ${ev.text}`);
+        else if (ev.kind === "text" && !("fix" in ev && ev.fix)) lines.push(`${from}: ${ev.text}`);
+        else if (ev.kind === "tool" && ["Edit", "Write", "MultiEdit"].includes(ev.name)) lines.push(`(${from} edited ${ev.input})`);
+      }
+      const transcript = lines.join("\n\n").slice(-8000);
+      await newChat(to);
+      setDraft(`You're taking over this task from ${from}, which had to stop. The conversation so far (latest part):\n\n${transcript}\n\nContinue from where it stopped. Check \`git status\` and \`git diff\` first to see what is already done.`);
+    },
     addFindings: (f: Finding[]) => {
       const key = `nekotrail.review.${workspaceId}`;
       const cur = JSON.parse(localStorage.getItem(key) || "[]");
@@ -403,7 +415,7 @@ export function Chat({
       setError(null);
       try { await api.restoreCheckpoint(active, checkpoint); } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, active, expandAll, search, session, workspaceId]);
+  }), [anyBusy, active, expandAll, search, session, workspaceId, events]);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);

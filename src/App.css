@@ -952,3 +952,4 @@ input.switch:focus-visible { box-shadow: var(--ring) !important; }
   background: linear-gradient(to right, transparent, var(--sidebar) 12px); }
 html.native .repo-actions { background: none; }
 .repo-head:hover .repo-meta { visibility: hidden; }
+.pill.autopilot { height: 22px; border: none; box-shadow: none; background: var(--accent-soft); color: var(--accent-text); font-weight: 600; cursor: default; }

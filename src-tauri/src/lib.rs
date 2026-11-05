@@ -554,7 +554,11 @@ async fn write_file(st: State<'_, AppState>, id: String, path: String, content: 
 /// Review comments left on the workspace's PR on GitHub (line comments, not general ones).
 #[tauri::command]
 async fn pr_review_comments(st: State<'_, AppState>, id: String) -> Res<Value> {
-    let ws = st.db().workspace(&id).map_err(e)?;
+    review_comments_blocking(&st, &id)
+}
+
+fn review_comments_blocking(st: &AppState, id: &str) -> Res<Value> {
+    let ws = st.db().workspace(id).map_err(e)?;
     let n = gh(&ws.path, &["pr", "view", &ws.branch, "--json", "number", "--jq", ".number"])?;
     let out = gh(&ws.path, &[
         "api", "--paginate", &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", n.trim()),
@@ -709,7 +713,7 @@ fn pr_status_blocking(st: &AppState, id: &str) -> Res<Value> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let out = gh(&ws.path, &[
         "pr", "list", "--head", &ws.branch, "--state", "all", "--limit", "1", "--json",
-        "number,url,state,title,isDraft,reviewDecision,mergeable,statusCheckRollup,author,latestReviews,reviewRequests,additions,deletions,comments",
+        "number,url,state,title,isDraft,reviewDecision,mergeable,statusCheckRollup,author,latestReviews,reviewRequests,additions,deletions,comments,headRefOid",
     ])?;
     let list: Value = serde_json::from_str(&out).map_err(e)?;
     let pr = list.get(0).cloned().unwrap_or(Value::Null);
@@ -993,6 +997,177 @@ async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String,
     Ok(out)
 }
 
+/// Other workspaces in the same repo that changed some of the same files as this one, so you hear
+/// about the merge conflict before it happens. Runs git in parallel, off the async workers.
+#[tauri::command]
+async fn overlaps(app: AppHandle, id: String) -> Res<Vec<Value>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<AppState>();
+        let (me, others) = {
+            let db = st.db();
+            let me = db.workspace(&id).map_err(e)?;
+            let others: Vec<Workspace> = db.workspaces(false).map_err(e)?.into_iter().filter(|w| w.repo_id == me.repo_id && w.id != me.id).collect();
+            (me, others)
+        };
+        let mine: std::collections::HashSet<String> = git::changes(Path::new(&me.path), &me.target_branch).map_err(e)?.into_iter().map(|f| f.path).collect();
+        if mine.is_empty() {
+            return Ok(vec![]);
+        }
+        let handles: Vec<_> = others.into_iter().map(|w| std::thread::spawn(move || {
+            let theirs = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
+            Some((w, theirs.into_iter().map(|f| f.path).collect::<Vec<_>>()))
+        })).collect();
+        let mut out = vec![];
+        for (w, files) in handles.into_iter().filter_map(|h| h.join().ok().flatten()) {
+            let shared: Vec<&String> = files.iter().filter(|f| mine.contains(*f)).collect();
+            if !shared.is_empty() {
+                out.push(json!({"workspace_id": w.id, "files": shared}));
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(e)?
+}
+
+// ---------- autopilot: drive a PR to green without you ----------
+
+const AUTOPILOT_TRIES: u64 = 3;
+
+/// What a PR needs next, judged from `gh pr list --json` output. Pure, so it can be tested.
+/// Returns (kind, fingerprint): kind is "fix", "conflicts", "review", "ready", "wait" or "closed".
+fn autopilot_next(pr: &Value) -> (&'static str, String) {
+    let sha = pr["headRefOid"].as_str().unwrap_or("").to_string();
+    match pr["state"].as_str() {
+        Some("MERGED") | Some("CLOSED") => return ("closed", sha),
+        None => return ("wait", sha),
+        _ => {}
+    }
+    let checks = pr["statusCheckRollup"].as_array().cloned().unwrap_or_default();
+    let result = |c: &Value| c["conclusion"].as_str().or(c["state"].as_str()).or(c["status"].as_str()).unwrap_or("").to_uppercase();
+    let failing = checks.iter().any(|c| ["FAILURE", "ERROR", "TIMED_OUT", "STARTUP_FAILURE"].contains(&result(c).as_str()));
+    let pending = checks.iter().any(|c| ["", "PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED", "WAITING"].contains(&result(c).as_str()));
+    if pr["mergeable"] == "CONFLICTING" {
+        ("conflicts", format!("conflicts:{sha}"))
+    } else if failing && !pending {
+        ("fix", format!("fix:{sha}"))
+    } else if pr["reviewDecision"] == "CHANGES_REQUESTED" {
+        ("review", format!("review:{sha}"))
+    } else if pending {
+        ("wait", sha)
+    } else {
+        ("ready", format!("ready:{sha}"))
+    }
+}
+
+fn autopilot_key(id: &str) -> String {
+    format!("autopilot:{id}")
+}
+
+/// Turn autopilot on or off for a workspace. On: nekotrail keeps the PR moving (fix CI, resolve
+/// conflicts, answer requested changes) for up to 3 agent turns, then hands back to you.
+#[tauri::command]
+async fn set_autopilot(app: AppHandle, st: State<'_, AppState>, id: String, on: bool) -> Res<()> {
+    let key = autopilot_key(&id);
+    if on {
+        st.db().set_setting(&key, &json!({"tries": 0, "last": ""}).to_string()).map_err(e)?;
+        let app2 = app.clone();
+        std::thread::spawn(move || autopilot_tick(&app2, &id));
+    } else {
+        st.db().delete_setting(&key).map_err(e)?;
+    }
+    let _ = app.emit("autopilot", json!({"workspace_id": key.trim_start_matches("autopilot:"), "state": if on { "on" } else { "off" }}));
+    Ok(())
+}
+
+/// Workspaces with autopilot on, and how many agent turns it has used.
+#[tauri::command]
+async fn autopilot_status(st: State<'_, AppState>) -> Res<HashMap<String, u64>> {
+    Ok(st.db().settings_with_prefix("autopilot:").map_err(e)?.into_iter()
+        .map(|(k, v)| (k.trim_start_matches("autopilot:").to_string(), serde_json::from_str::<Value>(&v).ok().and_then(|j| j["tries"].as_u64()).unwrap_or(0)))
+        .collect())
+}
+
+/// One look at one workspace's PR, acting if something needs doing.
+fn autopilot_tick(app: &AppHandle, id: &str) {
+    let st = app.state::<AppState>();
+    let key = autopilot_key(id);
+    let Some(raw) = st.db().setting(&key).ok().flatten() else { return };
+    let mut state: Value = serde_json::from_str(&raw).unwrap_or(json!({"tries": 0, "last": ""}));
+    let busy = {
+        let runs = st.runs.lock().unwrap();
+        st.db().sessions(id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(true)
+    };
+    if busy {
+        return;
+    }
+    let Ok(pr) = pr_status_blocking(&st, id) else { return };
+    let (kind, print) = autopilot_next(&pr);
+    let say = |state: &str, detail: &str| { let _ = app.emit("autopilot", json!({"workspace_id": id, "state": state, "detail": detail})); };
+    match kind {
+        "wait" => return,
+        "closed" | "ready" => {
+            let _ = st.db().delete_setting(&key);
+            if kind == "ready" {
+                say("ready", "Checks pass and nothing is waiting on the agent. Ready for you to merge.");
+            } else {
+                say("off", "The PR is closed or merged.");
+            }
+            return;
+        }
+        _ => {}
+    }
+    if state["last"].as_str() == Some(print.as_str()) {
+        return; // already acted on this exact commit; wait for CI or the reviewer
+    }
+    let tries = state["tries"].as_u64().unwrap_or(0);
+    if tries >= AUTOPILOT_TRIES {
+        let _ = st.db().delete_setting(&key);
+        say("gave_up", &format!("Still not green after {AUTOPILOT_TRIES} tries. Take a look."));
+        return;
+    }
+    let Ok(ws) = st.db().workspace(id) else { return };
+    let prompt = match kind {
+        "fix" => {
+            let logs = failing_logs_blocking(&st, id).unwrap_or_default();
+            format!("Autopilot: CI is failing on this PR. Failing logs:\n\n```\n{}\n```\n\nFind the cause, fix it, run the relevant tests locally, then commit and push.", &logs[logs.len().saturating_sub(12000)..])
+        }
+        "conflicts" => {
+            let _ = git::merge_target(Path::new(&ws.path), &ws.target_branch);
+            format!("Autopilot: this PR conflicts with origin/{}. I started the merge (see `git status`). Resolve each conflict keeping the intent of both sides, run the tests, commit the merge and push.", ws.target_branch)
+        }
+        _ => {
+            let comments = review_comments_blocking(&st, id).unwrap_or(Value::Null);
+            let list: Vec<String> = comments.as_array().into_iter().flatten()
+                .filter(|c| c["reply_to"].is_null() && !c["outdated"].as_bool().unwrap_or(false))
+                .map(|c| format!("- {}:{} (@{}): {}", c["path"].as_str().unwrap_or(""), c["line"], c["user"].as_str().unwrap_or(""), c["body"].as_str().unwrap_or("")))
+                .collect();
+            format!("Autopilot: a reviewer requested changes on this PR. Address these comments, then commit and push:\n\n{}", list.join("\n"))
+        }
+    };
+    let sid = match st.db().sessions(id).ok().and_then(|mut s| s.pop()) {
+        Some(s) => s.id,
+        None => return,
+    };
+    state["tries"] = json!(tries + 1);
+    state["last"] = json!(print);
+    let _ = st.db().set_setting(&key, &state.to_string());
+    say("working", match kind { "fix" => "Fixing failing checks", "conflicts" => "Resolving conflicts", _ => "Addressing review comments" });
+    let _ = start_turn(app.clone(), &st, sid, prompt);
+}
+
+/// Every 90 seconds, check each workspace with autopilot on.
+fn autopilot_loop(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(90));
+        let ids: Vec<String> = app.state::<AppState>().db().settings_with_prefix("autopilot:").unwrap_or_default()
+            .into_iter().map(|(k, _)| k.trim_start_matches("autopilot:").to_string()).collect();
+        for id in ids {
+            autopilot_tick(&app, &id);
+        }
+    });
+}
+
 /// Commit everything and push. An empty message uses the chat's first task as the subject.
 #[tauri::command]
 async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
@@ -1041,7 +1216,11 @@ async fn merge_pr(st: State<'_, AppState>, id: String, auto: Option<bool>) -> Re
 /// The last lines of each failing check's log, for "Fix errors".
 #[tauri::command]
 async fn failing_logs(st: State<'_, AppState>, id: String) -> Res<String> {
-    let ws = st.db().workspace(&id).map_err(e)?;
+    failing_logs_blocking(&st, &id)
+}
+
+fn failing_logs_blocking(st: &AppState, id: &str) -> Res<String> {
+    let ws = st.db().workspace(id).map_err(e)?;
     let out = gh(&ws.path, &["pr", "view", &ws.branch, "--json", "statusCheckRollup"])?;
     let v: Value = serde_json::from_str(&out).map_err(e)?;
     let mut runs: Vec<String> = vec![];
@@ -1734,6 +1913,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default() })
+        .setup(|app| {
+            autopilot_loop(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts,
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
@@ -1743,7 +1926,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky
@@ -1818,6 +2001,18 @@ mod tests {
         let u = tree_usage(10, &rows);
         assert_eq!(u["total_mb"], 470);
         assert_eq!(u["top"][0]["name"], "claude");
+    }
+
+    #[test]
+    fn autopilot_picks_the_next_step() {
+        let pr = |extra: Value| { let mut v = json!({"state": "OPEN", "headRefOid": "abc", "mergeable": "MERGEABLE", "reviewDecision": "", "statusCheckRollup": []}); for (k, x) in extra.as_object().unwrap() { v[k] = x.clone(); } v };
+        assert_eq!(autopilot_next(&pr(json!({"statusCheckRollup": [{"conclusion": "FAILURE"}]}))).0, "fix");
+        assert_eq!(autopilot_next(&pr(json!({"statusCheckRollup": [{"conclusion": "FAILURE"}, {"status": "IN_PROGRESS"}]}))).0, "wait");
+        assert_eq!(autopilot_next(&pr(json!({"mergeable": "CONFLICTING"}))).0, "conflicts");
+        assert_eq!(autopilot_next(&pr(json!({"reviewDecision": "CHANGES_REQUESTED", "statusCheckRollup": [{"conclusion": "SUCCESS"}]}))).0, "review");
+        assert_eq!(autopilot_next(&pr(json!({"statusCheckRollup": [{"conclusion": "SUCCESS"}]}))), ("ready", "ready:abc".to_string()));
+        assert_eq!(autopilot_next(&pr(json!({"state": "MERGED"}))).0, "closed");
+        assert_eq!(autopilot_next(&Value::Null).0, "wait");
     }
 
     #[test]

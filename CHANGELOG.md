@@ -3,6 +3,13 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.5.0 (2026-11-06)
+
+**Agents that work as a team**
+- Autopilot: turn it on from the PR menu and nekotrail keeps the PR moving on its own. Failing checks go to the agent with their logs, conflicts get merged and resolved, requested changes get answered. It stops after 3 agent turns or when the PR is green, and tells you with a ting and a notification.
+- Continue in the other agent: when Claude or Codex hits its usage limit (or isn't installed), one click opens the other agent with the conversation so far, ready to send.
+- Overlap warning: the PR bar tells you when another workspace in the same repo changed the same files, before it turns into a merge conflict.
+
 ## 0.4.0 (2026-11-06)
 
 **Fast with 30 workspaces** (measured on a real install with 23 workspaces and 18,500 chat messages)
