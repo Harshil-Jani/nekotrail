@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Minus, Plus, Volume2, X } from "lucide-react";
+import { Heart, Minus, Plus, Volume2, X } from "lucide-react";
 import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
 import { AGENTS, AGENT_INFO } from "../agents";
@@ -308,10 +308,11 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
         )}
         </div>
 
-        <div className="row end">
+        <div className="row end settings-foot">
           <span className="muted version num">nekotrail v{version}</span>
+          <span className="foot-dot" aria-hidden>·</span>
           <button className="link" onClick={() => openUrl("https://github.com/Harshil-Jani/nekotrail/blob/main/CHANGELOG.md").catch(() => {})}>What's new</button>
-          <button className="link" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="nekotrail is free and open source. Sponsoring keeps it that way.">Sponsor</button>
+          <span className="foot-dot" aria-hidden>·</span>
           {update?.kind === "checking" ? (
             <span className="muted update-status" role="status">Checking for updates…</span>
           ) : update?.kind === "latest" ? (
@@ -321,6 +322,9 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
           ) : (
             <button className="link" onClick={onCheckUpdates}>Check for updates</button>
           )}
+          {/* Sponsor is a different kind of link from the version ones: set apart, with a heart. */}
+          <span className="foot-sep" aria-hidden />
+          <button className="link sponsor" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="nekotrail is free and open source. Sponsoring keeps it that way."><Heart size={12} aria-hidden />Sponsor</button>
           <span className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>

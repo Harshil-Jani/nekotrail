@@ -1406,3 +1406,9 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
 }
+
+/* Settings footer: version · What's new · Check for updates, then Sponsor after a hairline. 12px like the version. */
+.settings-foot button.link { font-size: 12px; font-weight: 500; }
+.settings-foot .foot-dot { color: var(--faint); font-size: 12px; margin: 0 -2px; }
+.settings-foot .foot-sep { width: 0.5px; height: 12px; background: var(--line-strong); margin: 0 var(--s1); }
+.settings-foot button.link.sponsor { display: inline-flex; align-items: center; gap: 4px; }
