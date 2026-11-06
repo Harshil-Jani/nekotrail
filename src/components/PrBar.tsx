@@ -6,6 +6,7 @@ import { ask } from "./Confirm";
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
 import { getSettings } from "../settings";
+import { keyHint, mod } from "../platform";
 import { agentName, otherAgent } from "../agents";
 import { useFit, overflows } from "../useFit";
 
@@ -290,18 +291,18 @@ export function PrBar({
     : [];
 
   const actions: Record<string, Action> = {
-    createPr: { id: "createPr", label: "Create PR", keys: "⌘⇧P", icon: <GitPullRequest size={15} />, run: () => onSendAgent(agentPrompts.createPr(ws, repo)), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
+    createPr: { id: "createPr", label: "Create PR", keys: keyHint("⌘⇧P"), icon: <GitPullRequest size={15} />, run: () => onSendAgent(agentPrompts.createPr(ws, repo)), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
     manualPr: { id: "manualPr", label: "Write the PR myself", keys: "", icon: <GitPullRequest size={15} />, run: () => setForm({ title: ws.title, body: "", draft: false }), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
-    commitPush: { id: "commitPush", label: "Commit and push", keys: "⌘⇧Y", icon: <Upload size={15} />, run: () => task("push", async () => onSay(`Pushed: ${await api.commitPush(ws.id)}`)) },
+    commitPush: { id: "commitPush", label: "Commit and push", keys: keyHint("⌘⇧Y"), icon: <Upload size={15} />, run: () => task("push", async () => onSay(`Pushed: ${await api.commitPush(ws.id)}`)) },
     pull: {
-      id: "pull", label: `Pull latest ${ws.target_branch}`, keys: "⌘⇧L", icon: <ArrowDownToLine size={15} />,
+      id: "pull", label: `Pull latest ${ws.target_branch}`, keys: keyHint("⌘⇧L"), icon: <ArrowDownToLine size={15} />,
       run: () => task("pull", async () => {
         const r = await api.pullTarget(ws.id);
         if (r === "conflicts") { onSay(`Merging ${ws.target_branch} hit conflicts. The agent is resolving them.`); onSendAgent(agentPrompts.conflicts(ws)); }
         else onSay(r === "merged" ? `Merged the latest ${ws.target_branch}.` : `Already up to date with ${ws.target_branch}.`);
       }),
     },
-    review: { id: "review", label: "Review changes", keys: "⌘⇧R", icon: <ScanSearch size={15} />, run: () => onSendAgent(agentPrompts.review(ws, repo)) },
+    review: { id: "review", label: "Review changes", keys: keyHint("⌘⇧R"), icon: <ScanSearch size={15} />, run: () => onSendAgent(agentPrompts.review(ws, repo)) },
     second: {
       id: "second", label: "Get a second opinion from the other agent", keys: "", icon: <ScanSearch size={15} />,
       run: () => task("second", async () => {
@@ -312,12 +313,12 @@ export function PrBar({
       }),
     },
     fix: {
-      id: "fix", label: "Fix failing checks", keys: "⌘⇧X", icon: <Sparkles size={15} />, disabled: !(open && checks?.cls === "bad"),
+      id: "fix", label: "Fix failing checks", keys: keyHint("⌘⇧X"), icon: <Sparkles size={15} />, disabled: !(open && checks?.cls === "bad"),
       run: () => task("fix", async () => onSendAgent(agentPrompts.fixErrors(pr!.number, await api.failingLogs(ws.id)))),
     },
     conflicts: { id: "conflicts", label: "Resolve conflicts", keys: "", icon: <Sparkles size={15} />, disabled: !conflicting, run: () => actions.pull.run() },
     merge: {
-      id: "merge", label: mergeLabel(repo), keys: "⌘⇧M", icon: <GitMerge size={15} />,
+      id: "merge", label: mergeLabel(repo), keys: keyHint("⌘⇧M"), icon: <GitMerge size={15} />,
       disabled: !open || !!pr?.isDraft || conflicting || checks?.cls === "bad" || checks?.cls === "wait",
       run: () => task("merge", async () => { await api.mergePr(ws.id); onSay(`Merged #${pr!.number}. ${star} shines.`); }),
     },
@@ -336,7 +337,7 @@ export function PrBar({
           : "Autopilot is off.");
       }),
     },
-    openPr: { id: "openPr", label: "Open on GitHub", keys: "⌘⇧G", icon: <ExternalLink size={15} />, disabled: !pr, run: () => pr && openUrl(pr.url) },
+    openPr: { id: "openPr", label: "Open on GitHub", keys: keyHint("⌘⇧G"), icon: <ExternalLink size={15} />, disabled: !pr, run: () => pr && openUrl(pr.url) },
   };
   // The one button you most likely want next.
   const primary =
@@ -362,7 +363,7 @@ export function PrBar({
   useEffect(() => {
     const keys: Record<string, string> = { p: "createPr", y: "commitPush", l: "pull", r: "review", x: "fix", m: "merge", g: "openPr" };
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || !e.shiftKey || e.altKey) return;
+      if (!mod(e) || !e.shiftKey || e.altKey) return;
       const a = ref.current[keys[e.key.toLowerCase()]];
       if (!a) return;
       e.preventDefault();

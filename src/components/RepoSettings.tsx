@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, ShieldCheck, ShieldAlert, X } from "lucide-react";
 import { api, errText, type Repo, type RepoPrefs } from "../api";
 import { AGENT_INFO, GUARD_TAG, guardGroups } from "../agents";
+import { keyHint } from "../platform";
 
 type Section = "scripts" | "agent" | "files" | "guard";
 
@@ -74,11 +75,11 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
               These run in each workspace folder. A <code>nekotrail.json</code> committed in the repo overrides these, so your team can share one setup.
             </p>
             {script("setup", "Setup: runs when a workspace is created", "bun install")}
-            {script("run", "Run: runs from the Run button (⌘R)", "bun dev --port $NEKOTRAIL_PORT")}
+            {script("run", keyHint("Run: runs from the Run button (⌘R)"), "bun dev --port $NEKOTRAIL_PORT")}
             {script("archive", "Archive: runs before the folder is removed", "docker compose down")}
             <div className="field">
               <span>More actions</span>
-              <small className="muted">Named commands next to Run, like test or lint. Start them from the Run menu, ⌘K, or /run name in a chat. They run in the workspace terminal.</small>
+              <small className="muted">Named commands next to Run, like test or lint. Start them from the Run menu, {keyHint("⌘K")}, or /run name in a chat. They run in the workspace terminal.</small>
               {(p.actions ?? []).map(([n, c], i) => (
                 <div className="env-row" key={i}>
                   <input value={n} placeholder="test" aria-label="Action name" onChange={(e) => setP({ ...p, actions: p.actions.map((x, j) => (j === i ? [e.target.value.replace(/\s+/g, "-"), x[1]] : x)) })} />
@@ -94,8 +95,8 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
         {section === "agent" && (
           <>
             {prompt("general_prompt", "Instructions for every chat in this repo", "Use pnpm, not npm. Run `pnpm test` before you say you're done.", 4)}
-            {prompt("review_prompt", "Extra instructions for Review (⌘⇧R)", "Focus on security and missing tests.")}
-            {prompt("pr_prompt", "Extra instructions for Create PR (⌘⇧P)", "Link the Jira ticket from the branch name. Keep the description under 10 lines.")}
+            {prompt("review_prompt", keyHint("Extra instructions for Review (⌘⇧R)"), "Focus on security and missing tests.")}
+            {prompt("pr_prompt", keyHint("Extra instructions for Create PR (⌘⇧P)"), "Link the Jira ticket from the branch name. Keep the description under 10 lines.")}
             <label className="field">
               <span>Merge PRs with</span>
               <select value={p.merge_method || "squash"} onChange={(e) => setP({ ...p, merge_method: e.target.value })}>

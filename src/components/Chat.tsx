@@ -9,6 +9,7 @@ import { ModelPicker } from "./ModelPicker";
 import { McpSheet } from "./McpSheet";
 import { ask } from "./Confirm";
 import { getSettings } from "../settings";
+import { keyHint, mod, modKey } from "../platform";
 import { AGENT_INFO, agentName, otherAgent, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
@@ -311,7 +312,7 @@ function PlanCard({ plan, latest }: { plan: string; latest: boolean }) {
               <Split size={14} />Split into {steps.length} workspaces
             </button>
           )}
-          <button className="accent" disabled={disabled} onClick={approvePlan} title="Approve and build (⌘⇧↵)"><Play size={14} />Approve and build</button>
+          <button className="accent" disabled={disabled} onClick={approvePlan} title={keyHint("Approve and build (⌘⇧↵)")}><Play size={14} />Approve and build</button>
         </div>
       )}
     </div>
@@ -343,10 +344,10 @@ function ApprovalCard({ r }: { r: Extract<Row, { type: "approval" }> }) {
       {error && <p className="muted">{error}</p>}
       {live && (
         <div className="row">
-          <button className="danger" disabled={busy} onClick={() => answer(false)} title="Deny (⌫)">Deny</button>
+          <button className="danger" disabled={busy} onClick={() => answer(false)} title={keyHint("Deny (⌫)")}>Deny</button>
           <span className="spacer" />
           {r.can_always && <button disabled={busy} onClick={() => answer(true, true)} title="Allow this and similar changes for the rest of this chat">Allow for this chat</button>}
-          <button className="accent" disabled={busy} onClick={() => answer(true)} title="Allow (↵)"><Check size={14} />Allow</button>
+          <button className="accent" disabled={busy} onClick={() => answer(true)} title={keyHint("Allow (↵)")}><Check size={14} />Allow</button>
         </div>
       )}
       {!live && <p className="muted">The turn ended before this was answered.</p>}
@@ -912,7 +913,7 @@ export function Chat({
       case "/fork": await fork(); return true;
       case "/model":
         if (arg) await update({ model: arg });
-        else window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", metaKey: true }));
+        else window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", ...modKey() }));
         return true;
       case "/effort": case "/intelligence": await update({ effort: (arg || null) as Effort | null }); return true;
       case "/mcp": setMcpOpen(true); return true;
@@ -997,14 +998,14 @@ export function Chat({
   // Slash commands: nekotrail's own actions first, then the repo's and your own .claude/commands.
   const BASE_SLASH: [string, string][] = [
     ["/mcp", "MCP servers and skills, and share them across agents"],
-    ["/model", "Pick the model and intelligence (⌘/)"],
+    ["/model", keyHint("Pick the model and intelligence (⌘/)")],
     ["/intelligence", "Set how hard it thinks: /intelligence high"],
     ["/plan", "Switch to plan mode, no edits"], ["/auto", "Switch to auto-accept edits"],
-    ["/review", "Review the branch with this agent (⌘⇧R)"], ["/second-opinion", "Get a read-only review from the other agent"],
-    ["/pr", "Commit, push and create the PR (⌘⇧P)"], ["/merge", "Merge the PR (⌘⇧M)"], ["/pull", "Merge the latest target branch (⌘⇧L)"],
-    ["/fix-ci", "Fix failing checks from their logs (⌘⇧X)"],
-    ["/run", "Run or stop the app (⌘R), or /run test for a named action"], ["/diff", "Show the changes (⌘⇧D)"], ["/terminal", "Open the terminal (⌘J)"],
-    ["/preview", "Show the running app (⌘4)"],
+    ["/review", keyHint("Review the branch with this agent (⌘⇧R)")], ["/second-opinion", "Get a read-only review from the other agent"],
+    ["/pr", keyHint("Commit, push and create the PR (⌘⇧P)")], ["/merge", keyHint("Merge the PR (⌘⇧M)")], ["/pull", keyHint("Merge the latest target branch (⌘⇧L)")],
+    ["/fix-ci", keyHint("Fix failing checks from their logs (⌘⇧X)")],
+    ["/run", keyHint("Run or stop the app (⌘R), or /run test for a named action")], ["/diff", keyHint("Show the changes (⌘⇧D)")], ["/terminal", keyHint("Open the terminal (⌘J)")],
+    ["/preview", keyHint("Show the running app (⌘4)")],
     ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
     ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];
@@ -1032,12 +1033,12 @@ export function Chat({
       if (scroller.current?.closest(".pane")?.hasAttribute("hidden")) return; // Chat tab not showing
       if (e.ctrlKey && !e.metaKey && e.key === "o") { e.preventDefault(); setExpandAll((x) => !x); return; }
       // ↵ allows and ⌫ denies the waiting tool call, unless you're typing.
-      if ((e.key === "Enter" || e.key === "Backspace") && !e.metaKey && !e.shiftKey && !keys.current.readOnly && !(e.target as HTMLElement).closest("input, textarea, select")) {
+      if ((e.key === "Enter" || e.key === "Backspace") && !mod(e) && !e.shiftKey && !keys.current.readOnly && !(e.target as HTMLElement).closest("input, textarea, select")) {
         const cards = scroller.current?.querySelectorAll<HTMLElement>("[data-approval]");
         const card = cards?.[cards.length - 1];
         if (card) { e.preventDefault(); api.answerApproval(card.dataset.approval!, e.key === "Enter"); return; }
       }
-      if (!e.metaKey) return;
+      if (!mod(e)) return;
       const k = e.key.toLowerCase();
       if (k === "t" && !e.shiftKey) { if (!keys.current.readOnly) { e.preventDefault(); keys.current.newChat(keys.current.agent ?? "claude"); } }
       else if (k === "f" && !e.shiftKey) { e.preventDefault(); setSearch((q) => q ?? ""); requestAnimationFrame(() => document.getElementById("chat-search")?.focus()); }
@@ -1069,7 +1070,7 @@ export function Chat({
         ))}
         </div>
         {!readOnly && <span className="newchat">
-          <button className="icon" title="Start a chat (⌘T)" aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
+          <button className="icon" title={keyHint("Start a chat (⌘T)")} aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
               {chatAgents.shown.map((a) => (
@@ -1093,7 +1094,7 @@ export function Chat({
         </span>}
         <span className="spacer" />
         {copied && <span className="muted chat-flag">Copied</span>}
-        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title="Collapse tool output (⌃O)">Hide tool output</button>}
+        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title={keyHint("Collapse tool output (⌃O)")}>Hide tool output</button>}
       </div>
 
       {search !== null && (
@@ -1286,7 +1287,7 @@ export function Chat({
                 }
               }
               const enterSends = getSettings().sendKey === "enter";
-              if (e.key === "Enter" && !e.nativeEvent.isComposing && (enterSends ? !e.shiftKey && !e.metaKey : e.metaKey || e.ctrlKey)) {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && (enterSends ? !e.shiftKey && !mod(e) : e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 submit();
               }
@@ -1321,7 +1322,7 @@ export function Chat({
             <span className="spacer" />
             {/* One group, kept at the right edge even when the controls wrap. */}
             <span className="composer-send">
-            <span className="muted" style={{ fontSize: 13 }}>{getSettings().sendKey === "enter" ? "↵" : "⌘↵"}</span>
+            <span className="muted" style={{ fontSize: 13 }}>{getSettings().sendKey === "enter" ? keyHint("↵") : keyHint("⌘↵")}</span>
             {busy && <button className="danger" onClick={() => active && api.stop(active)}><Square size={14} />Stop</button>}
             <button className="accent" onClick={submit} disabled={!draft.trim()}>{busy ? "Queue" : "Send"}</button>
             </span>

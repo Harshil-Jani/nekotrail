@@ -3,6 +3,7 @@ import { api as backend } from "../api";
 import { ModelPicker } from "./ModelPicker";
 import { ChevronDown, CornerDownLeft } from "lucide-react";
 import type { Agent, PermissionMode, Repo } from "../api";
+import { keyHint } from "../platform";
 import { AGENTS, AGENT_INFO, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
@@ -255,7 +256,7 @@ export function NewWorkspace({
             {MODES.filter((m) => m.value !== "ask" || (agent !== "both" && AGENT_INFO[agent].ask)).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <span className="spacer" />
-          <span className="muted nw-hint">⇧↵ new line · Esc to close</span>
+          <span className="muted nw-hint">{keyHint("⇧↵ new line · Esc to close")}</span>
           <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "stack" && !stackOn)}>
             {busy ? <span className="spinner" /> : null}
             {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? "Create stacked workspace" : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}

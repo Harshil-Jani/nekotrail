@@ -1503,3 +1503,11 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 /* Archived: the chat reads like any other, but nothing in it can be acted on. */
 .chat.read-only [data-row] button:not([role="radio"]) { display: none; }
 .chat-readonly { padding: var(--s3) var(--s4); border-top: 0.5px solid var(--line); text-align: center; font-size: 12px; }
+
+/* Linux: the window has its own title bar, so no room is kept for traffic lights, and the UI uses
+   the desktop's font (Apple's system fonts are not there; WebKitGTK maps system-ui to the GTK font). */
+html.linux { font-family: system-ui, "Cantarell", "Ubuntu", "Noto Sans", sans-serif; }
+html.linux .gh-comment, html.linux .review-comment, html.linux .review-edit { font-family: system-ui, sans-serif; }
+html.linux .sidebar-head { padding-left: var(--s2); }
+html.linux .sidebar-toggle.floating { left: var(--s3); top: 9px; }
+html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, html.linux .app.no-sidebar .sky-title { padding-left: 52px; }

@@ -1,4 +1,5 @@
 import type { Agent, GuardLevel, McpAgent } from "./api";
+import { IS_MAC } from "./platform";
 
 /**
  * The agent CLIs nekotrail drives, in the order the UI lists them. The backend twin is `ALL` in
@@ -48,7 +49,7 @@ export const AGENT_INFO: Record<Agent, AgentInfo> = {
     guard: { level: "asks", how: "If it asks before changing a protected file, nekotrail says no. It often edits without asking." } },
   copilot: { name: "Copilot", full: "GitHub Copilot CLI", cli: "copilot", install: "npm install -g @github/copilot", login: "copilot login", setup: "copilot login", ask: true, effort: false, configOff: false,
     guard: { level: "asks", how: "In Ask before changes it asks before every write, and protected ones are refused. In other modes it may write without asking." } },
-  goose: { name: "Goose", full: "Goose", cli: "goose", install: "brew install block-goose-cli", login: "goose configure", setup: "goose configure", ask: false, effort: false, configOff: false,
+  goose: { name: "Goose", full: "Goose", cli: "goose", install: IS_MAC ? "brew install block-goose-cli" : "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash", login: "goose configure", setup: "goose configure", ask: false, effort: false, configOff: false,
     guard: { level: "asks", how: "If it asks before changing a protected file, nekotrail says no. It often edits without asking." } },
   qwen: { name: "Qwen", full: "Qwen Code", cli: "qwen", install: "npm install -g @qwen-code/qwen-code", login: "qwen", setup: "qwen", ask: false, effort: false, configOff: false,
     guard: { level: "asks", how: "If it asks before changing a protected file, nekotrail says no. It often edits without asking." } },

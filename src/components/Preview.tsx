@@ -3,6 +3,7 @@ import { ExternalLink, MoveUpRight, PenLine, Play, RectangleHorizontal, RotateCw
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errText } from "../api";
 import { snapshotScale } from "../appearance";
+import { keyHint, mod } from "../platform";
 
 /**
  * Turn what someone typed into a local address, or null. Only localhost and 127.0.0.1 are allowed:
@@ -229,7 +230,7 @@ export function Preview({
     if (!shot || !active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); cancel(); }
-      else if (e.metaKey && !e.shiftKey && e.key.toLowerCase() === "z" && !(e.target as HTMLElement).closest("input, textarea")) {
+      else if (mod(e) && !e.shiftKey && e.key.toLowerCase() === "z" && !(e.target as HTMLElement).closest("input, textarea")) {
         e.preventDefault();
         setShapes((s) => s.slice(0, -1));
       }
@@ -269,7 +270,7 @@ export function Preview({
             <button role="radio" aria-checked={tool === "box"} className={tool === "box" ? "on" : ""} onClick={() => setTool("box")}><RectangleHorizontal size={14} />Box</button>
             <button role="radio" aria-checked={tool === "arrow"} className={tool === "arrow" ? "on" : ""} onClick={() => setTool("arrow")}><MoveUpRight size={14} />Arrow</button>
           </div>
-          <button className="icon" aria-label="Undo the last mark" title="Undo (⌘Z)" disabled={!shapes.length} onClick={() => setShapes((s) => s.slice(0, -1))}><Undo2 size={15} /></button>
+          <button className="icon" aria-label="Undo the last mark" title={keyHint("Undo (⌘Z)")} disabled={!shapes.length} onClick={() => setShapes((s) => s.slice(0, -1))}><Undo2 size={15} /></button>
           <input
             className="preview-note"
             autoFocus
@@ -302,7 +303,7 @@ export function Preview({
             onKeyDown={(e) => { if (e.key === "Escape") { setField(src ?? ""); setFieldError(false); e.currentTarget.blur(); } }}
           />
           {fieldError && <span id="preview-url-error" className="preview-url-error" role="alert">Only localhost and 127.0.0.1 open here.</span>}
-          <button type="button" className="icon" aria-label="Open in browser" title="Open in browser (⌘⇧B)" disabled={!src} onClick={openOutside}><ExternalLink size={15} /></button>
+          <button type="button" className="icon" aria-label="Open in browser" title={keyHint("Open in browser (⌘⇧B)")} disabled={!src} onClick={openOutside}><ExternalLink size={15} /></button>
           <button type="button" onClick={freeze} disabled={!showing || busy} title="Freeze the page, mark it up and send it to the agent">
             {busy ? <span className="spinner" /> : <PenLine size={14} />}Annotate
           </button>
