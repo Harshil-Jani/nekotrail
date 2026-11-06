@@ -208,7 +208,7 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
             title: String::new(),
             status: String::new(),
             pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(),
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(),
         };
         store.insert_workspace(&ws)?;
         report.workspaces += 1;
@@ -236,6 +236,8 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
         }
     }
     report.chats_with_history = backfill_history(store, db)?;
+    // Imported workspaces are named after the first prompt in their history.
+    store.backfill_titles()?;
     Ok(report)
 }
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { GitPullRequest, Plus } from "lucide-react";
-import { displayName, statusOf, STATUS_LABEL, type Repo, type Sky, type Workspace, type WsStatus } from "../api";
+import { displayName, statusOf, subName, STATUS_LABEL, type Repo, type Sky, type Workspace, type WsStatus } from "../api";
 
 const COLUMNS = ["backlog", "in_progress", "in_review", "done"] as const;
 const HINT: Record<(typeof COLUMNS)[number], string> = {
@@ -80,7 +80,7 @@ export function Board({
                         {running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.unread ? <span className="unread" aria-label="Unread" /> : null}
                         <span className="card-title">{displayName(sky, w)}</span>
                       </span>
-                      <span className="card-meta muted">{repoName(w.repo_id)} · {w.branch}</span>
+                      <span className="card-meta muted">{subName(sky, w) && `${subName(sky, w)} · `}{repoName(w.repo_id)} · {w.branch}</span>
                       <span className="card-foot num">
                         {l && (l[0] > 0 || l[1] > 0) && <><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></>}
                         {prStates[w.id] && <span className="muted"><GitPullRequest size={11} /> {prStates[w.id].toLowerCase()}</span>}

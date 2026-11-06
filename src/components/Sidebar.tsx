@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
-import { api, displayName, statusOf, STATUS_LABEL, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
+import { api, displayName, nameInText, starName, subName, statusOf, STATUS_LABEL, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
 import { ask } from "./Confirm";
@@ -202,7 +202,7 @@ export function Sidebar(p: Props) {
   const inFilter = (w: Workspace) => !filter.length || filter.includes(w.repo_id);
   const q = query.trim().toLowerCase();
   const label = (w: Workspace) => displayName(p.sky, w);
-  const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
+  const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || starName(p.sky, w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
   const total = p.sky.stars.length;
   const repoName = (id: string) => p.repos.find((r) => r.id === id)?.name ?? "";
   /** One workspace row. `smart` rows repeat a workspace in a smart group (Needs you) and are never shown selected. */
@@ -210,7 +210,7 @@ export function Sidebar(p: Props) {
   const collisionNote = (w: Workspace) => {
     const g = p.collisions.find((c) => c.order.includes(w.id));
     if (!g) return null;
-    const nameById = (id: string) => { const x = p.workspaces.find((y) => y.id === id); return x ? label(x) : "another workspace"; };
+    const nameById = (id: string) => { const x = p.workspaces.find((y) => y.id === id); return x ? nameInText(p.sky, x) : "another workspace"; };
     const others = g.pairs.filter((x) => x.a === w.id || x.b === w.id).map((x) => nameById(x.a === w.id ? x.b : x.a));
     if (!others.length) return null;
     return `Changes the same files as ${others.join(", ")}.\nSuggested merge order: ${g.order.map(nameById).join(", then ")}.`;
@@ -219,6 +219,8 @@ export function Sidebar(p: Props) {
     const l = p.lines[w.id];
     const on = !smart && p.selected === w.id;
     const clash = w.state === "active" ? collisionNote(w) : null;
+    // A titled row says what the task is; its star sits underneath.
+    const sub = subName(p.sky, w);
     return (
       <button
         key={w.id}
@@ -226,7 +228,7 @@ export function Sidebar(p: Props) {
         aria-selected={on}
         tabIndex={-1}
         data-id={w.id}
-        className={`ws ${on ? "selected" : ""} ${smart ? "smart" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
+        className={`ws ${sub ? "two" : ""} ${on ? "selected" : ""} ${smart ? "smart" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
         onClick={() => p.onSelect(w.id)}
         draggable={w.state === "active"}
         onDragStart={(e) => { e.dataTransfer.setData(DRAG, w.id); e.dataTransfer.effectAllowed = "move"; setDragging(true); }}
@@ -237,7 +239,10 @@ export function Sidebar(p: Props) {
           {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : <PrIcon state={p.prStates[w.id]} />}
           {w.unread && !p.running.has(w.id) && <span className="unread badge" aria-label="Unread" />}
         </span>
-        <span className="ws-name" title={`${label(w)}\n${repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>{label(w)}</span>
+        <span className="ws-text" title={`${label(w)}${sub ? `\n${sub}` : ""}\n${repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>
+          <span className="ws-name">{label(w)}</span>
+          {sub && <span className="ws-star">{sub}</span>}
+        </span>
         {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
         {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
         {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}

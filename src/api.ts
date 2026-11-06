@@ -52,8 +52,10 @@ export type Workspace = {
   notes: string;
   imported_from: string | null;
   created_at: string;
-  /** A name the user gave it; the star name is shown when empty. */
+  /** What the task is called: from the first prompt, then the PR, or typed by hand. The star name is shown when empty. */
   title: string;
+  /** Where `title` came from; "" while there is none. A PR title replaces "auto", nothing replaces "user". */
+  title_source: "" | "auto" | "pr" | "user";
   /** Set by hand; empty means derived from the PR. */
   status: WsStatus;
   /** Shared by the workspaces of one bake-off (same task, different agents). */
@@ -158,8 +160,20 @@ export type Sky = { stars: Star[]; constellations: Constellation[] };
 /** GitHub avatar for any login, at the size we draw it (2x for retina). */
 export const avatar = (login: string, px = 24) => `https://github.com/${login}.png?size=${px * 2}`;
 
-/** What the sidebar and header call a workspace: the user's title, else its star, else its name. */
-export const displayName = (sky: Sky, w: Workspace) => w.title || starFor(sky, w.name)?.name || w.name;
+/** A workspace's star name ("Mochi", "Mochi 2" for a second one); imported workspaces keep their own name. */
+export const starName = (sky: Sky, w: Workspace) => {
+  const star = starFor(sky, w.name);
+  return star ? `${star.name}${w.name.match(/-(\d+)$/)?.[0].replace("-", " ") ?? ""}` : w.name;
+};
+
+/** What the sidebar and header call a workspace: its task title, else its star. */
+export const displayName = (sky: Sky, w: Workspace) => w.title || starName(sky, w);
+
+/** The secondary line under a titled workspace: its star. Empty when the star is already the title. */
+export const subName = (sky: Sky, w: Workspace) => (w.title ? starName(sky, w) : "");
+
+/** The name inside a sentence. A task title is quoted so "Fix login is done" reads as a name: “Fix login” is done. */
+export const nameInText = (sky: Sky, w: Workspace) => (w.title ? `“${w.title}”` : starName(sky, w));
 
 /** Status set by hand, else derived: merged PR = done, open PR = in review, else in progress. */
 export const statusOf = (w: Workspace, prState?: string | null): Exclude<WsStatus, ""> =>

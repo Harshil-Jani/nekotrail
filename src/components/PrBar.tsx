@@ -38,11 +38,12 @@ export function mergeReason(pr: string | undefined, lines: [number, number] | un
 }
 
 /** Collision radar details: which files overlap, and a suggested merge order for the group. */
-function RadarPopover({ here, collision, overlap, nameOf, prStates, lines, onOpen, onClose }: {
+function RadarPopover({ here, collision, overlap, nameOf, textNameOf, prStates, lines, onOpen, onClose }: {
   here: string;
   collision: Collision;
   overlap: { workspace_id: string; files: string[] }[];
   nameOf: (id: string) => string;
+  textNameOf: (id: string) => string;
   prStates: Record<string, string>;
   lines: Record<string, [number, number]>;
   onOpen: (id: string) => void;
@@ -83,7 +84,7 @@ function RadarPopover({ here, collision, overlap, nameOf, prStates, lines, onOpe
         ))}
       </ol>
       <p className="menu-hint muted">
-        {first === here ? "Merge this one first, then pull it into the others." : `Merge ${nameOf(first)} first, then pull it in here before you merge this one.`}
+        {first === here ? "Merge this one first, then pull it into the others." : `Merge ${textNameOf(first)} first, then pull it in here before you merge this one.`}
         {" "}Ready PRs go first, then the smaller change, so the next one rebases over less.
       </p>
     </div>
@@ -111,7 +112,7 @@ Then one line saying whether it is ready to merge.${repo?.prefs?.review_prompt ?
   conflicts: (ws: Workspace) =>
     `Merging origin/${ws.target_branch} into this branch left conflicts (see \`git status\`). Resolve each one keeping the intent of both sides, run the tests, and commit the merge. Then push.`,
   restack: (ws: Workspace, parentName: string, base: string, fork: string) =>
-    `This branch was stacked on ${parentName}'s branch \`${ws.target_branch}\`, whose PR has now merged into \`${base}\`. Move this branch onto \`${base}\`, keeping only its own commits:
+    `This branch was stacked on \`${ws.target_branch}\` (the ${parentName} workspace), whose PR has now merged into \`${base}\`. Move this branch onto \`${base}\`, keeping only its own commits:
 1. \`git fetch origin ${base}\`
 2. \`git rebase --onto origin/${base} ${fork || ws.target_branch}\` (everything after that commit is this branch's own work).
 3. Resolve each conflict keeping the intent of both sides, run the tests, and finish the rebase.
@@ -141,12 +142,17 @@ export function PrBar({
   onSay,
   autopilot,
   nameOf,
+  textNameOf,
+  star,
   stackedOnThis,
   onRestacked,
 }: {
   ws: Workspace;
   repo?: Repo;
+  /** This workspace's name inside a sentence (a task title comes quoted). */
   name: string;
+  /** Its star name, which shines when the PR merges. */
+  star: string;
   refreshKey: number;
   /** This workspace's collision group, if another workspace changes the same files. */
   collision?: Collision;
@@ -164,7 +170,10 @@ export function PrBar({
   onSay: (text: string, error?: boolean) => void;
   /** Agent turns autopilot has used on this PR; undefined when it's off. */
   autopilot?: number;
+  /** Another workspace's name for a label or a list. */
   nameOf: (workspaceId: string) => string;
+  /** Another workspace's name inside a sentence. */
+  textNameOf: (workspaceId: string) => string;
   /** Active workspaces stacked on this one. */
   stackedOnThis: string[];
   /** The workspace moved off its stack: reload the workspace list. */
@@ -236,13 +245,14 @@ export function PrBar({
 
   // The parent PR merged: move this workspace onto where it merged, after one confirm.
   const parentName = parent ? nameOf(parent.id) : "";
+  const parentText = parent ? textNameOf(parent.id) : "";
   const parentMerged = parent?.pr?.state === "MERGED";
   const newBase = parent?.pr?.baseRefName || parent?.target || "";
   const restack = async () => {
     if (!parent) return;
     const ok = await ask({
       title: `Move ${name} onto ${newBase}?`,
-      body: `${parentName}'s PR merged into ${newBase}. nekotrail replays only ${name}'s own commits on top of ${newBase}, updates the branch on GitHub (a force push with lease, so someone else's push is never overwritten) and points the PR at ${newBase}. Commit any uncommitted work first. If git hits a conflict, nothing changes and the agent gets the job instead.`,
+      body: `The PR for ${parentText} merged into ${newBase}. nekotrail replays only this workspace's own commits on top of ${newBase}, updates the branch on GitHub (a force push with lease, so someone else's push is never overwritten) and points the PR at ${newBase}. Commit any uncommitted work first. If git hits a conflict, nothing changes and the agent gets the job instead.`,
       ok: `Move onto ${newBase}`,
     });
     if (!ok) return;
@@ -250,7 +260,7 @@ export function PrBar({
       const r = await api.restackWorkspace(ws.id);
       if (r.result === "conflicts") {
         onSay(`Moving onto ${r.base} hit conflicts, so nothing changed. The agent is doing it by hand.`);
-        onSendAgent(agentPrompts.restack(ws, parentName, r.base, r.fork ?? ""));
+        onSendAgent(agentPrompts.restack(ws, parentText, r.base, r.fork ?? ""));
         return;
       }
       onSay(r.result === "rebased"
@@ -281,7 +291,7 @@ export function PrBar({
 
   const actions: Record<string, Action> = {
     createPr: { id: "createPr", label: "Create PR", keys: "⌘⇧P", icon: <GitPullRequest size={15} />, run: () => onSendAgent(agentPrompts.createPr(ws, repo)), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
-    manualPr: { id: "manualPr", label: "Write the PR myself", keys: "", icon: <GitPullRequest size={15} />, run: () => setForm({ title: "", body: "", draft: false }), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
+    manualPr: { id: "manualPr", label: "Write the PR myself", keys: "", icon: <GitPullRequest size={15} />, run: () => setForm({ title: ws.title, body: "", draft: false }), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
     commitPush: { id: "commitPush", label: "Commit and push", keys: "⌘⇧Y", icon: <Upload size={15} />, run: () => task("push", async () => onSay(`Pushed: ${await api.commitPush(ws.id)}`)) },
     pull: {
       id: "pull", label: `Pull latest ${ws.target_branch}`, keys: "⌘⇧L", icon: <ArrowDownToLine size={15} />,
@@ -309,7 +319,7 @@ export function PrBar({
     merge: {
       id: "merge", label: mergeLabel(repo), keys: "⌘⇧M", icon: <GitMerge size={15} />,
       disabled: !open || !!pr?.isDraft || conflicting || checks?.cls === "bad" || checks?.cls === "wait",
-      run: () => task("merge", async () => { await api.mergePr(ws.id); onSay(`Merged #${pr!.number}. ${name}'s star shines.`); }),
+      run: () => task("merge", async () => { await api.mergePr(ws.id); onSay(`Merged #${pr!.number}. ${star} shines.`); }),
     },
     mergeWhenGreen: {
       id: "mergeWhenGreen", label: "Merge when checks pass", keys: "", icon: <GitMerge size={15} />,
@@ -403,9 +413,9 @@ export function PrBar({
         </button>
       )}
       {ws.parent_id && parent && (
-        <span className="stack-link" title={`Stacked: this PR goes into ${parentName}'s branch ${parent.branch}`}>
+        <span className="stack-link" title={`Stacked on ${parentText}: this PR goes into its branch ${parent.branch}`}>
           <SquareStack size={13} />
-          <span className="pill-text">On <button className="link" onClick={() => onOpenWorkspace(parent.id)}>{parentName}</button></span>
+          <span className="pill-text">On <button className="link stack-name" onClick={() => onOpenWorkspace(parent.id)} title={`Open ${parentText}`}>{parentName}</button></span>
           {parent.pr && (
             <button className={`link num ${parentMerged ? "merged" : ""}`} onClick={() => openUrl(parent.pr!.url)} title={`${parent.pr.title} (${parent.pr.state.toLowerCase()})`}>
               #{parent.pr.number}{parentMerged ? " merged" : ""}
@@ -414,9 +424,9 @@ export function PrBar({
         </span>
       )}
       {stackedOnThis.length > 0 && (
-        <span className="stack-link" title={`Stacked on this one: ${stackedOnThis.map(nameOf).join(", ")}. Merge this PR first.`}>
+        <span className="stack-link" title={`Stacked on this one: ${stackedOnThis.map(textNameOf).join(", ")}. Merge this PR first.`}>
           <SquareStack size={13} />
-          <span className="pill-text">{stackedOnThis.length === 1 ? `${nameOf(stackedOnThis[0])} builds on this` : `${stackedOnThis.length} build on this`}</span>
+          <span className="pill-text">{stackedOnThis.length === 1 ? `${textNameOf(stackedOnThis[0])} builds on this` : `${stackedOnThis.length} build on this`}</span>
         </span>
       )}
       {collision && overlap.length > 0 && (
@@ -436,6 +446,7 @@ export function PrBar({
               collision={collision}
               overlap={overlap}
               nameOf={nameOf}
+              textNameOf={textNameOf}
               prStates={prStates}
               lines={lines}
               onOpen={(id) => { setRadarOpen(false); onOpenWorkspace(id); }}
@@ -502,7 +513,7 @@ export function PrBar({
       {ws.parent_id && parentMerged && pr?.state !== "MERGED" && (
         <div className="merged-banner stack-banner" role="status">
           <SquareStack size={18} className="muted" aria-hidden />
-          <span><b>{parentName}'s PR merged into {newBase}.</b> Move {name} onto {newBase} so its PR shows only its own changes.</span>
+          <span><b>The PR for {parentText} merged into {newBase}.</b> Move this workspace onto {newBase} so its PR shows only its own changes.</span>
           <span className="spacer" />
           <button className="primary" onClick={restack} disabled={!!busy}>
             {busy === "restack" ? <span className="spinner" /> : <SquareStack size={15} />}Move onto {newBase}
@@ -512,9 +523,9 @@ export function PrBar({
       {pr?.state === "MERGED" && (
         <div className="merged-banner" role="status">
           <Mascot size={36} mood="happy" title="Merged" />
-          <span><b>Merged.</b> {name}'s work is in {ws.target_branch}. Archive it to tidy up. The branch is kept.</span>
+          <span><b>Merged.</b> The work is in {ws.target_branch}. Archive the workspace to tidy up. The branch is kept.</span>
           <span className="spacer" />
-          <button className="primary" onClick={() => onArchive()}>Archive {name}</button>
+          <button className="primary" onClick={() => onArchive()}>Archive workspace</button>
         </div>
       )}
       {form && (
