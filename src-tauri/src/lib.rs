@@ -11,6 +11,7 @@ pub mod config;
 pub mod git;
 pub mod guard;
 pub mod importer;
+pub mod linear;
 #[cfg(unix)]
 pub mod linux;
 pub mod names;
@@ -595,8 +596,34 @@ fn branch_slug(text: &str) -> String {
 }
 
 #[tauri::command]
-async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>) -> Res<Workspace> {
+async fn create_workspace(app: AppHandle, st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>) -> Res<Workspace> {
+    // "linear:ENG-123": the issue is looked up again here (never taken from the window), off the
+    // async workers since it waits on the network.
+    if let Some(id) = from.as_deref().and_then(|f| f.strip_prefix("linear:")) {
+        let id = id.to_string();
+        return blocking(app, move |st| create_from_linear(st, repo_id, base, &id).map(|(ws, _)| ws)).await;
+    }
     make_workspace(&st, repo_id, base, name, from, false)
+}
+
+/// A workspace for a Linear issue: on the issue's branch name (made free if a workspace already
+/// has it), titled after the issue, and linked to it for the PR's "Fixes" line and In Progress.
+/// Also returns the issue, for the first message. Blocks on the network: call it off the async
+/// workers.
+fn create_from_linear(st: &AppState, repo_id: String, base: Option<String>, id: &str) -> Res<(Workspace, linear::Issue)> {
+    let ident = linear::issue_ref(id).ok_or_else(|| format!("\"{id}\" isn't a Linear issue. Use its identifier, like ENG-123."))?;
+    let issue = linear::issue(&ident, &linear::Keychain, &linear::Http)?;
+    let root = PathBuf::from(&st.db().repo(&repo_id).map_err(e)?.root_path);
+    let branch = linear::free_branch(&linear::branch_for(&issue, st.branch_prefix()), |b| git::branch_exists(&root, b));
+    let ws = make_workspace_on(st, repo_id, base, None, None, false, Some(branch))?;
+    let t = title::issue_title(&issue.identifier, &issue.title);
+    let ws = if !t.is_empty() && st.db().set_title(&ws.id, &t, title::ISSUE).unwrap_or(false) {
+        Workspace { title: t, title_source: title::ISSUE.into(), ..ws }
+    } else {
+        ws
+    };
+    linear::save_link(st, &ws.id, &linear::Link { issue_id: issue.id.clone(), identifier: issue.identifier.clone(), url: issue.url.clone(), started: false })?;
+    Ok((ws, issue))
 }
 
 /// A multi-repo task: one workspace per repo, all on the same branch name, linked by the first
@@ -688,6 +715,12 @@ fn linked_workspaces(st: &AppState, ws: &Workspace) -> Vec<Workspace> {
 /// `shared_name`: the name is already taken by the other workspaces of the same multi-repo task,
 /// which is fine (it only has to be free in this repo).
 fn make_workspace(st: &AppState, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>, shared_name: bool) -> Res<Workspace> {
+    make_workspace_on(st, repo_id, base, name, from, shared_name, None)
+}
+
+/// `make_workspace`, with `fresh` a new branch's name to use instead of `<prefix>/<star name>`
+/// (a Linear issue's). The caller makes sure it is free.
+fn make_workspace_on(st: &AppState, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>, shared_name: bool, fresh: Option<String>) -> Res<Workspace> {
     let (repo, taken) = {
         let db = st.db();
         let repo = db.repo(&repo_id).map_err(e)?;
@@ -756,7 +789,10 @@ fn make_workspace(st: &AppState, repo_id: String, base: Option<String>, name: Op
             (b.to_string(), base)
         }
         _ => {
-            let branch = format!("{}/{name}", st.branch_prefix());
+            let branch = fresh.unwrap_or_else(|| format!("{}/{name}", st.branch_prefix()));
+            if !safe::branch_name(&branch) {
+                return Err(format!("\"{branch}\" isn't a valid branch name."));
+            }
             git::add_worktree(&root, &path, &branch, &base).map_err(e)?;
             (branch, base)
         }
@@ -3102,6 +3138,11 @@ async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: Str
     review::refuse_in_review(ws.review_pr)?;
     terminal::refuse_in_history(&ws)?;
     git::git(Path::new(&ws.path), &["push", "-u", "origin", &ws.branch]).map_err(e)?;
+    // From a Linear issue: "Fixes ENG-123", so Linear's GitHub integration links the PR.
+    let body = match linear::link(&st, &id) {
+        Some(l) => linear::with_fixes_line(&body, &l.identifier),
+        None => body,
+    };
     let mut args = vec!["pr", "create", "--head", &ws.branch, "--base", &ws.target_branch, "--title", &title, "--body", &body];
     if draft {
         args.push("--draft");
@@ -3761,6 +3802,8 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
             let _ = app.emit("workspaces-changed", json!({}));
         }
     }
+    // Made from a Linear issue: its first turn moves the issue to In Progress (in the background).
+    linear::on_turn(&app, st, &ws.id);
     if st.runs.lock().unwrap().rewinding.contains(&ws.id) {
         return Err("Files are being rewound in this workspace. Send again in a moment.".into());
     }
@@ -4736,7 +4779,8 @@ pub fn run() {
             stage_status, stage_diff, stage_apply, stage_everything, head_commit, commit_staged, undo_commit, draft_commit_message, split_plan, split_commit,
             queuerun::queue_view, queuerun::queue_add, queuerun::queue_remove, queuerun::queue_move, queuerun::queue_retry, queuerun::queue_start_now,
             queuerun::queue_set_paused, queuerun::queue_set_limits, queuerun::queue_clear_finished, queuerun::queue_summary, queuerun::queue_summary_seen,
-            alerts::alerts_view, alerts::alerts_add, alerts::alerts_save, alerts::alerts_set_secret, alerts::alerts_remove, alerts::alerts_test
+            alerts::alerts_view, alerts::alerts_add, alerts::alerts_save, alerts::alerts_set_secret, alerts::alerts_remove, alerts::alerts_test,
+            linear::linear_status, linear::linear_connect, linear::linear_test, linear::linear_disconnect, linear::linear_set_move, linear::linear_teams, linear::linear_issues
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");

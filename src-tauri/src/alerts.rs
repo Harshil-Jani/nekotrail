@@ -353,7 +353,7 @@ impl Keychain {
     }
 }
 
-fn keychain_error(err: &keyring::Error) -> String {
+pub(crate) fn keychain_error(err: &keyring::Error) -> String {
     match err {
         keyring::Error::NoStorageAccess(_) | keyring::Error::PlatformFailure(_) => {
             if cfg!(target_os = "linux") {

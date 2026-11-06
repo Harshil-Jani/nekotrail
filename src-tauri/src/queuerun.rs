@@ -205,7 +205,7 @@ fn start_task(app: &AppHandle, id: &str, agent: &str) -> Res<()> {
     let fresh = existing.is_none();
     let ws = match existing {
         Some(w) => w,
-        None => tauri::async_runtime::block_on(crate::create_workspace(app.state::<AppState>(), task.repo_id.clone(), task.base.clone(), None, None))
+        None => tauri::async_runtime::block_on(crate::create_workspace(app.clone(), app.state::<AppState>(), task.repo_id.clone(), task.base.clone(), None, None))
             .map_err(|err| format!("Couldn't make its workspace. {err}"))?,
     };
     let old = if fresh { None } else { task.session_id.as_deref().and_then(|s| st.db().session(s).ok()) };

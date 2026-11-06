@@ -107,13 +107,21 @@ pub struct Task {
     pub base: Option<String>,
     #[serde(default)]
     pub plan: bool,
+    /// A Linear issue ("ENG-123") to start from: its branch, title and text. `prompt` is then
+    /// optional and goes after the issue's text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linear: Option<String>,
 }
 
 impl Task {
     /// The checks every door applies. `max` is the longest prompt allowed.
     pub fn validate(&self, max: usize) -> Result<(), String> {
         let prompt = self.prompt.trim();
-        if prompt.is_empty() {
+        if let Some(l) = &self.linear
+            && crate::linear::issue_ref(l).is_none() {
+                return Err(format!("\"{l}\" isn't a Linear issue. Use its identifier, for example: nekotrail new --linear ENG-123"));
+            }
+        if prompt.is_empty() && self.linear.is_none() {
             return Err("Write the task, for example: nekotrail new \"fix the login bug\"".into());
         }
         if prompt.chars().count() > max {
@@ -155,7 +163,7 @@ pub struct QueueTask {
 
 impl QueueTask {
     pub fn validate(&self) -> Result<(), String> {
-        Task { prompt: self.prompt.clone(), agent: self.agent.clone(), base: self.base.clone(), plan: false }
+        Task { prompt: self.prompt.clone(), agent: self.agent.clone(), base: self.base.clone(), plan: false, linear: None }
             .validate(crate::queue::MAX_PROMPT)
             .map_err(|e| e.replace("nekotrail new", "nekotrail queue add"))?;
         if let Some(f) = &self.fallback {
@@ -285,7 +293,7 @@ pub fn parse_link(url: &str) -> Result<Link, String> {
         "new" => {
             let repo = get("repo").ok_or("That nekotrail link doesn't say which repo.")?;
             let plan = matches!(get("plan").as_deref(), Some("1" | "true" | "yes"));
-            let task = Task { prompt: params.get("prompt").cloned().unwrap_or_default(), agent: get("agent"), base: get("base"), plan };
+            let task = Task { prompt: params.get("prompt").cloned().unwrap_or_default(), agent: get("agent"), base: get("base"), plan, linear: None };
             task.validate(MAX_LINK_PROMPT)?;
             Ok(Link::New { repo, task })
         }
@@ -594,8 +602,18 @@ mod server {
     }
 
     /// Make the workspace and its chat; the window runs setup and sends the prompt (`Job::Start`).
-    pub fn start(app: &AppHandle, repo_id: String, task: Task) -> Result<(Workspace, String), String> {
-        let ws = tauri::async_runtime::block_on(crate::create_workspace(app.state::<AppState>(), repo_id, task.base.clone(), None, None))?;
+    /// From a Linear issue, the prompt is the issue's text, then anything typed after it.
+    pub fn start(app: &AppHandle, repo_id: String, mut task: Task) -> Result<(Workspace, String), String> {
+        let ws = match task.linear.clone() {
+            Some(id) => {
+                let (ws, issue) = crate::create_from_linear(&app.state::<AppState>(), repo_id, task.base.clone(), &id)?;
+                let extra = task.prompt.trim();
+                let seed = crate::linear::seed_text(&issue);
+                task.prompt = if extra.is_empty() { seed } else { format!("{seed}\n\n{extra}") };
+                ws
+            }
+            None => tauri::async_runtime::block_on(crate::create_workspace(app.clone(), app.state::<AppState>(), repo_id, task.base.clone(), None, None))?,
+        };
         let st = app.state::<AppState>();
         let agent = crate::agent::get(task.agent.as_deref().unwrap_or("claude")).id();
         let pref = |k: &str| st.db().setting(&format!("{agent}_{k}")).ok().flatten().filter(|v| !v.is_empty());
@@ -629,8 +647,9 @@ mod server {
             Request::New { cwd, task } => {
                 task.validate(100_000)?;
                 let (r, _) = repo_for(&st, &cwd, true)?.ok_or("That folder isn't a git repo.")?;
+                let issue = task.linear.as_deref().and_then(crate::linear::issue_ref);
                 let (ws, agent) = start(app, r.id.clone(), task)?;
-                Ok(json!({"repo": r.name, "workspace": ws.name, "branch": ws.branch, "path": ws.path, "agent": agent}))
+                Ok(json!({"repo": r.name, "workspace": ws.name, "branch": ws.branch, "path": ws.path, "agent": agent, "issue": issue}))
             }
             Request::Ls { cwd, all } => {
                 let here = if all { None } else { cwd.as_deref().and_then(|c| repo_for(&st, c, false).ok().flatten()).map(|(r, _)| r) };
@@ -862,7 +881,7 @@ mod tests {
 
     #[test]
     fn requests_round_trip_with_a_version() {
-        let req = Request::New { cwd: "/r".into(), task: Task { prompt: "fix it".into(), agent: Some("codex".into()), base: None, plan: true } };
+        let req = Request::New { cwd: "/r".into(), task: Task { prompt: "fix it".into(), agent: Some("codex".into()), base: None, plan: true, linear: None } };
         let line = encode(&req);
         assert!(line.ends_with('\n') && line.contains("\"v\":1") && line.contains("\"cmd\":\"new\""));
         assert_eq!(decode(&line).unwrap(), req);
@@ -930,7 +949,7 @@ mod tests {
 
     #[test]
     fn tasks_are_checked() {
-        let t = |p: &str, a: Option<&str>, b: Option<&str>| Task { prompt: p.into(), agent: a.map(Into::into), base: b.map(Into::into), plan: false };
+        let t = |p: &str, a: Option<&str>, b: Option<&str>| Task { prompt: p.into(), agent: a.map(Into::into), base: b.map(Into::into), plan: false, linear: None };
         assert!(t("fix", None, None).validate(10).is_ok());
         assert!(t("  ", None, None).validate(10).is_err());
         assert!(t("x".repeat(11).as_str(), None, None).validate(10).unwrap_err().contains("too long"));
@@ -943,7 +962,7 @@ mod tests {
     fn links_parse() {
         assert_eq!(
             parse_link("nekotrail://new?repo=%2FUsers%2Fme%2Fapp&prompt=fix+the%20login%20bug&agent=codex&base=main&plan=1").unwrap(),
-            Link::New { repo: "/Users/me/app".into(), task: Task { prompt: "fix the login bug".into(), agent: Some("codex".into()), base: Some("main".into()), plan: true } }
+            Link::New { repo: "/Users/me/app".into(), task: Task { prompt: "fix the login bug".into(), agent: Some("codex".into()), base: Some("main".into()), plan: true, linear: None } }
         );
         assert_eq!(parse_link("NEKOTRAIL://open/?workspace=mochi#x").unwrap(), Link::Open { workspace: "mochi".into() });
         assert_eq!(parse_link("nekotrail:open?workspace=caf%C3%A9").unwrap(), Link::Open { workspace: "café".into() });
