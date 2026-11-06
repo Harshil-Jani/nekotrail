@@ -238,9 +238,9 @@ mod tests {
         assert_eq!(p.status, Some(200));
         assert_eq!(p.blocked.as_deref(), Some("x-frame-options"));
 
-        // Nothing listening: not up, and no error.
-        let free = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        assert!(!probe(&format!("http://127.0.0.1:{free}/")).unwrap().up);
+        // Nothing listening: not up, and no error. Port 1 (tcpmux) is never served on a Mac; a port
+        // freed by this test could be taken by another test running in parallel before the probe.
+        assert!(!probe("http://127.0.0.1:1/").unwrap().up);
         assert!(probe("http://example.com/").is_err());
     }
 }
