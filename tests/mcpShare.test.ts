@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { liveFor, parseMcp, scopeText, secretLabel, secretsAnswered } from "../src/mcpShare";
+import { liveFor, opencodeSkillsNote, parseMcp, scopeText, secretLabel, secretsAnswered } from "../src/mcpShare";
 import type { McpRow, McpSecret } from "../src/api";
 
 const row = (name: string): McpRow => ({
@@ -32,5 +32,16 @@ describe("secrets", () => {
     expect(secretLabel(env)).toBe("TOKEN (environment variable)");
     expect(secretLabel(arg)).toBe("Command line: --api-key");
     expect(scopeText("local")).toBe("this folder only");
+  });
+});
+
+describe("opencodeSkillsNote", () => {
+  test("says which shared folders OpenCode already reads", () => {
+    expect(opencodeSkillsNote(["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"])).toBe(
+      "OpenCode reads ~/.claude/skills and ~/.agents/skills as well as its own ~/.config/opencode/skills, so it already sees the skills in those folders.",
+    );
+    expect(opencodeSkillsNote(["~/oc/skills", "~/.agents/skills"])).toBe("OpenCode reads ~/.agents/skills as well as its own ~/oc/skills, so it already sees the skills in that folder.");
+    expect(opencodeSkillsNote(["~/oc/skills"])).toBe("OpenCode reads skills only from ~/oc/skills, because it's set to skip the shared folders.");
+    expect(opencodeSkillsNote([])).toBe("");
   });
 });

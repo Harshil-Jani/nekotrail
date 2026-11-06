@@ -1536,7 +1536,7 @@ async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<Str
     Ok(text.trim().to_string())
 }
 
-/// Every MCP server and skill Claude, Codex and Gemini have (user config, and this workspace's
+/// Every MCP server and skill Claude, Codex, Gemini and OpenCode have (user config, and this workspace's
 /// project config), and which ones can be shared. Reads only.
 #[tauri::command]
 async fn mcp_share_overview(st: State<'_, AppState>, id: String) -> Res<mcpshare::Overview> {
@@ -1563,7 +1563,7 @@ async fn mcp_share_apply(st: State<'_, AppState>, id: String, name: String, targ
     mcpshare::apply(&mcpshare::Homes::from_env()?, Some(Path::new(&ws.path)), &name, target, &choices, &token, &backup_stamp())
 }
 
-/// Links a skill folder for the other agents ("agents": Codex and Gemini, "claude": Claude).
+/// Links a skill folder for the other agents ("agents": Codex, Gemini and OpenCode, "claude": Claude).
 #[tauri::command]
 async fn skill_share(name: String, target: String) -> Res<String> {
     mcpshare::share_skill(&mcpshare::Homes::from_env()?, &name, &target)

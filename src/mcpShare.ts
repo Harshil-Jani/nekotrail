@@ -33,3 +33,14 @@ export function secretLabel(s: McpSecret): string {
   if (s.kind === "url") return "The server address";
   return `Command line: ${s.key}`;
 }
+
+/** "a", "a and b", "a, b and c". */
+const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** Where OpenCode finds skills, in plain words. `dirs` is its own folder first, then the shared ones it reads. */
+export function opencodeSkillsNote(dirs: string[]): string {
+  const [own, ...shared] = dirs;
+  if (!own) return "";
+  if (shared.length === 0) return `OpenCode reads skills only from ${own}, because it's set to skip the shared folders.`;
+  return `OpenCode reads ${andList(shared)} as well as its own ${own}, so it already sees the skills in ${shared.length === 1 ? "that folder" : "those folders"}.`;
+}

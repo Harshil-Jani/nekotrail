@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, CircleAlert, CircleCheck, Plug, RotateCw, SquareTerminal, X } from "lucide-react";
 import { api, errText, type Agent, type McpOverview, type McpPreview, type McpRow, type SecretChoices, type SkillRow, type SkillShare } from "../api";
 import { AGENT_INFO, AGENTS, agentName } from "../agents";
-import { liveFor, parseMcp, scopeText, secretLabel, secretsAnswered } from "../mcpShare";
+import { liveFor, opencodeSkillsNote, parseMcp, scopeText, secretLabel, secretsAnswered } from "../mcpShare";
 
 export { parseMcp };
 
 /**
- * /mcp: the MCP servers and skills Claude, Codex and Gemini each have, and one-click sharing between
+ * /mcp: the MCP servers and skills Claude, Codex, Gemini and OpenCode each have, and one-click sharing between
  * them. Sharing writes into the other agent's own config (never a proxy), after showing exactly what
  * goes in and backing the file up.
  */
@@ -52,7 +52,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
             {done && <div className="mcp-done"><CircleCheck size={14} /> <span>{done}</span></div>}
             {error && <div className="mcp-note bad">{error}</div>}
             {all?.problems.map((p) => <div key={p} className="mcp-note bad">{p}</div>)}
-            {!all && !error && <p className="muted"><span className="spinner" /> Reading your Claude, Codex and Gemini settings…</p>}
+            {!all && !error && <p className="muted"><span className="spinner" /> Reading your Claude, Codex, Gemini and OpenCode settings…</p>}
             {all && (
               <>
                 <h3 className="mcp-h">Servers</h3>
@@ -93,7 +93,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
                 )}
                 {liveError && <p className="muted">Couldn't ask {bin} which servers it reaches: {liveError}</p>}
                 <h3 className="mcp-h">Skills</h3>
-                <Skills skills={all.skills} onDone={(m) => { setDone(m); load(); }} />
+                <Skills skills={all.skills} opencodeNote={opencodeSkillsNote(all.opencode_skill_dirs)} onDone={(m) => { setDone(m); load(); }} />
               </>
             )}
           </div>
@@ -188,10 +188,10 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
 }
 
 /** Skills by name, which agents see each, and a link to share one. */
-function Skills({ skills, onDone }: { skills: SkillRow[]; onDone: (msg: string) => void }) {
+function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencodeNote: string; onDone: (msg: string) => void }) {
   const [ask, setAsk] = useState<{ name: string; s: SkillShare } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (skills.length === 0) return <p className="muted">No skills yet. Claude keeps them in ~/.claude/skills; Codex and Gemini read ~/.agents/skills.</p>;
+  if (skills.length === 0) return <p className="muted">No skills yet. Claude keeps them in ~/.claude/skills; Codex and Gemini read ~/.agents/skills. {opencodeNote}</p>;
   const link = async () => {
     if (!ask) return;
     try {
@@ -240,7 +240,7 @@ function Skills({ skills, onDone }: { skills: SkillRow[]; onDone: (msg: string) 
           </li>
         ))}
       </ul>
-      <p className="muted mcp-small">Codex and Gemini both read skills from ~/.agents/skills, so one link shares a Claude skill with both. Claude-only settings in a skill (like allowed-tools) are ignored there.</p>
+      <p className="muted mcp-small">Codex and Gemini both read skills from ~/.agents/skills, so one link shares a Claude skill with both. Claude-only settings in a skill (like allowed-tools) are ignored there. {opencodeNote}</p>
     </>
   );
 }
