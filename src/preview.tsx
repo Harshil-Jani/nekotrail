@@ -11,11 +11,24 @@ import App from "./App";
 import catalog from "../src-tauri/src/models.json";
 import { highlights } from "./updateNotes";
 import type { UpdatePhase } from "./useUpdater";
+import { getSettings } from "./settings";
+import { startAppearance } from "./appearance";
 
 if (new URLSearchParams(location.search).get("filter")) localStorage.setItem("nekotrail.settings", JSON.stringify({ repoFilter: ["r1"], collapsed: [] }));
 localStorage.setItem("nekotrail.sidebarHidden", new URLSearchParams(location.search).has("nosidebar") ? "1" : "0");
 if (new URLSearchParams(location.search).get("split")) localStorage.setItem("nekotrail.split", "1");
 if (new URLSearchParams(location.search).get("group") === "status") localStorage.setItem("nekotrail.settings", JSON.stringify({ groupBy: "status" }));
+// Appearance for screenshots: ?theme=light|dark, ?zoom=1.2, ?codeSize=14 (CSS zoom here; the app zooms the web view).
+{
+  const q = new URLSearchParams(location.search);
+  const s = getSettings();
+  const theme = q.get("theme");
+  if (theme === "light" || theme === "dark" || theme === "system") s.theme = theme;
+  if (q.get("codeSize")) s.codeSize = Number(q.get("codeSize"));
+  localStorage.setItem("nekotrail.settings", JSON.stringify(s));
+  localStorage.setItem("nekotrail.zoom", q.get("zoom") ?? "1");
+  startAppearance(getSettings);
+}
 
 // The update card: ?update=available | downloading | indeterminate | busy | ready | waiting | restarting | latest | error.
 // The notes are sample text run through the real parser (markdown and HTML come out as plain text).

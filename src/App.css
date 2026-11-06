@@ -58,6 +58,7 @@
   --ring: 0 0 0 3px var(--accent-ring);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --code-size: 12px; /* Settings, Appearance: diffs, code blocks and tool output */
 
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   font-size: 13px;
@@ -118,7 +119,7 @@ select {
   background-repeat: no-repeat; background-position: right 9px center;
 }
 input[type="checkbox"] { height: auto; box-shadow: none; accent-color: var(--accent); }
-code, pre { font-family: var(--mono); font-size: 12px; }
+code, pre { font-family: var(--mono); font-size: var(--code-size); }
 kbd { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; color: var(--muted); background: transparent; border: none; padding: 0; letter-spacing: 0.02em; }
 .muted { color: var(--muted); }
 .spacer { flex: 1; }
@@ -130,7 +131,7 @@ kbd { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11p
 .num { font-variant-numeric: tabular-nums; }
 
 /* ---------- window: sidebar + content ---------- */
-.app { display: grid; grid-template-columns: var(--sidebar-w, 264px) 0 1fr; height: 100vh; }
+.app { display: grid; grid-template-columns: var(--sidebar-w, 264px) 0 1fr; height: 100%; } /* 100%, not 100vh: CSS zoom scales vh */
 .app.resizing, .app.resizing * { cursor: col-resize !important; user-select: none; }
 .sidebar-resizer { position: relative; z-index: 4; width: 9px; margin-left: -5px; cursor: col-resize; }
 .sidebar-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; transition: background-color 0.15s var(--ease); }
@@ -336,10 +337,10 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .review-bar { margin-top: auto; padding: var(--s3); border-top: 0.5px solid var(--line-strong); display: flex; flex-direction: column; gap: var(--s2); }
 .review-bar p { margin: 0; font-size: 12px; line-height: 1.5; }
 .review-bar button { justify-content: center; }
-.diff { padding: var(--s2) 0; font-family: var(--mono); font-size: 12px; line-height: 1.65; min-width: max-content; }
+.diff { padding: var(--s2) 0; font-family: var(--mono); font-size: var(--code-size); line-height: 1.65; min-width: max-content; }
 .dl { display: grid; grid-template-columns: 44px 44px 20px 1fr; align-items: center; }
 .dl .ln { color: var(--muted); text-align: right; padding-right: var(--s2); user-select: none; font-variant-numeric: tabular-nums; font-size: 11px; }
-.dl code { white-space: pre; padding-right: var(--s4); font-size: 12px; }
+.dl code { white-space: pre; padding-right: var(--s4); font-size: var(--code-size); }
 .dl.add { background: var(--good-soft); }
 .dl.add .ln { color: var(--good-text); }
 .dl.del { background: var(--bad-soft); }
@@ -592,7 +593,7 @@ button.good-btn:hover { background: var(--good); }
 .split-row.full { grid-template-columns: 1fr; }
 .sl { display: grid; grid-template-columns: 44px 1fr; min-width: 0; overflow: hidden; }
 .sl + .sl { border-left: 0.5px solid var(--line-strong); }
-.sl code { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-size: 12px; padding-right: var(--s3); }
+.sl code { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-size: var(--code-size); padding-right: var(--s3); }
 .sl .ln { color: var(--muted); text-align: right; padding-right: var(--s2); font-size: 11px; user-select: none; }
 .sl.add { background: var(--good-soft); }
 .sl.del { background: var(--bad-soft); }
@@ -1028,6 +1029,18 @@ html.native .repo-actions { background: none; }
 .mermaid-diagram { text-align: center; }
 .mermaid-diagram svg { max-width: 100%; height: auto; }
 .mermaid-loading { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: var(--s3); }
+.mermaid-block { display: flex; flex-direction: column; gap: var(--s1); margin: var(--s2) 0; }
+.mermaid-block > .mermaid-diagram, .msg.assistant .mermaid-block > pre { margin: 0; }
+.seg.mermaid-toggle { align-self: flex-end; }
+
+/* Settings, Appearance */
+.zoom-control { display: inline-flex; align-items: center; gap: var(--s1); }
+.zoom-control select { min-width: 96px; }
+.font-control { display: inline-flex; align-items: center; gap: var(--s2); }
+.font-control select:first-child { min-width: 180px; }
+.setting .font-control select:last-child { min-width: 76px; }
+.font-sample { margin: 2px 0 var(--s1); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--surface); color: var(--text); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.font-sample.term { background: #1e1e1e; color: #d8dee9; box-shadow: inset 0 0 0 0.5px var(--line-strong); }
 .approval-card { border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
 .approval-input { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
 .approval-done code { font-size: 12px; color: var(--muted); }

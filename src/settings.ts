@@ -22,6 +22,14 @@ export type Settings = {
   repoFilter: string[];
   /** Repo ids whose sidebar section is folded. */
   collapsed: string[];
+  /** Light, dark, or follow the system. */
+  theme: "system" | "light" | "dark";
+  /** Font for diffs and code in chat ("" is SF Mono) and its size in px. */
+  codeFont: string;
+  codeSize: number;
+  /** Font for the terminal ("" is SF Mono) and its size in px. */
+  termFont: string;
+  termSize: number;
 };
 
 const KEY = "nekotrail.settings";
@@ -29,7 +37,8 @@ const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sen
   snippets: [
     { name: "tests", text: "Write tests for what you just changed. Cover the edge cases, run them, and fix anything that fails." },
     { name: "tidy", text: "Before I review: remove debug code and dead code, make names clear, and keep the diff as small as it can be." },
-  ], repoFilter: [], collapsed: [] };
+  ], repoFilter: [], collapsed: [],
+  theme: "system", codeFont: "", codeSize: 12, termFont: "", termSize: 13 };
 
 export function getSettings(): Settings {
   try {

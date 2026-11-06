@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow } from "lucide-react";
 import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
@@ -27,6 +26,7 @@ import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
 import { ask, ConfirmHost } from "./components/Confirm";
 import { chime, getSettings, saveSettings, ting } from "./settings";
+import { getZoom, setZoom, stepZoom } from "./appearance";
 import { AGENTS, agentName } from "./agents";
 // Loaded the first time someone opens the Preview tab, so it costs nothing at startup.
 const Preview = lazy(() => import("./components/Preview").then((m) => ({ default: m.Preview })));
@@ -435,26 +435,15 @@ export default function App() {
   workspacesRef.current = workspaces;
   skyRef.current = sky;
 
-  // ⌘+ / ⌘- / ⌘0 zoom the whole app, remembered between launches.
+  // ⌘+ / ⌘- / ⌘0 zoom the whole app (80% to 150%), remembered between launches. Also in Settings, Appearance.
   useEffect(() => {
-    let zoom = Number(localStorage.getItem("nekotrail.zoom")) || 1;
-    const apply = () => {
-      localStorage.setItem("nekotrail.zoom", String(zoom));
-      try {
-        getCurrentWebview().setZoom(zoom).catch(() => {});
-      } catch {
-        document.documentElement.style.zoom = String(zoom); // preview in a browser
-      }
-    };
-    if (zoom !== 1) apply();
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
-      const step = e.key === "=" || e.key === "+" ? 0.1 : e.key === "-" ? -0.1 : 0;
-      if (step) zoom = Math.round(Math.min(2, Math.max(0.6, zoom + step)) * 10) / 10;
-      else if (e.key === "0") zoom = 1;
+      if (e.key === "=" || e.key === "+") setZoom(stepZoom(getZoom(), 1));
+      else if (e.key === "-") setZoom(stepZoom(getZoom(), -1));
+      else if (e.key === "0") setZoom(1);
       else return;
       e.preventDefault();
-      apply();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

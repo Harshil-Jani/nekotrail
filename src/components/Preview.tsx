@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink, MoveUpRight, PenLine, Play, RectangleHorizontal, RotateCw, Undo2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errText } from "../api";
+import { snapshotScale } from "../appearance";
 
 /**
  * Turn what someone typed into a local address, or null. Only localhost and 127.0.0.1 are allowed:
@@ -172,9 +173,10 @@ export function Preview({
       const buf = await api.previewSnapshot();
       if (!buf) throw new Error("Annotate works in the nekotrail app, not in a browser.");
       const bmp = await createImageBitmap(new Blob([buf], { type: "image/png" }));
-      // The snapshot is the whole window at screen pixels; keep just the preview.
+      // The snapshot is the whole window at screen pixels; keep just the preview. Measure how many
+      // snapshot pixels one layout pixel is, so the crop stays right at any app zoom (80% to 150%).
       const r = el.getBoundingClientRect();
-      const scale = bmp.width / window.innerWidth;
+      const scale = snapshotScale(bmp.width, document.documentElement.getBoundingClientRect().width);
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(r.width * scale);
       canvas.height = Math.round(r.height * scale);
