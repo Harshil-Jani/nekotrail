@@ -365,7 +365,8 @@ export type RemoteJob =
   | { kind: "focus"; workspace_id: string }
   | { kind: "repo"; repo_id: string; added: boolean }
   | { kind: "start"; workspace_id: string; session_id: string; prompt: string }
-  | { kind: "confirm"; token: string; repo: string; repo_path: string; adds_repo: boolean; prompt: string; agent: string; base: string | null; plan: boolean }
+  | { kind: "confirm"; token: string; from?: "link" | "editor"; repo: string; repo_path: string; adds_repo: boolean; prompt: string; agent: string; base: string | null; plan: boolean }
+  | { kind: "draft"; workspace_id: string; text: string }
   | { kind: "error"; text: string };
 
 export const api = {

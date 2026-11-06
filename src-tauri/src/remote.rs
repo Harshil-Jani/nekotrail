@@ -16,11 +16,21 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// Bumped when a request or answer changes shape, so an old app and a new command say so plainly.
-pub const PROTOCOL: u32 = 1;
+/// 2 added `hello`, `propose`, `draft` and `changes` (the editor extension), and `path` and
+/// `target_branch` on each workspace row. A request carries the lowest version that has its
+/// command, so a new command still reaches an older app for anything that app knows.
+pub const PROTOCOL: u32 = 2;
+/// The oldest request version the app still answers.
+pub const MIN_PROTOCOL: u32 = 1;
 /// A request is one JSON line. Prompts can be long, but not this long.
 const MAX_REQUEST: u64 = 1 << 20;
 /// Prompts from a link are shown in full before they run, so they stay readable.
 pub const MAX_LINK_PROMPT: usize = 2000;
+/// A task proposed from your editor carries the selected code, so it may be longer than a link's.
+/// It is still shown in full (scrolling) before it runs.
+pub const MAX_EDITOR_PROMPT: usize = 20_000;
+/// Text put in a workspace's message box from your editor.
+pub const MAX_DRAFT: usize = 100_000;
 /// A link waits this long for your answer, then it's gone.
 const PENDING_FOR: Duration = Duration::from_secs(10 * 60);
 
@@ -58,6 +68,26 @@ pub enum Request {
     /// The queue, in order.
     #[serde(rename = "queue_ls")]
     QueueLs,
+    /// (v2) Which protocol and app version answer.
+    Hello,
+    /// (v2) Ask in the app before making a workspace for the repo at `cwd` and sending `task`.
+    /// Unlike `new`, nothing starts until you press Start in nekotrail (the same question a link gets).
+    Propose { cwd: String, task: Task },
+    /// (v2) Put `text` in the message box of `workspace` (its id, name or branch) and show it.
+    /// It is not sent: you read it and press Send.
+    Draft { workspace: String, text: String },
+    /// (v2) The files `workspace` changed against its target branch, and the commit they're compared to.
+    Changes { workspace: String },
+}
+
+impl Request {
+    /// The protocol version that added this command.
+    pub fn since(&self) -> u32 {
+        match self {
+            Request::Hello | Request::Propose { .. } | Request::Draft { .. } | Request::Changes { .. } => 2,
+            _ => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -148,9 +178,9 @@ pub fn agent_ids() -> Vec<&'static str> {
     crate::agent::ALL.iter().map(|a| a.id()).collect()
 }
 
-/// Encode a request as the line the command sends.
+/// Encode a request as the line the command sends, at the lowest version that has its command.
 pub fn encode(req: &Request) -> String {
-    let mut s = serde_json::to_string(&Envelope { v: PROTOCOL, req: req.clone() }).unwrap_or_default();
+    let mut s = serde_json::to_string(&Envelope { v: req.since(), req: req.clone() }).unwrap_or_default();
     s.push('\n');
     s
 }
@@ -158,10 +188,19 @@ pub fn encode(req: &Request) -> String {
 /// Decode one request line. Errors are written for a person.
 pub fn decode(line: &str) -> Result<Request, String> {
     let v: Value = serde_json::from_str(line.trim()).map_err(|_| "That request isn't valid JSON.".to_string())?;
-    if v["v"].as_u64() != Some(PROTOCOL as u64) {
+    let Some(ver) = v["v"].as_u64().filter(|n| (MIN_PROTOCOL as u64..=PROTOCOL as u64).contains(n)) else {
         return Err("This nekotrail command and the running app are different versions. Quit and reopen nekotrail, then try again.".into());
+    };
+    let req = serde_json::from_value::<Envelope>(v).map(|e| e.req).map_err(|err| format!("nekotrail didn't understand that request: {err}"))?;
+    // A command belongs to the versions from the one that added it.
+    if ver < req.since() as u64 {
+        return Err(format!("nekotrail didn't understand that request: \"{}\" needs protocol {} or newer.", command_name(&req), req.since()));
     }
-    serde_json::from_value::<Envelope>(v).map(|e| e.req).map_err(|err| format!("nekotrail didn't understand that request: {err}"))
+    Ok(req)
+}
+
+fn command_name(req: &Request) -> String {
+    serde_json::to_value(req).ok().and_then(|v| v["cmd"].as_str().map(String::from)).unwrap_or_default()
 }
 
 /// The one answer line: `{"ok":true,"data":...}` or `{"ok":false,"error":"..."}`.
@@ -306,8 +345,11 @@ pub enum Job {
     Repo { repo_id: String, added: bool },
     /// A new workspace from the command line or an approved link: run setup, then send the prompt.
     Start { workspace_id: String, session_id: String, prompt: String },
-    /// A link wants to start an agent. Ask, then call `link_confirm` with the token.
-    Confirm { token: String, repo: String, repo_path: String, adds_repo: bool, prompt: String, agent: String, base: Option<String>, plan: bool },
+    /// A link (or your editor) wants to start an agent. Ask, then call `link_confirm` with the token.
+    /// `from` is `link` or `editor`, so the question says who asked.
+    Confirm { token: String, from: String, repo: String, repo_path: String, adds_repo: bool, prompt: String, agent: String, base: Option<String>, plan: bool },
+    /// Your editor sent text for this workspace's message box. Show it there; don't send it.
+    Draft { workspace_id: String, text: String },
     /// A link nekotrail couldn't use.
     Error { text: String },
 }
@@ -620,7 +662,78 @@ mod server {
                 })).collect();
                 Ok(json!({"paused": q.paused, "tasks": tasks}))
             }
+            Request::Hello => Ok(json!({"protocol": PROTOCOL, "min_protocol": MIN_PROTOCOL, "app": env!("CARGO_PKG_VERSION")})),
+            Request::Propose { cwd, task } => match propose(&st, &cwd, task)? {
+                Some(job) => {
+                    deliver(app, job);
+                    Ok(json!({"asked": true}))
+                }
+                None => {
+                    show(app);
+                    Ok(json!({"asked": false}))
+                }
+            },
+            Request::Draft { workspace, text } => {
+                let job = draft(&st, &workspace, text)?;
+                let Job::Draft { workspace_id, .. } = &job else { unreachable!("draft makes a Draft") };
+                let w = st.db().workspace(workspace_id).map_err(crate::e)?;
+                deliver(app, job);
+                Ok(json!({"workspace": w.name, "title": w.title}))
+            }
+            Request::Changes { workspace } => {
+                let w = &find_active(&st, &workspace)?;
+                let dir = Path::new(&w.path);
+                let base = crate::git::merge_base(dir, &w.target_branch).map_err(|_| format!("Couldn't compare {} with {}. Is the branch still there?", w.name, w.target_branch))?;
+                let files = crate::git::changes_since(dir, &base).map_err(crate::e)?;
+                Ok(json!({"workspace": w.name, "path": w.path, "target_branch": w.target_branch, "base": base, "files": files}))
+            }
         }
+    }
+
+    /// An active workspace by id, name, branch or title.
+    fn find_active(st: &AppState, query: &str) -> Result<Workspace, String> {
+        let wss = st.db().workspaces(false).map_err(crate::e)?;
+        let cands: Vec<Candidate> = wss.iter().map(|w| Candidate { id: &w.id, name: &w.name, branch: &w.branch, title: &w.title, in_cwd_repo: false }).collect();
+        let i = find_workspace(query, &cands)?;
+        Ok(wss[i].clone())
+    }
+
+    /// Text from your editor for a workspace's message box. Checked here; the window only shows it.
+    pub fn draft(st: &AppState, workspace: &str, text: String) -> Result<Job, String> {
+        if text.trim().is_empty() {
+            return Err("There's nothing to send. Select some code first.".into());
+        }
+        if text.chars().count() > MAX_DRAFT {
+            return Err(format!("That's too long for a message (over {MAX_DRAFT} characters)."));
+        }
+        let w = find_active(st, workspace)?;
+        Ok(Job::Draft { workspace_id: w.id, text })
+    }
+
+    /// A task proposed from your editor for the repo at `cwd`. Like a link, it only parks the task
+    /// and returns the question; nothing is created or sent until you answer it in the window.
+    /// None when the same task is already waiting.
+    pub fn propose(st: &AppState, cwd: &str, task: Task) -> Result<Option<Job>, String> {
+        task.validate(MAX_EDITOR_PROMPT)?;
+        let (repo_id, name, path) = match repo_for(st, cwd, false)? {
+            Some((r, _)) => (Some(r.id), r.name, r.root_path),
+            None => {
+                let top = crate::git::toplevel(Path::new(cwd)).map_err(|_| format!("{cwd} isn't in a git repo."))?;
+                let name = top.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                (None, name, top.to_string_lossy().to_string())
+            }
+        };
+        Ok(ask_first(st, repo_id, name, path, task, "editor"))
+    }
+
+    /// Park a task behind a one-time token and return the question for the window.
+    fn ask_first(st: &AppState, repo_id: Option<String>, name: String, path: String, task: Task, from: &str) -> Option<Job> {
+        let item = LinkTask { repo_id: repo_id.clone(), repo_path: path.clone(), task: task.clone() };
+        let token = st.inbox.pending.lock().unwrap().push(item)?;
+        Some(Job::Confirm {
+            token, from: from.into(), repo: name, repo_path: path, adds_repo: repo_id.is_none(), prompt: task.prompt.trim().to_string(),
+            agent: task.agent.clone().unwrap_or_else(|| "claude".into()), base: task.base.clone(), plan: task.plan,
+        })
     }
 
     fn queue_add(app: &AppHandle, st: &AppState, cwd: String, repo: Option<String>, task: QueueTask) -> Result<Value, String> {
@@ -672,6 +785,7 @@ mod server {
             let state = if asking { "needs OK" } else if working { "working" } else if w.unread { "done, unread" } else { "idle" };
             out.push(json!({
                 "id": w.id, "name": w.name, "title": w.title, "display": display(&w), "branch": w.branch,
+                "path": w.path, "target_branch": w.target_branch,
                 "repo_id": w.repo_id, "repo": repos.iter().find(|r| r.id == w.repo_id).map(|r| r.name.clone()),
                 "state": state, "agent": agent, "pr": pr.as_ref().and_then(pr_summary), "pr_url": pr.as_ref().and_then(|p| p["url"].as_str().map(String::from)),
                 "needs": needs,
@@ -718,12 +832,7 @@ mod server {
             }
             None => return Some(Job::Error { text: format!("A link asked for the repo \"{repo}\", which isn't in nekotrail. Add it first.") }),
         };
-        let item = LinkTask { repo_id: repo_id.clone(), repo_path: path.clone(), task: task.clone() };
-        let token = st.inbox.pending.lock().unwrap().push(item)?;
-        Some(Job::Confirm {
-            token, repo: name, repo_path: path, adds_repo: repo_id.is_none(), prompt: task.prompt.trim().to_string(),
-            agent: task.agent.clone().unwrap_or_else(|| "claude".into()), base: task.base.clone(), plan: task.plan,
-        })
+        ask_first(st, repo_id, name, path, task, "link")
     }
 
     /// Spend a link's token. The task comes back only when you said yes.
@@ -762,6 +871,36 @@ mod tests {
         assert!(decode(r#"{"cmd":"status"}"#).is_err());
         assert!(decode(r#"{"v":1,"cmd":"rm"}"#).is_err());
         assert!(decode("not json").is_err());
+    }
+
+    #[test]
+    fn version_two_commands_round_trip_and_older_requests_still_work() {
+        let reqs = [
+            Request::Hello,
+            Request::Propose { cwd: "/r".into(), task: Task { prompt: "fix src/a.rs:12".into(), ..Default::default() } },
+            Request::Draft { workspace: "mochi".into(), text: "look at this".into() },
+            Request::Changes { workspace: "mochi".into() },
+        ];
+        for req in reqs {
+            let line = encode(&req);
+            assert!(line.contains("\"v\":2"), "{line}");
+            assert_eq!(decode(&line).unwrap(), req);
+        }
+        // Old commands go out as v1, so an app that only speaks v1 still answers them.
+        assert!(encode(&Request::Ls { cwd: None, all: true }).contains("\"v\":1"));
+        assert_eq!(decode(r#"{"v":2,"cmd":"status"}"#).unwrap(), Request::Status);
+        // A v2 command sent as v1 is refused by name, not misread.
+        assert!(decode(r#"{"v":1,"cmd":"hello"}"#).unwrap_err().contains("\"hello\" needs protocol 2"));
+        assert!(decode(r#"{"v":0,"cmd":"status"}"#).unwrap_err().contains("different versions"));
+        assert!(decode(r#"{"v":3,"cmd":"hello"}"#).unwrap_err().contains("different versions"));
+        assert!(decode(r#"{"v":2,"cmd":"draft","workspace":"x"}"#).is_err());
+        // The exact lines the editor extension writes (extensions/vscode/src/protocol.ts).
+        assert_eq!(
+            decode(r#"{"v":2,"cmd":"propose","cwd":"/r/src","task":{"prompt":"fix it","agent":null}}"#).unwrap(),
+            Request::Propose { cwd: "/r/src".into(), task: Task { prompt: "fix it".into(), ..Default::default() } }
+        );
+        assert_eq!(decode(r#"{"v":1,"cmd":"ls","cwd":"/r","all":false}"#).unwrap(), Request::Ls { cwd: Some("/r".into()), all: false });
+        assert_eq!(decode(r#"{"v":1,"cmd":"open","cwd":null,"query":"w1"}"#).unwrap(), Request::Open { cwd: None, query: "w1".into() });
     }
 
     #[test]
@@ -1004,6 +1143,8 @@ mod tests {
         assert_eq!(get("idle")["state"], "idle");
         assert_eq!(get("idle")["needs"], json!([]));
         assert_eq!(get("idle")["agent"], "codex");
+        // v2: the editor extension opens the worktree and diffs it against its target.
+        assert_eq!((get("idle")["path"].as_str(), get("idle")["target_branch"].as_str()), (Some("/x/w/idle"), Some("main")));
         assert_eq!(get("unread")["needs"], json!(["agent finished, not read yet"]));
         assert_eq!(get("busy")["state"], "working");
         assert_eq!(get("busy")["needs"], json!([]));
@@ -1055,5 +1196,62 @@ mod tests {
         // Open goes straight to the workspace, or says it can't find one.
         assert!(matches!(route_link(&st, "nekotrail://open?workspace=mochi"), Some(Job::Error { .. })));
         assert!(matches!(route_link(&st, "nekotrail://bogus"), Some(Job::Error { .. })));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_editor_proposes_a_task_and_nothing_starts_until_you_answer() {
+        use super::server::{answer_link, propose};
+        let t = tempfile::tempdir().unwrap();
+        let base = t.path().canonicalize().unwrap();
+        let root = base.join("app");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        run_git(&root, &["init", "-q", "-b", "main"]);
+        run_git(&root, &["commit", "-q", "--allow-empty", "-m", "first"]);
+        let st = state(&base);
+        let s = |p: &Path| p.to_string_lossy().to_string();
+        let task = |p: &str| Task { prompt: p.into(), agent: Some("codex".into()), ..Default::default() };
+        // A repo nekotrail doesn't have yet: the question says it would be added, and nothing is added.
+        let Some(Job::Confirm { token, from, repo, adds_repo, prompt, .. }) = propose(&st, &s(&root.join("src")), task("explain src/a.rs:3")).unwrap() else { panic!("a proposal must ask") };
+        assert_eq!((from.as_str(), repo.as_str(), adds_repo, prompt.as_str()), ("editor", "app", true, "explain src/a.rs:3"));
+        assert!(st.db().repos().unwrap().is_empty());
+        assert!(st.db().workspaces(true).unwrap().is_empty());
+        // The same proposal twice asks once; "no" spends the token.
+        assert_eq!(propose(&st, &s(&root), task("explain src/a.rs:3")).unwrap(), None);
+        assert_eq!(answer_link(&st, &token, false), Ok(None));
+        assert!(answer_link(&st, &token, true).is_err());
+        // Longer than a link may be, up to the editor's limit; empty or too long is refused.
+        assert!(propose(&st, &s(&root), task(&"x".repeat(MAX_LINK_PROMPT + 1))).unwrap().is_some());
+        assert!(propose(&st, &s(&root), task(&"x".repeat(MAX_EDITOR_PROMPT + 1))).unwrap_err().contains("too long"));
+        assert!(propose(&st, &s(&root), task("  ")).is_err());
+        // Outside a repo.
+        let plain = base.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert!(propose(&st, &s(&plain), task("x")).unwrap_err().contains("isn't in a git repo"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_editor_drafts_into_a_workspace_and_never_sends() {
+        use super::server::draft;
+        use crate::store::{Repo, Workspace};
+        let t = tempfile::tempdir().unwrap();
+        let st = state(t.path());
+        st.db().insert_repo(&Repo {
+            id: "r".into(), name: "app".into(), root_path: "/x/app".into(), default_branch: "main".into(),
+            remote_url: None, setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        }).unwrap();
+        st.db().insert_workspace(&Workspace {
+            id: "w1".into(), repo_id: "r".into(), name: "mochi".into(), branch: "me/mochi".into(), path: "/x/w/mochi".into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
+        }).unwrap();
+        assert_eq!(draft(&st, "w1", "see a.rs:3".into()), Ok(Job::Draft { workspace_id: "w1".into(), text: "see a.rs:3".into() }));
+        assert_eq!(draft(&st, "me/mochi", "x".into()).map(|j| matches!(j, Job::Draft { .. })), Ok(true));
+        assert!(draft(&st, "w1", " \n".into()).unwrap_err().contains("nothing to send"));
+        assert!(draft(&st, "w1", "x".repeat(MAX_DRAFT + 1)).unwrap_err().contains("too long"));
+        assert!(draft(&st, "nope", "x".into()).is_err());
+        // Nothing ran.
+        assert!(st.runs.lock().unwrap().running.is_empty());
     }
 }
