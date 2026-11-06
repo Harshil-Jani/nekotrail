@@ -58,7 +58,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - An archived workspace says "Archived, read only" next to Restore.
 - Search results show replies as plain text, without markdown marks like bold stars and backticks.
 - Checks: the bar lines up with the cards, Fix all is the main button when something fails, a running or waiting check says so instead of showing its last result, and Allow these commands and Add checks are the main buttons on their cards. With no checks yet, the empty page says it once and keeps its text to a readable width.
-- Settings, Prompts: a little more room between the buttons and the note under them.
+- Settings, Prompts: a little more room between the buttons and the note under them, and a prompt whose blank sits on its own line no longer shows a stray "…" in its preview.
 - Review with lists the agents you have first, then the rest under "Not installed".
 - Settings, General calls the command line tool "Terminal command", and a port problem keeps a command like `$PORT` on one line.
 

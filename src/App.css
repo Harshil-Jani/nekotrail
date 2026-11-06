@@ -1712,7 +1712,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .prompt-row-name { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
 .prompt-row-name svg { color: var(--muted); flex-shrink: 0; align-self: center; }
 .prompt-row-name .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.prompt-row-text { font-size: 12px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompt-row-text { font-size: 12px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow-wrap: anywhere; }
 .prompt-row-meta { display: flex; flex-wrap: wrap; gap: var(--s2); font-size: 11.5px; }
 .prompt-row-meta code { font-size: 11px; }
 .prompt-row-actions { display: flex; gap: 2px; flex-shrink: 0; }
