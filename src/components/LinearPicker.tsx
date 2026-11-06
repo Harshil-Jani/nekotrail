@@ -86,7 +86,14 @@ export function LinearPicker({ picked, onPick, onOpenSettings }: {
           </button>
         ))}
       </div>
-      {picked && <p className="muted nw-note">On branch <code>{picked.branch || `${picked.identifier.toLowerCase()}-…`}</code>. Its PR will say "Fixes {picked.identifier}", so Linear links it.</p>}
+      {picked && (
+        <p className="muted nw-note">
+          {picked.branch
+            ? <>Linear suggests the branch <code>{picked.branch}</code>. If your repo already has it, the workspace gets the next free name. </>
+            : <>The branch is named after {picked.identifier}. </>}
+          Its PR will say "Fixes {picked.identifier}", so Linear links it.
+        </p>
+      )}
     </>
   );
 }
