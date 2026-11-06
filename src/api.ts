@@ -159,7 +159,7 @@ export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find
 export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
 export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
 
-/** MCP servers and skills across Claude, Codex and Gemini (src-tauri/src/mcpshare.rs). */
+/** MCP servers and skills across Claude, Codex, Gemini and OpenCode (src-tauri/src/mcpshare.rs). */
 export type McpHas = { agent: Agent; scope: "user" | "local" | "project"; file: string };
 export type McpSecret = { id: string; kind: "env" | "header" | "arg" | "url"; key: string; can_ref: boolean };
 export type McpRow = {
@@ -168,7 +168,7 @@ export type McpRow = {
 };
 export type SkillShare = { target: "agents" | "claude"; label: string; link: string; to: string; ok: boolean; why: string | null };
 export type SkillRow = { name: string; description: string; has: Agent[]; share: SkillShare[] };
-export type McpOverview = { servers: McpRow[]; skills: SkillRow[]; files: Record<Agent, string>; problems: string[] };
+export type McpOverview = { servers: McpRow[]; skills: SkillRow[]; files: Record<Agent, string>; opencode_skill_dirs: string[]; problems: string[] };
 /** How each secret comes across: as a variable, or a copy of the value. */
 export type SecretChoices = Record<string, "ref" | "copy">;
 export type McpPreview = { file: string; creates: boolean; backup: string | null; snippet: string; notes: string[]; blockers: string[]; asks: string[]; secrets: McpSecret[]; token: string };

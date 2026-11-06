@@ -1,4 +1,4 @@
-//! Share MCP servers and skills between Claude Code, Codex and Gemini CLI, in each CLI's own
+//! Share MCP servers and skills between Claude Code, Codex, Gemini CLI and OpenCode, in each CLI's own
 //! user config. nekotrail never proxies a server: it copies the definition into the other CLI's
 //! file, in that CLI's format, and the CLI runs it as if you had added it yourself.
 //!
@@ -26,6 +26,20 @@
 //!   `~/.gemini/skills` and `~/.agents/skills` (skills are on by default in 0.65). Codex needs `name`
 //!   and `description` in the front matter, and Gemini skips a skill without them. So one symlink
 //!   in `~/.agents/skills` shares a Claude skill with both, and the skill keeps one home.
+//! - OpenCode (1.17 binary and opencode.ai/docs, checked 2026-11-06): `mcp` in its global config
+//!   folder, `$XDG_CONFIG_HOME/opencode` (default `~/.config/opencode`), read from `config.json`,
+//!   then `opencode.json`, then `opencode.jsonc` (a later file wins). OpenCode writes its own changes
+//!   to the first of `opencode.jsonc`, `opencode.json`, `config.json` that exists (a new
+//!   `opencode.jsonc` if none), and so does nekotrail. `$OPENCODE_CONFIG` names one more file, loaded
+//!   after those. Project config is `opencode.json(c)` in the repo or its `.opencode/`. All of them
+//!   may hold comments and trailing commas. Entries are `{"type": "local", "command": [cmd, ...args],
+//!   "environment", "cwd", "enabled"}` (a relative `cwd` is from the workspace) or `{"type":
+//!   "remote", "url", "headers", "oauth", "enabled"}`; remote tries streamable HTTP, then SSE.
+//!   `{env:NAME}` (empty when unset) and `{file:path}` are replaced in the raw file text before it
+//!   is parsed, so they work in every string, and a literal `{env:` in any value would be read as
+//!   one. Skills: OpenCode reads `~/.config/opencode/skills`, `~/.claude/skills` (off with
+//!   `OPENCODE_DISABLE_CLAUDE_CODE(_SKILLS)`) and `~/.agents/skills` (both off with
+//!   `OPENCODE_DISABLE_EXTERNAL_SKILLS`), and skips a SKILL.md with no `name`.
 //!
 //! Every write shows the exact text first, backs the file up next to itself
 //! (`<file>.bak-nekotrail-<time>`), keeps everything else byte for byte (TOML through `toml_edit`,
@@ -43,10 +57,11 @@ pub enum AgentId {
     Claude,
     Codex,
     Gemini,
+    OpenCode,
 }
 use AgentId::*;
 
-pub const AGENTS: [AgentId; 3] = [Claude, Codex, Gemini];
+pub const AGENTS: [AgentId; 4] = [Claude, Codex, Gemini, OpenCode];
 
 impl AgentId {
     pub fn label(self) -> &'static str {
@@ -54,6 +69,7 @@ impl AgentId {
             Claude => "Claude Code",
             Codex => "Codex",
             Gemini => "Gemini CLI",
+            OpenCode => "OpenCode",
         }
     }
 }
@@ -69,7 +85,18 @@ pub struct Homes {
     /// `~/.agents/skills`: read by Codex and Gemini CLI.
     pub agents_skills: PathBuf,
     pub gemini_skills: PathBuf,
+    /// OpenCode's global config folder (`~/.config/opencode`).
+    pub opencode_dir: PathBuf,
+    /// `$OPENCODE_CONFIG`: one more config file OpenCode loads.
+    pub opencode_custom: Option<PathBuf>,
+    pub opencode_skills: PathBuf,
+    /// OpenCode also reads `~/.claude/skills` and `~/.agents/skills` unless told not to.
+    pub opencode_reads_claude_skills: bool,
+    pub opencode_reads_agents_skills: bool,
 }
+
+/// OpenCode's global config files, in the order it merges them (the last one wins).
+const OPENCODE_GLOBAL: [&str; 3] = ["config.json", "opencode.json", "opencode.jsonc"];
 
 impl Homes {
     pub fn under(home: &Path) -> Homes {
@@ -81,6 +108,11 @@ impl Homes {
             gemini_settings: home.join(".gemini/settings.json"),
             agents_skills: home.join(".agents/skills"),
             gemini_skills: home.join(".gemini/skills"),
+            opencode_dir: home.join(".config/opencode"),
+            opencode_custom: None,
+            opencode_skills: home.join(".config/opencode/skills"),
+            opencode_reads_claude_skills: true,
+            opencode_reads_agents_skills: true,
         }
     }
 
@@ -99,14 +131,26 @@ impl Homes {
             h.gemini_settings = d.join(".gemini/settings.json");
             h.gemini_skills = d.join(".gemini/skills");
         }
+        if let Some(d) = var("XDG_CONFIG_HOME") {
+            h.opencode_dir = d.join("opencode");
+            h.opencode_skills = d.join("opencode/skills");
+        }
+        h.opencode_custom = var("OPENCODE_CONFIG");
+        // OpenCode's flags are on for "1" or "true".
+        let flag = |k: &str| std::env::var(k).is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        h.opencode_reads_agents_skills = !flag("OPENCODE_DISABLE_EXTERNAL_SKILLS");
+        h.opencode_reads_claude_skills = h.opencode_reads_agents_skills && !flag("OPENCODE_DISABLE_CLAUDE_CODE") && !flag("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS");
         Ok(h)
     }
 
-    pub fn user_file(&self, a: AgentId) -> &Path {
+    /// The file "Add to" writes. For OpenCode, the global file it writes itself: the first of
+    /// opencode.jsonc, opencode.json, config.json that exists, else a new opencode.jsonc.
+    pub fn user_file(&self, a: AgentId) -> PathBuf {
         match a {
-            Claude => &self.claude_json,
-            Codex => &self.codex_config,
-            Gemini => &self.gemini_settings,
+            Claude => self.claude_json.clone(),
+            Codex => self.codex_config.clone(),
+            Gemini => self.gemini_settings.clone(),
+            OpenCode => OPENCODE_GLOBAL.iter().rev().map(|f| self.opencode_dir.join(f)).find(|p| p.exists()).unwrap_or_else(|| self.opencode_dir.join("opencode.jsonc")),
         }
     }
 
@@ -171,13 +215,111 @@ fn expands(flavor: AgentId, s: &str) -> bool {
         Codex => false,
         Claude => s.contains("${"),
         Gemini => s.char_indices().any(|(i, c)| c == '$' && s[i + 1..].starts_with(|n: char| n == '{' || n == '_' || n.is_ascii_alphabetic())),
+        OpenCode => s.contains("{env:") || s.contains("{file:"),
     }
+}
+
+/// A string split into plain text and variables, in no CLI's syntax.
+#[derive(Clone, Debug, PartialEq)]
+enum Piece {
+    Text(String),
+    Var(String),
+}
+
+/// `s` as the CLI that wrote it reads it. Err names the part no other CLI can write.
+fn pieces(flavor: AgentId, s: &str) -> Result<Vec<Piece>, String> {
+    let mut out = vec![];
+    let (mut text, mut rest) = (String::new(), s);
+    let flush = |text: &mut String, out: &mut Vec<Piece>| {
+        if !text.is_empty() {
+            out.push(Piece::Text(std::mem::take(text)));
+        }
+    };
+    while !rest.is_empty() {
+        let found: Option<(usize, usize, String)> = match flavor {
+            Codex => None,
+            Claude | Gemini => rest.match_indices('$').find_map(|(i, _)| {
+                let after = &rest[i + 1..];
+                if let Some(inner) = after.strip_prefix('{') {
+                    let end = inner.find('}')?;
+                    Some((i, i + 3 + end, inner[..end].to_string()))
+                } else if flavor == Gemini {
+                    let n = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(after.len());
+                    (n > 0 && !after.starts_with(|c: char| c.is_ascii_digit())).then(|| (i, i + 1 + n, after[..n].to_string()))
+                } else {
+                    None
+                }
+            }),
+            OpenCode => {
+                let i = [rest.find("{env:"), rest.find("{file:")].into_iter().flatten().min();
+                i.and_then(|i| rest[i..].find('}').map(|e| (i, i + e + 1, rest[i + 1..i + e].to_string())))
+            }
+        };
+        let Some((start, end, inner)) = found else {
+            text.push_str(rest);
+            break;
+        };
+        text.push_str(&rest[..start]);
+        let name = match flavor {
+            OpenCode => inner.strip_prefix("env:").filter(|n| is_ident(n)),
+            _ => Some(inner.as_str()).filter(|n| is_ident(n)),
+        };
+        match name {
+            Some(n) => {
+                flush(&mut text, &mut out);
+                out.push(Piece::Var(n.to_string()));
+            }
+            // A default (`${X:-y}`), a file, or a name OpenCode would look up as it is.
+            None => return Err(rest[start..end].to_string()),
+        }
+        rest = &rest[end..];
+    }
+    flush(&mut text, &mut out);
+    Ok(out)
+}
+
+/// `s`, written by `from`, in `to`'s variable syntax. Only for moves to or from OpenCode; the
+/// other CLIs keep their own rules in `check`. Err says why it can't be written.
+fn convert(from: AgentId, to: AgentId, s: &str) -> Result<String, String> {
+    if from == to {
+        return Ok(s.to_string());
+    }
+    let parts = pieces(from, s).map_err(|bad| match from {
+        OpenCode if bad.starts_with("{file:") => format!("OpenCode reads {bad} from a file, and {} can't do that.", to.label()),
+        _ => format!("{} has no way to write {bad} (from {}).", to.label(), from.label()),
+    })?;
+    let mut out = String::new();
+    for p in parts {
+        match p {
+            Piece::Var(n) => match to {
+                Codex => return Err(format!("Codex doesn't fill in variables inside text, and this uses {n}.")),
+                OpenCode => out.push_str(&format!("{{env:{n}}}")),
+                _ => out.push_str(&format!("${{{n}}}")),
+            },
+            Piece::Text(t) if expands(to, &t) => {
+                return Err(match to {
+                    OpenCode => format!("OpenCode would read the {{env:...}} or {{file:...}} in {s} as a variable, so it can't be copied as it is."),
+                    _ => format!("{} would read the $ in {s} as a variable, so it can't be copied as it is.", to.label()),
+                });
+            }
+            Piece::Text(t) => out.push_str(&t),
+        }
+    }
+    Ok(out)
+}
+
+/// Whether moving between these two CLIs goes through `convert`.
+fn converts(from: AgentId, to: AgentId) -> bool {
+    from != to && (from == OpenCode || to == OpenCode)
 }
 
 fn parse_val(flavor: AgentId, s: &str, header: bool) -> Val {
     let var = |t: &str| -> Option<String> {
         if flavor == Codex {
             return None;
+        }
+        if flavor == OpenCode {
+            return t.strip_prefix("{env:").and_then(|r| r.strip_suffix('}')).filter(|n| is_ident(n)).map(str::to_string);
         }
         if let Some(inner) = t.strip_prefix("${").and_then(|r| r.strip_suffix('}'))
             && is_ident(inner)
@@ -205,8 +347,44 @@ fn text(v: &Value) -> String {
     v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())
 }
 
-/// A Claude Code or Gemini CLI `mcpServers` entry.
+/// An OpenCode `mcp` entry.
+pub fn from_opencode(v: &Value) -> Result<Def, String> {
+    let o = v.as_object().ok_or("It isn't a JSON object.")?;
+    let s = |k: &str| o.get(k).and_then(Value::as_str).map(str::to_string);
+    let known = ["type", "command", "environment", "cwd", "url", "headers", "enabled"];
+    let mut d = Def { flavor: Some(OpenCode), left_out: o.keys().filter(|k| !known.contains(&k.as_str())).cloned().collect(), ..Def::default() };
+    d.off = o.get("enabled").and_then(Value::as_bool) == Some(false);
+    match s("type").as_deref() {
+        Some("local") => {
+            let cmd: Vec<String> = o.get("command").and_then(Value::as_array).into_iter().flatten().map(text).collect();
+            let (first, rest) = cmd.split_first().ok_or("Its command is empty.")?;
+            d.command = first.clone();
+            d.args = rest.to_vec();
+            d.cwd = s("cwd");
+            for (k, val) in o.get("environment").and_then(Value::as_object).into_iter().flatten() {
+                d.env.push((k.clone(), parse_val(OpenCode, &text(val), false)));
+            }
+        }
+        Some("remote") => {
+            d.url = s("url").ok_or("It's a remote server with no url.")?;
+            // OpenCode tries streamable HTTP first and falls back to SSE.
+            d.transport = Transport::Http;
+            for (k, val) in o.get("headers").and_then(Value::as_object).into_iter().flatten() {
+                d.headers.push((k.clone(), parse_val(OpenCode, &text(val), true)));
+            }
+        }
+        None if o.len() == 1 && o.contains_key("enabled") => return Err("It only switches a server from another OpenCode config on or off.".into()),
+        None => return Err("It has no type, so OpenCode skips it.".into()),
+        Some(t) => return Err(format!("Its type {t} isn't one OpenCode knows.")),
+    }
+    Ok(d)
+}
+
+/// A Claude Code or Gemini CLI `mcpServers` entry, or an OpenCode `mcp` entry.
 pub fn from_json(flavor: AgentId, v: &Value) -> Result<Def, String> {
+    if flavor == OpenCode {
+        return from_opencode(v);
+    }
     let o = v.as_object().ok_or("It isn't a JSON object.")?;
     let s = |k: &str| o.get(k).and_then(Value::as_str).map(str::to_string);
     let known: &[&str] = match flavor {
@@ -429,9 +607,31 @@ fn check(d: &Def, target: AgentId, name: &str) -> (Vec<String>, Vec<String>) {
     if target == Claude && d.cwd.is_some() {
         no.push(format!("This server starts in {}, and Claude Code has no setting for an MCP server's working folder.", d.cwd.as_deref().unwrap_or_default()));
     }
+    // OpenCode starts a relative cwd from the workspace; the others don't say, so only full paths move.
+    if converts(from, target)
+        && target != Claude
+        && let Some(c) = &d.cwd
+        && !c.starts_with('/')
+    {
+        no.push(format!("It starts in {c}, a folder relative to where {} runs, so it could start somewhere else in {to}. Change it to a full path first.", from.label()));
+    }
     // Text with variables in it means something else in a CLI that expands differently.
     let templated: Vec<&str> = std::iter::once(d.command.as_str()).chain(d.args.iter().map(String::as_str)).chain([d.url.as_str()]).chain(d.cwd.as_deref()).filter(|s| expands(from, s)).collect();
-    if target != from && !templated.is_empty() {
+    if converts(from, target) && target != Codex {
+        // To or from OpenCode: every string is rewritten in the other syntax, or refused.
+        let values = d.env.iter().chain(&d.headers).filter_map(|(_, v)| match v {
+            Val::Lit(s) | Val::Template(s) => Some(s.as_str()),
+            _ => None,
+        });
+        for s in std::iter::once(d.command.as_str()).chain(d.args.iter().map(String::as_str)).chain([d.url.as_str()]).chain(d.cwd.as_deref()).chain(values) {
+            if let Err(e) = convert(from, target, s) {
+                no.push(e);
+            }
+        }
+        if target == Gemini && !templated.is_empty() {
+            no.push(format!("Gemini CLI fills in variables only in env and headers, and this server uses {}.", templated[0]));
+        }
+    } else if target != from && !templated.is_empty() {
         match target {
             Codex => no.push(format!("Codex doesn't fill in variables in commands or urls, and this server uses {}.", templated[0])),
             Claude if from == Gemini && templated.iter().any(|s| !s.contains("${")) => no.push(format!("Claude Code only fills in variables written as ${{NAME}}, and this server uses {}.", templated[0])),
@@ -465,6 +665,12 @@ fn check(d: &Def, target: AgentId, name: &str) -> (Vec<String>, Vec<String>) {
         if target == Gemini && !hidden.is_empty() {
             notes.push(format!("Gemini CLI keeps variables with names like {} away from MCP servers unless you list them under security.environmentVariableRedaction.allowed in its settings. Until then they arrive empty.", hidden.join(", ")));
         }
+        if target == OpenCode {
+            notes.push("If one isn't set, OpenCode fills in an empty value instead of stopping.".into());
+        }
+    }
+    if target == OpenCode && d.transport == Transport::Sse {
+        notes.push("OpenCode tries streamable HTTP first and falls back to SSE, so it needs no type for this.".into());
     }
     if target == Gemini && d.transport == Transport::Stdio {
         notes.push("Gemini CLI starts command servers only in folders you trust.".into());
@@ -474,6 +680,7 @@ fn check(d: &Def, target: AgentId, name: &str) -> (Vec<String>, Vec<String>) {
             Claude => format!("If {name} asks you to sign in, do it once in Claude Code with /mcp."),
             Codex => format!("If {name} asks you to sign in, run `codex mcp login {name}` once."),
             Gemini => format!("If {name} asks you to sign in, do it once in Gemini CLI with /mcp auth {name}."),
+            OpenCode => format!("If {name} asks you to sign in, run `opencode mcp auth {name}` once."),
         });
     }
     if d.off {
@@ -482,6 +689,8 @@ fn check(d: &Def, target: AgentId, name: &str) -> (Vec<String>, Vec<String>) {
     if !d.left_out.is_empty() {
         notes.push(format!("Not copied, because {to} has no matching setting or it only makes sense where it is: {}.", d.left_out.join(", ")));
     }
+    let mut seen = std::collections::HashSet::new();
+    no.retain(|n| seen.insert(n.clone()));
     (no, notes)
 }
 
@@ -543,23 +752,43 @@ fn json_val(v: &Val) -> String {
     }
 }
 
-/// The entry for Claude Code or Gemini CLI.
+/// `{env:NAME}` in OpenCode.
+fn opencode_val(v: &Val) -> String {
+    match v {
+        Val::Lit(s) | Val::Template(s) => s.clone(),
+        Val::Var(n) => format!("{{env:{n}}}"),
+        Val::Bearer(n) => format!("Bearer {{env:{n}}}"),
+    }
+}
+
+/// The entry for Claude Code, Gemini CLI or OpenCode.
 pub fn to_json(d: &Def, target: AgentId) -> Value {
+    if target == OpenCode {
+        return to_opencode(d);
+    }
+    let from = d.flavor.unwrap_or(Codex);
+    // Plain text and variables in the source's syntax, written in Claude's and Gemini's `${NAME}`.
+    let s = |t: &str| if converts(from, target) { convert(from, target, t).unwrap_or_else(|_| t.to_string()) } else { t.to_string() };
+    let pairs = |p: &[(String, Val)]| {
+        Value::Object(p.iter().map(|(k, v)| (k.clone(), Value::String(match v {
+            Val::Lit(t) | Val::Template(t) => s(t),
+            other => json_val(other),
+        }))).collect())
+    };
     let mut o = serde_json::Map::new();
-    let pairs = |p: &[(String, Val)]| Value::Object(p.iter().map(|(k, v)| (k.clone(), Value::String(json_val(v)))).collect());
     if d.transport == Transport::Stdio {
         if target == Claude {
             o.insert("type".into(), json!("stdio"));
         }
-        o.insert("command".into(), json!(d.command));
+        o.insert("command".into(), json!(s(&d.command)));
         if !d.args.is_empty() {
-            o.insert("args".into(), json!(d.args));
+            o.insert("args".into(), json!(d.args.iter().map(|a| s(a)).collect::<Vec<_>>()));
         }
         if !d.env.is_empty() {
             o.insert("env".into(), pairs(&d.env));
         }
         if target == Gemini && let Some(c) = &d.cwd {
-            o.insert("cwd".into(), json!(c));
+            o.insert("cwd".into(), json!(s(c)));
         }
     } else {
         o.insert("type".into(), json!(match d.transport {
@@ -567,7 +796,37 @@ pub fn to_json(d: &Def, target: AgentId) -> Value {
             Transport::Ws => "ws",
             _ => "http",
         }));
-        o.insert("url".into(), json!(d.url));
+        o.insert("url".into(), json!(s(&d.url)));
+        if !d.headers.is_empty() {
+            o.insert("headers".into(), pairs(&d.headers));
+        }
+    }
+    Value::Object(o)
+}
+
+/// The `mcp.<name>` entry for OpenCode.
+pub fn to_opencode(d: &Def) -> Value {
+    let from = d.flavor.unwrap_or(Codex);
+    let s = |t: &str| convert(from, OpenCode, t).unwrap_or_else(|_| t.to_string());
+    let pairs = |p: &[(String, Val)]| {
+        Value::Object(p.iter().map(|(k, v)| (k.clone(), Value::String(match v {
+            Val::Lit(t) | Val::Template(t) => s(t),
+            other => opencode_val(other),
+        }))).collect())
+    };
+    let mut o = serde_json::Map::new();
+    if d.transport == Transport::Stdio {
+        o.insert("type".into(), json!("local"));
+        o.insert("command".into(), json!(std::iter::once(&d.command).chain(&d.args).map(|a| s(a)).collect::<Vec<_>>()));
+        if !d.env.is_empty() {
+            o.insert("environment".into(), pairs(&d.env));
+        }
+        if let Some(c) = &d.cwd {
+            o.insert("cwd".into(), json!(s(c)));
+        }
+    } else {
+        o.insert("type".into(), json!("remote"));
+        o.insert("url".into(), json!(s(&d.url)));
         if !d.headers.is_empty() {
             o.insert("headers".into(), pairs(&d.headers));
         }
@@ -784,7 +1043,7 @@ fn line_indent(s: &str, pos: usize) -> String {
 }
 
 /// The order the CLIs' own docs write a server's keys in; anything else follows, A to Z.
-const KEY_ORDER: [&str; 8] = ["type", "command", "args", "env", "cwd", "url", "httpUrl", "headers"];
+const KEY_ORDER: [&str; 9] = ["type", "command", "args", "env", "environment", "cwd", "url", "httpUrl", "headers"];
 
 /// Writes a JSON value with server keys in `KEY_ORDER` (serde_json's map is sorted A to Z).
 struct InOrder<'a>(&'a Value);
@@ -839,36 +1098,41 @@ fn insert_member(orig: &str, blank: &str, (s, e): (usize, usize), key: &str, val
 
 /// `text` with `mcpServers.<name>` added and nothing else changed. Refuses a name that is there.
 pub fn json_add(text: &str, name: &str, val: &Value) -> Result<String, String> {
+    json_add_at(text, "mcpServers", name, val)
+}
+
+/// `text` with `<key>.<name>` added at the top level (`mcp` for OpenCode), nothing else changed.
+pub fn json_add_at(text: &str, key: &str, name: &str, val: &Value) -> Result<String, String> {
     if text.trim().is_empty() {
-        return Ok(format!("{}\n", pretty(&json!({ "mcpServers": { name: val } }), "  ", "")));
+        return Ok(format!("{}\n", pretty(&json!({ key: { name: val } }), "  ", "")));
     }
     let blank = blank_jsonc(text);
     let before: Value = serde_json::from_str(&blank).map_err(|e| format!("It isn't valid JSON ({e}), so nekotrail won't change it."))?;
     let root = before.as_object().ok_or("It isn't a JSON object, so nekotrail won't change it.")?;
-    let ((rs, re), servers) = root_spans(&blank, "mcpServers").ok_or("nekotrail couldn't find its way around this file, so it won't change it.")?;
+    let ((rs, re), servers) = root_spans(&blank, key).ok_or("nekotrail couldn't find its way around this file, so it won't change it.")?;
     let first = skip_ws(blank.as_bytes(), rs + 1);
     let unit = match line_indent(text, first) {
         u if u.is_empty() || !text[rs..first].contains('\n') => "  ".to_string(),
         u => u,
     };
-    let new = match (root.get("mcpServers"), servers) {
+    let new = match (root.get(key), servers) {
         (Some(Value::Object(m)), Some(span)) => {
             if m.contains_key(name) {
                 return Err(format!("There's already a server called {name} there. nekotrail won't replace it."));
             }
             insert_member(text, &blank, span, name, val, &unit)
         }
-        (Some(_), _) => return Err("Its mcpServers isn't a list of servers, so nekotrail won't change it.".into()),
-        (None, _) => insert_member(text, &blank, (rs, re), "mcpServers", &json!({ name: val }), &unit),
+        (Some(_), _) => return Err(format!("Its {key} isn't a list of servers, so nekotrail won't change it.")),
+        (None, _) => insert_member(text, &blank, (rs, re), key, &json!({ name: val }), &unit),
     };
     // Parse the result: the new server is there, and everything else is exactly as before.
     let mut after: Value = serde_json::from_str(&blank_jsonc(&new)).map_err(|_| "nekotrail couldn't add it without breaking the file, so it left it alone.")?;
-    let servers = after.get_mut("mcpServers").and_then(Value::as_object_mut).ok_or("Couldn't add it safely.")?;
+    let servers = after.get_mut(key).and_then(Value::as_object_mut).ok_or("Couldn't add it safely.")?;
     if servers.remove(name).as_ref() != Some(val) {
         return Err("Couldn't add it safely.".into());
     }
-    if servers.is_empty() && root.get("mcpServers").is_none() {
-        after.as_object_mut().unwrap().remove("mcpServers");
+    if servers.is_empty() && root.get(key).is_none() {
+        after.as_object_mut().unwrap().remove(key);
     }
     if after != before {
         return Err("Adding it would have changed other settings, so nekotrail left the file alone.".into());
@@ -964,6 +1228,8 @@ pub struct Overview {
     pub skills: Vec<SkillRow>,
     /// Each CLI's user config, for the footer.
     pub files: HashMap<AgentId, String>,
+    /// The skills folders OpenCode reads, so the sheet can say it already sees those skills.
+    pub opencode_skill_dirs: Vec<String>,
     /// Files that exist but can't be read.
     pub problems: Vec<String>,
 }
@@ -1024,16 +1290,28 @@ fn found(h: &Homes, ws: Option<&Path>, problems: &mut Vec<String>) -> Vec<Found>
     if let Some(ws) = ws {
         json_file(Gemini, "project", &ws.join(".gemini/settings.json"), &top, &mut out, problems);
     }
+    // OpenCode: the file a later merge wins with comes first, so "Add to" copies what OpenCode runs.
+    let mcp = |v: &Value| v.get("mcp").cloned();
+    let mut user: Vec<PathBuf> = h.opencode_custom.iter().cloned().collect();
+    user.extend(OPENCODE_GLOBAL.iter().rev().map(|f| h.opencode_dir.join(f)));
+    for p in user {
+        json_file(OpenCode, "user", &p, &mcp, &mut out, problems);
+    }
+    if let Some(ws) = ws {
+        for f in [".opencode/opencode.jsonc", ".opencode/opencode.json", "opencode.jsonc", "opencode.json"] {
+            json_file(OpenCode, "project", &ws.join(f), &mcp, &mut out, problems);
+        }
+    }
     out
 }
 
 fn user_readable(h: &Homes, a: AgentId) -> Result<(), String> {
     let p = h.user_file(a);
     let ok = match a {
-        Codex => read_toml(p).map(|_| ()),
-        _ => read_json(p).map(|_| ()),
+        Codex => read_toml(&p).map(|_| ()),
+        _ => read_json(&p).map(|_| ()),
     };
-    ok.map_err(|_| format!("nekotrail can't read {}, so it won't change it.", h.tilde(p)))
+    ok.map_err(|_| format!("nekotrail can't read {}, so it won't change it.", h.tilde(&p)))
 }
 
 pub fn overview(h: &Homes, ws: Option<&Path>) -> Overview {
@@ -1077,7 +1355,13 @@ pub fn overview(h: &Homes, ws: Option<&Path>) -> Overview {
             }
         })
         .collect();
-    Overview { servers, skills: skills(h), files: AGENTS.iter().map(|&a| (a, h.tilde(h.user_file(a)))).collect(), problems }
+    Overview {
+        servers,
+        skills: skills(h),
+        files: AGENTS.iter().map(|&a| (a, h.tilde(&h.user_file(a)))).collect(),
+        opencode_skill_dirs: opencode_skill_dirs(h).iter().map(|p| h.tilde(p)).collect(),
+        problems,
+    }
 }
 
 // ---------- adding a server ----------
@@ -1131,7 +1415,7 @@ fn plan(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices: &Has
     }
     let def = mine.iter().find_map(|(_, _, d)| d.as_ref().ok()).ok_or_else(|| format!("nekotrail can't read {name}'s settings."))?;
     let path = h.user_file(target);
-    let real = real_path(path);
+    let real = real_path(&path);
     let old = std::fs::read(&real).ok();
     // Checked after your choices, so a secret you bring as a variable gets the variable notes.
     let (real_def, mut no, more) = with_choices(def, name, choices, false);
@@ -1142,14 +1426,27 @@ fn plan(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices: &Has
     notes.extend(more);
     let (shown, _, _) = with_choices(def, name, choices, true);
     let mut new_text = None;
+    let creates = old.is_none();
+    let mut snip = snippet(target, name, &shown);
     if blockers.is_empty() && no.is_empty() {
-        let old_text = old.as_ref().map(|b| String::from_utf8_lossy(b).to_string()).unwrap_or_default();
-        let edit = match target {
-            Codex => toml_add(&old_text, name, to_toml(&real_def)),
-            _ => json_add(&old_text, name, &to_json(&real_def, target)),
+        let mut old_text = old.as_ref().map(|b| String::from_utf8_lossy(b).to_string()).unwrap_or_default();
+        // A new OpenCode file starts the way OpenCode starts its own.
+        if target == OpenCode && old_text.trim().is_empty() {
+            old_text = "{\n  \"$schema\": \"https://opencode.ai/config.json\"\n}\n".into();
+        }
+        let edit = |d: &Def| match target {
+            Codex => toml_add(&old_text, name, to_toml(d)),
+            OpenCode => json_add_at(&old_text, "mcp", name, &to_opencode(d)),
+            _ => json_add(&old_text, name, &to_json(d, target)),
         };
-        match edit {
-            Ok(t) => new_text = Some(t),
+        match edit(&real_def) {
+            Ok(t) => {
+                // A new file is shown whole, so the preview is exactly what lands on disk.
+                if creates && let Ok(whole) = edit(&shown) {
+                    snip = whole.trim_end().to_string();
+                }
+                new_text = Some(t);
+            }
             Err(e) => blockers.push(e),
         }
     }
@@ -1161,13 +1458,12 @@ fn plan(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices: &Has
         s.update(new_text.as_deref().unwrap_or("").as_bytes());
         s.finalize().iter().map(|b| format!("{b:02x}")).collect()
     };
-    let creates = old.is_none();
     Ok(Plan {
         preview: Preview {
-            file: h.tilde(path),
+            file: h.tilde(&path),
             creates,
             backup: (!creates).then(|| h.tilde(&backup_path(&real, stamp))),
-            snippet: snippet(target, name, &shown),
+            snippet: snip,
             notes,
             blockers,
             asks: std::mem::take(&mut no),
@@ -1200,10 +1496,10 @@ pub fn apply(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices:
     }
     let new = p.new_text.ok_or("Nothing to add.")?;
     let path = h.user_file(target);
-    let real = real_path(path);
+    let real = real_path(&path);
     let backup = if real.exists() {
         let b = backup_path(&real, stamp);
-        std::fs::copy(&real, &b).map_err(|e| format!("Couldn't back up {}: {e}", h.tilde(path)))?;
+        std::fs::copy(&real, &b).map_err(|e| format!("Couldn't back up {}: {e}", h.tilde(&path)))?;
         Some(b)
     } else {
         if let Some(dir) = real.parent() {
@@ -1212,7 +1508,7 @@ pub fn apply(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices:
         None
     };
     let tmp = real.with_file_name(format!(".{}.nekotrail-tmp", real.file_name().unwrap_or_default().to_string_lossy()));
-    std::fs::write(&tmp, &new).map_err(|e| format!("Couldn't write {}: {e}", h.tilde(path)))?;
+    std::fs::write(&tmp, &new).map_err(|e| format!("Couldn't write {}: {e}", h.tilde(&path)))?;
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::metadata(&real).map(|m| m.permissions()).unwrap_or_else(|_| std::fs::Permissions::from_mode(0o600));
@@ -1220,16 +1516,16 @@ pub fn apply(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices:
     }
     std::fs::rename(&tmp, &real).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        format!("Couldn't write {}: {e}", h.tilde(path))
+        format!("Couldn't write {}: {e}", h.tilde(&path))
     })?;
-    Ok(Applied { file: h.tilde(path), backup: backup.map(|b| h.tilde(&b)) })
+    Ok(Applied { file: h.tilde(&path), backup: backup.map(|b| h.tilde(&b)) })
 }
 
 // ---------- skills ----------
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SkillShare {
-    /// "agents" (Codex and Gemini CLI, through ~/.agents/skills) or "claude".
+    /// "agents" (Codex, Gemini CLI and OpenCode, through ~/.agents/skills) or "claude".
     pub target: &'static str,
     pub label: String,
     /// The link that will be made, and where it points.
@@ -1281,18 +1577,42 @@ fn skill_dirs(dir: &Path) -> Vec<(String, PathBuf)> {
     out
 }
 
+/// Every skills folder OpenCode reads, its own first.
+pub fn opencode_skill_dirs(h: &Homes) -> Vec<PathBuf> {
+    let mut out = vec![h.opencode_skills.clone()];
+    if h.opencode_reads_claude_skills {
+        out.push(h.claude_skills.clone());
+    }
+    if h.opencode_reads_agents_skills {
+        out.push(h.agents_skills.clone());
+    }
+    out
+}
+
+/// "Codex", "Codex and Gemini", "Codex, Gemini and OpenCode".
+fn and_list(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 pub fn skills(h: &Homes) -> Vec<SkillRow> {
     let claude = skill_dirs(&h.claude_skills);
     let agents = skill_dirs(&h.agents_skills);
     let gemini = skill_dirs(&h.gemini_skills);
-    let mut names: Vec<&String> = claude.iter().chain(&agents).chain(&gemini).map(|(n, _)| n).collect();
+    let opencode = skill_dirs(&h.opencode_skills);
+    let mut names: Vec<&String> = claude.iter().chain(&agents).chain(&gemini).chain(&opencode).map(|(n, _)| n).collect();
     names.sort_by_key(|n| n.to_lowercase());
     names.dedup();
     let find = |list: &[(String, PathBuf)], n: &str| list.iter().find(|(m, _)| m == n).map(|(_, p)| p.clone());
     names
         .into_iter()
         .map(|name| {
-            let (c, a, g) = (find(&claude, name), find(&agents, name), find(&gemini, name));
+            let (c, a, g, o) = (find(&claude, name), find(&agents, name), find(&gemini, name), find(&opencode, name));
+            let src = c.clone().or(a.clone()).or(g.clone()).or(o.clone()).unwrap();
+            let (fm_name, desc) = front_matter(&src.join("SKILL.md"));
             let mut has = vec![];
             if c.is_some() {
                 has.push(Claude);
@@ -1303,10 +1623,14 @@ pub fn skills(h: &Homes) -> Vec<SkillRow> {
             if a.is_some() || g.is_some() {
                 has.push(Gemini);
             }
-            let src = c.clone().or(a.clone()).or(g.clone()).unwrap();
-            let (fm_name, desc) = front_matter(&src.join("SKILL.md"));
+            // OpenCode skips a SKILL.md with no name.
+            let opencode_sees = o.is_some() || (c.is_some() && h.opencode_reads_claude_skills) || (a.is_some() && h.opencode_reads_agents_skills);
+            if opencode_sees && fm_name.is_some() {
+                has.push(OpenCode);
+            }
             let mut share = vec![];
-            if a.is_none() && let Some(c) = &c {
+            // Into ~/.agents/skills from Claude's or OpenCode's own folder.
+            if a.is_none() && let Some(from) = c.as_ref().or(o.as_ref()) {
                 let link = h.agents_skills.join(name);
                 let why = if fm_name.is_none() || desc.is_none() {
                     Some("Codex and Gemini CLI need a name and a description at the top of SKILL.md, and this one is missing them.".into())
@@ -1315,10 +1639,17 @@ pub fn skills(h: &Homes) -> Vec<SkillRow> {
                 } else {
                     None
                 };
-                share.push(SkillShare { target: "agents", label: if g.is_some() { "Add to Codex".into() } else { "Add to Codex and Gemini".into() }, link: h.tilde(&link), to: h.tilde(&real_path(c)), ok: why.is_none(), why });
+                let mut gain = vec!["Codex"];
+                if g.is_none() {
+                    gain.push("Gemini");
+                }
+                if !has.contains(&OpenCode) && h.opencode_reads_agents_skills {
+                    gain.push("OpenCode");
+                }
+                share.push(SkillShare { target: "agents", label: format!("Add to {}", and_list(&gain)), link: h.tilde(&link), to: h.tilde(&real_path(from)), ok: why.is_none(), why });
             }
             if c.is_none() {
-                let from = a.clone().or(g.clone()).unwrap();
+                let from = a.clone().or(g.clone()).or(o.clone()).unwrap();
                 let link = h.claude_skills.join(name);
                 let why = link.symlink_metadata().is_ok().then(|| format!("Something called {name} is already in {}.", h.tilde(&h.claude_skills)));
                 share.push(SkillShare { target: "claude", label: "Add to Claude".into(), link: h.tilde(&link), to: h.tilde(&real_path(&from)), ok: why.is_none(), why });
@@ -1339,14 +1670,13 @@ pub fn share_skill(h: &Homes, name: &str, target: &str) -> Result<String, String
     if let Some(why) = s.why {
         return Err(why);
     }
+    // The first folder that has it, in the order `skills` picks a source.
+    let first = |dirs: &[&PathBuf]| dirs.iter().map(|d| d.join(name)).find(|p| p.join("SKILL.md").is_file());
     let (dir, from) = match target {
-        "agents" => (&h.agents_skills, real_path(&h.claude_skills.join(name))),
-        _ => {
-            let a = h.agents_skills.join(name);
-            let from = if a.join("SKILL.md").is_file() { a } else { h.gemini_skills.join(name) };
-            (&h.claude_skills, real_path(&from))
-        }
+        "agents" => (&h.agents_skills, first(&[&h.claude_skills, &h.opencode_skills])),
+        _ => (&h.claude_skills, first(&[&h.agents_skills, &h.gemini_skills, &h.opencode_skills])),
     };
+    let from = real_path(&from.ok_or_else(|| format!("No skill called {name} any more."))?);
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let link = dir.join(name);
     std::os::unix::fs::symlink(&from, &link).map_err(|e| format!("Couldn't link {}: {e}", h.tilde(&link)))?;
@@ -1428,7 +1758,8 @@ mod tests {
         assert!(p.notes.iter().any(|n| n.contains("reads DEBUG_LEVEL, GRAFANA_SERVICE_ACCOUNT_TOKEN from the environment")), "{:?}", p.notes);
         let g = preview(&h, None, "grafana", Gemini, &c, "t1").unwrap();
         assert!(g.notes.iter().any(|n| n.contains("GRAFANA_SERVICE_ACCOUNT_TOKEN") && n.contains("environmentVariableRedaction")), "{:?}", g.notes);
-        assert!(g.snippet.starts_with("\"grafana\": {\n  \"command\": \"uvx\",\n  \"args\""), "keys in the docs' order: {}", g.snippet);
+        // No Gemini file yet: the preview is the whole new file, keys in the docs' order.
+        assert!(g.creates && g.snippet.starts_with("{\n  \"mcpServers\": {\n    \"grafana\": {\n      \"command\": \"uvx\",\n      \"args\""), "{}", g.snippet);
         let done = apply(&h, None, "grafana", Codex, &c, &p.token, "t1").unwrap();
         assert_eq!(done.backup.as_deref(), Some("~/.codex/config.toml.bak-nekotrail-t1"));
         let new = std::fs::read_to_string(&h.codex_config).unwrap();
@@ -1643,8 +1974,9 @@ mod tests {
         assert_eq!(local.has[0].scope, "local");
         let team = o.servers.iter().find(|r| r.name == "team").unwrap();
         assert_eq!(team.has.iter().map(|h| (h.agent, h.scope)).collect::<Vec<_>>(), [(Claude, "project"), (Gemini, "project")]);
-        assert_eq!(team.targets.iter().map(|t| t.agent).collect::<Vec<_>>(), [Codex]);
+        assert_eq!(team.targets.iter().map(|t| t.agent).collect::<Vec<_>>(), [Codex, OpenCode]);
         assert_eq!(o.files[&Codex], "~/.codex/config.toml");
+        assert_eq!(o.files[&OpenCode], "~/.config/opencode/opencode.jsonc");
     }
 
     #[test]
@@ -1658,9 +1990,12 @@ mod tests {
         std::os::unix::fs::symlink(h.agents_skills.join("both"), h.claude_skills.join("both")).unwrap();
         let rows = skills(&h);
         let get = |n: &str| rows.iter().find(|r| r.name == n).unwrap().clone();
-        assert_eq!(get("both").has, [Claude, Codex, Gemini]);
+        assert_eq!(get("both").has, [Claude, Codex, Gemini, OpenCode]);
         assert!(get("both").share.is_empty());
-        assert_eq!(get("review").has, [Claude]);
+        // OpenCode reads ~/.claude/skills itself.
+        assert_eq!(get("review").has, [Claude, OpenCode]);
+        assert_eq!(get("review").share[0].label, "Add to Codex and Gemini");
+        assert_eq!(get("bare").has, [Claude], "OpenCode skips a skill with no name");
         assert_eq!(get("review").description, "Review a diff");
         assert!(get("review").share[0].ok && get("review").share[0].link == "~/.agents/skills/review");
         assert!(!get("bare").share[0].ok, "no front matter, Codex would skip it");
@@ -1670,7 +2005,7 @@ mod tests {
         let link = h.agents_skills.join("review");
         assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
         assert_eq!(std::fs::read_to_string(link.join("SKILL.md")).unwrap(), "---\nname: review\ndescription: Review a diff\n---\nBody");
-        assert_eq!(skills(&h).iter().find(|r| r.name == "review").unwrap().has, [Claude, Codex, Gemini]);
+        assert_eq!(skills(&h).iter().find(|r| r.name == "review").unwrap().has, [Claude, Codex, Gemini, OpenCode]);
         share_skill(&h, "deploy", "claude").unwrap();
         assert!(h.claude_skills.join("deploy/SKILL.md").is_file());
         // Never replaces, never shares what the other CLIs would skip.
@@ -1680,6 +2015,227 @@ mod tests {
         put(&h.claude_skills.join("bare/SKILL.md"), "---\nname: bare\ndescription: d\n---\n");
         assert!(share_skill(&h, "bare", "agents").unwrap_err().contains("already in"));
         assert!(share_skill(&h, "../x", "agents").is_err());
+    }
+
+    const OPENCODE: &str = "{\n  // my opencode\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"theme\": \"tokyonight\", /* keep */\n  \"mcp\": {\n    \"docs\": { \"type\": \"remote\", \"url\": \"https://docs.dev/mcp\" }, // old one\n  },\n}\n";
+
+    fn mode(p: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn claude_to_opencode_and_back() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, h) = homes();
+        put(&h.claude_json, CLAUDE);
+        let file = h.opencode_dir.join("opencode.jsonc");
+        put(&file, OPENCODE);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let o = overview(&h, None);
+        let docs = o.servers.iter().find(|r| r.name == "docs").unwrap();
+        assert_eq!(docs.has, [Has { agent: OpenCode, scope: "user", file: "~/.config/opencode/opencode.jsonc".into() }]);
+        assert_eq!(docs.transport, Some(Transport::Http));
+        let grafana = o.servers.iter().find(|r| r.name == "grafana").unwrap();
+        assert!(grafana.targets.iter().any(|t| t.agent == OpenCode && t.ok), "{:?}", grafana.targets);
+
+        // The token still needs a decision; as a variable it becomes {env:NAME}.
+        let p = preview(&h, None, "grafana", OpenCode, &HashMap::new(), "t1").unwrap();
+        assert!(p.asks[0].contains("GRAFANA_SERVICE_ACCOUNT_TOKEN looks like a secret"), "{:?}", p.asks);
+        let c = choices(&[("env:GRAFANA_SERVICE_ACCOUNT_TOKEN", "ref")]);
+        let p = preview(&h, None, "grafana", OpenCode, &c, "t1").unwrap();
+        assert!(p.blockers.is_empty() && p.asks.is_empty(), "{:?} {:?}", p.blockers, p.asks);
+        assert_eq!(p.file, "~/.config/opencode/opencode.jsonc");
+        assert_eq!(p.backup.as_deref(), Some("~/.config/opencode/opencode.jsonc.bak-nekotrail-t1"));
+        assert!(p.snippet.starts_with("\"grafana\": {\n  \"type\": \"local\",\n  \"command\": [\n    \"uvx\",\n    \"mcp-grafana\"\n  ],\n  \"environment\""), "{}", p.snippet);
+        assert!(p.snippet.contains("\"DEBUG_LEVEL\": \"{env:DEBUG_LEVEL}\"") && p.snippet.contains("{env:GRAFANA_SERVICE_ACCOUNT_TOKEN}"), "{}", p.snippet);
+        assert!(p.notes.iter().any(|n| n.contains("OpenCode fills in an empty value")), "{:?}", p.notes);
+        apply(&h, None, "grafana", OpenCode, &c, &p.token, "t1").unwrap();
+
+        let new = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(std::fs::read_to_string(h.opencode_dir.join("opencode.jsonc.bak-nekotrail-t1")).unwrap(), OPENCODE);
+        assert!(new.contains("// my opencode") && new.contains("/* keep */") && new.contains("// old one"), "comments kept:\n{new}");
+        assert_eq!(mode(&file), 0o640, "permissions kept");
+        let v: Value = serde_json::from_str(&blank_jsonc(&new)).unwrap();
+        assert_eq!(v["theme"], "tokyonight");
+        assert_eq!(v["mcp"]["docs"], json!({"type": "remote", "url": "https://docs.dev/mcp"}));
+        assert_eq!(v["mcp"]["grafana"], json!({"type": "local", "command": ["uvx", "mcp-grafana"], "environment": {
+            "GRAFANA_URL": "https://grafana.example.com", "GRAFANA_SERVICE_ACCOUNT_TOKEN": "{env:GRAFANA_SERVICE_ACCOUNT_TOKEN}", "DEBUG_LEVEL": "{env:DEBUG_LEVEL}"}}));
+        assert!(!new.contains("glsa_"));
+
+        // And back: OpenCode's entry reads as the same server and renders as the same Claude entry.
+        let back = from_opencode(&v["mcp"]["grafana"]).unwrap();
+        let claude_def = from_json(Claude, &serde_json::from_str::<Value>(CLAUDE).unwrap()["mcpServers"]["grafana"]).unwrap();
+        let (claude_ref, _, _) = with_choices(&claude_def, "grafana", &c, false);
+        assert_eq!(to_json(&back, Claude), to_json(&claude_ref, Claude));
+
+        // OpenCode has it now: the same name is refused, and so is a stale preview.
+        let p = preview(&h, None, "grafana", OpenCode, &c, "t2").unwrap();
+        assert!(p.blockers[0].contains("OpenCode already has a server called grafana"), "{:?}", p.blockers);
+        let p = preview(&h, None, "cloudflare", OpenCode, &HashMap::new(), "t2").unwrap();
+        assert!(p.blockers.is_empty(), "{:?}", p.blockers);
+        assert!(p.notes.iter().any(|n| n.contains("opencode mcp auth cloudflare")), "{:?}", p.notes);
+        put(&file, &format!("{new}// edited\n"));
+        assert!(apply(&h, None, "cloudflare", OpenCode, &HashMap::new(), &p.token, "t2").unwrap_err().contains("changed since the preview"));
+
+        // OpenCode's remote server goes to Claude and Codex.
+        let p = preview(&h, None, "docs", Claude, &HashMap::new(), "t3").unwrap();
+        apply(&h, None, "docs", Claude, &HashMap::new(), &p.token, "t3").unwrap();
+        let cj: Value = serde_json::from_str(&std::fs::read_to_string(&h.claude_json).unwrap()).unwrap();
+        assert_eq!(cj["mcpServers"]["docs"], json!({"type": "http", "url": "https://docs.dev/mcp"}));
+        assert_eq!(to_opencode(&from_json(Claude, &cj["mcpServers"]["docs"]).unwrap()), json!({"type": "remote", "url": "https://docs.dev/mcp"}));
+    }
+
+    #[test]
+    fn opencode_to_codex_gemini_and_claude() {
+        let (_d, h) = homes();
+        let ws = h.home.join("repo");
+        let oc = r#"{
+  "mcp": {
+    "ctx": {"type": "local", "command": ["npx", "-y", "@upstash/context7-mcp"], "environment": {"CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}", "MODE": "fast"}, "enabled": false, "timeout": 9000},
+    "gh": {"type": "remote", "url": "https://api.github.com/mcp", "headers": {"Authorization": "Bearer {env:GITHUB_TOKEN}"}, "oauth": false},
+    "renamed": {"type": "local", "command": ["srv"], "environment": {"TOKEN": "{env:MY_TOKEN}"}},
+    "tpl": {"type": "local", "command": ["node", "{env:TOOLS}/srv.js"]},
+    "filey": {"type": "remote", "url": "https://x.dev/mcp", "headers": {"X-Key": "{file:~/.x-key}"}},
+    "rel": {"type": "local", "command": ["x"], "cwd": "tools"},
+    "toggle": {"enabled": false}
+  }
+}
+"#;
+        put(&h.opencode_dir.join("opencode.json"), oc);
+        put(&h.codex_config, CODEX);
+        put(&ws.join("opencode.json"), r#"{"mcp": {"team": {"type": "remote", "url": "https://team.dev/mcp"}}}"#);
+        assert_eq!(h.user_file(OpenCode), h.opencode_dir.join("opencode.json"), "writes go where OpenCode's own config is");
+        let o = overview(&h, Some(&ws));
+        let team = o.servers.iter().find(|r| r.name == "team").unwrap();
+        assert_eq!(team.has.iter().map(|h| (h.agent, h.scope)).collect::<Vec<_>>(), [(OpenCode, "project")]);
+        assert!(o.servers.iter().find(|r| r.name == "toggle").unwrap().problem.as_deref().unwrap().contains("on or off"));
+        let none = HashMap::new();
+
+        // Stdio with a variable under its own name: Codex passes it on, Gemini writes ${NAME}.
+        let p = preview(&h, None, "ctx", Codex, &none, "s").unwrap();
+        assert!(p.blockers.is_empty(), "{:?}", p.blockers);
+        assert!(p.notes.iter().any(|n| n.contains("timeout")) && p.notes.iter().any(|n| n.contains("switched off")), "{:?}", p.notes);
+        apply(&h, None, "ctx", Codex, &none, &p.token, "s").unwrap();
+        let t: toml::Table = std::fs::read_to_string(&h.codex_config).unwrap().parse().unwrap();
+        assert_eq!(t["mcp_servers"]["ctx"]["env_vars"].as_array().unwrap()[0].as_str(), Some("CONTEXT7_API_KEY"));
+        assert_eq!(t["mcp_servers"]["ctx"]["env"]["MODE"].as_str(), Some("fast"));
+        let p = preview(&h, None, "ctx", Gemini, &none, "s").unwrap();
+        assert!(p.creates && p.snippet.starts_with("{\n  \"mcpServers\""), "a new file is shown whole: {}", p.snippet);
+        apply(&h, None, "ctx", Gemini, &none, &p.token, "s").unwrap();
+        let g: Value = serde_json::from_str(&std::fs::read_to_string(&h.gemini_settings).unwrap()).unwrap();
+        assert_eq!(g["mcpServers"]["ctx"], json!({"command": "npx", "args": ["-y", "@upstash/context7-mcp"], "env": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}", "MODE": "fast"}}));
+        // Round trip: Gemini's and Codex's copies read back as OpenCode's entry, less the settings left out.
+        let want = json!({"type": "local", "command": ["npx", "-y", "@upstash/context7-mcp"], "environment": {"CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}", "MODE": "fast"}});
+        assert_eq!(to_opencode(&from_json(Gemini, &g["mcpServers"]["ctx"]).unwrap()), want);
+        let codex_back = to_opencode(&from_toml(t["mcp_servers"]["ctx"].as_table().unwrap()).unwrap());
+        assert_eq!(codex_back["environment"], want["environment"]);
+
+        // Remote with Bearer {env:...}: Codex's bearer_token_env_var, and back.
+        let p = preview(&h, None, "gh", Codex, &none, "s2").unwrap();
+        assert!(p.snippet.contains("bearer_token_env_var = \"GITHUB_TOKEN\""), "{}", p.snippet);
+        assert!(p.notes.iter().any(|n| n.contains("oauth")), "{:?}", p.notes);
+        apply(&h, None, "gh", Codex, &none, &p.token, "s2").unwrap();
+        let t: toml::Table = std::fs::read_to_string(&h.codex_config).unwrap().parse().unwrap();
+        assert_eq!(to_opencode(&from_toml(t["mcp_servers"]["gh"].as_table().unwrap()).unwrap()), json!({"type": "remote", "url": "https://api.github.com/mcp", "headers": {"Authorization": "Bearer {env:GITHUB_TOKEN}"}}));
+        let gh = from_opencode(&serde_json::from_str::<Value>(oc).unwrap()["mcp"]["gh"]).unwrap();
+        assert_eq!(to_json(&gh, Claude), json!({"type": "http", "url": "https://api.github.com/mcp", "headers": {"Authorization": "Bearer ${GITHUB_TOKEN}"}}));
+
+        // Variables inside text: converted for Claude, refused where they can't work, with the reason.
+        let p = preview(&h, None, "tpl", Claude, &none, "s3").unwrap();
+        assert!(p.blockers.is_empty(), "{:?}", p.blockers);
+        assert!(p.snippet.contains("\"${TOOLS}/srv.js\""), "{}", p.snippet);
+        assert!(preview(&h, None, "tpl", Codex, &none, "s3").unwrap().blockers[0].contains("doesn't fill in variables"));
+        assert!(preview(&h, None, "tpl", Gemini, &none, "s3").unwrap().blockers.iter().any(|b| b.contains("only in env and headers")));
+        assert!(preview(&h, None, "renamed", Codex, &none, "s3").unwrap().blockers[0].contains("under its own name"));
+        assert!(preview(&h, None, "renamed", Claude, &none, "s3").unwrap().blockers.is_empty());
+        let f = preview(&h, None, "filey", Claude, &none, "s3").unwrap();
+        assert!(f.blockers.iter().any(|b| b.contains("reads {file:~/.x-key} from a file")), "{:?}", f.blockers);
+        assert!(preview(&h, None, "filey", Codex, &none, "s3").unwrap().blockers.iter().any(|b| b.contains("X-Key")));
+        assert!(preview(&h, None, "rel", Gemini, &none, "s3").unwrap().blockers[0].contains("relative"));
+        assert!(preview(&h, None, "rel", Claude, &none, "s3").unwrap().blockers[0].contains("working folder"));
+        // Nothing refused was written.
+        assert!(!std::fs::read_to_string(&h.claude_json).unwrap_or_default().contains("filey"));
+    }
+
+    #[test]
+    fn into_opencode_converts_or_refuses() {
+        let (_d, h) = homes();
+        // No OpenCode config yet: a new opencode.jsonc, shown whole, private to you.
+        put(&h.claude_json, r#"{"mcpServers": {
+            "dflt": {"type": "stdio", "command": "srv", "args": ["--port", "${PORT:-8080}"]},
+            "tpl": {"type": "stdio", "command": "srv", "env": {"P": "${A}:${B}"}},
+            "events": {"type": "sse", "url": "https://x.dev/sse"},
+            "sock": {"type": "ws", "url": "wss://x.dev/ws"}
+        }}"#);
+        put(&h.codex_config, "[mcp_servers.lit]\ncommand = \"srv\"\nenv = { Q = \"a{env:B}\" }\n");
+        put(&h.gemini_settings, r#"{"mcpServers": {"gpath": {"command": "srv", "env": {"PATH": "$HOME/bin:${PATH}"}}}}"#);
+        let none = HashMap::new();
+        let p = preview(&h, None, "tpl", OpenCode, &none, "n").unwrap();
+        assert!(p.blockers.is_empty() && p.creates, "{:?}", p.blockers);
+        assert_eq!(p.file, "~/.config/opencode/opencode.jsonc");
+        apply(&h, None, "tpl", OpenCode, &none, &p.token, "n").unwrap();
+        let file = h.opencode_dir.join("opencode.jsonc");
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(p.snippet, text.trim_end(), "the preview is exactly the new file");
+        assert!(text.starts_with("{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"mcp\": {"), "{text}");
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["mcp"]["tpl"]["environment"]["P"], "{env:A}:{env:B}");
+        assert_eq!(mode(&file), 0o600);
+
+        let p = preview(&h, None, "gpath", OpenCode, &none, "n").unwrap();
+        assert!(p.blockers.is_empty(), "{:?}", p.blockers);
+        assert!(p.snippet.contains("\"PATH\": \"{env:HOME}/bin:{env:PATH}\""), "{}", p.snippet);
+        assert!(preview(&h, None, "dflt", OpenCode, &none, "n").unwrap().blockers[0].contains("no way to write ${PORT:-8080}"));
+        assert!(preview(&h, None, "lit", OpenCode, &none, "n").unwrap().blockers[0].contains("would read the {env:...}"));
+        assert!(preview(&h, None, "sock", OpenCode, &none, "n").unwrap().blockers[0].contains("WebSocket"));
+        let p = preview(&h, None, "events", OpenCode, &none, "n").unwrap();
+        assert!(p.blockers.is_empty() && p.notes.iter().any(|n| n.contains("falls back to SSE")), "{:?}", p.notes);
+        assert!(p.snippet.contains("\"type\": \"remote\""));
+
+        // Variable syntax, piece by piece.
+        assert_eq!(convert(Claude, OpenCode, "${A}/x/${B}").unwrap(), "{env:A}/x/{env:B}");
+        assert_eq!(convert(Claude, OpenCode, "cost $5 and $HOME").unwrap(), "cost $5 and $HOME", "Claude doesn't expand $NAME");
+        assert_eq!(convert(OpenCode, Claude, "Bearer {env:T}").unwrap(), "Bearer ${T}");
+        assert_eq!(convert(OpenCode, Gemini, "a {env:T} b").unwrap(), "a ${T} b");
+        assert!(convert(OpenCode, Gemini, "$HOME").unwrap_err().contains("would read the $"), "a literal $HOME in OpenCode means something else in Gemini");
+        assert!(convert(OpenCode, Claude, "{env:not-a-name}").is_err());
+        assert_eq!(parse_val(OpenCode, "{env:T}", false), Val::Var("T".into()));
+        assert_eq!(parse_val(OpenCode, "Bearer {env:T}", true), Val::Bearer("T".into()));
+        assert_eq!(parse_val(OpenCode, "x{env:T}", false), Val::Template("x{env:T}".into()));
+        assert_eq!(parse_val(OpenCode, "${T}", false), Val::Lit("${T}".into()), "OpenCode doesn't expand ${{T}}");
+    }
+
+    #[test]
+    fn opencode_global_file_and_skills() {
+        let (_d, h) = homes();
+        // OpenCode writes to the first of opencode.jsonc, opencode.json, config.json that exists.
+        put(&h.opencode_dir.join("config.json"), r#"{"mcp": {"old": {"type": "local", "command": ["a"]}}}"#);
+        assert_eq!(h.user_file(OpenCode), h.opencode_dir.join("config.json"));
+        put(&h.opencode_dir.join("opencode.json"), r#"{"mcp": {"old": {"type": "local", "command": ["b"]}}}"#);
+        assert_eq!(h.user_file(OpenCode), h.opencode_dir.join("opencode.json"));
+        // The later file wins, so it's the one "Add to" copies.
+        let o = overview(&h, None);
+        let old = o.servers.iter().find(|r| r.name == "old").unwrap();
+        assert_eq!(old.summary, "b");
+        assert_eq!(old.from.file, "~/.config/opencode/opencode.json");
+        assert_eq!(o.opencode_skill_dirs, ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"]);
+
+        put(&h.opencode_skills.join("oc-only/SKILL.md"), "---\nname: oc-only\ndescription: Mine\n---\n");
+        put(&h.claude_skills.join("review/SKILL.md"), "---\nname: review\ndescription: Review a diff\n---\n");
+        let rows = skills(&h);
+        let oc = rows.iter().find(|r| r.name == "oc-only").unwrap();
+        assert_eq!(oc.has, [OpenCode]);
+        assert_eq!(oc.share.iter().map(|s| (s.target, s.label.as_str())).collect::<Vec<_>>(), [("agents", "Add to Codex and Gemini"), ("claude", "Add to Claude")]);
+        assert_eq!(share_skill(&h, "oc-only", "claude").unwrap(), "~/.claude/skills/oc-only");
+        assert_eq!(std::fs::read_link(h.claude_skills.join("oc-only")).unwrap(), real_path(&h.opencode_skills.join("oc-only")));
+        share_skill(&h, "oc-only", "agents").unwrap();
+        assert_eq!(std::fs::read_link(h.agents_skills.join("oc-only")).unwrap(), real_path(&h.opencode_skills.join("oc-only")));
+
+        // With OPENCODE_DISABLE_CLAUDE_CODE_SKILLS, a Claude skill reaches OpenCode through ~/.agents/skills.
+        let off = Homes { opencode_reads_claude_skills: false, ..h.clone() };
+        let review = skills(&off).into_iter().find(|r| r.name == "review").unwrap();
+        assert_eq!(review.has, [Claude]);
+        assert_eq!(review.share[0].label, "Add to Codex, Gemini and OpenCode");
     }
 }
 
