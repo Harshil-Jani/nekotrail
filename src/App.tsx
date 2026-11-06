@@ -38,6 +38,8 @@ import { chime, getSettings, saveSettings, ting } from "./settings";
 import { getZoom, setZoom, stepZoom } from "./appearance";
 import { IS_MAC, isOpenIn, isWorkspaceDigit, keyHint, mod } from "./platform";
 import { AGENTS, agentName } from "./agents";
+import { isLinked, mainOf, membersOf } from "./multiRepo";
+import { GroupPrBar } from "./components/GroupPrBar";
 // Loaded the first time someone opens the Preview tab, so it costs nothing at startup.
 const Preview = lazy(() => import("./components/Preview").then((m) => ({ default: m.Preview })));
 const Checks = lazy(() => import("./components/Checks").then((m) => ({ default: m.Checks })));
@@ -252,25 +254,29 @@ export default function App() {
   const agentAsks = useRef(new Map<string, Promise<void>>());
   useEffect(() => {
     setBeforeTurn(async (id) => {
-      const t = await api.agentConfigTrust(id).catch(() => null);
-      if (!t) return;
-      let asking = agentAsks.current.get(t.fingerprint);
-      if (!asking) {
-        // One sheet at a time, and parallel sends for the same config share it.
-        const before = Promise.all(agentAsks.current.values()).then(() => {});
-        asking = before.then(async () => {
-          const run = await new Promise<boolean>((answer) => setTrustAsk({ repo: t.repo || "this repo", agent: t, answer }));
-          setTrustAsk(null);
-          if (run) await api.trustAgentConfig(id, t.fingerprint).catch((e) => say(errText(e), true));
-          // Gemini can't run with these off, so its "Not now" isn't kept: the next send asks again.
-          else if (t.items.some((it) => it.agent === "gemini")) agentAsks.current.delete(t.fingerprint);
-        });
-        agentAsks.current.set(t.fingerprint, asking);
-      }
-      await asking;
+      const first = await api.agentConfigTrust(id).catch(() => null);
+      if (!first) return;
+      // A multi-repo task asks per repo, the main one first.
+      for (const t of [first, ...(first.rest ?? [])]) await askAgentTrust(id, t);
     });
     return () => setBeforeTurn(async () => {});
   }, []);
+  const askAgentTrust = async (id: string, t: AgentConfigTrust) => {
+    let asking = agentAsks.current.get(t.fingerprint);
+    if (!asking) {
+      // One sheet at a time, and parallel sends for the same config share it.
+      const before = Promise.all(agentAsks.current.values()).then(() => {});
+      asking = before.then(async () => {
+        const run = await new Promise<boolean>((answer) => setTrustAsk({ repo: t.repo || "this repo", agent: t, answer }));
+        setTrustAsk(null);
+        if (run) await api.trustAgentConfig(id, t.fingerprint, t.workspace_id).catch((e) => say(errText(e), true));
+        // Agents that can't run with these off (Gemini, Copilot): "Not now" isn't kept, the next send asks again.
+        else if (t.items.some((it) => it.agent === "gemini" || it.agent === "copilot")) agentAsks.current.delete(t.fingerprint);
+      });
+      agentAsks.current.set(t.fingerprint, asking);
+    }
+    await asking;
+  };
   const startPty = async (id: string, script: "setup" | "run", tabName: string) => {
     await api.ptyRun(id, script);
     setLivePtys((s) => new Set(s).add(id));
@@ -605,7 +611,61 @@ export default function App() {
     if (c) say(`${c.name}: ${c.story}`);
   };
 
-  const ws = workspaces.find((w) => w.id === selected) ?? (extraWs?.id === selected ? extraWs : null);
+  const picked = workspaces.find((w) => w.id === selected) ?? (extraWs?.id === selected ? extraWs : null);
+  // A linked workspace of a multi-repo task (a deep link, the palette) shows as its task.
+  const ws = picked && isLinked(picked) ? mainOf(picked, workspaces) : picked;
+  // Multi-repo tasks: every workspace of the open task, and the repo Changes, Checks and Ports show.
+  const [repoView, setRepoView] = useState<Record<string, string>>({});
+  const members = useMemo(() => (ws ? membersOf(ws, workspaces) : []), [ws?.id, ws?.state, workspaces]);
+  const isTask = members.length > 1;
+  // The repo picked in the switcher; else the one a link or the palette opened; else the main one.
+  const viewWs = (isTask && ws ? members.find((m) => m.id === (repoView[ws.id] ?? picked?.id)) : undefined) ?? ws;
+  const repoNameOf = (id: string) => repos.find((r) => r.id === id)?.name ?? "";
+  // The sidebar and the board show a task once, as its main workspace, with its repos.
+  const listed = useMemo(() => workspaces.filter((w) => !isLinked(w)), [workspaces]);
+  const taskRepos = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const w of workspaces) if (w.group_id && w.group_id === w.id) out[w.id] = membersOf(w, workspaces).map((m) => repoNameOf(m.repo_id));
+    return out;
+  }, [workspaces, repos]);
+  /** Line counts for the sidebar: a task's row adds up every repo. */
+  const taskLines = useMemo(() => {
+    const out = { ...lines };
+    for (const w of workspaces) {
+      if (!isLinked(w) || !lines[w.id]) continue;
+      const [a, d] = out[w.group_id] ?? [0, 0];
+      out[w.group_id] = [a + lines[w.id][0], d + lines[w.id][1]];
+    }
+    return out;
+  }, [lines, workspaces]);
+  /** The Checks tab's dot: the worst of the task's repos (failing, then running). */
+  const taskDot = ws ? (members.map((m) => checkDots[m.id]).find((d) => d === "failed") ?? members.map((m) => checkDots[m.id]).find((d) => d && d !== "passed") ?? checkDots[ws.id]) : undefined;
+  /** Text for the task's agent about another repo's files: it works from the main repo's folder. */
+  const inRepo = (w: Workspace, text: string) =>
+    ws && w.id !== ws.id ? `In the ${repoNameOf(w.repo_id)} repo of this task (${w.path}):\n\n${text}` : text;
+  /** Changes and Checks of a multi-repo task: a repo switcher above the pane. */
+  const perRepo = (body: React.ReactNode) => !isTask || !ws ? body : (
+    <div className="repo-pane">
+      <div className="repo-switch-bar">
+        <nav className="seg repo-switch" role="tablist" aria-label="Repo">
+          {members.map((m) => {
+            const l = lines[m.id];
+            const dot = checkDots[m.id];
+            return (
+              <button key={m.id} role="tab" aria-selected={viewWs?.id === m.id} className={viewWs?.id === m.id ? "on" : ""}
+                onClick={() => setRepoView((v) => ({ ...v, [ws.id]: m.id }))}
+                title={m.id === ws.id ? `${repoNameOf(m.repo_id)}: the agent works here` : repoNameOf(m.repo_id)}>
+                {repoNameOf(m.repo_id)}
+                {l && (l[0] > 0 || l[1] > 0) && <span className="num repo-switch-lines"><span className="add">+{l[0]}</span> <span className="del">-{l[1]}</span></span>}
+                {dot && dot !== "passed" && <span className={`ws-check ck-${dot}`} role="img" aria-label={dot === "failed" ? "checks failing" : "checks running"} />}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+      <div className="repo-pane-body">{body}</div>
+    </div>
+  );
 
   // A jump belongs to one visit: leaving its workspace forgets it, so coming back doesn't scroll again.
   useEffect(() => { if (jump && jump.session.workspace_id !== selected) setJump(undefined); }, [selected]);
@@ -664,7 +724,12 @@ export default function App() {
   // Ports: the toolbar popover, and addresses it asks a workspace's Preview tab to show.
   const [portsOpen, setPortsOpen] = useState(() => params.has("ports"));
   const [previewShow, setPreviewShow] = useState<{ ws: string; url: string; nonce: number } | null>(null);
-  const wsLabel = (id: string) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; };
+  const wsLabel = (id: string) => {
+    const w = workspaces.find((x) => x.id === id);
+    if (!w) return "another workspace";
+    // A multi-repo task names its repo: "Export orders, web".
+    return w.group_id ? `${displayName(sky, mainOf(w, workspaces))}, ${repoNameOf(w.repo_id)}` : displayName(sky, w);
+  };
   const showInPreview = (wsId: string, url: string) => {
     select(wsId);
     setTab("preview");
@@ -706,7 +771,11 @@ export default function App() {
     if (!selected) return;
     localStorage.setItem("nekotrail.recent", JSON.stringify([selected, ...recentIds().filter((x) => x !== selected)].slice(0, 20)));
   }, [selected]);
-  const select = (id: string) => {
+  const select = (pickedId: string) => {
+    // A multi-repo task opens on its main workspace, wherever it was picked from.
+    const p = workspaces.find((x) => x.id === pickedId);
+    const id = p && isLinked(p) ? p.group_id : pickedId;
+    if (p && isLinked(p)) setRepoView((v) => ({ ...v, [id]: p.id }));
     const w = workspaces.find((x) => x.id === id);
     if (w?.unread && w.id !== selected) summarize(w); else setAway(null);
     setSelected(id);
@@ -744,8 +813,44 @@ export default function App() {
     }
   };
 
+  /** A task across repos: a workspace in each, one chat in the main one, setup in every repo first. */
+  const newMultiTask = async (req: NewWorkspaceRequest & { repoIds: string[] }) => {
+    const { repoIds, prompt, agent, model, effort, mode } = req;
+    if (agent === "both") return;
+    try {
+      const made = await api.createMultiTask(repoIds);
+      const main = made[0];
+      let session: Awaited<ReturnType<typeof api.newSession>> | null = null;
+      if (prompt) {
+        session = await api.newSession(main.id, agent);
+        await api.updateSession(session.id, "New chat", model, mode);
+        if (effort) await api.setSessionEffort(session.id, effort);
+      }
+      setNewFor(null);
+      await refresh();
+      select(main.id);
+      setTab("chat");
+      const names = made.map((w) => repos.find((r) => r.id === w.repo_id)?.name ?? "a repo");
+      say(`One task in ${names.join(", ")}, all on ${main.branch}. The agent works in ${names[0]} and reaches the others from there.`);
+      // Each repo's setup runs (once you approve its commands), and the agent starts after all of them.
+      const setups = await Promise.all(made.map(async (w) => {
+        const scripts = await api.workspaceScripts(w.id);
+        if (!scripts.setup || !await trusted(w, scripts, "setup")) return null;
+        const done = waitForExit(`${w.id}:setup`);
+        await startPty(`${w.id}:setup`, "setup", "setup");
+        return done;
+      }));
+      setTab("chat");
+      await Promise.all(setups.filter(Boolean));
+      if (session) await api.send(session.id, prompt);
+    } catch (e) {
+      say(`Couldn't create the task. ${errText(e)}`, true);
+    }
+  };
+
   const newWorkspace = async (req: NewWorkspaceRequest) => {
     const { repoId, prompt, agent, model, effort, mode, from } = req;
+    if (req.repoIds) return newMultiTask({ ...req, repoIds: req.repoIds });
     try {
       // A bake-off makes one workspace per agent, linked so they can be compared.
       const agents: Agent[] = agent === "both" ? ["claude", "codex"] : [agent];
@@ -887,6 +992,8 @@ export default function App() {
     const target = opts?.id ? workspaces.find((w) => w.id === opts.id) : ws;
     if (!target) return;
     const name = nameInText(sky, target);
+    // A multi-repo task is archived as a whole: every repo's workspace goes, every branch stays.
+    const repoCount = membersOf(target, workspaces).length;
     try {
       await api.archiveWorkspace(target.id);
     } catch (e) {
@@ -894,7 +1001,9 @@ export default function App() {
       if (opts?.auto) return say(`The PR for ${name} merged, but it has uncommitted changes, so it stays open. Commit or discard them, then archive it.`);
       const go = await ask({
         title: `Archive ${name} with uncommitted changes?`,
-        body: `The branch ${target.branch} is kept, but uncommitted work in its folder is lost.`,
+        body: repoCount > 1
+          ? `This task's ${repoCount} workspaces are archived together. The branch ${target.branch} is kept in every repo, but uncommitted work in their folders is lost.`
+          : `The branch ${target.branch} is kept, but uncommitted work in its folder is lost.`,
         ok: "Archive anyway",
         danger: true,
       });
@@ -914,7 +1023,7 @@ export default function App() {
     setLeaving(null);
     if (selectedRef.current === target.id) setSelected(next);
     await refresh();
-    say(`Archived ${name}. Branch ${target.branch} is kept.`, false, {
+    say(repoCount > 1 ? `Archived ${name} in all ${repoCount} repos. Branch ${target.branch} is kept in each.` : `Archived ${name}. Branch ${target.branch} is kept.`, false, {
       label: "Undo",
       run: () => api.restoreWorkspace(target.id).then(refresh).then(() => select(target.id)).catch((e) => say(errText(e), true)),
     });
@@ -1175,12 +1284,13 @@ export default function App() {
     <div className={`app ${resizing ? "resizing" : ""} ${sidebarHidden ? "no-sidebar" : ""}`}>
       <Sidebar
         repos={repos}
-        workspaces={workspaces}
+        workspaces={listed}
+        taskRepos={taskRepos}
         sky={sky}
         lit={lit.size}
         me={me}
         running={runningWs}
-        selected={view === "workspace" ? selected : null}
+        selected={view === "workspace" ? ws?.id ?? selected : null}
         showArchived={showArchived}
         onSelect={select}
         onNewWorkspace={setNewFor}
@@ -1195,7 +1305,7 @@ export default function App() {
         groupBy={groupBy}
         onGroupBy={(g) => { setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); }}
         prStates={prStates}
-        lines={lines}
+        lines={taskLines}
         checks={checkDots}
         collisions={collisions}
         usage={usage}
@@ -1234,7 +1344,7 @@ export default function App() {
         {view === "workspace" && !ws && <div className="titlebar-drag" data-tauri-drag-region />}
         {view === "board" && (
           <Board
-            workspaces={workspaces} repos={repos} sky={sky} prStates={prStates} lines={lines} running={runningWs} costs={costs}
+            workspaces={listed} repos={repos} sky={sky} prStates={prStates} lines={lines} running={runningWs} costs={costs}
             repoFilter={getSettings().repoFilter}
             onOpen={select}
             onSetStatus={(id, st) => api.setWorkspaceStatus(id, st).then(refresh)}
@@ -1278,7 +1388,7 @@ export default function App() {
                     {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                   </h1>
                 )}
-                <div className="ws-sub">{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{repo?.name} · {isHistory(ws) ? <>on {ws.branch}, in your main checkout</> : <>{ws.branch} → {ws.target_branch}</>}</div>
+                <div className="ws-sub" title={isTask ? `One task across ${members.map((m) => repoNameOf(m.repo_id)).join(", ")}. The agent works in ${repo?.name}.` : undefined}>{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{isTask ? members.map((m) => repoNameOf(m.repo_id)).join(", ") : repo?.name} · {isHistory(ws) ?<>on {ws.branch}, in your main checkout</> : <>{ws.branch} → {ws.target_branch}</>}</div>
               </div>
               <span className="spacer" />
               {ws.state === "active" && !isHistory(ws) && (
@@ -1286,8 +1396,8 @@ export default function App() {
                   {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
                     <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
                       {t.label}
-                      {t.id === "checks" && checkDots[ws.id] && checkDots[ws.id] !== "passed" && (
-                        <span className={`ws-check ck-${checkDots[ws.id]}`} role="img" aria-label={checkDots[ws.id] === "failed" ? "failing" : "running"} />
+                      {t.id === "checks" && taskDot && taskDot !== "passed" && (
+                        <span className={`ws-check ck-${taskDot}`} role="img" aria-label={taskDot === "failed" ? "failing" : "running"} />
                       )}
                     </button>
                   ))}
@@ -1314,7 +1424,7 @@ export default function App() {
                     {/* Folded away, the button moves into ⋯; the popover still opens from here. */}
                     <span className="tb-ports-wrap">
                       {fold < 3 && <button className="quiet tb-ports" onClick={() => setPortsOpen((o) => !o)} aria-expanded={portsOpen} title="Ports: what each workspace's app listens on" aria-label="Ports"><Network size={14} />{fold < 1 && "Ports"}</button>}
-                      {portsOpen && <PortsPopover selected={ws.id} label={wsLabel} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
+                      {portsOpen && <PortsPopover selected={viewWs?.id ?? ws.id} task={members.map((m) => m.id)} label={wsLabel} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
                     </span>
                     {fold < 3 && paired && (
                       <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results" aria-label="Compare"><Columns2 size={14} />{fold < 1 && "Compare"}</button>
@@ -1388,7 +1498,20 @@ export default function App() {
             {ws.state === "active" && ws.review_pr > 0 && (
               <ReviewBar ws={ws} request={reviewRequests.find((r) => r.repo_id === ws.repo_id && r.number === ws.review_pr)} refreshKey={wsRefreshKey} onChanges={() => setTab("changes")} />
             )}
-            {ws.state === "active" && !ws.review_pr && !isHistory(ws) && (
+            {ws.state === "active" && isTask && (
+              <GroupPrBar
+                members={members}
+                repos={repos}
+                prs={prs}
+                title={displayName(sky, ws)}
+                refreshKey={wsRefreshKey}
+                onSay={say}
+                onArchive={() => archive()}
+                onShowRepo={(id) => { setRepoView((v) => ({ ...v, [ws.id]: id })); setTab("changes"); }}
+                onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
+              />
+            )}
+            {ws.state === "active" && !isTask && !ws.review_pr && !isHistory(ws) && (
               <PrBar
                 ws={ws}
                 repo={repo ?? undefined}
@@ -1431,10 +1554,11 @@ export default function App() {
                     <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
-                    {tab === "changes" && (
+                    {tab === "changes" && viewWs && perRepo(
                       <Diff
-                        workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile}
-                        onSendReview={(text, send) => { setTab("chat"); setInject({ text, nonce: Date.now(), send }); }}
+                        key={viewWs.id}
+                        workspaceId={viewWs.id} refreshKey={wsRefreshKey} focusFile={focusFile}
+                        onSendReview={(text, send) => { setTab("chat"); setInject({ text: inRepo(viewWs, text), nonce: Date.now(), send }); }}
                         reviewPr={ws.review_pr}
                         onSubmitted={(r) => {
                           refresh();
@@ -1468,15 +1592,15 @@ export default function App() {
                     )}
                   </div>
                   <div className="pane" hidden={tab !== "checks"}>
-                    {tab === "checks" && (
+                    {tab === "checks" && viewWs && perRepo(
                       <Suspense fallback={null}>
                         <Checks
-                          key={ws.id}
-                          workspaceId={ws.id}
-                          repo={repo ?? undefined}
+                          key={viewWs.id}
+                          workspaceId={viewWs.id}
+                          repo={repos.find((r) => r.id === viewWs.repo_id)}
                           active={tab === "checks"}
-                          onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
-                          onRepoSettings={() => setSettingsFor(ws.repo_id)}
+                          onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, inRepo(viewWs, text)).then(refresh).catch((e) => say(errText(e), true)); }}
+                          onRepoSettings={() => setSettingsFor(viewWs.repo_id)}
                           onRepoChanged={refresh}
                           onSay={say}
                         />

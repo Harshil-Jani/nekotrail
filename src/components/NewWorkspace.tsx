@@ -10,6 +10,7 @@ import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
 import { forNewWorkspace, fuzzy, loadPrompts, type PromptEntry } from "../prompts";
 import { FillBar, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
+import { MAX_REPOS, MIN_REPOS, MULTI_REPO_AGENTS, multiRepoNote, togglePick } from "../multiRepo";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
@@ -23,9 +24,11 @@ export type NewWorkspaceRequest = {
   repoId: string; prompt: string; agent: Agent | "both"; model: string | null; effort?: string | null; mode: PermissionMode;
   /** "pr:123", "branch:name" or "workspace:<id>" (stack on it) to start from existing work; empty for a fresh branch. */
   from?: string;
+  /** A multi-repo task: 2 to 5 repos, the main one (where the chat runs) first. `repoId` is the main one. */
+  repoIds?: string[];
 };
 
-export type Source = "task" | "pr" | "branch" | "issue" | "stack";
+export type Source = "task" | "multi" | "pr" | "branch" | "issue" | "stack";
 /** An active workspace a new one can be stacked on. */
 /** `name` for the list, `text` inside a sentence (a task title comes quoted), `star` under it. */
 export type StackTarget = { id: string; repo_id: string; name: string; text: string; star: string; branch: string };
@@ -72,6 +75,13 @@ export function NewWorkspace({
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuePick, setIssuePick] = useState<number | null>(null);
   const [stackPick, setStackPick] = useState<string | null>(initialStack ?? null);
+  // Several repos: the ones ticked, in order; the first is the main one, where the chat runs.
+  const [picked, setPicked] = useState<string[]>([initialRepo]);
+  const multi = source === "multi";
+  useEffect(() => {
+    // Only some agents can open more than one folder.
+    if (multi && (agent === "both" || !MULTI_REPO_AGENTS.includes(agent))) { setAgent("claude"); setModel(""); setEffort(null); }
+  }, [multi]);
   const stackable = stackTargets.filter((t) => t.repo_id === repoId);
   const stackOn = stackable.find((t) => t.id === stackPick);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -98,7 +108,8 @@ export function NewWorkspace({
     try {
       const from = source === "pr" && prPick ? `pr:${prPick}` : source === "branch" && branch.trim() ? `branch:${branch.trim()}`
         : source === "stack" && stackOn ? `workspace:${stackOn.id}` : undefined;
-      await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode, from });
+      if (multi) await onCreate({ repoId: picked[0], repoIds: picked, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode });
+      else await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode, from });
     } finally {
       setBusy(false);
     }
@@ -163,22 +174,26 @@ export function NewWorkspace({
         style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
       >
         <div className="nw-head" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
-          <label className="nw-repo">
-            <select value={repoId} onChange={(e) => setRepoId(e.target.value)} aria-label="Repo">
-              {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-            <ChevronDown size={16} />
-          </label>
+          {multi ? (
+            <span className="nw-repo nw-multi-title">{picked.length > 1 ? `${picked.length} repos` : "Several repos"}</span>
+          ) : (
+            <label className="nw-repo">
+              <select value={repoId} onChange={(e) => setRepoId(e.target.value)} aria-label="Repo">
+                {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <ChevronDown size={16} />
+            </label>
+          )}
           <span className="spacer" />
           <div className="nw-agent" role="radiogroup" aria-label="Agent">
-            {([...split.shown, "both"] as (Agent | "both")[]).map((a) => (
+            {(multi ? MULTI_REPO_AGENTS : [...split.shown, "both"] as (Agent | "both")[]).map((a) => (
               <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => choose(a)}
                 title={a === "both" ? "Run Claude and Codex side by side, then keep the better one" : undefined}>
                 {a === "both" ? "Claude + Codex" : AGENT_INFO[a].name}
               </button>
             ))}
           </div>
-          {(split.installed.length > 0 || split.missing.length > 0) && (
+          {!multi && (split.installed.length > 0 || split.missing.length > 0) && (
             <span className="nw-more">
               <button className="quiet" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)} title="Other agents: Cursor, Copilot, Goose and more">
                 More<ChevronDown size={12} />
@@ -192,10 +207,34 @@ export function NewWorkspace({
           )}
         </div>
         <nav className="seg nw-source" role="tablist" aria-label="Start from">
-          {([["task", "New branch"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"], ["stack", "On a workspace"]] as [Source, string][]).map(([id, label]) => (
+          {([["task", "New branch"], ["multi", "Several repos"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"], ["stack", "On a workspace"]] as [Source, string][]).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={source === id} className={source === id ? "on" : ""} onClick={() => setSource(id)}>{label}</button>
           ))}
         </nav>
+        {multi && (
+          <>
+            <div className="nw-list nw-repos" role="group" aria-label="Repos in this task">
+              {repos.length < MIN_REPOS && <p className="muted">Add another repo first. A task across repos needs at least two.</p>}
+              {repos.map((r) => {
+                const at = picked.indexOf(r.id);
+                const full = at < 0 && picked.length >= MAX_REPOS;
+                return (
+                  <div key={r.id} className={`nw-repo-row ${at >= 0 ? "on" : ""}`}>
+                    <label title={full ? `A task can span up to ${MAX_REPOS} repos.` : undefined}>
+                      <input type="checkbox" checked={at >= 0} disabled={full} onChange={() => setPicked((p) => togglePick(p, r.id))} />
+                      <span className="nw-pr-title">{r.name}</span>
+                    </label>
+                    {at === 0 && <span className="chip nw-main" title="The agent's chat runs in this repo's workspace">Main</span>}
+                    {at > 0 && <button className="quiet nw-make-main" onClick={() => setPicked((p) => [r.id, ...p.filter((x) => x !== r.id)])}>Make main</button>}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="muted nw-note">
+              Each repo gets a workspace on the same branch. The agent works in the main one and can read and change the others. {multiRepoNote()}
+            </p>
+          </>
+        )}
         {source === "pr" && (
           <div className="nw-list" role="listbox" aria-label="Open PRs">
             {prs === null && <p className="muted"><span className="spinner" /> Loading open PRs…</p>}
@@ -281,7 +320,8 @@ export function NewWorkspace({
               submit();
             }
           }}
-          placeholder={source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Type / for a saved prompt. Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
+          placeholder={multi ? "What should the agent change across these repos? Type / for a saved prompt."
+            : source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Type / for a saved prompt. Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
           aria-label="What the agent should do"
         />
         {blankNote && <p className="muted nw-note" role="status">{blankNote}</p>}
@@ -299,9 +339,9 @@ export function NewWorkspace({
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">{keyHint("⇧↵ new line · Esc to close")}</span>
-          <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "stack" && !stackOn)}>
+          <button className="primary" onClick={submit} disabled={busy || (multi ? picked.length < MIN_REPOS : !repo) || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "stack" && !stackOn)}>
             {busy ? <span className="spinner" /> : null}
-            {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? "Create stacked workspace" : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
+            {multi ? (picked.length < MIN_REPOS ? "Pick at least two repos" : `Create task in ${picked.length} repos`) : source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? "Create stacked workspace" : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
             <CornerDownLeft size={14} />
           </button>
         </div>

@@ -16,12 +16,15 @@ function Fix({ text }: { text: string }) {
  */
 export function PortsPopover({
   selected,
+  task = [],
   label,
   onPreview,
   onSay,
   onClose,
 }: {
   selected: string;
+  /** The other workspaces of the open multi-repo task, listed right after it. */
+  task?: string[];
   /** A workspace's name as the sidebar shows it. */
   label: (id: string) => string;
   /** Show this local address in that workspace's Preview tab. */
@@ -96,7 +99,7 @@ export function PortsPopover({
         {error && <p className="ports-note bad-text">{error}</p>}
         {!list && !error && <span className="spinner" aria-label="Loading" />}
         {list && list.length === 0 && <p className="ports-note muted">No active workspaces.</p>}
-        {list && orderWorkspaces(list, selected).map((ws) => {
+        {list && orderWorkspaces(list, selected, task).map((ws) => {
           const quiet = quietPorts(ws);
           return (
             <section key={ws.id} className="ports-ws" aria-label={`Ports of ${label(ws.id)}`}>

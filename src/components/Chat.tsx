@@ -82,7 +82,7 @@ type Row =
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> }
   | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" }
   | { type: "blocked"; text: string; files: string[] }
-  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] }
+  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[]; workspace_id?: string; repo?: string }
   | { type: "checks"; results: Extract<ChatEvent, { kind: "checks" }>["results"] };
 
 /**
@@ -133,7 +133,7 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
         break;
       case "guard":
         guardIdx.set(ev.checkpoint ?? "", rows.length);
-        rows.push({ type: "guard", files: ev.files, checkpoint: ev.checkpoint, ignored: ev.ignored, level: ev.level });
+        rows.push({ type: "guard", files: ev.files, checkpoint: ev.checkpoint, ignored: ev.ignored, level: ev.level, workspace_id: ev.workspace_id, repo: ev.repo });
         break;
       case "checks":
         rows.push({ type: "checks", results: ev.results });
@@ -183,7 +183,7 @@ type ChatCtxValue = {
   /** Put `file:line` findings from a reply into the Changes tab as review comments. */
   addFindings: (f: Finding[]) => void;
   /** Put back the protected files a turn changed, after the confirm sheet. */
-  putBack: (checkpoint: string, ignored: string | null, files: GuardHit[]) => Promise<void>;
+  putBack: (checkpoint: string, ignored: string | null, files: GuardHit[], workspace?: string) => Promise<void>;
   /** Open the save sheet with a past message's text. */
   savePrompt: (text: string) => void;
 };
@@ -209,7 +209,8 @@ function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
   const left = r.files.filter((f) => !r.restored?.includes(f.path));
   const names = r.files.map((f) => f.path);
   // The list below names the files, so the title only counts them.
-  const title = names.length === 1 ? "Changed a protected file" : `Changed ${names.length} protected files`;
+  // In a multi-repo task the file may be in another repo, which has its own protected paths.
+  const title = `${names.length === 1 ? "Changed a protected file" : `Changed ${names.length} protected files`}${r.repo ? ` in ${r.repo}` : ""}`;
   return (
     <div className={`guard-card ${left.length ? "" : "settled"}`}>
       <div className="fix-head"><ShieldAlert size={15} /><b>{title}</b></div>
@@ -228,7 +229,7 @@ function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
           <span className="spacer" />
           {r.checkpoint && (
             <button className="accent" disabled={disabled || busy} title={disabled ? "Stop the agent first" : "Restore only these files from before the turn"}
-              onClick={async () => { setBusy(true); try { await putBack(r.checkpoint!, r.ignored, left); } finally { setBusy(false); } }}>
+              onClick={async () => { setBusy(true); try { await putBack(r.checkpoint!, r.ignored, left, r.workspace_id); } finally { setBusy(false); } }}>
               <Undo2 size={14} />Put {left.length === 1 ? "it" : "them"} back
             </button>
           )}
@@ -676,7 +677,7 @@ export function Chat({
     },
     approvePlan: () => live.current.approvePlan(),
     savePrompt: (text: string) => setSaving(text),
-    putBack: async (checkpoint: string, ignored: string | null, files: GuardHit[]) => {
+    putBack: async (checkpoint: string, ignored: string | null, files: GuardHit[], workspace?: string) => {
       const { active } = live.current;
       if (!active) return;
       setError(null);
@@ -694,7 +695,7 @@ export function Chat({
         ok: one && gone.length ? "Remove" : "Put back",
       });
       if (!ok) return;
-      try { await api.putBackProtected(active, checkpoint, ignored, files.map((f) => f.path)); } catch (e) { setError(errText(e)); }
+      try { await api.putBackProtected(active, checkpoint, ignored, files.map((f) => f.path), workspace); } catch (e) { setError(errText(e)); }
     },
     expandAll,
     query: (search ?? "").trim().toLowerCase(),

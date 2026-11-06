@@ -34,20 +34,22 @@ type AgentInfo = {
   configOff: boolean;
   /** How protected paths hold (twin of `Agent::guard_level`), in plain words for Repo settings. */
   guard: { level: GuardLevel; how: string };
+  /** Can work in other folders too, so a multi-repo task can use it (twin of `Agent::extra_dirs`). */
+  multiRepo?: boolean;
 };
 
 export const AGENT_INFO: Record<Agent, AgentInfo> = {
-  claude: { name: "Claude", full: "Claude Code", cli: "claude", install: "npm install -g @anthropic-ai/claude-code", login: "claude /login", setup: "claude", ask: true, effort: true, configOff: true,
+  claude: { name: "Claude", full: "Claude Code", cli: "claude", install: "npm install -g @anthropic-ai/claude-code", login: "claude /login", setup: "claude", ask: true, effort: true, configOff: true, multiRepo: true,
     guard: { level: "blocked", how: "Its file tools and simple shell writes can't touch them, in every mode. A script could still get around that." } },
-  codex: { name: "Codex", full: "Codex", cli: "codex", install: "npm install -g @openai/codex", login: "codex login", setup: "codex", ask: false, effort: true, configOff: true,
+  codex: { name: "Codex", full: "Codex", cli: "codex", install: "npm install -g @openai/codex", login: "codex login", setup: "codex", ask: false, effort: true, configOff: true, multiRepo: true,
     guard: { level: "after", how: "It can't block single files yet, so only the check after each turn applies." } },
-  gemini: { name: "Gemini", full: "Gemini CLI", cli: "gemini", install: "npm install -g @google/gemini-cli", login: "gemini", setup: "gemini", ask: false, effort: false, configOff: false,
+  gemini: { name: "Gemini", full: "Gemini CLI", cli: "gemini", install: "npm install -g @google/gemini-cli", login: "gemini", setup: "gemini", ask: false, effort: false, configOff: false, multiRepo: true,
     guard: { level: "after", how: "It can't block single files yet, so only the check after each turn applies." } },
   opencode: { name: "OpenCode", full: "OpenCode", cli: "opencode", install: "curl -fsSL https://opencode.ai/install | bash", login: "opencode auth login", setup: "opencode auth login", ask: true, effort: false, configOff: true,
     guard: { level: "blocked", how: "Its edits to them are refused in every mode, with the reason in the chat. Shell commands aren't." } },
   cursor: { name: "Cursor", full: "Cursor CLI", cli: "cursor-agent", install: "curl https://cursor.com/install -fsS | bash", login: "cursor-agent login", setup: "cursor-agent login", ask: false, effort: false, configOff: false,
     guard: { level: "asks", how: "If it asks before changing a protected file, nekotrail says no. It often edits without asking." } },
-  copilot: { name: "Copilot", full: "GitHub Copilot CLI", cli: "copilot", install: "npm install -g @github/copilot", login: "copilot login", setup: "copilot login", ask: true, effort: false, configOff: false,
+  copilot: { name: "Copilot", full: "GitHub Copilot CLI", cli: "copilot", install: "npm install -g @github/copilot", login: "copilot login", setup: "copilot login", ask: true, effort: false, configOff: false, multiRepo: true,
     guard: { level: "asks", how: "In Ask before changes it asks before every write, and protected ones are refused. In other modes it may write without asking." } },
   goose: { name: "Goose", full: "Goose", cli: "goose", install: IS_MAC ? "brew install block-goose-cli" : "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash", login: "goose configure", setup: "goose configure", ask: false, effort: false, configOff: false,
     guard: { level: "asks", how: "If it asks before changing a protected file, nekotrail says no. It often edits without asking." } },

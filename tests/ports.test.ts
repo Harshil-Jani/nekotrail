@@ -28,6 +28,8 @@ describe("ports popover", () => {
     const list = [ws("c", 4120), ws("a", 4100), ws("b", 4110)];
     expect(orderWorkspaces(list, "b").map((w) => w.id)).toEqual(["b", "a", "c"]);
     expect(orderWorkspaces(list, null).map((w) => w.id)).toEqual(["a", "b", "c"]);
+    // A multi-repo task's other repos follow the open one.
+    expect(orderWorkspaces(list, "b", ["b", "c"]).map((w) => w.id)).toEqual(["b", "c", "a"]);
   });
 
   test("block range and the free ports left unlisted", () => {

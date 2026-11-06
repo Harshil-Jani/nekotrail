@@ -357,15 +357,24 @@ fn workspace_or_chat(st: &AppState, id: &str) -> Res<(Workspace, &'static dyn ag
 #[tauri::command]
 async fn agent_config_trust(st: State<'_, AppState>, id: String) -> Res<Value> {
     let (ws, harness) = workspace_or_chat(&st, &id)?;
-    // A multi-repo task asks per repo: the main one first, then each other repo the agent works in.
+    // A multi-repo task asks per repo: the first untrusted one, with the others that need asking
+    // in `rest` (so "Not now" on one still asks about the next).
     let linked = linked_workspaces(&st, &ws);
+    let mut all: Vec<Value> = vec![];
     for w in std::iter::once(&ws).chain(&linked) {
         if let Some((items, print)) = untrusted_agent_config(&st, w, harness) {
             let repo = st.db().repo(&w.repo_id).map(|r| r.name).unwrap_or_default();
-            return Ok(json!({"repo": repo, "fingerprint": print, "items": items, "workspace_id": w.id}));
+            all.push(json!({"repo": repo, "fingerprint": print, "items": items, "workspace_id": w.id}));
         }
     }
-    Ok(Value::Null)
+    if all.is_empty() {
+        return Ok(Value::Null);
+    }
+    let mut first = all.remove(0);
+    if !all.is_empty() {
+        first["rest"] = json!(all);
+    }
+    Ok(first)
 }
 
 /// The user trusted the agent config they were shown. Same store as the scripts: per repo and

@@ -90,7 +90,7 @@ const repos = [
 ];
 const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
-  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", title_source: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", parent_id: "", review_pr: 0, ...extra,
+  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", title_source: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", parent_id: "", review_pr: 0, group_id: "", ...extra,
 });
 const planEvents = [
   { kind: "user", checkpoint: "c1", text: "Tickets should breach SLA after 4 business hours, not 4 hours. Plan it first." },
@@ -123,6 +123,19 @@ const workspaces = [
 ];
 if (new URLSearchParams(location.search).has("review")) workspaces.push(ws("w6", "r1", "biscuit", "review/pr-731", { title: "Retry webhook deliveries with backoff", title_source: "pr", review_pr: 731 }));
 // ?history&ws=w7: a repo's History workspace (terminal chats from the main checkout, read-only).
+// ?multi&ws=g1: a task across three repos (api, web, types) on one branch, the chat in the api one.
+// ?multi=green: every PR green, so Merge all can run; ?multi=nopr: no PRs yet; default: one check still running.
+const multi = new URLSearchParams(location.search).get("multi");
+const multiMerged = new Set<string>();
+if (multi !== null) {
+  repos.push({ id: "r3", name: "pawprint-types", root_path: "/code/pawprint-types", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null });
+  const t = { group_id: "g1", created_at: "2026-11-06T10:00:00Z" };
+  workspaces.push(
+    ws("g1", "r1", "vega", "harshil/order-export", { ...t, title: "Export orders as CSV", title_source: "auto", path: "/code/ws/pawprint-api/vega" }),
+    ws("g2", "r2", "vega", "harshil/order-export", { ...t, path: "/code/ws/pawprint-web/vega", created_at: "2026-11-06T10:00:01Z" }),
+    ws("g3", "r3", "vega", "harshil/order-export", { ...t, path: "/code/ws/pawprint-types/vega", created_at: "2026-11-06T10:00:02Z" }),
+  );
+}
 if (new URLSearchParams(location.search).has("history")) workspaces.push(ws("w7", "r1", "history", "main", { path: "/code/pawprint-api", title: "History", title_source: "user", imported_from: "terminal-history" }));
 // ?many adds 20 more workspaces (most titled, a few not yet) to judge the sidebar's density.
 if (new URLSearchParams(location.search).has("many")) {
@@ -253,6 +266,11 @@ const portsList = () => [
   { id: "w4", base: 4130, main: 4130, problems: [], rows: [
     { port: 4130, vars: ["NEKOTRAIL_PORT", "PORT"], name: null, outside: false, holder: holder("vite", 50112, null, false) },
   ] },
+  // ?multi: each repo of the task has its own block, named "<task>, <repo>".
+  ...(new URLSearchParams(location.search).get("multi") !== null ? [
+    { id: "g1", base: 4170, main: 4170, problems: [], rows: [{ port: 4170, vars: ["NEKOTRAIL_PORT", "PORT"], name: null, outside: false, holder: holder("api", 61200, "g1") }] },
+    { id: "g2", base: 4180, main: 4180, problems: [], rows: [{ port: 4180, vars: ["NEKOTRAIL_PORT", "PORT"], name: null, outside: false, holder: holder("vite", 61201, "g2") }] },
+  ] : []),
 ];
 if (new URLSearchParams(location.search).has("portclash")) setTimeout(() => emit("port-clash", { workspace_id: "w2", text: "Comet's Run script stopped: port 3000 is taken by Mochi (node, pid 41230).", fix: "Use `$PORT` in the Run script so each workspace gets its own." }), 1200);
 // ?link: a nekotrail://new link waiting for "Start this task?". ?link=long has a long prompt and adds the repo.
@@ -432,9 +450,16 @@ mockIPC(
           // Comet's PR is the draft the sidebar shows, with the same +120 -31 as its files.
           if (id === "w2") return { ...pr, number: 479, isDraft: true, additions: 120, deletions: 31, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };
           if (id === "w4") return { ...pr, number: 471, state: "MERGED", additions: 6, deletions: 2, latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }], reviewRequests: [] };
+          if (id.startsWith("g") && multi !== "nopr") {
+            const n = { g1: 512, g2: 96, g3: 14 }[id]!;
+            const repo = { g1: "pawprint-api", g2: "pawprint-web", g3: "pawprint-types" }[id]!;
+            const running = multi !== "green" && id === "g2";
+            return { ...pr, number: n, url: `https://github.com/pawprint/${repo}/pull/${n}`, state: multiMerged.has(id) ? "MERGED" : "OPEN", title: "Export orders as CSV",
+              statusCheckRollup: running ? [{ name: "build", conclusion: "SUCCESS" }, { name: "e2e", status: "IN_PROGRESS", conclusion: null }] : [{ name: "build", conclusion: "SUCCESS" }] };
+          }
           return null;
         };
-        return Object.fromEntries(["w1", "w2", "w3", "w4", "w5"].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
+        return Object.fromEntries(["w1", "w2", "w3", "w4", "w5", ...(multi !== null ? ["g1", "g2", "g3"] : [])].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
       }
       // Files per workspace add up to line_counts below. Dash (w3) and Pip (w5) have no changes yet.
       case "changes": return args.id === "w1" || args.id === "w6" ? [
@@ -449,6 +474,13 @@ mockIPC(
         { path: "internal/server/http.go", status: "M", additions: 3, deletions: 1 },
       ] : args.id === "w4" ? [
         { path: "src/pages/pricing.tsx", status: "M", additions: 6, deletions: 2 },
+      ] : args.id === "g1" ? [
+        { path: "internal/orders/export.go", status: "A", additions: 64, deletions: 0 },
+        { path: "internal/server/routes.go", status: "M", additions: 2, deletions: 0 },
+      ] : args.id === "g2" ? [
+        { path: "src/pages/orders.tsx", status: "M", additions: 18, deletions: 3 },
+      ] : args.id === "g3" ? [
+        { path: "src/orders.ts", status: "M", additions: 9, deletions: 0 },
       ] : [];
       case "file_diff": return diff;
       // Changes, Commit. ?pushed makes the last commit pushed (Amend and Undo off); ?nostaged empties
@@ -495,7 +527,19 @@ mockIPC(
       case "read_file": return "package server\n\nfunc New(cfg Config) *http.Server {\n  return nil\n}\n";
       case "pty_open": return "\x1b[32m~/code/ws/mochi\x1b[0m on \x1b[35mharshil/fix-502-gateway\x1b[0m\r\n$ ";
       case "pty_attach": return String(args.id).endsWith(":run") ? "$ make dev\r\ngo run ./cmd/api\r\n2026/11/06 01:40:12 listening on http://localhost:41230\r\n" : null;
-      case "line_counts": return { w1: [38, 1], w2: [120, 31], w4: [6, 2] };
+      case "line_counts": return { w1: [38, 1], w2: [120, 31], w4: [6, 2], g1: [66, 0], g2: [18, 3], g3: [9, 0] };
+      case "create_multi_task": return (args.repoIds as string[]).map((r, i) => ({ ...workspaces[0], id: `new${i}`, repo_id: r, name: "vega", branch: "harshil/vega", group_id: "new0", pinned: false, title: "" }));
+      case "group_prs": return [{ workspace_id: "g1", repo: "pawprint/pawprint-api", number: 512, url: "" }, { workspace_id: "g2", repo: "pawprint/pawprint-web", number: 96, url: "" }, { workspace_id: "g3", repo: "pawprint/pawprint-types", number: 14, url: "" }];
+      case "merge_all": {
+        // ?multi=green&mergefail: the second repo in the order fails, so the third waits.
+        const order = args.order as string[];
+        const fail = location.search.includes("mergefail") ? order[1] : null;
+        const steps = order.map((id, i) => ({ workspace_id: id, name: { g1: "pawprint-api", g2: "pawprint-web", g3: "pawprint-types" }[id as "g1"], detail: "",
+          outcome: fail && i > order.indexOf(fail) ? "skipped" : id === fail ? "failed" : "merged" }));
+        for (const s of steps) if (s.outcome === "merged") multiMerged.add(s.workspace_id);
+        if (fail) steps[order.indexOf(fail)].detail = "Pull request is not mergeable: the base branch policy prohibits the merge.";
+        return steps;
+      }
       case "open_in_targets": return [{ id: "cursor", name: "Cursor" }, { id: "vscode", name: "Visual Studio Code" }, { id: "zed", name: "Zed" }, { id: "ghostty", name: "Ghostty" }, { id: "finder", name: "Finder" }];
       case "doctor": return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: !location.search.includes("fresh"), login: location.search.includes("fresh") ? null : "Harshil-Jani" }, claude: { ok: true, version: "2.4.1 (Claude Code)" },
         ...Object.fromEntries(AGENTS.filter((a) => a !== "claude").map((a) => [a, installed.includes(a) ? { ok: true, version: `${a} 1.0.0` } : { ok: false, version: "" }])) };

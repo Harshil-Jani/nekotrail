@@ -10,7 +10,10 @@ import { ask } from "./Confirm";
 
 type Props = {
   repos: Repo[];
+  /** Without the linked workspaces of multi-repo tasks: a task shows as its main workspace. */
   workspaces: Workspace[];
+  /** Multi-repo tasks: main workspace id to the names of its repos, the main one first. */
+  taskRepos?: Record<string, string[]>;
   sky: Sky;
   lit: number;
   me: GithubUser;
@@ -233,7 +236,10 @@ export function Sidebar(p: Props) {
     const ck = w.state === "active" ? p.checks?.[w.id] : undefined;
     // A titled row says what the task is; its star sits underneath.
     const sub = subName(p.sky, w);
+    const task = p.taskRepos?.[w.id];
+    const taskNote = task ? `One task across ${task.join(", ")}` : "";
     const meta = <>
+      {task && <span className="ws-repos num" role="img" aria-label={taskNote} title={taskNote}><FolderGit2 size={12} />{task.length}</span>}
       {ck && <span className={`ws-check ck-${ck}`} role="img" aria-label={CHECK_LABEL[ck]} title={CHECK_LABEL[ck]} />}
       {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
       {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
@@ -257,7 +263,7 @@ export function Sidebar(p: Props) {
           {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.review_pr ? <Eye size={15} className="pr-none" aria-label={`Reviewing PR #${w.review_pr}`} /> : isHistory(w) ? <History size={15} className="pr-none" aria-label="Terminal history, read only" /> : <PrIcon state={p.prStates[w.id]} />}
           {w.unread && !p.running.has(w.id) && <span className="unread badge" aria-label="Unread" />}
         </span>
-        <span className="ws-text" title={`${label(w)}${sub ? `\n${sub}` : ""}\n${repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>
+        <span className="ws-text" title={`${label(w)}${sub ? `\n${sub}` : ""}\n${task ? task.join(", ") : repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>
           <span className="ws-name">{label(w)}</span>
           {/* Two-line rows keep the marks on the star's line, so the task title gets the full width. */}
           {sub && <span className="ws-sub-line"><span className="ws-star">{sub}</span>{meta}</span>}

@@ -20,8 +20,10 @@ export function holderText(row: PortRow, wsId: string, label: (id: string) => st
 }
 
 /** The selected workspace first, then the rest by their first port. */
-export function orderWorkspaces(list: WsPorts[], selected: string | null): WsPorts[] {
-  return [...list].sort((a, b) => Number(b.id === selected) - Number(a.id === selected) || a.base - b.base);
+export function orderWorkspaces(list: WsPorts[], selected: string | null, task: string[] = []): WsPorts[] {
+  // The open workspace first, then the other repos of its multi-repo task, then by port.
+  const rank = (w: WsPorts) => (w.id === selected ? 2 : task.includes(w.id) ? 1 : 0);
+  return [...list].sort((a, b) => rank(b) - rank(a) || a.base - b.base);
 }
 
 /** The ports a block spans, for its heading: "4110 to 4119". */
