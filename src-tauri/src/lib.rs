@@ -627,7 +627,7 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
             let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
                 .args(["-lc", &script])
                 .current_dir(path)
-                .envs(env_for(&st, &repo, &ws))
+                .envs(env_for(st, &repo, &ws))
                 .status();
         }
         git::remove_worktree(Path::new(&repo.root_path), path).map_err(e)?;
@@ -3844,7 +3844,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
         };
         let repo = Repo {
             id: "r1".into(), name: "app".into(), root_path: dir.path().join("app").to_string_lossy().into(), default_branch: "main".into(),
@@ -3862,7 +3862,7 @@ mod tests {
         assert_eq!(st.db().workspace("theirs").unwrap().review_pr, 7, "stored and read back");
 
         // Agent, terminal and scripts in a review workspace get the no-push git settings; others don't.
-        let has_block = |w: &Workspace| workspace_env(&repo, w).iter().any(|(k, v)| k == "GIT_CONFIG_KEY_0" && v.ends_with(".pushInsteadOf"));
+        let has_block = |w: &Workspace| workspace_env(&repo, w, None).iter().any(|(k, v)| k == "GIT_CONFIG_KEY_0" && v.ends_with(".pushInsteadOf"));
         assert!(has_block(&theirs));
         assert!(!has_block(&mine));
 
