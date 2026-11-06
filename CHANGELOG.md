@@ -51,6 +51,10 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Welcome puts setup first while something is missing and has one main button. The Conductor import card can be dismissed.
 - Compare agents, the board and Changes fit 1100 px windows; a closed PR counts as Done on the board.
 - Higher contrast for diff line numbers, +/- counts, shortcut hints, the merge button, warnings and orange labels (all 4.5:1 or more). The terminal background matches its frame. "New" on a model lasts 30 days.
+- Side by side in Changes wraps long lines instead of cutting off the code, so it stays readable in a 1100 px window.
+- In small windows the PR bar keeps the name in "Same files as ..." and shortens the branch first. The bar keeps its height above the "Move onto main" and merged banners.
+- Gemini's model picker lists Default once, the agent choice "Both" now reads "Claude + Codex", and "On a workspace" starts with the workspace you have open.
+- Agent defaults in Settings line up in columns, and the comment box in Changes has one focus ring instead of two.
 
 ## 0.10.1 (2026-11-06)
 
