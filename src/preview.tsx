@@ -91,6 +91,10 @@ const planEvents = [
   { kind: "tool", id: "t3", name: "ExitPlanMode", input: "## Plan\n1. Add `BusinessHours` (9:00 to 18:00, Mon to Fri, holiday list from config).\n2. `slaDeadline` adds 4 business hours instead of 4 wall-clock hours.\n3. Table tests: Friday 17:00 rolls to Monday 12:00; holidays skip.\n\nNo schema changes." },
 ];
 
+// ?opencode makes Comet's chat an OpenCode chat in "Ask before changes", mid-turn, waiting on an edit.
+const opencode = new URLSearchParams(location.search).has("opencode");
+if (opencode) planEvents.splice(planEvents.findIndex((e) => e.kind === "approval"), 1, { kind: "approval", request_id: "a2", tool: "Edit", input: "internal/tickets/sla.go", description: "Edit internal/tickets/sla.go", can_always: true });
+
 const workspaces = [
   ws("w1", "r1", "mochi", "harshil/fix-502-gateway", { pinned: true }),
   ws("w2", "r1", "comet", "harshil/ticket-sla", { unread: true }),
@@ -137,14 +141,14 @@ mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
       case "snapshot": if (location.search.includes("fresh")) return { repos: [], workspaces: [], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
-        return { repos, workspaces, running: [], running_workspaces: ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
+        return { repos, workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       case "repo_github": return { nameWithOwner: "pawprint/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "", isPrivate: false };
       case "sky": return SKY;
       case "conductor_available": return true;
       case "sessions": return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
-        : [{ id: "s9", workspace_id: args.workspaceId, agent: "claude", agent_session_id: null, title: "New chat", model: null, permission_mode: "acceptEdits" }];
+        : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
       case "session_events_tail": { const all = args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
       case "session_events": return args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
@@ -211,7 +215,8 @@ mockIPC(
         { workspace_id: "w3", total_kb: 120_000, cleanable_kb: 0, dirs: [] },
       ];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
-      case "workspace_scripts": return { setup: null, run: "make dev", archive: null, trust: location.search.includes("trust") ? { fingerprint: "f", setup: "go mod download && ./scripts/bootstrap.sh", run: "make dev", archive: null } : null };
+      // pawprint-web (Ziggy, Pip) has no Run script, for the Preview tab's "set one up" state.
+      case "workspace_scripts": return { setup: null, run: args.id === "w4" || args.id === "w5" ? null : "make dev", archive: null, trust: location.search.includes("trust") ? { fingerprint: "f", setup: "go mod download && ./scripts/bootstrap.sh", run: "make dev", archive: null } : null };
       case "agent_config_trust": return location.search.includes("agenttrust") ? { repo: "acme-api", fingerprint: "a", items: [
         { agent: "claude", file: ".claude/settings.json", what: "hook SessionStart", command: "./scripts/warm-cache.sh" },
         { agent: "claude", file: ".mcp.json", what: "MCP server db", command: "npx -y @acme/db-mcp --readonly" },
