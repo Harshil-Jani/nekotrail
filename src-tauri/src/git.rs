@@ -71,6 +71,17 @@ pub fn add_worktree(repo: &Path, path: &Path, branch: &str, base: &str) -> Resul
     Ok(())
 }
 
+/// Create a worktree at `path` on a new `branch` starting exactly at `start` (a local ref), with
+/// no fetch. Stacked workspaces use it to start from the parent's newest local commit.
+pub fn add_worktree_at(repo: &Path, path: &Path, branch: &str, start: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let p = path.to_string_lossy();
+    git(repo, &["worktree", "add", "--no-track", "-b", branch, &p, start])?;
+    Ok(())
+}
+
 /// Remove the worktree directory but keep the branch, so archived work can be restored.
 pub fn remove_worktree(repo: &Path, path: &Path) -> Result<()> {
     let p = path.to_string_lossy();
@@ -374,6 +385,35 @@ pub fn files(ws: &Path) -> Result<Vec<String>> {
     Ok(git(ws, &["ls-files", "-co", "--exclude-standard"])?.lines().map(String::from).collect())
 }
 
+/// Stacked PRs: move a branch that started from `parent` (a branch ref) onto `new_base` once the
+/// parent merged there. Replays only this branch's own commits, so it works after a squash or
+/// rebase merge too, where the parent's commits never reach `new_base` by hash.
+/// "up-to-date": nothing to replay (a merge-commit merge, or already moved).
+/// "rebased": done. "conflicts": git stopped, the rebase was aborted and HEAD is as it was.
+/// Refuses to start with uncommitted changes to tracked files, so a rebase can't touch them.
+pub fn restack(ws: &Path, new_base: &str, parent: &str) -> Result<&'static str> {
+    if !git(ws, &["status", "--porcelain", "--untracked-files=no"])?.is_empty() {
+        bail!("This workspace has uncommitted changes. Commit them first, then try again.");
+    }
+    let _ = git(ws, &["fetch", "--quiet", "origin", new_base]);
+    let onto = start_point(ws, new_base);
+    // The newest parent commit this branch contains: everything after it is this branch's own work.
+    let fork = restack_fork(ws, parent)?;
+    if git(ws, &["merge-base", "--is-ancestor", &fork, &onto]).is_ok() {
+        return Ok("up-to-date");
+    }
+    if git(ws, &["rebase", "--onto", &onto, &fork]).is_err() {
+        let _ = git(ws, &["rebase", "--abort"]);
+        return Ok("conflicts");
+    }
+    Ok("rebased")
+}
+
+/// Where a stacked branch left its parent: the commit to replay from.
+pub fn restack_fork(ws: &Path, parent: &str) -> Result<String> {
+    git(ws, &["merge-base", "HEAD", parent])
+}
+
 /// What discarding one file did.
 #[derive(Debug, PartialEq)]
 pub enum Discarded {
@@ -448,6 +488,75 @@ pub mod tests {
         assert_eq!(get("img.bin").additions, 0);
         assert_eq!(get("untracked.txt").additions, 2);
         assert!(!c.iter().any(|f| f.path.contains("old name")));
+    }
+
+    /// An origin repo and a clone with a parent branch `p` (pushed) and a child branch `child`
+    /// stacked on it, checked out. Returns (origin, clone dir holder, clone path).
+    fn stacked() -> (tempfile::TempDir, tempfile::TempDir, PathBuf) {
+        let origin = init_repo();
+        let holder = tempfile::tempdir().unwrap();
+        let c = holder.path().join("c");
+        git(origin.path(), &["clone", "-q", &origin.path().to_string_lossy(), &c.to_string_lossy()]).unwrap();
+        git(&c, &["config", "user.email", "t@example.com"]).unwrap();
+        git(&c, &["config", "user.name", "T"]).unwrap();
+        git(&c, &["checkout", "-qb", "p"]).unwrap();
+        std::fs::write(c.join("p.txt"), "parent 1\n").unwrap();
+        git(&c, &["add", "."]).unwrap();
+        git(&c, &["commit", "-qm", "p1"]).unwrap();
+        std::fs::write(c.join("p.txt"), "parent 1\nparent 2\n").unwrap();
+        git(&c, &["commit", "-qam", "p2"]).unwrap();
+        git(&c, &["push", "-q", "origin", "p"]).unwrap();
+        git(&c, &["checkout", "-qb", "child"]).unwrap();
+        std::fs::write(c.join("child.txt"), "child\n").unwrap();
+        git(&c, &["add", "."]).unwrap();
+        git(&c, &["commit", "-qm", "c1"]).unwrap();
+        (origin, holder, c)
+    }
+
+    #[test]
+    fn restack_after_a_squash_merge_keeps_only_the_childs_commits() {
+        let (origin, _h, c) = stacked();
+        let o = origin.path();
+        git(o, &["merge", "-q", "--squash", "p"]).unwrap();
+        git(o, &["commit", "-qm", "Parent PR (#1)"]).unwrap();
+        assert_eq!(restack(&c, "main", "p").unwrap(), "rebased");
+        // Only c1 on top of origin/main; the squashed parent is not replayed.
+        assert_eq!(git(&c, &["log", "--format=%s", "origin/main..HEAD"]).unwrap(), "c1");
+        assert_eq!(std::fs::read_to_string(c.join("p.txt")).unwrap(), "parent 1\nparent 2\n");
+        assert!(c.join("child.txt").exists());
+        // Running it again finds nothing to do.
+        assert_eq!(restack(&c, "main", "p").unwrap(), "up-to-date");
+    }
+
+    #[test]
+    fn restack_after_a_merge_commit_needs_no_rebase() {
+        let (origin, _h, c) = stacked();
+        git(origin.path(), &["merge", "-q", "--no-ff", "-m", "Merge p", "p"]).unwrap();
+        let head = git(&c, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(restack(&c, "main", "p").unwrap(), "up-to-date");
+        assert_eq!(git(&c, &["rev-parse", "HEAD"]).unwrap(), head);
+    }
+
+    #[test]
+    fn restack_aborts_on_conflicts_and_refuses_uncommitted_work() {
+        let (origin, _h, c) = stacked();
+        let o = origin.path();
+        git(o, &["merge", "-q", "--squash", "p"]).unwrap();
+        std::fs::write(o.join("child.txt"), "main wrote this first\n").unwrap();
+        git(o, &["add", "."]).unwrap();
+        git(o, &["commit", "-qm", "squash plus a clash"]).unwrap();
+        let head = git(&c, &["rev-parse", "HEAD"]).unwrap();
+
+        std::fs::write(c.join("child.txt"), "unsaved\n").unwrap();
+        assert!(restack(&c, "main", "p").is_err());
+        assert_eq!(std::fs::read_to_string(c.join("child.txt")).unwrap(), "unsaved\n");
+        git(&c, &["checkout", "--", "child.txt"]).unwrap();
+
+        assert_eq!(restack(&c, "main", "p").unwrap(), "conflicts");
+        assert_eq!(git(&c, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(current_branch(&c).unwrap(), "child");
+        assert!(git(&c, &["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]).is_err(), "no rebase left in progress");
+        assert_eq!(git(&c, &["status", "--porcelain"]).unwrap(), "");
     }
 
     /// A stand-in Trash: moves files into `bin`, numbered, so tests can read what was "trashed".

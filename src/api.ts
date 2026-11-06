@@ -64,7 +64,15 @@ export type Workspace = {
   pair_id: string;
   /** Sidebar section, or "" for none. */
   section_id: string;
+  /** Stacked PRs: the workspace whose branch this one started from and targets, or "". */
+  parent_id: string;
 };
+
+/** The workspace a stacked one sits on, and that workspace's PR (null before it has one). */
+export type StackParent = {
+  id: string; branch: string; target: string; state: "active" | "archived";
+  pr: { number: number; url: string; state: "OPEN" | "MERGED" | "CLOSED"; title: string; isDraft: boolean; baseRefName: string } | null;
+} | null;
 
 export type Section = { id: string; name: string; sort: number };
 
@@ -192,6 +200,10 @@ export const api = {
   agentScorecard: () => invoke<{ agent: string; turns: number; errors: number; duration_ms: number; merged: number; cost_usd: number }[]>("agent_scorecard"),
   setAutopilot: (id: string, on: boolean) => invoke<void>("set_autopilot", { id, on }),
   autopilotStatus: () => invoke<Record<string, number>>("autopilot_status"),
+  stackParent: (id: string) => invoke<StackParent>("stack_parent", { id }),
+  /** The parent PR merged: rebase onto where it merged, push with lease, `gh pr edit --base`. */
+  restackWorkspace: (id: string) =>
+    invoke<{ result: "rebased" | "up-to-date" | "conflicts"; base: string; fork?: string; pushed?: boolean; pr?: number | null }>("restack_workspace", { id }),
   /** From the file lists line counts already gathered: no git of its own. */
   collisions: (prs: Record<string, string>) => invoke<Collision[]>("collisions", { prs }),
   importedOutside: () => invoke<string[]>("imported_outside"),

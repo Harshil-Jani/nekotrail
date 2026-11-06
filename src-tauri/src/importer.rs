@@ -204,7 +204,7 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
             title: String::new(),
             status: String::new(),
             pair_id: String::new(),
-            section_id: String::new(),
+            section_id: String::new(), parent_id: String::new(),
         };
         store.insert_workspace(&ws)?;
         report.workspaces += 1;

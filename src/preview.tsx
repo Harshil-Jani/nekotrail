@@ -59,7 +59,7 @@ const repos = [
 ];
 const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
-  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", ...extra,
+  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", parent_id: "", ...extra,
 });
 const planEvents = [
   { kind: "user", checkpoint: "c1", text: "Tickets should breach SLA after 4 business hours, not 4 hours. Plan it first." },
@@ -78,7 +78,8 @@ const planEvents = [
 const workspaces = [
   ws("w1", "r1", "mochi", "harshil/fix-502-gateway", { pinned: true }),
   ws("w2", "r1", "comet", "harshil/ticket-sla", { unread: true }),
-  ws("w3", "r1", "dash", "harshil/rate-limit"),
+  // Dash is stacked on Mochi: it started from Mochi's branch and its PR goes there.
+  ws("w3", "r1", "dash", "harshil/rate-limit", { parent_id: "w1", target_branch: "harshil/fix-502-gateway" }),
   ws("w4", "r2", "ziggy", "harshil/pricing-page"),
   ws("w5", "r2", "pip", "harshil/blog-rss"),
 ];
@@ -176,6 +177,9 @@ mockIPC(
       case "autopilot_status": return { w2: 1 };
       // Mochi (w1, PR open, 39 lines) and Comet (w2, draft, 151 lines) both change http.go.
       case "collisions": return [{ repo_id: "r1", order: ["w1", "w2"], pairs: [{ a: "w1", b: "w2", files: ["internal/server/http.go"] }] }];
+      // Dash sits on Mochi's PR #482; add ?stackmerged to see it after #482 merged.
+      case "stack_parent": return args.id === "w3" ? { id: "w1", branch: "harshil/fix-502-gateway", target: "main", state: "active",
+        pr: { number: 482, url: "https://github.com/pawprint/pawprint-api/pull/482", state: location.search.includes("stackmerged") ? "MERGED" : "OPEN", title: "Fix 502s after deploy", isDraft: false, baseRefName: "main" } } : null;
       case "agent_scorecard": return [
         { agent: "claude", turns: 212, errors: 9, duration_ms: 212 * 96000, merged: 31, cost_usd: 148.2 },
         { agent: "codex", turns: 87, errors: 6, duration_ms: 87 * 71000, merged: 11, cost_usd: 39.6 },
