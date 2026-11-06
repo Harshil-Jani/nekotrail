@@ -207,9 +207,13 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .prbar { display: flex; align-items: center; gap: var(--s2); padding: 4px var(--s4); border-bottom: 0.5px solid var(--line-strong); flex-wrap: nowrap; min-height: 40px; }
 /* One line at any width: the branch and the overlap note shorten first, then reviewers and comments hide. */
 .prbar:has(> .pr-form, > .merged-banner) { flex-wrap: wrap; }
+/* With a banner under it the bar wraps, so min-height no longer centres the first line: pad it to the same 40 px. */
+.prbar:has(> .merged-banner) { padding-top: 7px; }
 .prbar > * { flex-shrink: 0; }
 .prbar > .spacer { flex-shrink: 1; min-width: 0; }
 .prbar > button.branch, .prbar > .overlap { flex-shrink: 1; min-width: 0; }
+/* Narrow windows: the overlap warning keeps the other workspace's name, since "Same files as" alone says nothing. */
+.prbar > .overlap { flex-shrink: 0; max-width: 40%; }
 .branch-text, .pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1200px) { .prbar .reviewers, .prbar > .pr-comments { display: none; } }
 .branch { font-family: var(--mono); font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: var(--s1); }
@@ -1070,8 +1074,8 @@ html.native .repo-actions { background: none; }
 .stack-link button.link.merged { color: var(--purple); }
 .stack-link button.link:hover { text-decoration: underline; }
 .stack-banner { border-top: 0.5px solid var(--line); }
-/* The branch gives up room first, so "Same files as <name>" stays readable at 1100 px. */
-.prbar > button.branch { flex-shrink: 4; }
+/* The branch (also in the toolbar subtitle) gives up room first, then the stack link. */
+.prbar > button.branch { flex-shrink: 8; }
 .prbar .overlap > button.pill { border: none; box-shadow: none; min-width: 0; max-width: 100%; cursor: pointer; }
 .prbar .overlap > button.pill:hover { background: color-mix(in srgb, var(--wait) 18%, transparent); }
 .radar-pop { left: 0; right: auto; width: 340px; max-width: calc(100vw - 32px); border-radius: var(--r-lg); padding: var(--s2) 0; }
