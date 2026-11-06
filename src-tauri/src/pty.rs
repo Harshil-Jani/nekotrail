@@ -14,6 +14,8 @@ pub struct Pty {
     scrollback: Arc<Mutex<String>>,
     /// Which start of this terminal id this is, so a late exit of an old process can't close a new one.
     generation: u64,
+    /// Started to run a command (run, setup or a named action) rather than as an interactive shell.
+    scripted: bool,
 }
 
 const SCROLLBACK: usize = 256 * 1024;
@@ -90,7 +92,7 @@ impl Ptys {
             }
             on_exit(generation);
         });
-        self.0.lock().unwrap().insert(id.to_string(), Pty { master: pair.master, writer, child, scrollback, generation });
+        self.0.lock().unwrap().insert(id.to_string(), Pty { master: pair.master, writer, child, scrollback, generation, scripted: command.is_some() });
         Ok(generation)
     }
 
@@ -130,6 +132,30 @@ impl Ptys {
 
     pub fn is_open(&self, id: &str) -> bool {
         self.0.lock().unwrap().contains_key(id)
+    }
+
+    /// Terminals doing work that a restart would stop: every running script, and every
+    /// interactive shell with a command in the foreground. A shell at its prompt is not counted,
+    /// even if it keeps background helpers (prompt themes often run one).
+    pub fn busy(&self) -> usize {
+        let map = self.0.lock().unwrap();
+        map.values()
+            .filter(|p| {
+                p.scripted
+                    || match (p.master.process_group_leader(), p.child.process_id()) {
+                        (Some(fg), Some(shell)) => fg as u32 != shell,
+                        _ => false,
+                    }
+            })
+            .count()
+    }
+
+    /// Stop every terminal (used right before the app relaunches).
+    pub fn close_all(&self) {
+        let ids: Vec<String> = self.0.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            self.close(&id);
+        }
     }
 }
 
@@ -180,5 +206,31 @@ mod tests {
         ptys.close_if("run", ended);
         assert!(ptys.is_open("run"), "the old exit must not close the new run");
         ptys.close("run");
+    }
+
+    #[test]
+    fn busy_counts_scripts_and_shells_running_a_command_but_not_idle_shells() {
+        let d = tempfile::tempdir().unwrap();
+        let cwd = d.path().to_str().unwrap();
+        let ptys = Ptys::default();
+        let (tx, rx) = mpsc::channel::<String>();
+        ptys.open("sh", cwd, &[], None, 80, 24, move |s| { let _ = tx.send(s); }, |_| {}).unwrap();
+        // Let the login shell settle at its prompt.
+        let settle = |want: usize| {
+            for _ in 0..100 {
+                if ptys.busy() == want { return true; }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            false
+        };
+        assert!(settle(0), "an idle shell must not count as busy");
+        ptys.write("sh", "sleep 30\n").unwrap();
+        assert!(settle(1), "a shell running sleep must count as busy");
+        ptys.open("run", cwd, &[], Some("sleep 30"), 80, 24, |_| {}, |_| {}).unwrap();
+        assert!(settle(2), "a running script counts as busy");
+        ptys.close_all();
+        assert_eq!(ptys.busy(), 0);
+        assert!(!ptys.is_open("sh") && !ptys.is_open("run"));
+        drop(rx);
     }
 }

@@ -3,6 +3,14 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Updates**
+- nekotrail now tells you when a new version is out: a small card with the cat, what's new, and Update or Not now. "Not now" waits a day before asking about that version again; a newer one asks right away.
+- Update downloads in the background while you keep working. If agents or terminal commands are running, it says how many and lets you restart now or once everything is idle.
+- Check for updates any time from ⌘K or Settings, next to the version.
+- If you're on 0.10.1 or earlier, install this release by hand once from the release page. After that, updates come to you.
+
 ## 0.10.1 (2026-11-06)
 
 - Fixes the 0.10.0 build: "Copy branch name" and "Copy PR link" were missing from the ⋯ menu, which also broke the type check.

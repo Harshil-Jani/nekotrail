@@ -20,6 +20,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
       - run: bun run build
+      - run: bun test tests/
       - run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
       - run: cargo test

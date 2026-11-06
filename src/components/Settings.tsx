@@ -4,6 +4,7 @@ import { api, type AppSettings } from "../api";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
+import type { UpdatePhase } from "../useUpdater";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
@@ -34,7 +35,7 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 /** ⌘, : a few preferences and the shortcut list. Changes save as you make them. */
-export function Settings({ onClose, home }: { onClose: () => void; home: string }) {
+export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: () => void; home: string; update?: UpdatePhase | null; onCheckUpdates?: () => void }) {
   const [s, setS] = useState<S>(getSettings);
   const [backend, setBackend] = useState<AppSettings | null>(null);
   const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
@@ -199,6 +200,15 @@ export function Settings({ onClose, home }: { onClose: () => void; home: string 
         <div className="row end">
           <span className="muted version num">nekotrail v{version}</span>
           <button className="link" onClick={() => openUrl("https://github.com/Harshil-Jani/nekotrail/blob/main/CHANGELOG.md").catch(() => {})}>What's new</button>
+          {update?.kind === "checking" ? (
+            <span className="muted update-status" role="status">Checking for updates…</span>
+          ) : update?.kind === "latest" ? (
+            <span className="muted update-status" role="status">You're on the latest</span>
+          ) : update?.kind === "dev" ? (
+            <span className="muted update-status" role="status">Update checks run in release builds</span>
+          ) : (
+            <button className="link" onClick={onCheckUpdates}>Check for updates</button>
+          )}
           <span className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>

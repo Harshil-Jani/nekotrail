@@ -8,11 +8,44 @@ import ReactDOM from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import catalog from "../src-tauri/src/models.json";
+import { highlights } from "./updateNotes";
+import type { UpdatePhase } from "./useUpdater";
 
 if (new URLSearchParams(location.search).get("filter")) localStorage.setItem("nekotrail.settings", JSON.stringify({ repoFilter: ["r1"], collapsed: [] }));
 localStorage.setItem("nekotrail.sidebarHidden", new URLSearchParams(location.search).has("nosidebar") ? "1" : "0");
 if (new URLSearchParams(location.search).get("split")) localStorage.setItem("nekotrail.split", "1");
 if (new URLSearchParams(location.search).get("group") === "status") localStorage.setItem("nekotrail.settings", JSON.stringify({ groupBy: "status" }));
+
+// The update card: ?update=available | downloading | indeterminate | busy | ready | waiting | restarting | latest | error.
+// The notes are sample text run through the real parser (markdown and HTML come out as plain text).
+{
+  const notes = [
+    "**Updates** (sample notes for the preview)",
+    "- The app tells you when a new version is out, and updates itself in the background.",
+    "- Restarting waits for your agents: pick **Restart when idle** and it happens once they're done.",
+    "- `⌘K` → Check for updates, also in Settings next to the version.",
+    "- Faster diff view on <b>large</b> files.",
+    "- Fixes the Run button losing its URL after a reload.",
+    "",
+    "### Install",
+    "- Download the .dmg below",
+  ].join("\n");
+  const { items, more } = highlights(notes);
+  const v = "0.11.0";
+  const phases: Record<string, UpdatePhase> = {
+    available: { kind: "available", version: v, current: "0.10.1", items, more },
+    downloading: { kind: "downloading", version: v, got: 7.6 * 1_048_576, total: 18.2 * 1_048_576 },
+    indeterminate: { kind: "downloading", version: v, got: 3.1 * 1_048_576, total: null },
+    busy: { kind: "busy", version: v, agents: 2, terminals: 1 },
+    ready: { kind: "busy", version: v, agents: 0, terminals: 0 },
+    waiting: { kind: "waiting", version: v, agents: 1, terminals: 0 },
+    restarting: { kind: "restarting", version: v },
+    latest: { kind: "latest", version: "0.10.1" },
+    error: { kind: "error", title: "The update didn't download", message: "Check your connection and try again, or download it from GitHub.", detail: "error sending request for url (https://github.com/Harshil-Jani/nekotrail/releases/download/v0.11.0/nekotrail.app.tar.gz)", version: v, retry: true },
+  };
+  const want = new URLSearchParams(location.search).get("update");
+  if (want && phases[want]) window.__nekotrailUpdatePreview = phases[want];
+}
 
 // Sample review comments so the Changes tab shows them.
 localStorage.setItem("nekotrail.review.w1", JSON.stringify([
