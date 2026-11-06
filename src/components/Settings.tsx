@@ -278,6 +278,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
               </span>
             </div>
           ))}
+          {defaultsFor.length < AGENTS.length && <p className="muted setting-note">Other agents show up here once they're installed.</p>}
         </section>
 
         <section>
