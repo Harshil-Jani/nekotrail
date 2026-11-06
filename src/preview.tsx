@@ -28,6 +28,9 @@ const freshFound = new URLSearchParams(location.search).get("found");
 const freshStep = new URLSearchParams(location.search).get("step");
 const freshRepos: any[] = [];
 const freshWorkspaces: any[] = [];
+// The first task's chat: its mode follows update_session, and its events follow send.
+let freshSession: any = null;
+const freshEvents: any[] = [];
 // Cleared once per tab, so a reload keeps them (that is how "never twice" can be checked here).
 if (!sessionStorage.getItem("nekotrail.previewStarted")) {
   sessionStorage.setItem("nekotrail.previewStarted", "1");
@@ -510,7 +513,9 @@ const prFor = (id: string) => {
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
-      case "export_save": return null;
+      // Save dialogs answer with a path in Downloads; the saved text is kept on window for screenshots.
+      case "plugin:dialog|save": return `/Users/sam/Downloads/${args.options?.defaultPath ?? "export"}`;
+      case "export_save": (window as any).__exported = args.text ?? args.contents ?? args; return null;
       case "plugin:path|resolve_directory": return "/Users/sam";
       case "queue_view": return queueView();
       case "queue_add": {
@@ -553,13 +558,14 @@ mockIPC(
       }
       case "search_chats": return previewSearch(args.query, args.filter);
       case "search_open": { const c = corpus.find((x) => x.id === args.messageId)!; return { session: { id: c.session, workspace_id: c.ws, agent: c.agent, agent_session_id: null, title: c.chat, model: null, permission_mode: "acceptEdits", effort: null }, workspace_id: c.ws, index: c.index, total: c.total }; }
-      case "sessions": if (args.workspaceId === "w7") return [{ id: "s7", workspace_id: "w7", agent: "claude", agent_session_id: "4b1f0c2e-9d7a-4e55-a1c3-2f6d8e9b7a10", title: "Fix the flaky checkout test", model: null, permission_mode: "acceptEdits" }];
+      case "sessions": if (fresh && freshSession && args.workspaceId === freshSession.workspace_id) return [freshSession];
+        if (args.workspaceId === "w7") return [{ id: "s7", workspace_id: "w7", agent: "claude", agent_session_id: "4b1f0c2e-9d7a-4e55-a1c3-2f6d8e9b7a10", title: "Fix the flaky checkout test", model: null, permission_mode: "acceptEdits" }];
         if (args.workspaceId === "w9") return [{ id: "s7", workspace_id: "w9", agent: "codex", agent_session_id: null, title: "Webhook retries", model: null, permission_mode: "acceptEdits" }];
         return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
-      case "session_events_tail": { const all = args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
-      case "session_events": return args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
+      case "session_events_tail": { const all = fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
+      case "session_events": return fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_cache": {
         return Object.fromEntries(["w1", "w2", "w3", "w4", "w5", ...(multi !== null ? ["g1", "g2", "g3"] : [])].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
@@ -798,8 +804,16 @@ mockIPC(
         // A fresh install's first task: the agent works for a few seconds, then answers.
         if (fresh) {
           const w = freshWorkspaces[0]?.id;
+          const say = (event: any) => { freshEvents.push(event); emit("agent", { session_id: args.id, event }); };
+          say({ kind: "user", text: args.text });
           emit("running", { running: true, workspace_id: w });
-          setTimeout(() => emit("running", { running: false, workspace_id: w, ok: true, title: "Explain the layout" }), 3000);
+          setTimeout(() => say({ kind: "tool", id: "f1", name: "Read", input: "README.md" }), 800);
+          setTimeout(() => say({ kind: "tool", id: "f2", name: "Bash", input: "ls src tests docs" }), 1400);
+          setTimeout(() => {
+            say({ kind: "text", text: "**pawprint-web** is a Vite and React app. The code lives in `src/` (pages in `src/pages`, shared UI in `src/components`), tests in `tests/`, and docs in `docs/`.\n\n`bun run dev` starts Vite on port 5173.\n\nA good first change: the empty inbox page has no message. Add one in `src/pages/Inbox.tsx`, with a test." });
+            say({ kind: "done", is_error: false, duration_ms: 2900, cost_usd: 0.02 });
+            emit("running", { running: false, workspace_id: w, ok: true, title: "Explain the layout" });
+          }, 3000);
         }
         return null;
       case "create_workspace": if (!fresh) return null; {
@@ -807,7 +821,10 @@ mockIPC(
         freshWorkspaces.push(w);
         return w;
       }
-      case "new_session": return fresh ? { id: "s9", workspace_id: args.workspaceId, agent: args.agent, agent_session_id: null, title: "New chat", model: null, permission_mode: "plan" } : null;
+      case "new_session": if (!fresh) return null;
+        freshSession = { id: "s9", workspace_id: args.workspaceId, agent: args.agent, agent_session_id: null, title: "New chat", model: null, permission_mode: "plan" };
+        return freshSession;
+      case "update_session": if (fresh && freshSession && args.id === freshSession.id) freshSession = { ...freshSession, title: args.title ?? freshSession.title, model: args.model ?? null, permission_mode: args.permissionMode ?? freshSession.permission_mode }; return null;
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
       case "remote_take": if (linkMode === null || linkTaken) return [];
         linkTaken = true;
