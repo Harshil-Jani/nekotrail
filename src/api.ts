@@ -546,7 +546,31 @@ export const api = {
   repoIssues: (id: string) => invoke<{ number: number; title: string; body: string; url: string; labels: { name: string }[] }[]>("repo_issues", { id }),
   conductorAvailable: () => invoke<boolean>("conductor_available"),
   importConductor: () => invoke<ImportReport>("import_conductor"),
+  /** Sessions run in a terminal (Claude Code, Codex, Gemini), read from the CLIs' own folders. */
+  terminalScan: () => invoke<TerminalPreview>("terminal_scan"),
+  terminalImport: (picks: { agent: string; id: string }[]) => invoke<TerminalReport>("terminal_import", { picks }),
 };
+
+export type TerminalSession = {
+  agent: string; id: string; title: string; messages: number; first: string; last: string; bytes: number;
+  /** Already in nekotrail. */
+  imported: boolean;
+  /** Sending a message continues this CLI session. */
+  resumable: boolean;
+};
+export type TerminalFolder = { path: string; kind: "history" | "worktree" | "workspace"; branch: string; workspace_id: string | null; sessions: TerminalSession[] };
+export type TerminalRepo = { root: string; name: string; repo_id: string | null; folders: TerminalFolder[] };
+export type TerminalPreview = {
+  repos: TerminalRepo[];
+  skipped: { folder: string; reason: string; sessions: number; messages: number }[];
+  found: Record<string, number>;
+  sources: string[];
+  took_ms: number;
+};
+export type TerminalReport = { repos: number; workspaces: number; chats: number; messages: number; skipped: number; problems: string[] };
+
+/** A repo's History workspace: its main checkout's terminal chats, read-only. */
+export const isHistory = (w: { imported_from: string | null }) => w.imported_from === "terminal-history";
 
 export type SearchKind = "user" | "agent" | "command" | "file";
 export type SearchFilter = { repo?: string | null; agent?: string | null; workspace?: string | null; since?: string | null; kind?: "user" | "command" | null; limit?: number };

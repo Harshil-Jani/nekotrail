@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
+import { resumeCommand } from "../terminalImport";
 import { turnLine } from "../checks";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
@@ -534,6 +535,7 @@ export function Chat({
   jump,
   readOnly = false,
   reviewPr = 0,
+  history,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -552,6 +554,8 @@ export function Chat({
   readOnly?: boolean;
   /** A review workspace for this PR: the agent only reads (the backend sends every turn in plan mode). */
   reviewPr?: number;
+  /** A History workspace (read-only): the main checkout these terminal chats ran in. */
+  history?: string;
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -1223,7 +1227,7 @@ export function Chat({
           <div className="empty">
             <Mascot size={64} mood="sleep" />
             <h2>{sessions.length ? "Nothing in this chat" : "No chats here"}</h2>
-            <p>This workspace is archived. Its branch is kept.</p>
+            <p>{history ? "Your terminal chats from this repo's main checkout land here." : "This workspace is archived. Its branch is kept."}</p>
           </div>
         )}
         {rows.length === 0 && !readOnly && (
@@ -1300,7 +1304,16 @@ export function Chat({
       {mcpOpen && session && <McpSheet workspaceId={workspaceId} agent={session.agent} onClose={() => setMcpOpen(false)} />}
 
       {readOnly ? (
-        <div className="chat-readonly muted" role="note">Archived, so this chat is read-only. Restore the workspace to keep working in it.</div>
+        history ? (
+          <div className="chat-readonly muted row" role="note">
+            <span>This chat ran in your main checkout, so it is read-only here and nekotrail never changes that folder.</span>
+            {session?.agent_session_id && (
+              <button className="quiet" title="Paste it in a terminal to continue this session there." onClick={() => { navigator.clipboard.writeText(resumeCommand(session.agent, session.agent_session_id!, history)); setNote("Copied. Paste it in a terminal to continue this session."); }}>
+                <Copy size={13} />Copy resume command
+              </button>
+            )}
+          </div>
+        ) : <div className="chat-readonly muted" role="note">Archived, so this chat is read-only. Restore the workspace to keep working in it.</div>
       ) : (
       <div className="composer">
         <div className="composer-box">

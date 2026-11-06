@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
+import { Check, ChevronRight, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, SquareTerminal, X } from "lucide-react";
 import { api, errText, type Agent, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
 import { IS_MAC, keyHint } from "../platform";
 import { AGENTS, AGENT_INFO } from "../agents";
@@ -144,12 +144,14 @@ export function CloneSheet({ onDone, onClose }: { onDone: (r: Repo) => void; onC
 
 /** What you see with no workspace open: setup, ways to start, and the Conductor import. */
 export function Welcome({
-  me, repos, mood, purring, onPet, onAddRepo, onClone, onNew, canImport, onImport, onImported,
+  me, repos, mood, purring, onPet, onAddRepo, onClone, onNew, canImport, onImport, onImported, onImportTerminal,
 }: {
   me: GithubUser; repos: Repo[]; mood: Mood; purring: boolean; onPet: () => void;
   onAddRepo: () => void; onClone: () => void; onNew: () => void;
   canImport: boolean; onImport: () => Promise<void>;
   onImported?: () => void;
+  /** Opens "Import terminal sessions" (Claude Code, Codex and Gemini chats run in a terminal). */
+  onImportTerminal?: () => void;
 }) {
   const [preview, setPreview] = useState<ImportReport | null>(null);
   const [importing, setImporting] = useState(false);
@@ -221,6 +223,7 @@ export function Welcome({
         {!fresh && <button className="primary" onClick={onNew}><Plus size={15} />Create workspace <kbd>{keyHint("⌘N")}</kbd></button>}
         <button className={fresh && setup?.allOk ? "primary" : ""} onClick={onAddRepo}><FolderOpen size={15} />Add local repo</button>
         <button onClick={onClone}><GitFork size={15} />Clone repo from GitHub</button>
+        {onImportTerminal && <button onClick={onImportTerminal} title="Bring in the Claude Code, Codex and Gemini chats you ran in a terminal. Read-only."><SquareTerminal size={15} />Import terminal sessions</button>}
       </div>
       {!fresh && <p className="muted">{keyHint("⌘K finds any workspace or action. ⌘⌥L jumps to the next one with news.")}</p>}
     </div>

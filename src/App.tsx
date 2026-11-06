@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText } from "lucide-react";
-import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
+import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -26,6 +26,7 @@ import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
 import { RulesSheet } from "./components/RulesSheet";
+import { TerminalImport } from "./components/TerminalImport";
 import { Settings, type Pane as SettingsPane } from "./components/Settings";
 import { loadPrompts, type PromptEntry } from "./prompts";
 import { TrustSheet } from "./components/TrustSheet";
@@ -394,6 +395,7 @@ export default function App() {
   const [commandsFor, setCommandsFor] = useState<string | null>(params.get("commands")); // workspace id
   // The Rules sheet: workspace id and the pane it opens on.
   const [rulesFor, setRulesFor] = useState<{ id: string; pane: "files" | "edit" | "task" } | null>(params.get("rules") ? { id: params.get("rules")!, pane: (params.get("rulesPane") as "files" | "edit" | "task") ?? "files" } : null);
+  const [terminalImport, setTerminalImport] = useState(params.has("terminalImport"));
   // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
   const [freeMb, setFreeMb] = useState<number | null>(null);
   useEffect(() => {
@@ -955,6 +957,19 @@ export default function App() {
     }
   };
 
+  const terminalImported = async (r: TerminalReport) => {
+    setTerminalImport(false);
+    await refresh();
+    const parts = [
+      r.repos ? `${r.repos} ${r.repos === 1 ? "repo" : "repos"}` : "",
+      r.workspaces ? `${r.workspaces} ${r.workspaces === 1 ? "workspace" : "workspaces"}` : "",
+      `${r.chats} ${r.chats === 1 ? "chat" : "chats"}`,
+    ].filter(Boolean);
+    const last = parts.pop();
+    const what = parts.length ? `${parts.join(", ")} and ${last}` : last;
+    say(`Imported ${what}.${r.skipped ? ` ${r.skipped} were already here or can't be used.` : ""}${r.problems.length ? ` Not imported: ${r.problems.join(" ")}` : ""}`, r.problems.length > 0);
+  };
+
   // ⌘N: the current workspace's repo, else the filtered project, else the first repo.
   const openNew = (source: NewSource = "task", stackOn?: string) => {
     // "On a workspace" starts with the open workspace picked: stacking on what you're looking at is the common case.
@@ -1018,7 +1033,7 @@ export default function App() {
         icon: runningWs.has(w.id) ? <span className="spinner" /> : w.unread ? <span className="unread" /> : <Sparkles size={15} />, run: () => select(w.id),
       });
     }
-    if (ws && ws.state === "active") {
+    if (ws && ws.state === "active" && !isHistory(ws)) {
       const here = nameOf(ws);
       c.push(
         { id: "tab-chat", group: here, label: "Show chat", hint: keyHint("⌘1"), icon: <MessageSquare size={15} />, run: () => setTab("chat") },
@@ -1098,6 +1113,7 @@ export default function App() {
     if (getSettings().repoFilter.length) c.push({ id: "filter-all", group: "Go", label: "Show all repos", keywords: "filter clear project", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [] }) });
     for (const r of repos) c.push({ id: `scripts-${r.id}`, group: "App", label: `Edit ${r.name} setup and run scripts`, icon: <Gear size={15} />, run: () => setSettingsFor(r.id) });
     if (canImport) c.push({ id: "import", group: "App", label: "Import from Conductor", icon: <Download size={15} />, run: importConductor });
+    c.push({ id: "import-terminal", group: "App", label: "Import terminal sessions", keywords: "claude code codex gemini history cli", icon: <SquareTerminal size={15} />, run: () => setTerminalImport(true) });
     return c;
   };
 
@@ -1133,7 +1149,7 @@ export default function App() {
       });
       if (e.altKey && e.code === "KeyA") return go(addRepo);
       if (!ws) return;
-      if (/^[1-5]$/.test(e.key) && !e.altKey && !e.shiftKey && ws.state === "active") return go(() => setTab((["chat", "changes", "terminal", "preview", "checks"] as const)[Number(e.key) - 1]));
+      if (/^[1-5]$/.test(e.key) && !e.altKey && !e.shiftKey && ws.state === "active" && !isHistory(ws)) return go(() => setTab((["chat", "changes", "terminal", "preview", "checks"] as const)[Number(e.key) - 1]));
       if (k === "j" && !e.shiftKey) return go(() => setTab((t) => (t === "terminal" ? "chat" : "terminal")));
       if (k === "d" && e.shiftKey) return go(() => setTab("changes"));
       if (e.altKey && !e.shiftKey && e.code === "KeyP") return go(() => setTab((t) => (t === "preview" ? "chat" : "preview")));
@@ -1232,6 +1248,7 @@ export default function App() {
             me={me} repos={repos} mood={mood} purring={purring} onPet={pet}
             onAddRepo={addRepo} onClone={() => setCloning(true)} onNew={() => openNew()}
             canImport={canImport} onImport={importConductor} onImported={refresh}
+            onImportTerminal={() => setTerminalImport(true)}
           />
         )}
 
@@ -1264,7 +1281,7 @@ export default function App() {
                 <div className="ws-sub">{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{repo?.name} · {ws.branch} → {ws.target_branch}</div>
               </div>
               <span className="spacer" />
-              {ws.state === "active" && (
+              {ws.state === "active" && !isHistory(ws) && (
                 <nav className="tabs" role="tablist" aria-label="Workspace">
                   {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
                     <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
@@ -1278,7 +1295,11 @@ export default function App() {
               )}
               <span className="spacer" />
               <div className="ws-actions">
-                {ws.state === "archived" ? (<>
+                {ws.state === "active" && isHistory(ws) ? (<>
+                  <span className="chip read-only" title="Chats you ran in this repo's main checkout from a terminal. nekotrail never changes that folder."><SquareTerminal size={11} />History, read only</span>
+                  <button onClick={() => openNew()}><Plus size={16} />New workspace</button>
+                  <button className="icon" aria-label="Archive" title={`Hide this history (${keyHint("⌘⇧A")}). Your main checkout stays as it is.`} onClick={() => archive()}><Archive size={15} /></button>
+                </>) : ws.state === "archived" ? (<>
                   <span className="chip read-only" title="Archived workspaces open read-only. Its branch is kept."><Archive size={11} />Archived, read only</span>
                   <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
                     <ArchiveRestore size={16} />Restore workspace
@@ -1367,7 +1388,7 @@ export default function App() {
             {ws.state === "active" && ws.review_pr > 0 && (
               <ReviewBar ws={ws} request={reviewRequests.find((r) => r.repo_id === ws.repo_id && r.number === ws.review_pr)} refreshKey={wsRefreshKey} onChanges={() => setTab("changes")} />
             )}
-            {ws.state === "active" && !ws.review_pr && (
+            {ws.state === "active" && !ws.review_pr && !isHistory(ws) && (
               <PrBar
                 ws={ws}
                 repo={repo ?? undefined}
@@ -1400,9 +1421,9 @@ export default function App() {
             )}
 
             <div className="panel">
-              {ws.state === "archived" ? (
+              {ws.state === "archived" || isHistory(ws) ? (
                 <div className="pane">
-                  <Chat key={`ro-${ws.id}`} workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} jump={jump} readOnly />
+                  <Chat key={`ro-${ws.id}`} workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} jump={jump} readOnly history={isHistory(ws) ? ws.path : undefined} />
                 </div>
               ) : (
                 <>
@@ -1534,8 +1555,9 @@ export default function App() {
       })()}
       {rulesFor && (() => {
         const w = workspaces.find((x) => x.id === rulesFor.id);
-        return <RulesSheet workspaceId={rulesFor.id} initialPane={rulesFor.pane} name={w ? displayName(sky, w) : "this workspace"} readOnly={!w || w.state !== "active" || w.review_pr > 0} onClose={() => setRulesFor(null)} />;
+        return <RulesSheet workspaceId={rulesFor.id} initialPane={rulesFor.pane} name={w ? displayName(sky, w) : "this workspace"} readOnly={!w || w.state !== "active" || w.review_pr > 0 || isHistory(w)} onClose={() => setRulesFor(null)} />;
       })()}
+      {terminalImport && <TerminalImport onClose={() => setTerminalImport(false)} onImported={terminalImported} />}
       {storage && <Storage names={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : id; }} onClose={() => setStorage(false)} onSay={say} />}
       {comparing && (
         <Compare
