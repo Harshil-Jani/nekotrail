@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Search every chat**
+- Search every chat with ⌘⇧F: your prompts, the agents' replies, the commands they ran and the files they touched, in every workspace, archived ones too.
+- Filter by repo, agent or date, or show only your messages or only commands. Enter opens the chat at that message and highlights it.
+- Chats from before this version are indexed once in the background. The search sheet shows how far it has got, and the app opens as fast as before.
+- Archived workspaces open read-only, so you can read their chats without restoring them.
+- ⌘F searches the whole chat, not just what's loaded, finds commands and file paths too, and highlights each match.
+
 ## 0.13.0 (2026-11-06)
 
 **Protected files**
