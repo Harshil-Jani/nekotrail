@@ -115,7 +115,8 @@ export function ModelPicker({
           <button role="menuitemradio" aria-checked={!model} onClick={() => pick(null)}>
             {!model ? <Check size={14} /> : <span className="check-space" />}<span className="pm-label">Default</span><span className="muted">{defaultModel?.label}</span>
           </button>
-          {top.map(row)}
+          {/* "Auto" as the default means the CLI picks, which is what Default already says: one row, not two. */}
+          {top.filter((m) => !(m.id === "auto" && a.default_model === "auto" && model !== "auto")).map(row)}
           {older.length > 0 && (
             <button className="older-toggle" onClick={() => setShowOlder((v) => !v)} aria-expanded={showOlder}>
               <ChevronRight size={13} style={{ transform: showOlder ? "rotate(90deg)" : undefined }} /><span className="pm-label">Older versions</span><span className="muted">{older.length}</span>
