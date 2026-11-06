@@ -17,9 +17,9 @@ use std::time::{Duration, Instant};
 
 /// Bumped when a request or answer changes shape, so an old app and a new command say so plainly.
 /// 2 added `hello`, `propose`, `draft` and `changes` (the editor extension), and `path` and
-/// `target_branch` on each workspace row. A request carries the lowest version that has its
-/// command, so a new command still reaches an older app for anything that app knows.
-pub const PROTOCOL: u32 = 2;
+/// `target_branch` on each workspace row. 3 added `handoff`. A request carries the lowest version
+/// that has its command, so a new command still reaches an older app for anything that app knows.
+pub const PROTOCOL: u32 = 3;
 /// The oldest request version the app still answers.
 pub const MIN_PROTOCOL: u32 = 1;
 /// A request is one JSON line. Prompts can be long, but not this long.
@@ -78,6 +78,10 @@ pub enum Request {
     Draft { workspace: String, text: String },
     /// (v2) The files `workspace` changed against its target branch, and the commit they're compared to.
     Changes { workspace: String },
+    /// (v3) Hand `workspace`'s latest chat to the agent `to` (see `handoff`). `workspace` "." is the
+    /// one `cwd` is in. Without `now` the hand-off opens in the app with its brief, and nothing is
+    /// sent until you press Hand off there.
+    Handoff { cwd: String, workspace: String, to: String, model: Option<String>, now: bool },
 }
 
 impl Request {
@@ -85,6 +89,7 @@ impl Request {
     pub fn since(&self) -> u32 {
         match self {
             Request::Hello | Request::Propose { .. } | Request::Draft { .. } | Request::Changes { .. } => 2,
+            Request::Handoff { .. } => 3,
             _ => 1,
         }
     }
@@ -358,6 +363,8 @@ pub enum Job {
     Confirm { token: String, from: String, repo: String, repo_path: String, adds_repo: bool, prompt: String, agent: String, base: Option<String>, plan: bool },
     /// Your editor sent text for this workspace's message box. Show it there; don't send it.
     Draft { workspace_id: String, text: String },
+    /// `nekotrail handoff`: open the hand-off of this chat to `agent`, with its brief to read first.
+    Handoff { workspace_id: String, session_id: String, agent: String, model: Option<String> },
     /// A link nekotrail couldn't use.
     Error { text: String },
 }
@@ -706,7 +713,36 @@ mod server {
                 let files = crate::git::changes_since(dir, &base).map_err(crate::e)?;
                 Ok(json!({"workspace": w.name, "path": w.path, "target_branch": w.target_branch, "base": base, "files": files}))
             }
+            Request::Handoff { cwd, workspace, to, model, now } => handoff(app, &st, &cwd, &workspace, &to, model, now),
         }
+    }
+
+    /// `nekotrail handoff`: the workspace's latest chat (the one you last wrote in) goes to `to`.
+    fn handoff(app: &AppHandle, st: &AppState, cwd: &str, workspace: &str, to: &str, model: Option<String>, now: bool) -> Result<Value, String> {
+        if !crate::agent::ALL.iter().any(|a| a.id() == to) {
+            return Err(format!("There's no agent called \"{to}\". Use one of: {}.", agent_ids().join(", ")));
+        }
+        let w = if workspace == "." {
+            let here = Path::new(cwd).canonicalize().map_err(|_| format!("{cwd} doesn't exist."))?;
+            let wss = st.db().workspaces(false).map_err(crate::e)?;
+            wss.into_iter()
+                .find(|w| Path::new(&w.path).canonicalize().is_ok_and(|p| here.starts_with(p)))
+                .ok_or("This folder isn't one of nekotrail's workspaces. Name the workspace instead: nekotrail handoff <name> --to codex")?
+        } else {
+            find_active(st, workspace)?
+        };
+        let sid = st.db().latest_chat(&w.id).map_err(crate::e)?.ok_or_else(|| format!("{} has no chat with a message yet, so there's nothing to hand off.", display(&w)))?;
+        let from = st.db().session(&sid).map_err(crate::e)?.agent;
+        let names = json!({"workspace": w.name, "title": w.title, "from": from, "to": to});
+        if !now {
+            crate::handoff_check(st, &sid, to)?;
+            deliver(app, Job::Handoff { workspace_id: w.id.clone(), session_id: sid, agent: to.to_string(), model });
+            return Ok(json!({"started": false, "names": names}));
+        }
+        let brief = crate::handoff_build(st, &sid)?;
+        let s = crate::handoff_begin(app, st, &sid, to, model, None, &brief.text)?;
+        deliver(app, Job::Focus { workspace_id: w.id.clone() });
+        Ok(json!({"started": true, "names": names, "session_id": s.id, "mode": s.permission_mode, "chars": brief.text.chars().count(), "hidden": brief.hidden}))
     }
 
     /// An active workspace by id, name, branch or title.
@@ -911,8 +947,15 @@ mod tests {
         // A v2 command sent as v1 is refused by name, not misread.
         assert!(decode(r#"{"v":1,"cmd":"hello"}"#).unwrap_err().contains("\"hello\" needs protocol 2"));
         assert!(decode(r#"{"v":0,"cmd":"status"}"#).unwrap_err().contains("different versions"));
-        assert!(decode(r#"{"v":3,"cmd":"hello"}"#).unwrap_err().contains("different versions"));
+        assert!(decode(r#"{"v":4,"cmd":"hello"}"#).unwrap_err().contains("different versions"));
         assert!(decode(r#"{"v":2,"cmd":"draft","workspace":"x"}"#).is_err());
+        // v3: handoff. An app on v2 says the versions differ; a v2 line naming it is refused by name.
+        let h = Request::Handoff { cwd: "/code/ws/mochi".into(), workspace: ".".into(), to: "codex".into(), model: None, now: false };
+        let line = encode(&h);
+        assert!(line.contains("\"v\":3") && line.contains("\"cmd\":\"handoff\""), "{line}");
+        assert_eq!(decode(&line).unwrap(), h);
+        assert!(decode(r#"{"v":2,"cmd":"handoff","cwd":"/","workspace":"x","to":"codex","model":null,"now":true}"#).unwrap_err().contains("\"handoff\" needs protocol 3"));
+        assert_eq!(decode(r#"{"v":3,"cmd":"hello"}"#).unwrap(), Request::Hello, "older commands still answer at v3");
         // The exact lines the editor extension writes (extensions/vscode/src/protocol.ts).
         assert_eq!(
             decode(r#"{"v":2,"cmd":"propose","cwd":"/r/src","task":{"prompt":"fix it","agent":null}}"#).unwrap(),

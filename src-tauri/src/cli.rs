@@ -33,6 +33,11 @@ Usage:
       --pr                       Then open a draft PR
       --autopilot                Then open a draft PR and let autopilot get it green
   nekotrail queue [--json]       The queue, in order
+  nekotrail handoff <name> --to <agent>
+                                 Hand a workspace's chat to another agent, with a brief of what
+                                 was done. <name> is a name, branch or title; . is the one you're in
+      --model <id>               Model for the new agent. Default: your default for it
+      --now                      Send the brief right away. Default: nekotrail shows it to you first
   nekotrail --help | --version
 
 nekotrail starts if it isn't running. For a folder named new, ls, open or status, write ./new.
@@ -51,6 +56,7 @@ pub enum Action {
     Status { json: bool },
     QueueAdd { repo: Option<String>, task: QueueTask },
     QueueLs { json: bool },
+    Handoff { workspace: String, to: String, model: Option<String>, now: bool },
 }
 
 /// Parse the arguments after `nekotrail`. Pure, so every form is tested.
@@ -92,6 +98,7 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
             }
             Some(other) => Err(format!("nekotrail queue doesn't know \"{other}\". Try nekotrail queue add \"<task>\".")),
         },
+        "handoff" | "hand-off" => parse_handoff(rest),
         "open" => {
             let words: Vec<&str> = rest.iter().map(String::as_str).filter(|w| *w != "--").collect();
             if words.is_empty() {
@@ -107,6 +114,37 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
             Ok(Action::Add { path: path.to_string() })
         }
     }
+}
+
+fn parse_handoff(args: &[String]) -> Result<Action, String> {
+    let (mut to, mut model, mut now) = (None, None, false);
+    let mut words: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        let (flag, inline) = match a.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (a.as_str(), None),
+        };
+        let mut value = |name: &str, example: &str| -> Result<String, String> {
+            inline.clone().or_else(|| it.next().cloned()).filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} needs a value, for example {name} {example}."))
+        };
+        match flag {
+            "--to" | "-t" | "--agent" | "-a" => to = Some(value("--to", "codex")?),
+            "--model" | "-m" => model = Some(value("--model", "gpt-5.5")?),
+            "--now" => now = true,
+            f if f.starts_with('-') && f.len() > 1 => return Err(format!("nekotrail handoff doesn't know \"{f}\". Run nekotrail --help.")),
+            _ => words.push(a.clone()),
+        }
+    }
+    let workspace = words.join(" ");
+    if workspace.trim().is_empty() {
+        return Err("Say which workspace, for example: nekotrail handoff mochi --to codex (or . for the one you're in)".into());
+    }
+    let to = to.ok_or("Say which agent takes over, for example: nekotrail handoff mochi --to codex")?;
+    if !remote::agent_ids().contains(&to.as_str()) {
+        return Err(format!("There's no agent called \"{to}\". Use one of: {}.", remote::agent_ids().join(", ")));
+    }
+    Ok(Action::Handoff { workspace, to, model, now })
 }
 
 fn parse_new(args: &[String]) -> Result<Action, String> {
@@ -223,6 +261,13 @@ pub fn request(action: &Action, cwd: &Path, home: Option<&Path>) -> Option<Reque
             task: task.clone(),
         },
         Action::QueueLs { .. } => Request::QueueLs,
+        Action::Handoff { workspace, to, model, now } => Request::Handoff {
+            cwd: cwd.to_string_lossy().to_string(),
+            workspace: workspace.clone(),
+            to: to.clone(),
+            model: model.clone(),
+            now: *now,
+        },
     })
 }
 
@@ -342,6 +387,26 @@ pub fn format_queue(data: &Value) -> String {
     out
 }
 
+/// What `handoff` says back.
+pub fn format_handoff(data: &Value) -> String {
+    let n = &data["names"];
+    let name = |k: &str| crate::queue::agent_name(n[k].as_str().unwrap_or(""));
+    let ws = n["title"].as_str().filter(|t| !t.is_empty()).or(n["workspace"].as_str()).unwrap_or("the workspace");
+    if data["started"] != true {
+        return format!("The hand-off from {} to {} is open in nekotrail, in {ws}. Read the brief, then press Hand off.\n", name("from"), name("to"));
+    }
+    let mode = match data["mode"].as_str().unwrap_or("") {
+        "plan" => " It started in Plan (read only): it can't ask before changes, so switch its mode in the chat when you're ready.",
+        _ => "",
+    };
+    let hidden = match data["hidden"].as_u64().unwrap_or(0) {
+        0 => String::new(),
+        1 => " 1 thing that looked like a secret is hidden in it.".into(),
+        k => format!(" {k} things that looked like secrets are hidden in it."),
+    };
+    format!("Handed {ws} from {} to {}. Its new chat started with a brief of what was done ({} characters).{hidden}{mode}\n", name("from"), name("to"), data["chars"].as_u64().unwrap_or(0))
+}
+
 fn format_done(action: &Action, data: &Value) -> String {
     let s = |k: &str| data[k].as_str().unwrap_or("").to_string();
     match action {
@@ -353,6 +418,7 @@ fn format_done(action: &Action, data: &Value) -> String {
         Action::Ls { json: true, .. } | Action::Status { json: true } | Action::QueueLs { json: true } => format!("{}\n", serde_json::to_string_pretty(data).unwrap_or_default()),
         Action::QueueAdd { .. } => format_queued(data),
         Action::QueueLs { .. } => format_queue(data),
+        Action::Handoff { .. } => format_handoff(data),
         Action::Ls { .. } => format_ls(data),
         Action::Status { .. } => format_status(data),
         _ => String::new(),
@@ -711,6 +777,35 @@ mod tests {
         assert!(p(&["open"]).is_err());
         assert!(p(&["--frobnicate"]).is_err());
         assert!(p(&["a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parses_handoff() {
+        let h = |workspace: &str, to: &str, model: Option<&str>, now: bool| Ok(Action::Handoff { workspace: workspace.into(), to: to.into(), model: model.map(String::from), now });
+        assert_eq!(p(&["handoff", "mochi", "--to", "codex"]), h("mochi", "codex", None, false));
+        assert_eq!(p(&["handoff", ".", "--to=gemini", "--model", "gemini-3-pro", "--now"]), h(".", "gemini", Some("gemini-3-pro"), true));
+        assert_eq!(p(&["hand-off", "--to", "opencode", "Fix", "502s"]), h("Fix 502s", "opencode", None, false), "a title of several words");
+        assert!(p(&["handoff", "--to", "codex"]).unwrap_err().contains("Say which workspace"));
+        assert!(p(&["handoff", "mochi"]).unwrap_err().contains("--to codex"));
+        assert!(p(&["handoff", "mochi", "--to"]).unwrap_err().contains("--to needs a value"));
+        assert!(p(&["handoff", "mochi", "--to", "skynet"]).unwrap_err().contains("claude, codex"));
+        assert!(p(&["handoff", "mochi", "--to", "codex", "--force"]).unwrap_err().contains("--force"));
+        // Paths resolve against where you are; the app finds the workspace.
+        let req = request(&p(&["handoff", ".", "--to", "codex"]).unwrap(), Path::new("/code/ws/mochi"), None);
+        assert_eq!(req, Some(Request::Handoff { cwd: "/code/ws/mochi".into(), workspace: ".".into(), to: "codex".into(), model: None, now: false }));
+        assert!(HELP.contains("nekotrail handoff <name> --to <agent>"));
+    }
+
+    #[test]
+    fn formats_handoff() {
+        let names = json!({"workspace": "mochi", "title": "Fix 502s after deploy", "from": "claude", "to": "codex"});
+        assert_eq!(format_handoff(&json!({"started": false, "names": names})), "The hand-off from Claude to Codex is open in nekotrail, in Fix 502s after deploy. Read the brief, then press Hand off.\n");
+        let done = format_handoff(&json!({"started": true, "names": names, "mode": "plan", "chars": 2410, "hidden": 2}));
+        assert!(done.starts_with("Handed Fix 502s after deploy from Claude to Codex. Its new chat started with a brief of what was done (2410 characters)."), "{done}");
+        assert!(done.contains("2 things that looked like secrets are hidden"));
+        assert!(done.contains("started in Plan (read only)"));
+        let plain = format_handoff(&json!({"started": true, "names": {"workspace": "mochi", "title": "", "from": "codex", "to": "claude"}, "mode": "acceptEdits", "chars": 900, "hidden": 0}));
+        assert_eq!(plain, "Handed mochi from Codex to Claude. Its new chat started with a brief of what was done (900 characters).\n");
     }
 
     #[test]
