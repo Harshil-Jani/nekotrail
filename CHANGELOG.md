@@ -34,6 +34,17 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Archived workspaces open read-only, so you can read their chats without restoring them.
 - ⌘F searches the whole chat, not just what's loaded, finds commands and file paths too, and highlights each match.
 
+**Design ship-gate fixes**
+- A long workspace name ends in an ellipsis instead of running under the tabs, and the toolbar turns its buttons into icons before it cuts the name short (for example a review workspace at 1100 px).
+- Error toasts are readable: white text on red in light mode.
+- A review workspace's chat says it only reads: "Ask about #731", a matching placeholder, and a Read only chip where the permissions menu was.
+- Review drafts show a suggested change as code, the way GitHub does, instead of the raw suggestion block. Discard is gone from read-only reviews, and Submit review says why it is off (for example a request for changes with no summary).
+- ⌘F rings the current message with a rounded outline that sits clear of the text.
+- Ports: the popover grows to fit every workspace, free ports have no dead buttons, and freeing a port uses a stop icon.
+- "Start this task?" from a nekotrail:// link lists the repo, folder, branch and agent on their own lines, gives the task more room, and says when there is more to scroll.
+- An archived workspace says "Archived, read only" next to Restore.
+- Search results show replies as plain text, without markdown marks like bold stars and backticks.
+
 ## 0.13.0 (2026-11-06)
 
 **Protected files**
