@@ -367,6 +367,17 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
   }
 }
 
+/** The rendered rows. Memoized so typing in the composer or an app refresh doesn't walk a long chat. */
+const Thread = memo(function Thread({ visible, hidden, total, current, busy, latestPlanIdx }: {
+  visible: Row[]; hidden: number; total: number; current: number | undefined; busy: boolean; latestPlanIdx: number;
+}) {
+  return visible.map((r, k) => (
+    <div key={hidden + k} data-row={hidden + k} className={current === hidden + k ? "row-current" : undefined}>
+      <RowView r={r} pendingSpin={busy && hidden + k === total - 1} latestPlan={hidden + k === latestPlanIdx} />
+    </div>
+  ));
+});
+
 const PAGE = 150; // rows rendered at a time; older rows load on demand
 const TAIL = 600; // events fetched when a chat opens
 
@@ -452,9 +463,13 @@ export function Chat({
     await api.send(active, "Approved. Go ahead and implement the plan.");
     onRunningChange();
   };
+  // The handlers below read the latest chat through this ref, so the context value (and with it
+  // every memoized row) only changes when busy, expand-all or search change, not on each new event.
+  const live = useRef({ session, events, active, workspaceId, approvePlan, newChat: async (_: Agent) => {} });
   const rewindCtx = useMemo(() => ({
     // Hand the task to the other agent with the conversation so far, ready to send.
     switchAgent: async (to: Agent) => {
+      const { session, events, newChat } = live.current;
       const from = session?.agent === "codex" ? "Codex" : "Claude";
       const lines: string[] = [];
       for (const ev of events) {
@@ -467,9 +482,11 @@ export function Chat({
       setDraft(`You're taking over this task from ${from}, which had to stop. The conversation so far (latest part):\n\n${transcript}\n\nContinue from where it stopped. Check \`git status\` and \`git diff\` first to see what is already done.`);
     },
     fanOut: (plan: string, steps: string[]) => {
+      const { session, workspaceId } = live.current;
       window.dispatchEvent(new CustomEvent("nekotrail-fanout", { detail: { workspaceId, agent: session?.agent ?? "claude", model: session?.model ?? null, effort: session?.effort ?? null, plan, steps } }));
     },
     addFindings: (f: Finding[]) => {
+      const { session, workspaceId } = live.current;
       const key = `nekotrail.review.${workspaceId}`;
       const cur = JSON.parse(localStorage.getItem(key) || "[]");
       const by = session?.agent === "codex" ? "Codex" : "Claude";
@@ -477,16 +494,17 @@ export function Chat({
       localStorage.setItem(key, JSON.stringify([...cur, ...add]));
       window.dispatchEvent(new Event("nekotrail-review"));
     },
-    approvePlan,
+    approvePlan: () => live.current.approvePlan(),
     expandAll,
     query: (search ?? "").trim().toLowerCase(),
     disabled: anyBusy,
     rewind: async (checkpoint: string) => {
+      const { active } = live.current;
       if (!active) return;
       setError(null);
       try { await api.restoreCheckpoint(active, checkpoint); } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, active, expandAll, search, session, workspaceId, events]);
+  }), [anyBusy, expandAll, search]);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);
@@ -513,8 +531,8 @@ export function Chat({
     const un2 = listen<{ session_id: string; queued: string[] }>("queue", ({ payload }) => {
       if (payload.session_id === active) setQueue(payload.queued);
     });
+    // App already reloads its snapshot on every "running" event; only the chat tabs are ours to refresh.
     const un3 = listen("running", () => {
-      onRunningChange();
       api.sessions(workspaceId).then(setSessions);
     });
     const un4 = listen<{ session_id: string; context_tokens: number }>("usage", ({ payload }) => {
@@ -678,6 +696,7 @@ export function Chat({
     const s = await api.newSession(workspaceId, agent);
     await loadSessions(s.id);
   };
+  live.current = { session, events, active, workspaceId, approvePlan, newChat };
 
   const fork = async () => {
     if (!active) return;
@@ -837,11 +856,7 @@ export function Chat({
               Show {Math.min(PAGE, hidden)} earlier messages ({hidden} hidden)
             </button>
           )}
-          {visible.map((r, k) => (
-            <div key={hidden + k} data-row={hidden + k} className={hits[hitIdx] === hidden + k ? "row-current" : undefined}>
-              <RowView r={r} pendingSpin={busy && hidden + k === rows.length - 1} latestPlan={hidden + k === latestPlanIdx} />
-            </div>
-          ))}
+          <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} busy={busy} latestPlanIdx={latestPlanIdx} />
         </div>
         </RewindCtx.Provider>
       </div>

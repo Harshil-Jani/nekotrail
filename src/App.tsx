@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -9,7 +9,6 @@ import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
-import { TerminalPanel } from "./components/Terminal";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrBar } from "./components/PrBar";
 import { RepoSettings } from "./components/RepoSettings";
@@ -27,6 +26,10 @@ import { chime, getSettings, saveSettings, ting } from "./settings";
 import { UserAttentionType } from "@tauri-apps/api/window";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
+
+// xterm is a third of the app's JavaScript: load it after first paint instead of before.
+const loadTerminal = () => import("./components/Terminal");
+const TerminalPanel = lazy(() => loadTerminal().then((m) => ({ default: m.TerminalPanel })));
 
 async function notify(title: string, body: string) {
   try {
@@ -100,6 +103,7 @@ export default function App() {
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [wsRefreshKey, setWsRefreshKey] = useState(0); // bumps only for the selected workspace's turns
   const [inject, setInject] = useState<{ text: string; nonce: number } | undefined>();
   // Run and setup scripts that are alive (pty ids), the terminal tab to show, and dev-server URLs.
   const [livePtys, setLivePtys] = useState<Set<string>>(new Set());
@@ -205,7 +209,8 @@ export default function App() {
   const [newSource, setNewSource] = useState<"task" | "pr" | "branch" | "issue">((params.get("from") as "pr") || "task"); // repo id the new-workspace panel opens on
   const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
-  const [lastActive, setLastActive] = useState(Date.now());
+  // A ref, not state: every keypress counts as activity, and a re-render per key would redraw the whole app.
+  const lastActive = useRef(Date.now());
   const [worriedUntil, setWorriedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [costs, setCosts] = useState<Record<string, number>>({});
@@ -240,6 +245,8 @@ export default function App() {
   const [lines, setLines] = useState<Record<string, [number, number]>>({});
   const [openTargets, setOpenTargets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.openInTargets().then(setOpenTargets).catch(() => {}); }, []);
+  // Fetch the terminal code once launch has settled, so it's ready before you open a workspace.
+  useEffect(() => { const t = setTimeout(() => { loadTerminal().catch(() => {}); }, 1000); return () => clearTimeout(t); }, []);
   // Sidebar facts that cost a git or gh call per workspace: refreshed after turns and every 5 minutes.
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof api.usageSummary>> | null>(null);
   useEffect(() => {
@@ -304,8 +311,10 @@ export default function App() {
   useEffect(() => {
     const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
       refresh();
-      setRefreshKey((k) => k + 1); // a turn ended: reload changes and PR state
-      setLastActive(Date.now());
+      setRefreshKey((k) => k + 1); // a turn ended: reload line counts and file overlaps
+      // Changes and PR state only move for the workspace whose agent ran.
+      if (!payload.workspace_id || payload.workspace_id === selectedRef.current) setWsRefreshKey((k) => k + 1);
+      lastActive.current = Date.now();
       if (payload.running || !payload.workspace_id || payload.more_queued) return;
       if (payload.ok === false) setWorriedUntil(Date.now() + 15_000);
       const prefs = getSettings();
@@ -434,14 +443,18 @@ export default function App() {
     }
   }, [worriedUntil]);
   useEffect(() => {
-    const wake = () => setLastActive(Date.now());
+    const wake = () => {
+      const napping = Date.now() - lastActive.current > NAP_AFTER_MS;
+      lastActive.current = Date.now();
+      if (napping) setNow(Date.now()); // the cat wakes up right away
+    };
     window.addEventListener("keydown", wake);
     window.addEventListener("pointerdown", wake);
     return () => { window.removeEventListener("keydown", wake); window.removeEventListener("pointerdown", wake); };
   }, []);
 
   const mood: Mood =
-    runningWs.size > 0 ? "working" : worriedUntil > now ? "worried" : now - lastActive > NAP_AFTER_MS ? "sleep" : "idle";
+    runningWs.size > 0 ? "working" : worriedUntil > now ? "worried" : now - lastActive.current > NAP_AFTER_MS ? "sleep" : "idle";
 
   function celebrate(slug: string) {
     const st = skyRef.current.stars.find((x) => x.slug === slug);
@@ -947,7 +960,8 @@ export default function App() {
                 ws={ws}
                 repo={repo ?? undefined}
                 name={displayName(sky, ws)}
-                refreshKey={refreshKey}
+                refreshKey={wsRefreshKey}
+                overlapKey={refreshKey}
                 onArchive={(auto) => archive({ auto })}
                 onSay={say}
                 autopilot={autopilot[ws.id]}
@@ -977,10 +991,12 @@ export default function App() {
                     <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
-                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} focusFile={focusFile} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
+                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
-                    <TerminalPanel key={ws.id} wsId={ws.id} cwd={ws.path} running={livePtys} focus={termFocus} onRun={runScript} onSetup={rerunSetup} />
+                    <Suspense fallback={null}>
+                      <TerminalPanel key={ws.id} wsId={ws.id} cwd={ws.path} running={livePtys} focus={termFocus} onRun={runScript} onSetup={rerunSetup} />
+                    </Suspense>
                   </div>
                   <div className="pane" hidden={tab !== "notes"}>
                     <textarea
