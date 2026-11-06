@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.15.0 (2026-11-07)
 
 **Import terminal sessions**
 - Bring in the Claude Code, Codex and Gemini chats you ran in a terminal: ⌘K, "Import terminal sessions". nekotrail only reads the CLIs' folders and never changes them.
