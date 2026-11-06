@@ -18,11 +18,12 @@ function loadMermaid(dark: boolean) {
     mermaidDark = dark;
     // Plain SVG text labels: measured reliably everywhere (HTML labels can collapse to nothing).
     m.initialize({
-      startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral", htmlLabels: false,
-      flowchart: { htmlLabels: false, useMaxWidth: true, curve: "basis" }, fontFamily: "-apple-system, BlinkMacSystemFont, Helvetica, sans-serif", fontSize: 12,
+      // "classic" look: flat shapes with hairlines. The newer look adds drop shadows and gradient strokes.
+      startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral", htmlLabels: false, look: "classic",
+      flowchart: { htmlLabels: false, useMaxWidth: true, curve: "basis" }, fontFamily: "-apple-system, BlinkMacSystemFont, Helvetica, sans-serif", fontSize: 13,
       themeVariables: dark
-        ? { primaryColor: "#2c2c2e", primaryBorderColor: "#4a4a4c", primaryTextColor: "#e8e8ea", lineColor: "#6b6b70", fontSize: "12px" }
-        : { primaryColor: "#ffffff", primaryBorderColor: "#c7c7cc", primaryTextColor: "#1d1d1f", lineColor: "#8e8e93", fontSize: "12px" },
+        ? { primaryColor: "#2c2c2e", primaryBorderColor: "#4a4a4c", primaryTextColor: "#e8e8ea", lineColor: "#6b6b70", fontSize: "13px" }
+        : { primaryColor: "#ffffff", primaryBorderColor: "#c7c7cc", primaryTextColor: "#1d1d1f", lineColor: "#8e8e93", fontSize: "13px" },
     });
     return m;
   });
@@ -63,6 +64,9 @@ function Mermaid({ code }: { code: string }) {
     el.removeAttribute("height");
     el.style.maxWidth = `${Math.min(b.width + pad * 2, 900)}px`;
     el.style.width = "100%";
+    // Shrink wide diagrams to fit, but not below 85%: past that the labels get too small to read,
+    // so the frame scrolls sideways instead.
+    el.style.minWidth = `${Math.min(b.width + pad * 2, 900) * 0.85}px`;
   }, [svg, source]);
   if (failed) return <pre><code>{code}</code></pre>;
   return (
