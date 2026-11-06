@@ -92,7 +92,9 @@ export function ModelPicker({
     onChange({ model: id, effort: keep });
   };
 
-  const label = `${current?.label ?? (defaultModel ? `${defaultModel.label} (default)` : "Default model")}${effort ? ` · ${effortName(effort)}` : ""}`;
+  // OpenCode's catalog is one "Default" entry (its own config picks the model): say it once, not "Default (default)".
+  const plainDefault = (m?: { id: string; label: string } | null) => !!m && m.id === a?.default_model && m.label.toLowerCase() === "default";
+  const label = `${plainDefault(current) || (!current && plainDefault(defaultModel)) ? "Default model" : current?.label ?? (defaultModel ? `${defaultModel.label} (default)` : "Default model")}${effort ? ` · ${effortName(effort)}` : ""}`;
   const row = (m: (typeof top)[number]) => (
     <button key={m.id} role="menuitemradio" aria-checked={m.id === model} onClick={() => pick(m.id)}>
       {m.id === model ? <Check size={14} /> : <span className="check-space" />}
@@ -113,10 +115,10 @@ export function ModelPicker({
         <span className="menu picker-menu" role="menu">
           <div className="menu-label">{AGENT_INFO[agent]?.name ?? "Claude"} model</div>
           <button role="menuitemradio" aria-checked={!model} onClick={() => pick(null)}>
-            {!model ? <Check size={14} /> : <span className="check-space" />}<span className="pm-label">Default</span><span className="muted">{defaultModel?.label}</span>
+            {!model ? <Check size={14} /> : <span className="check-space" />}<span className="pm-label">Default</span>{!plainDefault(defaultModel) && <span className="muted">{defaultModel?.label}</span>}
           </button>
           {/* "Auto" as the default means the CLI picks, which is what Default already says: one row, not two. */}
-          {top.filter((m) => !(m.id === "auto" && a.default_model === "auto" && model !== "auto")).map(row)}
+          {top.filter((m) => !(m.id === "auto" && a.default_model === "auto" && model !== "auto") && !(plainDefault(m) && model !== m.id)).map(row)}
           {older.length > 0 && (
             <button className="older-toggle" onClick={() => setShowOlder((v) => !v)} aria-expanded={showOlder}>
               <ChevronRight size={13} style={{ transform: showOlder ? "rotate(90deg)" : undefined }} /><span className="pm-label">Older versions</span><span className="muted">{older.length}</span>
@@ -126,6 +128,9 @@ export function ModelPicker({
           <form className="custom-model" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) { onChange({ model: custom.trim(), effort }); setCustom(""); } }}>
             <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Other model ID, then ↵" aria-label="Other model ID" />
           </form>
+          {plainDefault(defaultModel) && (
+            <p className="muted menu-hint">Default uses the model in {AGENT_INFO[agent]?.full ?? "the agent"}'s own config. To pick another, type its ID above.</p>
+          )}
           {efforts.length > 0 && (
             <>
               <div className="menu-label"><Brain size={12} /> Intelligence</div>
