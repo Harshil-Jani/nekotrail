@@ -1296,3 +1296,11 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .prbar.pb-3 > span.num, .prbar.pb-3 .pb-text { display: none; }
 .prbar.pb-3 .pill.autopilot { padding: 0 6px; }
 .prbar.pb-4 .pb-long, .prbar.pb-5 > .overlap .pill-text, .prbar.pb-5 .pb-label { display: none; }
+/* Chat tabs scroll inside their own strip; the + menu hangs below the bar without being clipped. */
+.chat-tabs:not(.term-tabs) { overflow: visible; }
+.chat-tab-strip { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; padding: 3px 0; }
+.chat-tab-strip::-webkit-scrollbar { display: none; }
+.chat-tabs > .newchat { flex-shrink: 0; }
+.chat-tabs .newchat-menu { z-index: 20; }
+.chat-tab > button[role="tab"] .spinner { margin-right: 6px; vertical-align: -2px; }
+.menu-icon-space { width: 13px; flex-shrink: 0; display: inline-block; }

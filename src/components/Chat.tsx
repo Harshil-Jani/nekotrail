@@ -846,7 +846,9 @@ export function Chat({
 
   return (
     <div className="chat">
-      <div className="chat-tabs" role="tablist" aria-label="Chats">
+      <div className="chat-tabs">
+        {/* Only the tabs scroll sideways: the + menu sits outside the scroller, so it isn't clipped. */}
+        <div className="chat-tab-strip" role="tablist" aria-label="Chats">
         {sessions.map((s) => (
           <span key={s.id} className={`chat-tab ${s.id === active ? "active" : ""}`}>
             <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} title={s.title}>
@@ -858,13 +860,15 @@ export function Chat({
             )}
           </span>
         ))}
+        </div>
         <span className="newchat">
           <button className="icon" title="Start a chat (⌘T)" aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
               {AGENTS.map((a) => (
-                <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}>Start a {AGENT_INFO[a].name} chat</button>
+                <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}><span className="menu-icon-space" aria-hidden />Start a {AGENT_INFO[a].name} chat</button>
               ))}
+              <div className="menu-sep" />
               <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
             </span>
