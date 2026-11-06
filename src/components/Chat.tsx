@@ -1322,7 +1322,7 @@ export function Chat({
           </div>
         ) : <div className="chat-readonly muted" role="note">Archived, so this chat is read-only. Restore the workspace to keep working in it.</div>
       ) : (
-      <div className="composer">
+      <div className="composer" data-tour="chat">
         <div className="composer-box">
           {slash && <SlashList items={slash.items} sel={slash.sel} onPick={pickSlash} onHover={(i) => setSlash({ ...slash, sel: i })} />}
           {pf.fill && !slash && !mention && <FillBar fill={pf.fill} onGo={pf.go} />}

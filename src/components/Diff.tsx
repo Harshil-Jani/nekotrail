@@ -823,7 +823,7 @@ export function Diff({
           </label>
         )}
         {files.length === 0 && (
-          <p className="muted file-list-empty">{uncommitted ? "No uncommitted changes. Everything is committed." : reviewPr ? "This PR changes no files compared with its base branch." : "Nothing changed yet. Edits the agent makes show up here, compared with the target branch."}</p>
+          <p className="muted file-list-empty">{uncommitted ? "No uncommitted changes. Everything is committed." : reviewPr ? "This PR changes no files compared with its base branch." : keyHint("Nothing changed yet. Ask the agent for a change in Chat (⌘1), and its edits show up here, compared with the target branch.")}</p>
         )}
         {files.length > 0 && shown.length === 0 && (
           <p className="muted file-list-empty">No changed file matches "{query.trim()}".</p>
