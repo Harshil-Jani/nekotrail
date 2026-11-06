@@ -8,6 +8,8 @@ export type Ask = {
   cancel?: string;
   /** Red go-ahead button, for anything that loses work. */
   danger?: boolean;
+  /** Just tell the user something: one button, no Cancel. */
+  notice?: boolean;
 };
 
 let show: ((a: Ask) => Promise<boolean>) | null = null;
@@ -50,7 +52,7 @@ export function ConfirmHost() {
         <h2 id="confirm-title">{cur.title}</h2>
         {cur.body && <p id="confirm-body" className="muted">{cur.body}</p>}
         <div className="row end">
-          <button onClick={() => done(false)}>{cur.cancel ?? "Cancel"}</button>
+          {!cur.notice && <button onClick={() => done(false)}>{cur.cancel ?? "Cancel"}</button>}
           <button className={cur.danger ? "danger-fill" : "primary"} onClick={() => done(true)}>{cur.ok}</button>
         </div>
       </div>

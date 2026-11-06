@@ -39,6 +39,8 @@ struct Runs {
     approvals: HashMap<String, (String, Value, Value)>,
     /// Chats whose next turn should fork the agent's conversation instead of continuing it.
     forks: std::collections::HashSet<String>,
+    /// Workspaces whose files are being rewound right now. No turn may start in them meanwhile.
+    rewinding: std::collections::HashSet<String>,
 }
 
 /// (counts with when they were taken, workspaces to recount)
@@ -505,6 +507,13 @@ async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> 
                 .status();
         }
         git::remove_worktree(Path::new(&repo.root_path), path).map_err(e)?;
+    }
+    // Drop its checkpoints: the branch keeps the work, and snapshots of an archived workspace
+    // would only hold on to disk. Git frees them at its next gc.
+    if let Ok(repo) = st.db().repo(&ws.repo_id) {
+        let root = Path::new(&repo.root_path);
+        let _ = git::prune_checkpoints(root, &git::checkpoint_prefix(&id), 0);
+        let _ = git::git(root, &["update-ref", "-d", &git::legacy_checkpoint_ref(&id)]);
     }
     st.ptys.close(&format!("{id}:term"));
     st.db().set_workspace_state(&id, "archived").map_err(e)
@@ -1677,32 +1686,88 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
     Ok(())
 }
 
-/// Undo every file change made since `checkpoint` (taken before one of this chat's messages).
-/// The agent is told on its next turn, so it does not assume its old edits still exist.
-#[tauri::command]
-async fn restore_checkpoint(app: AppHandle, st: State<'_, AppState>, id: String, checkpoint: String) -> Res<()> {
-    if !safe::object_id(&checkpoint) {
+/// The workspace a chat belongs to, refusing while any agent in it is working: a rewind under a
+/// running agent would mix its next edits with the restored files.
+fn idle_workspace(st: &AppState, session_id: &str, checkpoint: &str, claim: bool) -> Res<Workspace> {
+    if !safe::object_id(checkpoint) {
         return Err("That checkpoint isn't valid.".into());
     }
     let ws = {
         let db = st.db();
-        let s = db.session(&id).map_err(e)?;
+        let s = db.session(session_id).map_err(e)?;
         db.workspace(&s.workspace_id).map_err(e)?
     };
-    mark_changed(&st, &ws.id);
-    {
-        let runs = st.runs.lock().unwrap();
-        let busy = st.db().sessions(&ws.id).map_err(e)?.iter().any(|s| runs.running.contains_key(&s.id));
-        if busy {
-            return Err("An agent is still working in this workspace. Stop it first.".into());
-        }
+    if !Path::new(&ws.path).exists() {
+        return Err("This workspace is archived. Restore it first.".into());
     }
-    // Keep a checkpoint of the current state too, so a rewind can itself be undone from the terminal.
-    let _ = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id));
-    git::restore_checkpoint(Path::new(&ws.path), &checkpoint).map_err(e)?;
-    let ev = json!({"kind": "note", "text": "Files rewound to before this point. Later changes were undone."});
+    if !git::is_checkpoint(Path::new(&ws.path), checkpoint) {
+        return Err("This checkpoint is gone. Workspaces keep their last 50.".into());
+    }
+    let sessions = st.db().sessions(&ws.id).map_err(e)?;
+    let mut runs = st.runs.lock().unwrap();
+    if sessions.iter().any(|s| runs.running.contains_key(&s.id)) {
+        return Err("An agent is still working in this workspace. Stop it first.".into());
+    }
+    if runs.rewinding.contains(&ws.id) {
+        return Err("Files are already being rewound here.".into());
+    }
+    if claim {
+        runs.rewinding.insert(ws.id.clone());
+    }
+    Ok(ws)
+}
+
+/// Which of these checkpoints can still be rewound to (the rest were pruned and collected).
+#[tauri::command]
+async fn live_checkpoints(st: State<'_, AppState>, id: String, checkpoints: Vec<String>) -> Res<Vec<String>> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let ids: Vec<String> = checkpoints.into_iter().filter(|c| safe::object_id(c)).collect();
+    if !Path::new(&ws.path).exists() {
+        return Ok(vec![]);
+    }
+    git::existing_commits(Path::new(&ws.path), &ids).map_err(e)
+}
+
+/// What a rewind would change, for the confirm sheet: files that change and commits taken off.
+#[tauri::command]
+async fn checkpoint_preview(app: AppHandle, id: String, checkpoint: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = idle_workspace(st, &id, &checkpoint, false)?;
+        let (files, commits) = git::checkpoint_preview(Path::new(&ws.path), &checkpoint).map_err(e)?;
+        Ok(json!({"files": files, "commits": commits}))
+    })
+    .await
+}
+
+/// Undo every file change made since `checkpoint` (taken before one of this chat's messages).
+/// The current state is saved first, so the rewind itself can be undone from the marker it leaves.
+/// The agent is told on its next turn, so it does not assume its old edits still exist.
+#[tauri::command]
+async fn restore_checkpoint(app: AppHandle, id: String, checkpoint: String) -> Res<()> {
+    blocking(app.clone(), move |st| rewind_to(&app, st, id, checkpoint)).await
+}
+
+fn rewind_to(app: &AppHandle, st: &AppState, id: String, checkpoint: String) -> Res<()> {
+    let ws = idle_workspace(st, &id, &checkpoint, true)?;
+    mark_changed(st, &ws.id);
+    let done = git::rewind(Path::new(&ws.path), &git::checkpoint_prefix(&ws.id), &checkpoint);
+    st.runs.lock().unwrap().rewinding.remove(&ws.id);
+    let (undo, files) = done.map_err(e)?;
+    // Name the message this went back to, or say it undid an earlier rewind.
+    let events = st.db().events(&id).unwrap_or_default();
+    let prompt = events.iter().find(|ev| ev["kind"] == "user" && ev["checkpoint"] == checkpoint.as_str());
+    let text = match prompt {
+        Some(ev) => {
+            let first: String = ev["text"].as_str().unwrap_or("").lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(80).collect();
+            format!("Rewound to before: {}", first.trim())
+        }
+        None if events.iter().any(|ev| ev["kind"] == "rewind" && ev["undo"] == checkpoint.as_str()) => "Rewind undone".to_string(),
+        None => "Rewound files to an earlier point".to_string(),
+    };
+    let ev = json!({"kind": "rewind", "text": text, "undo": undo, "files": files});
     st.db().append_event(&id, &ev).map_err(e)?;
-    emit_event(&app, &id, &ev);
+    emit_event(app, &id, &ev);
+    let _ = app.emit("workspaces-changed", json!({}));
     st.runs.lock().unwrap().notes.insert(
         id,
         "[Note from nekotrail: the user rewound the workspace files to an earlier point in this chat. \
@@ -1875,8 +1940,15 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let _ = app.emit("workspaces-changed", json!({}));
         }
     }
+    if st.runs.lock().unwrap().rewinding.contains(&ws.id) {
+        return Err("Files are being rewound in this workspace. Send again in a moment.".into());
+    }
     // Snapshot the worktree first, so this turn can be undone with one click.
-    let checkpoint = git::checkpoint(Path::new(&ws.path), &format!("refs/nekotrail/{}", ws.id)).ok();
+    let prefix = git::checkpoint_prefix(&ws.id);
+    let checkpoint = git::checkpoint(Path::new(&ws.path), &prefix).ok();
+    // Keep the newest 50, without making the turn wait for it.
+    let ws_path = ws.path.clone();
+    std::thread::spawn(move || git::prune_checkpoints(Path::new(&ws_path), &prefix, git::CHECKPOINT_KEEP));
     let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
     st.db().append_event(&id, &user).map_err(e)?;
     emit_event(&app, &id, &user);
@@ -2253,7 +2325,7 @@ pub fn run() {
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
-            restore_checkpoint, workspace_files, save_attachment, preview_probe, preview_snapshot,
+            restore_checkpoint, checkpoint_preview, live_checkpoints, workspace_files, save_attachment, preview_probe, preview_snapshot,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
