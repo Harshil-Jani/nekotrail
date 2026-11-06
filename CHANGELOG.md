@@ -5,6 +5,16 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**OpenCode, and any ACP agent**
+- OpenCode joins Claude, Codex and Gemini. Pick it for a workspace or chat; it uses your own OpenCode setup, and setup shows its install command if it's missing.
+- "Ask before changes" works for OpenCode: each edit or command waits for Allow, Deny or "Allow for this chat", and Stop cancels cleanly mid-turn.
+- Repo settings that would make OpenCode run commands (MCP servers, plugins, custom tools, formatters, `allow` permissions) ask first; until you trust them, OpenCode runs with them switched off.
+
+**Appearance**
+- New Appearance pane in Settings: Light, Dark or Follow system, and zoom from 80% to 150% (⌘+, ⌘- and ⌘0 still work anywhere).
+- Pick the font and size for code (diffs, code blocks in chat, tool output) and for the terminal, from the monospace fonts on your Mac. Terminals change right away.
+- Mermaid diagrams in chat have a Diagram / Source toggle and redraw when you switch between light and dark.
+
 **Review the agent like a pull request**
 - Click a line number in Changes (shift-click or drag for more lines) to leave a comment. Drafts stay with the workspace, even after a restart.
 - "Send review" sends all your comments to the agent in one message, with each file and line, the code and your note. If the agent is busy, it waits in the chat box for Queue.
