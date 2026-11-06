@@ -23,10 +23,8 @@ pub fn parse_local(url: &str) -> Option<LocalUrl> {
     let url = url.trim();
     let (https, rest) = if let Some(r) = url.strip_prefix("http://") {
         (false, r)
-    } else if let Some(r) = url.strip_prefix("https://") {
-        (true, r)
     } else {
-        return None;
+        (true, url.strip_prefix("https://")?)
     };
     let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let (authority, path) = rest.split_at(end);
