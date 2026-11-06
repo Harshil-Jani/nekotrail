@@ -1,10 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -302,7 +302,8 @@ export default function App() {
   const setSidebarHidden = (f: (h: boolean) => boolean) =>
     setSidebarHiddenState((h) => { const n = f(h); localStorage.setItem("nekotrail.sidebarHidden", n ? "1" : "0"); return n; });
   const [groupBy, setGroupBy] = useState<"repo" | "status">(() => getSettings().groupBy);
-  const [prStates, setPrStates] = useState<Record<string, string>>({});
+  // Every workspace's PR, pushed by the one poller in the backend (`pr` events). Nothing here polls GitHub.
+  const [prs, setPrs] = useState<Record<string, PrView>>({});
   const [lines, setLines] = useState<Record<string, [number, number]>>({});
   const [openTargets, setOpenTargets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.openInTargets().then(setOpenTargets).catch(() => {}); }, []);
@@ -315,14 +316,28 @@ export default function App() {
     api.usageSummary().then(setUsage).catch(() => {});
   }, [refreshKey, workspaces.length]);
   useEffect(() => {
-    const load = () => api.prStates().then(setPrStates).catch(() => {});
-    load();
-    const t = setInterval(load, 5 * 60_000);
-    return () => clearInterval(t);
-  }, [workspaces.length]);
+    const un = listen<PrView>("pr", ({ payload }) => setPrs((m) => ({ ...m, [payload.workspace_id]: payload })));
+    api.prCache().then((all) => setPrs((m) => ({ ...all, ...m }))).catch(() => {});
+    // The poller pauses while the window is hidden and looks again when it comes back.
+    const vis = () => { api.prVisible(!document.hidden).catch(() => {}); };
+    const focus = () => { api.prVisible(true).catch(() => {}); };
+    vis();
+    document.addEventListener("visibilitychange", vis);
+    window.addEventListener("focus", focus);
+    return () => { un.then((f) => f()); document.removeEventListener("visibilitychange", vis); window.removeEventListener("focus", focus); };
+  }, []);
+  // A new workspace has no PR yet: ask for a look so its bar settles quickly.
+  useEffect(() => { api.prRefresh().catch(() => {}); }, [workspaces.length]);
+  // OPEN, DRAFT, MERGED or CLOSED per workspace, for the sidebar, the board and the radar.
+  const prStates = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [id, v] of Object.entries(prs)) { const st = prStateOf(v.pr ?? undefined); if (st) out[id] = st; }
+    return out;
+  }, [prs]);
+  const prStatesKey = JSON.stringify(prStates);
   // Collision radar: reads the file lists the line counts just cached, so it adds no git work.
   const [collisions, setCollisions] = useState<Collision[]>([]);
-  useEffect(() => { api.collisions(prStates).then(setCollisions).catch(() => {}); }, [lines, prStates]);
+  useEffect(() => { api.collisions(prStates).then(setCollisions).catch(() => {}); }, [lines, prStatesKey]);
   const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
   const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -377,6 +392,8 @@ export default function App() {
     const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
       refresh();
       setRefreshKey((k) => k + 1); // a turn ended: reload line counts and the collision radar
+      // The agent may have pushed or opened a PR: have the poller look at that repo now.
+      if (!payload.running && payload.workspace_id) api.prRefresh(payload.workspace_id, true).catch(() => {});
       // Changes and PR state only move for the workspace whose agent ran.
       if (!payload.workspace_id || payload.workspace_id === selectedRef.current) setWsRefreshKey((k) => k + 1);
       lastActive.current = Date.now();
@@ -1060,7 +1077,7 @@ export default function App() {
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
-                          <button role="menuitem" onClick={async () => { setMoreOpen(false); const pr = await api.prStatus(ws.id).catch(() => null); if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); const pr = prs[ws.id]?.pr; if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); openNew("stack", ws.id); }}><SquareStack size={15} /><span>Stack a new workspace on this one</span></button>
                           <div className="menu-label">Status</div>
                           {([["", "Automatic (from the PR)"], ...Object.entries(STATUS_LABEL)] as [WsStatus, string][]).map(([k, v]) => (
@@ -1086,6 +1103,8 @@ export default function App() {
                 refreshKey={wsRefreshKey}
                 collision={collisions.find((c) => c.order.includes(ws.id))}
                 prStates={prStates}
+                prView={prs[ws.id]}
+                parentPr={ws.parent_id ? prs[ws.parent_id]?.pr : undefined}
                 lines={lines}
                 onOpenWorkspace={select}
                 stackedOnThis={workspaces.filter((w) => w.state === "active" && w.parent_id === ws.id).map((w) => w.id)}
