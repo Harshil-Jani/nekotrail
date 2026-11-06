@@ -1,5 +1,8 @@
 # Push a tag like v0.2.0 (scripts/release.sh does it) to build the macOS app and publish a GitHub
 # release whose notes are that version's section of CHANGELOG.md.
+# The build is signed with the updater key (repo secrets TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD), so the release also carries nekotrail.app.tar.gz, its .sig
+# and latest.json. Installed apps read latest.json from the latest release to offer the update.
 name: release
 
 on:
@@ -48,9 +51,31 @@ jobs:
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: nekotrail ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           args: --target universal-apple-darwin
+          # latest.json for the in-app updater. The universal build serves both Mac chips:
+          # darwin-aarch64 and darwin-x86_64 point at the same signed .app.tar.gz.
+          includeUpdaterJson: true
+      - name: Updater notes are the changelog section only, and latest.json is complete
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release download "$tag" -p latest.json -O latest.json --clobber
+          jq --rawfile notes notes.md '.notes = ($notes | sub("\\s+$"; ""))' latest.json > latest.next.json
+          for p in darwin-aarch64 darwin-x86_64; do
+            jq -e --arg p "$p" '.platforms[$p].url and (.platforms[$p].signature | length > 0)' latest.next.json >/dev/null \
+              || { echo "latest.json has no signed $p entry" >&2; cat latest.next.json; exit 1; }
+          done
+          jq -e --arg v "${tag#v}" '.version == $v or .version == ("v" + $v)' latest.next.json >/dev/null \
+            || { echo "latest.json version does not match $tag" >&2; exit 1; }
+          mv latest.next.json latest.json
+          gh release upload "$tag" latest.json --clobber
+          jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json

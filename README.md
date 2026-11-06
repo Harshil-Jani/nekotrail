@@ -102,6 +102,8 @@ The cat reflects the real state of your work, so its moods carry information:
 
 Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so on first launch right-click it and choose **Open**.
 
+**Updates.** nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the next release from the download link once by hand: those versions can't update themselves yet.
+
 nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code) or [`codex`](https://github.com/openai/codex).
 
 To build it yourself:
@@ -110,7 +112,8 @@ To build it yourself:
 git clone https://github.com/Harshil-Jani/nekotrail
 cd nekotrail
 bun install
-bun run tauri build      # app bundle in src-tauri/target/release/bundle
+bun run tauri build -c '{"bundle":{"createUpdaterArtifacts":false}}'   # app bundle in src-tauri/target/release/bundle
+# (release builds also sign an update archive; that needs the maintainers' updater key)
 # or, while hacking on it:
 bun run tauri dev
 ```

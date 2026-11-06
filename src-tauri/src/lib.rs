@@ -2046,6 +2046,30 @@ async fn pty_close(st: State<'_, AppState>, id: String) -> Res<()> {
     Ok(())
 }
 
+// ---------- updates ----------
+
+/// What a restart would stop right now: running agent turns, and terminals with a command running.
+#[tauri::command]
+async fn busy_work(st: State<'_, AppState>) -> Res<Value> {
+    let agents = st.runs.lock().unwrap().running.len();
+    Ok(json!({ "agents": agents, "terminals": st.ptys.busy() }))
+}
+
+/// Stop every agent turn and terminal, right before the app relaunches into an update.
+/// Queued prompts are dropped so no new turn starts in between (they live in memory only).
+#[tauri::command]
+async fn stop_all_work(st: State<'_, AppState>) -> Res<()> {
+    {
+        let mut runs = st.runs.lock().unwrap();
+        runs.queued.clear();
+        for pid in runs.running.values() {
+            let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
+        }
+    }
+    st.ptys.close_all();
+    Ok(())
+}
+
 // ---------- import ----------
 
 #[tauri::command]
@@ -2110,6 +2134,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default() })
         .setup(|app| {
             autopilot_loop(app.handle().clone());
@@ -2127,7 +2153,7 @@ pub fn run() {
             remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
-            github_profile, repo_github, sky
+            github_profile, repo_github, sky, busy_work, stop_all_work
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");

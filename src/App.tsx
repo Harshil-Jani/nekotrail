@@ -24,6 +24,8 @@ import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { Settings } from "./components/Settings";
 import { TrustSheet } from "./components/TrustSheet";
+import { UpdateSheet } from "./components/UpdateSheet";
+import { useUpdater } from "./useUpdater";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { UserAttentionType } from "@tauri-apps/api/window";
 
@@ -289,6 +291,7 @@ export default function App() {
   const [comparing, setComparing] = useState<string | null>(params.get("compare")); // pair id
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
+  const updater = useUpdater();
 
   const refresh = useCallback(async () => {
     const s = await api.snapshot(showArchived);
@@ -718,6 +721,7 @@ export default function App() {
       { id: "new-pr", group: "Create", label: "Create workspace from a PR", hint: "⌘⇧N", keywords: "new pull request", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
       { id: "new-issue", group: "Create", label: "Create workspace from a GitHub issue", keywords: "new", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
+      { id: "update", group: "App", label: "Check for updates", keywords: "upgrade new version release download", icon: <Download size={15} />, run: () => updater.checkNow(true) },
       { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
@@ -1038,7 +1042,16 @@ export default function App() {
           onClose={() => setQuickOpen(null)}
         />
       )}
-      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)} />}
+      {updater.open && updater.phase && (
+        <UpdateSheet
+          phase={updater.phase}
+          onUpdate={updater.startUpdate}
+          onNotNow={updater.notNow}
+          onRestartNow={updater.restartNow}
+          onRestartWhenIdle={updater.restartWhenIdle}
+        />
+      )}
       {toast && (
         <div role="status" className={`toast ${toast.error ? "error" : ""}`}>
           {toast.text}
