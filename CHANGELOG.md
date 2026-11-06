@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.20.0 (2026-11-07)
 
 **Hand off to another agent**
 - New Hand off to another agent (a chat's + menu, ⌘K, or /handoff): another agent, Codex, Gemini or any you have installed, carries on the task in the same workspace and branch, so you don't explain it again.
