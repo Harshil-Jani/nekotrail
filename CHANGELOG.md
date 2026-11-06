@@ -33,6 +33,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - With no repos yet, the empty board and night sky offer Add a repo, and the board has one button instead of two. Storage with no workspaces reads as one short note.
 - Export session: Add to PR description is off when no chat has a message yet.
 - The queue shows one Add task when it is empty and one Resume when it is paused. The repo switcher leaves out "-0", and a task across repos says "3 repos" in the sidebar.
+- Usage: the Today and period totals say how many turns reported no cost, so a partial number never reads as your whole spend. The view says at the top when a daily cap is reached, and a cap you typed wrong is outlined with the reason under it.
+- An agent that reports no cost never shows as $0.00: the sidebar, Compare and the agent scorecard say Not reported, and Compare only names the cheapest result when every result has a cost.
+- A chat stopped at a spend cap has Change caps, which opens Usage.
+- The first run's main button no longer looks pressed on load, and the "You lit" star card sits above the composer so Send stays in reach.
+- An export of an empty workspace says "none" for agent time and changes, and Changes and Commit leave out "+0" and "-0".
 
 ## 0.16.0 (2026-11-07)
 
