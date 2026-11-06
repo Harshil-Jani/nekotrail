@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { ago, flatten, occurrences, sinceFor, snippetParts } from "../src/search";
+import { ago, flatten, occurrences, plainSnippet, sinceFor, snippetParts } from "../src/search";
 import type { SearchGroup } from "../src/api";
 
 describe("global search helpers", () => {
@@ -44,5 +44,17 @@ describe("global search helpers", () => {
     expect(occurrences("Retry, retry and RETRY", "retry")).toEqual([[0, 5], [7, 12], [17, 22]]);
     expect(occurrences("aaaa", "aa")).toEqual([[0, 2], [2, 4]]);
     expect(occurrences("abc", "")).toEqual([]);
+  });
+});
+
+describe("plainSnippet", () => {
+  test("drops markdown marks around words and matches", () => {
+    expect(plainSnippet("after **30s**, I raised `\u0002IdleTimeout\u0003` to 75s")).toBe("after 30s, I raised \u0002IdleTimeout\u0003 to 75s");
+  });
+  test("links keep their text, list and heading markers go", () => {
+    expect(plainSnippet("## Plan\n- see [the doc](https://x.dev/a)")).toBe("Plan\nsee the doc");
+  });
+  test("leaves maths and lone asterisks alone", () => {
+    expect(plainSnippet("2 * 3 = 6")).toBe("2 * 3 = 6");
   });
 });

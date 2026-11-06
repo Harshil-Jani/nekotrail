@@ -15,6 +15,20 @@ export function snippetParts(s: string): { text: string; hit: boolean }[] {
   return out;
 }
 
+/**
+ * Prose snippets without markdown marks: `**30s**` reads as 30s, `code` as code, [text](url) as text,
+ * and list or heading markers go. Only for prompts and replies; commands and paths keep every character.
+ * The \u0002 and \u0003 match markers pass through untouched.
+ */
+export function plainSnippet(s: string): string {
+  return s
+    .replace(/\[([^\]\n]*)\]\([^)\s]*\)/g, "$1")
+    .replace(/(^|\n)[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|>[ \t]?)/g, "$1")
+    .replace(/(\*\*|__)(?=[^\s*_])/g, "")
+    .replace(/([^\s*_])(\*\*|__)/g, "$1")
+    .replace(/`+/g, "");
+}
+
 export type DateRange = "any" | "today" | "week" | "month";
 export const DATE_LABEL: Record<DateRange, string> = { any: "Any time", today: "Today", week: "Last 7 days", month: "Last 30 days" };
 

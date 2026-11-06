@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Archive, FileText, MessageSquare, Search, SquareTerminal, User } from "lucide-react";
 import { api, errText, type Repo, type SearchGroup, type SearchHit, type SearchProgress } from "../api";
 import { agentName } from "../agents";
-import { ago, DATE_LABEL, flatten, snippetParts, type DateRange, sinceFor } from "../search";
+import { ago, DATE_LABEL, flatten, plainSnippet, snippetParts, type DateRange, sinceFor } from "../search";
 
 type Only = "all" | "user" | "command";
 const ONLY: [Only, string][] = [["all", "Everything"], ["user", "My messages"], ["command", "Commands"]];
@@ -12,7 +12,7 @@ const KIND_ICON = { user: User, agent: MessageSquare, command: SquareTerminal, f
 const KIND_LABEL = { user: "You", agent: "Agent", command: "Command", file: "File" } as const;
 
 function Snippet({ text, mono }: { text: string; mono: boolean }) {
-  const parts = snippetParts(text);
+  const parts = snippetParts(mono ? text : plainSnippet(text));
   return (
     <span className={`gs-snippet ${mono ? "mono" : ""}`}>
       {parts.map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>))}
