@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, SquareTerminal, X } from "lucide-react";
+import { ChevronRight, Download, SquareTerminal, X } from "lucide-react";
 import { api, errText, type TerminalPreview, type TerminalReport, type TerminalSession } from "../api";
 import { agentName } from "../agents";
 import { bytes, fresh, keyOf, newKeys, picks, plural, range, totals } from "../terminalImport";
@@ -87,6 +87,7 @@ export function TerminalImport({ onClose, onImported }: { onClose: () => void; o
               return (
                 <details key={r.root} className="ti-repo">
                   <summary>
+                    <ChevronRight size={14} className="ti-chevron" aria-hidden />
                     <Tick {...st} label={`Import ${r.name}`} onChange={(on) => setMany(list, on)} />
                     <span className="ti-name"><b>{r.name}</b>{!r.repo_id && <span className="chip">New repo</span>}</span>
                     <span className="muted ti-sum">{summary(list)}</span>
