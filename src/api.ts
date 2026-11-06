@@ -222,6 +222,8 @@ export const api = {
   fileDiff: (id: string, file: string, uncommitted = false) => invoke<string>("file_diff", { id, file, uncommitted }),
   readFile: (id: string, path: string) => invoke<string>("read_file", { id, path }),
   writeFile: (id: string, path: string, content: string) => invoke<void>("write_file", { id, path, content }),
+  /** Discard one file's uncommitted changes; its current copy goes to the Trash. */
+  discardFile: (id: string, path: string) => invoke<"trashed" | "restored">("discard_file", { id, path }),
   prReviewComments: (id: string) => invoke<import("./components/Diff").GhComment[]>("pr_review_comments", { id }),
   openIn: (id: string, app: string) => invoke<void>("open_in", { id, app }),
   openInTargets: () => invoke<{ id: string; name: string }[]>("open_in_targets"),

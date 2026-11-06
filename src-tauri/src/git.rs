@@ -374,6 +374,41 @@ pub fn files(ws: &Path) -> Result<Vec<String>> {
     Ok(git(ws, &["ls-files", "-co", "--exclude-standard"])?.lines().map(String::from).collect())
 }
 
+/// What discarding one file did.
+#[derive(Debug, PartialEq)]
+pub enum Discarded {
+    /// The file was new (untracked or only staged): it went to the Trash and out of the index.
+    Trashed,
+    /// The file is back to its last commit; the edited copy, if there was one, went to the Trash.
+    Restored,
+}
+
+/// Drop the uncommitted changes to one file and nothing else. The current copy goes through
+/// `trash` first, so the discarded work can be fished out again; if that fails, git is never
+/// touched. Committed changes stay: this only undoes what isn't in a commit yet.
+pub fn discard_file(ws: &Path, rel: &str, trash: impl Fn(&Path) -> Result<()>) -> Result<Discarded> {
+    // `:(literal)` so a name like `*.ts` or `[id].tsx` means that one file, never a pattern.
+    let spec = format!(":(literal){rel}");
+    let status = git_raw(ws, &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", &spec])?;
+    if status.split('\0').all(|s| s.is_empty()) {
+        bail!("{rel} has no uncommitted changes. Its committed changes stay as they are.");
+    }
+    let in_head = git(ws, &["cat-file", "-e", &format!("HEAD:{rel}")]).is_ok();
+    let full = ws.join(rel);
+    if full.symlink_metadata().is_ok() {
+        trash(&full).with_context(|| format!("moving {rel} to the Trash"))?;
+    }
+    if in_head {
+        // Index and working copy back to HEAD, for this path only.
+        git(ws, &["checkout", "HEAD", "--", &spec])?;
+        Ok(Discarded::Restored)
+    } else {
+        // New file: out of the index if it was staged. The file itself is already in the Trash.
+        let _ = git(ws, &["rm", "--cached", "--quiet", "--ignore-unmatch", "--", &spec]);
+        Ok(Discarded::Trashed)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -413,6 +448,83 @@ pub mod tests {
         assert_eq!(get("img.bin").additions, 0);
         assert_eq!(get("untracked.txt").additions, 2);
         assert!(!c.iter().any(|f| f.path.contains("old name")));
+    }
+
+    /// A stand-in Trash: moves files into `bin`, numbered, so tests can read what was "trashed".
+    fn fake_trash(bin: &Path) -> impl Fn(&Path) -> Result<()> + '_ {
+        move |p: &Path| {
+            let n = std::fs::read_dir(bin)?.count();
+            std::fs::rename(p, bin.join(format!("{n}-{}", p.file_name().unwrap().to_string_lossy())))?;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn discard_touches_only_the_one_file_and_keeps_a_copy() {
+        let repo = init_repo();
+        let r = repo.path();
+        let bin = tempfile::tempdir().unwrap();
+        std::fs::write(r.join("b.txt"), "b\n").unwrap();
+        std::fs::write(r.join("[id].tsx"), "page\n").unwrap();
+        git(r, &["add", "."]).unwrap();
+        git(r, &["commit", "-qm", "more"]).unwrap();
+
+        // Edits everywhere; discard only a.txt.
+        std::fs::write(r.join("a.txt"), "agent edit\n").unwrap();
+        std::fs::write(r.join("b.txt"), "keep me\n").unwrap();
+        std::fs::write(r.join("i.tsx"), "matches [id].tsx as a glob\n").unwrap();
+        std::fs::write(r.join("[id].tsx"), "edited page\n").unwrap();
+        git(r, &["add", "a.txt"]).unwrap(); // staged too: both index and file go back
+        assert_eq!(discard_file(r, "a.txt", fake_trash(bin.path())).unwrap(), Discarded::Restored);
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "one\n");
+        assert_eq!(git(r, &["diff", "--cached", "--name-only"]).unwrap(), "");
+        assert_eq!(std::fs::read_to_string(bin.path().join("0-a.txt")).unwrap(), "agent edit\n");
+        assert_eq!(std::fs::read_to_string(r.join("b.txt")).unwrap(), "keep me\n");
+
+        // A name with glob characters means only itself.
+        assert_eq!(discard_file(r, "[id].tsx", fake_trash(bin.path())).unwrap(), Discarded::Restored);
+        assert_eq!(std::fs::read_to_string(r.join("[id].tsx")).unwrap(), "page\n");
+        assert!(r.join("i.tsx").exists());
+    }
+
+    #[test]
+    fn discard_sends_new_files_to_the_trash_and_brings_deleted_ones_back() {
+        let repo = init_repo();
+        let r = repo.path();
+        let bin = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(r.join("src")).unwrap();
+        std::fs::write(r.join("src/new.rs"), "fn x() {}\n").unwrap();
+        std::fs::write(r.join("staged.rs"), "staged\n").unwrap();
+        git(r, &["add", "staged.rs"]).unwrap();
+
+        assert_eq!(discard_file(r, "src/new.rs", fake_trash(bin.path())).unwrap(), Discarded::Trashed);
+        assert!(!r.join("src/new.rs").exists());
+        assert_eq!(std::fs::read_to_string(bin.path().join("0-new.rs")).unwrap(), "fn x() {}\n");
+
+        assert_eq!(discard_file(r, "staged.rs", fake_trash(bin.path())).unwrap(), Discarded::Trashed);
+        assert!(!r.join("staged.rs").exists());
+        assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), "");
+
+        std::fs::remove_file(r.join("a.txt")).unwrap();
+        assert_eq!(discard_file(r, "a.txt", fake_trash(bin.path())).unwrap(), Discarded::Restored);
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "one\n");
+    }
+
+    #[test]
+    fn discard_refuses_committed_only_files_and_stops_when_trash_fails() {
+        let repo = init_repo();
+        let r = repo.path();
+        let bin = tempfile::tempdir().unwrap();
+        std::fs::write(r.join("a.txt"), "committed\n").unwrap();
+        git(r, &["commit", "-qam", "c"]).unwrap();
+        assert!(discard_file(r, "a.txt", fake_trash(bin.path())).is_err());
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "committed\n");
+
+        // If the Trash refuses, the edit stays exactly where it was.
+        std::fs::write(r.join("a.txt"), "unsaved\n").unwrap();
+        let broken = |_: &Path| -> Result<()> { bail!("no trash") };
+        assert!(discard_file(r, "a.txt", broken).is_err());
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "unsaved\n");
     }
 
     #[test]

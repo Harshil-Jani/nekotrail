@@ -677,6 +677,34 @@ async fn write_file(st: State<'_, AppState>, id: String, path: String, content: 
     std::fs::write(inside(&ws, &path)?, content).map_err(e)
 }
 
+/// Discard the uncommitted changes to one file. The current copy goes to the macOS Trash first,
+/// so nothing is ever deleted outright. Returns "trashed" (a new file) or "restored".
+#[tauri::command]
+async fn discard_file(app: AppHandle, id: String, path: String) -> Res<String> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let root = Path::new(&ws.path);
+        // A file that still exists must resolve inside the workspace (no symlink out of it). A
+        // deleted one only needs a plain relative path: git itself refuses paths through links.
+        if root.join(&path).symlink_metadata().is_ok() {
+            inside(&ws, &path)?;
+        } else if path.is_empty() || Path::new(&path).components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+            return Err("That file is outside the workspace.".into());
+        }
+        let r = git::discard_file(root, &path, |p| {
+            use trash::macos::{DeleteMethod, TrashContextExtMacos};
+            let mut t = trash::TrashContext::default();
+            // The system call, not Finder: no Automation prompt and no sound.
+            t.set_delete_method(DeleteMethod::NsFileManager);
+            t.delete(p).map_err(|err| anyhow::anyhow!("{err}"))
+        })
+        .map_err(e)?;
+        mark_changed(st, &id);
+        Ok(if r == git::Discarded::Trashed { "trashed" } else { "restored" }.to_string())
+    })
+    .await
+}
+
 /// Review comments left on the workspace's PR on GitHub (line comments, not general ones).
 #[tauri::command]
 async fn pr_review_comments(st: State<'_, AppState>, id: String) -> Res<Value> {
@@ -2257,7 +2285,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work
