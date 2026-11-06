@@ -147,6 +147,14 @@ export const starFor = (sky: Sky, name: string) => {
 };
 export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find((c) => c.slug === star.constellation)!;
 
+/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/) would run, not trusted yet. */
+export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
+export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
+
+/** Runs before every message is sent; App uses it to ask about a repo's agent config first. */
+let beforeTurn: (id: string) => Promise<void> = async () => {};
+export const setBeforeTurn = (f: (id: string) => Promise<void>) => { beforeTurn = f; };
+
 export const api = {
   githubProfile: () => invoke<GithubUser>("github_profile"),
   repoGithub: (id: string) => invoke<RepoGithub>("repo_github", { id }),
@@ -158,6 +166,9 @@ export const api = {
   repoBranches: (id: string) => invoke<string[]>("repo_branches", { id }),
   workspaceScripts: (id: string) => invoke<WorkspaceScripts>("workspace_scripts", { id }),
   trustScripts: (id: string, fingerprint: string) => invoke<void>("trust_scripts", { id, fingerprint }),
+  /** `id` is a workspace or a chat. Null when there is nothing to trust. */
+  agentConfigTrust: (id: string) => invoke<AgentConfigTrust | null>("agent_config_trust", { id }),
+  trustAgentConfig: (id: string, fingerprint: string) => invoke<void>("trust_agent_config", { id, fingerprint }),
   createWorkspace: (repoId: string, base?: string, name?: string, from?: string) =>
     invoke<Workspace>("create_workspace", { repoId, base, name, from }),
   repoPrs: (id: string) =>
@@ -200,7 +211,7 @@ export const api = {
   pullTarget: (id: string) => invoke<"up-to-date" | "merged" | "conflicts">("pull_target", { id }),
   mergePr: (id: string, auto = false) => invoke<void>("merge_pr", { id, auto }),
   failingLogs: (id: string) => invoke<string>("failing_logs", { id }),
-  sendToWorkspace: (id: string, text: string) => invoke<string>("send_to_workspace", { id, text }),
+  sendToWorkspace: async (id: string, text: string) => { await beforeTurn(id); return invoke<string>("send_to_workspace", { id, text }); },
   archiveWorkspace: (id: string, force = false) => invoke<void>("archive_workspace", { id, force }),
   restoreWorkspace: (id: string) => invoke<void>("restore_workspace", { id }),
   setPinned: (id: string, pinned: boolean) => invoke<void>("set_pinned", { id, pinned }),
@@ -227,7 +238,7 @@ export const api = {
   sessionEvents: (id: string) => invoke<ChatEvent[]>("session_events", { id }),
   queued: (id: string) => invoke<string[]>("queued", { id }),
   clearQueue: (id: string) => invoke<void>("clear_queue", { id }),
-  send: (id: string, text: string) => invoke<void>("send", { id, text }),
+  send: async (id: string, text: string) => { await beforeTurn(id); return invoke<void>("send", { id, text }); },
   stop: (id: string) => invoke<void>("stop", { id }),
   restoreCheckpoint: (id: string, checkpoint: string) => invoke<void>("restore_checkpoint", { id, checkpoint }),
   workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),

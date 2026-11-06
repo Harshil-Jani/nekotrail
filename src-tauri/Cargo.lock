@@ -2320,6 +2320,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "tempfile",
+ "toml 0.8.2",
  "uuid",
 ]
 

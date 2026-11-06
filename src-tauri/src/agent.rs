@@ -168,6 +168,9 @@ pub struct TurnSpec<'a> {
     pub env: &'a [(String, String)],
     /// Other folders the agent may use (/add-dir).
     pub dirs: &'a [String],
+    /// Load the agent config the repo commits (`.claude/settings.json`, `.mcp.json`, `.codex/`).
+    /// False until the user trusted what it runs (see `agentcfg`).
+    pub project_config: bool,
 }
 
 /// Build the CLI command for one turn.
@@ -190,6 +193,9 @@ pub fn command(spec: &TurnSpec) -> Command {
             c.args(["resume", id]);
         }
         c.args(["--json", "--skip-git-repo-check", "-c", &format!("sandbox_mode=\"{sandbox}\"")]);
+        if !spec.project_config {
+            c.args(["-c", &codex_untrusted(spec.cwd)]);
+        }
         if let Some(m) = model {
             c.args(["-m", m]);
         }
@@ -217,6 +223,11 @@ pub fn command(spec: &TurnSpec) -> Command {
             c.args(["-p", &crate::safe::positional(spec.prompt), "--output-format", "stream-json", "--verbose"]);
             c.args(["--permission-mode", spec.permission_mode]);
         }
+        if !spec.project_config {
+            // Project and local settings carry the hooks, apiKeyHelper and env; `user` alone also
+            // keeps the repo's .mcp.json servers from starting. The user's own settings and MCP stay.
+            c.args(["--setting-sources", "user"]);
+        }
         if let Some(m) = model {
             c.args(["--model", m]);
         }
@@ -240,6 +251,20 @@ pub fn command(spec: &TurnSpec) -> Command {
     c.current_dir(spec.cwd);
     c.stdin(if interactive(spec) { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     c
+}
+
+/// `projects={"<cwd>"={trust_level="untrusted"}}`: Codex then skips the folder's `.codex/` layer
+/// (config, rules, hooks) for this run, even inside a folder the user trusted. The dotted form
+/// `projects."<path>".trust_level` is not read as one key, so the table is written inline.
+fn codex_untrusted(cwd: &Path) -> String {
+    let mut paths = vec![cwd.to_string_lossy().to_string()];
+    if let Ok(real) = cwd.canonicalize()
+        && real != cwd {
+            paths.insert(0, real.to_string_lossy().to_string());
+        }
+    // A JSON string is a valid TOML basic string, so quotes in a path stay inside the key.
+    let entries: Vec<String> = paths.into_iter().map(|p| format!("{}={{trust_level=\"untrusted\"}}", Value::String(p))).collect();
+    format!("projects={{{}}}", entries.join(","))
 }
 
 /// Turns where the user approves each risky tool call (Claude's "ask before changes" mode).
@@ -319,7 +344,7 @@ mod tests {
     #[test]
     fn ask_mode_uses_the_control_channel() {
         let cwd = Path::new("/tmp");
-        let spec = TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: None, model: None, permission_mode: "ask", cwd, effort: None, instructions: None, env: &[], dirs: &[] };
+        let spec = TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: None, model: None, permission_mode: "ask", cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
         assert!(interactive(&spec));
         let args: Vec<_> = command(&spec).get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert!(args.windows(2).any(|w| w == ["--permission-prompt-tool", "stdio"]));
@@ -336,7 +361,7 @@ mod tests {
     #[test]
     fn commands() {
         let cwd = Path::new("/tmp");
-        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &["/code/shared".into()] });
+        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &["/code/shared".into()], project_config: true });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert!(args.windows(2).any(|w| w == ["--add-dir", "/code/shared"]));
         assert!(args.windows(2).any(|w| w == ["--effort", "high"]));
@@ -344,10 +369,38 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--resume", "s1"]));
         assert!(args.windows(2).any(|w| w == ["--permission-mode", "plan"]));
 
-        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[] });
+        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(&args[..3], ["exec", "resume", "t1"]);
         assert!(args.contains(&"sandbox_mode=\"read-only\"".to_string()));
         assert_eq!(args.last().unwrap(), "hi", "instructions only lead a chat's first message");
+        assert!(!args.iter().any(|a| a.starts_with("projects=")), "trusted repo config loads as usual");
+    }
+
+    #[test]
+    fn untrusted_repo_config_is_switched_off() {
+        let d = tempfile::tempdir().unwrap();
+        let cwd = d.path();
+        let spec = |agent, mode, project_config| TurnSpec { fork: false, agent, prompt: "hi", agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config };
+        let args = |s: &TurnSpec| command(s).get_args().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>();
+        for mode in ["default", "ask", "bypassPermissions"] {
+            assert!(args(&spec("claude", mode, false)).windows(2).any(|w| w == ["--setting-sources", "user"]), "{mode}");
+            assert!(!args(&spec("claude", mode, true)).contains(&"--setting-sources".to_string()));
+        }
+        let a = args(&spec("codex", "default", false));
+        let i = a.iter().position(|x| x.starts_with("projects=")).expect("codex override");
+        assert_eq!(a[i - 1], "-c");
+        assert_eq!(a.last().unwrap(), "hi");
+        // It has to parse as TOML to this exact table, or codex would read it as a plain string.
+        let t: toml::Table = a[i].parse().unwrap();
+        let p = t["projects"].as_table().unwrap();
+        // The temp dir is under /var, which is /private/var: both spellings are listed.
+        for path in [cwd.to_path_buf(), cwd.canonicalize().unwrap()] {
+            assert_eq!(p[path.to_str().unwrap()]["trust_level"].as_str(), Some("untrusted"), "{path:?}");
+        }
+        assert!(!args(&spec("codex", "default", true)).iter().any(|x| x.starts_with("projects=")));
+        // Quotes in a path stay inside the key.
+        let t: toml::Table = codex_untrusted(Path::new("/tmp/a\"b\\c]}")).parse().unwrap();
+        assert_eq!(t["projects"].as_table().unwrap().keys().collect::<Vec<_>>(), ["/tmp/a\"b\\c]}"]);
     }
 }
