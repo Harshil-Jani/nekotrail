@@ -12,7 +12,8 @@ export async function okFullAuto(mode: string): Promise<boolean> {
     title: "Use Full auto?",
     body: [
       "The agent runs commands, installs packages and edits files without stopping to ask you.",
-      "It works in this workspace's own folder and branch, every message saves a checkpoint you can rewind to, and protected files from Repo settings still apply.",
+      "It stays in this workspace's own folder and branch. Every message saves a checkpoint you can rewind to.",
+      "Protected files from Repo settings still apply.",
       "You'll only be asked this once.",
     ].join("\n"),
     ok: "Use Full auto",
