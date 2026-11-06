@@ -8,6 +8,8 @@
  * First run (a fresh install): ?fresh (nothing found), &found=conductor or &found=terminal (what "Where's your code?"
  * leads with), &noagents (no agent CLI yet), &gh=0 (GitHub not signed in), &step=code or &step=try (open on that
  * step; try comes with one repo). ?tour opens the coach-mark tour on any workspace.
+ * Linear: ?new=r1&from=linear (your open issues), &linear=off (not connected), &linear=empty (no issues),
+ * &linear=error (Linear is rate limiting). Settings: ?settings=integrations, with &linear=off or &linear=error.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -585,10 +587,58 @@ let alertsState: any = {
 };
 const alertsReply = (next: any) => (alertsState = { ...alertsState, ...next });
 
+// Linear (?new=r1&from=linear, ?settings=integrations). &linear=off: not connected; empty: no issues
+// match; error: Linear is rate limiting, and the last move to In Progress failed. Nothing reaches Linear.
+const linearMode = new URLSearchParams(location.search).get("linear");
+const linearTeams = [{ id: "t1", key: "ENG", name: "Engineering" }, { id: "t2", key: "WEB", name: "Web" }, { id: "t3", key: "OPS", name: "Platform" }];
+const linearIssue = (n: number, team: number, title: string, state: [string, string], priority: number, labels: string[], assignee: string | null, description: string) => {
+  const t = linearTeams[team];
+  const identifier = `${t.key}-${n}`;
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").split("-").slice(0, 6).join("-");
+  const url = `https://linear.app/pawprint/issue/${identifier}/${slug}`;
+  const seed = `Linear issue ${identifier}: ${title}\n${url}${description ? `\n\n${description}` : ""}\n\nWhen you open a PR, put "Fixes ${identifier}" in its description.`;
+  return { id: `lin-${identifier}`, identifier, title, description, url, branch: `harshil/${identifier.toLowerCase()}-${slug}`, state: state[0], state_type: state[1], team: t, assignee, labels, priority, updated_at: "2026-11-06T10:00:00.000Z", seed };
+};
+const linearAll = [
+  linearIssue(482, 0, "Webhook retries give up after the first 502", ["Todo", "unstarted"], 2, ["Bug", "Webhooks"], "Harshil Jani", "Deliveries that hit a 502 from the load balancer are marked failed straight away.\n\n**Expected:** retry with backoff, up to 5 times.\n\n- [ ] Add a retry policy\n- [ ] Cover it in `internal/webhooks/retry_test.go`"),
+  linearIssue(479, 0, "Tickets API should rate limit per API key, not per IP", ["In Progress", "started"], 3, ["API"], "Harshil Jani", "Customers behind one NAT share a limit today."),
+  linearIssue(131, 1, "Pricing page: annual toggle keeps the monthly price on Safari", ["Todo", "unstarted"], 1, ["Bug", "Safari"], "Harshil Jani", "Repro: Safari 18, toggle Annual, the card still says $12/mo."),
+  linearIssue(88, 2, "Alert when the Postgres replica lags more than 30 seconds", ["Backlog", "backlog"], 3, ["Observability"], "Harshil Jani", ""),
+  linearIssue(476, 0, "Export orders as CSV from the admin", ["Todo", "unstarted"], 0, ["Feature"], "Maya Patel", "Admins want a CSV of the filtered list."),
+  linearIssue(140, 1, "Dark mode: chart tooltips are unreadable", ["Triage", "triage"], 4, [], null, ""),
+];
+const linearKeyHint = { name: "Harshil Jani", org: "Pawprint" };
+let linearState: any = {
+  connected: linearMode !== "off",
+  account: linearMode === "off" ? null : linearKeyHint,
+  move_started: true,
+  last_error: linearMode === "error" ? "Couldn't move ENG-482 to In Progress. Linear is limiting requests right now. Try again in a minute." : null,
+};
+const linearIssues = (f: any) => {
+  if (linearMode === "error") throw "Linear is limiting requests right now. Try again in a minute.";
+  if (linearMode === "empty") return [];
+  const q = String(f?.query ?? "").trim().toLowerCase();
+  const ref = /^([a-z][a-z0-9]*)-(\d+)$/.exec(q);
+  return linearAll.filter((i) => ref ? i.identifier.toLowerCase() === q : (
+    (f?.anyone || i.assignee === "Harshil Jani")
+    && (!f?.team || i.team.id === f.team)
+    && (f?.state === "all" ? true : f?.state && f.state !== "open" ? i.state_type === f.state : !["completed", "canceled"].includes(i.state_type))
+    && (!q || i.title.toLowerCase().includes(q))));
+};
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
       case "alerts_view": return alertsState;
+      case "linear_status": return linearState;
+      case "linear_connect":
+        if (!String(args.key).trim().startsWith("lin_api_")) throw "That doesn't look like a Linear personal API key. It starts with lin_api_.";
+        return (linearState = { ...linearState, connected: true, account: linearKeyHint, last_error: null });
+      case "linear_test": if (linearMode === "error") throw "Linear is limiting requests right now. Try again in a minute."; return (linearState = { ...linearState, last_error: null });
+      case "linear_disconnect": return (linearState = { ...linearState, connected: false, account: null, last_error: null });
+      case "linear_set_move": return (linearState = { ...linearState, move_started: args.on });
+      case "linear_teams": return linearMode === "error" ? [] : linearTeams;
+      case "linear_issues": return linearIssues(args.filter);
       case "alerts_save": return alertsReply({ config: args.config });
       case "alerts_add": {
         const d = { id: `a${Date.now()}`, service: args.service, name: { ntfy: "ntfy", slack: "Slack", discord: "Discord", webhook: "Webhook", pushover: "Pushover" }[args.service as string], on: true, events: alertEvents, last_line: false, saved: false, hint: "" };
