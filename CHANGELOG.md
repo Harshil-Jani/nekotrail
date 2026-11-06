@@ -5,6 +5,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Linux (new, experimental)**
+- nekotrail runs on Linux (x86_64), shipped as a `.deb` and an `.AppImage` that update themselves from inside the app.
+- On Linux, shortcuts use Ctrl where the Mac uses ⌘. Switching workspace is Alt+1 to Alt+9 and Open in editor is Ctrl+Shift+O. The terminal copies and pastes with Ctrl+Shift+C / Ctrl+Shift+V.
+- On Linux, discarded files go to the desktop's Trash, Open in finds your editors and terminals on PATH, and agents keep the computer from idling to sleep.
+
 **Search every chat**
 - Search every chat with ⌘⇧F: your prompts, the agents' replies, the commands they ran and the files they touched, in every workspace, archived ones too.
 - Filter by repo, agent or date, or show only your messages or only commands. Enter opens the chat at that message and highlights it.
