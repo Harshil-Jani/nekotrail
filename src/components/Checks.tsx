@@ -71,25 +71,23 @@ export function Checks({ workspaceId, repo, active, onSendAgent, onRepoSettings,
 
   return (
     <div className="checks">
-      <div className="checks-bar" role="toolbar" aria-label="Checks">
+      {!none && <div className="checks-bar" role="toolbar" aria-label="Checks">
         <span className="checks-headline" role="status">
           {view.active && <span className="spinner" aria-hidden />}
-          {none ? (view.trust ? "Checks wait for your OK" : "No checks yet") : headline(view)}
+          {headline(view)}
         </span>
         <span className="spacer" />
-        {!none && (
-          <label className="checks-auto" title="After each agent turn that ends well, run these checks. If one that passed before fails, the workspace moves to Needs you.">
-            <input type="checkbox" className="switch" checked={view.after_turn} disabled={busy || !repo} onChange={(e) => savePrefs({ checks_after_turn: e.target.checked })} />
-            Run after every agent turn
-          </label>
-        )}
+        <label className="checks-auto" title="After each agent turn that ends well, run these checks. If one that passed before fails, the workspace moves to Needs you.">
+          <input type="checkbox" className="switch" checked={view.after_turn} disabled={busy || !repo} onChange={(e) => savePrefs({ checks_after_turn: e.target.checked })} />
+          Run after every agent turn
+        </label>
         {failing.length > 0 && !view.active && (
-          <button onClick={() => onSendAgent(fixAllPrompt(failing))} title="Send every failure to the agent in one message"><Sparkles size={14} />Fix all</button>
+          <button className="primary" onClick={() => onSendAgent(fixAllPrompt(failing))} title="Send every failure to the agent in one message"><Sparkles size={14} />Fix all</button>
         )}
-        {!none && (view.active
+        {view.active
           ? <button className="danger" onClick={stop}><Square size={12} />Stop</button>
-          : <button onClick={() => run()}><Play size={13} />Run checks</button>)}
-      </div>
+          : <button className={failing.length > 0 || view.trust ? "" : "primary"} onClick={() => run()}><Play size={13} />Run checks</button>}
+      </div>}
 
       <div className="checks-body">
         {view.trust && <TrustCard checks={view.trust.checks} onAllow={async () => {
@@ -133,7 +131,7 @@ function TrustCard({ checks, onAllow }: { checks: [string, string][]; onAllow: (
       <ul className="checks-cmds">
         {checks.map(([n, c]) => <li key={n}><span>{n}</span><code>{c}</code></li>)}
       </ul>
-      <div className="row end"><button onClick={onAllow}>Allow these commands</button></div>
+      <div className="row end"><button className="primary" onClick={onAllow}>Allow these commands</button></div>
     </section>
   );
 }
@@ -171,7 +169,7 @@ function Suggest({ suggestions, busy, onAdd, onRepoSettings }: {
       <p className="muted">They're saved as actions in the repo's settings, where you can change them. Nothing runs until you press Run checks.</p>
       <div className="row end">
         <button className="quiet" onClick={onRepoSettings}>Edit in repo settings</button>
-        <button onClick={() => onAdd(picked)} disabled={busy || !picked.length}>{picked.length === 1 ? "Add 1 check" : `Add ${picked.length} checks`}</button>
+        <button className="primary" onClick={() => onAdd(picked)} disabled={busy || !picked.length}>{picked.length === 1 ? "Add 1 check" : `Add ${picked.length} checks`}</button>
       </div>
     </section>
   );
@@ -211,7 +209,8 @@ function CheckRow({ def, result, state, workspaceId, runDisabled, onRun, onFix }
         <code className="check-cmd" title={def.command}>{def.command}</code>
         {result?.regressed && <span className="check-tag bad" title="It passed the time before this run">Passed before</span>}
         <span className="spacer" />
-        {result && (
+        {state && <span className="check-meta muted">{state === "running" ? "Running…" : "Waiting to run"}</span>}
+        {result && !state && (
           <span className="check-meta num muted" title={`Finished ${new Date(result.finished_at).toLocaleString()}${result.formats.length ? `\nRead as ${result.formats.join(", ")}` : ""}`}>
             <span className={result.status === "passed" ? "" : "bad-text"}>{countLine(result)}</span> · {duration(result.duration_ms)}
           </span>
