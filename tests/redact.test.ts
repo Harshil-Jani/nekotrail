@@ -12,6 +12,7 @@ const ANTHROPIC = "sk-ant-api03-" + "Zx9Yw8Vu7Ts6Rq5Po4Nm3";
 const AWS = "AKIA" + "IOSFODNN7EXAMPL1";
 const STRIPE = "sk_live_" + "51HbQ2eLkdjf83Kdl2";
 const SLACK = "xoxb-" + "123456789012-abcdefABCDEF";
+const LINEAR = "lin_api_" + "Ab12Cd34Ef56Gh78Ij90Kl12Mn34Op56Qr78St90";
 const GOOGLE = "AIza" + "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q";
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
 
@@ -24,6 +25,7 @@ describe("secret masking: common token formats", () => {
     expect(kinds(`aws configure set aws_access_key_id ${AWS}`)).toEqual([["AWS access key", AWS]]);
     expect(kinds(`stripe ${STRIPE}`)).toEqual([["Stripe key", STRIPE]]);
     expect(kinds(`slack ${SLACK}`)).toEqual([["Slack token", SLACK]]);
+    expect(kinds(`Authorization: ${LINEAR}`)).toEqual([["Linear key", LINEAR]]);
     expect(kinds(`maps ${GOOGLE}`)).toEqual([["Google API key", GOOGLE]]);
     expect(kinds(`cookie ${JWT}`)).toEqual([["JWT", JWT]]);
   });

@@ -38,6 +38,7 @@ const DETECTORS: Detector[] = [
   { kind: "API key", re: /(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}/g, ok: (v) => /\d/.test(v) && /[A-Za-z]/.test(v.slice(3)) },
   { kind: "Stripe key", re: /\b(?:sk|rk|pk|whsec)_(?:live|test)_[A-Za-z0-9]{16,}\b|\bwhsec_[A-Za-z0-9]{24,}\b/g },
   { kind: "Slack token", re: /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g },
+  { kind: "Linear key", re: /\blin_(?:api|oauth)_[A-Za-z0-9]{32,}\b/g },
   { kind: "AWS access key", re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
   { kind: "Google API key", re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
   { kind: "npm token", re: /\bnpm_[A-Za-z0-9]{36}\b/g },

@@ -70,6 +70,7 @@ static DETECTORS: LazyLock<Vec<Detector>> = LazyLock::new(|| {
         }),
         d("Stripe key", r"\b(?:sk|rk|pk|whsec)_(?:live|test)_[A-Za-z0-9]{16,}\b|\bwhsec_[A-Za-z0-9]{24,}\b", 0, always),
         d("Slack token", r"\bxox[abposr]-[A-Za-z0-9-]{10,}\b", 0, always),
+        d("Linear key", r"\blin_(?:api|oauth)_[A-Za-z0-9]{32,}\b", 0, always),
         d("AWS access key", r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", 0, always),
         d("Google API key", r"\bAIza[0-9A-Za-z_-]{35}\b", 0, always),
         d("npm token", r"\bnpm_[A-Za-z0-9]{36}\b", 0, always),
@@ -170,6 +171,9 @@ mod tests {
         assert_eq!(kinds(&format!("key {openai}")), [("API key", openai)]);
         assert_eq!(kinds(&format!("key {anthropic}")), [("Anthropic key", anthropic)]);
         assert_eq!(kinds(&format!("slack {slack}")), [("Slack token", slack)]);
+        let linear = format!("lin_api_{}", "Ab12Cd34Ef56Gh78Ij90Kl12Mn34Op56Qr78St90");
+        assert_eq!(kinds(&format!("Authorization: {linear}")), [("Linear key", linear.clone())]);
+        assert_eq!(mask(&format!("key={linear}.")), "key=[hidden: Linear key].");
         assert_eq!(kinds(&format!("aws configure set aws_access_key_id {aws}")), [("AWS access key", aws)]);
     }
 
