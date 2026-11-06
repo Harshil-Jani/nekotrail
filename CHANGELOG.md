@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.16.0 (2026-11-07)
 
 **Tasks across repos**
 - New workspace, "Several repos": pick 2 to 5 repos and nekotrail makes a workspace in each, all on one branch. The sidebar shows them as one task.
