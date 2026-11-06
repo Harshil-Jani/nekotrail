@@ -4,6 +4,7 @@ import type { NewQueueTask, QueueSummary, QueueTask, QueueView } from "./queue";
 import type { Budgets, UsageReport } from "./usage";
 import type { AlertSecret, AlertService, AlertsConfig, AlertsView } from "./alerts";
 import type { LinearFilter, LinearIssue, LinearStatus, LinearTeam } from "./linear";
+import type { HandoffReason } from "./handoff";
 
 export type Repo = {
   id: string;
@@ -183,7 +184,12 @@ export type ChatEvent =
   /** Put it back ran: these files are as they were before the turn. */
   | { kind: "guard_restored"; files: string[]; checkpoint: string }
   /** Checks that ran after the turn ("Run checks after every agent turn"). */
-  | { kind: "checks"; results: { name: string; status: CheckResult["status"]; passed: number | null; failed: number; regressed: boolean }[] };
+  | { kind: "checks"; results: { name: string; status: CheckResult["status"]; passed: number | null; failed: number; regressed: boolean }[] }
+  /** A hand-off: "to" in the chat that handed off, "from" in the chat that picked up. `session_id` is the other chat. */
+  | { kind: "handoff"; dir: "to" | "from"; agent: Agent; session_id: string; task?: string; reason?: HandoffReason };
+
+/** The brief for handing a chat to another agent (src-tauri/src/handoff.rs), to read and edit first. */
+export type HandoffBrief = { text: string; reason: HandoffReason; hidden: number; cut: boolean; max: number };
 
 /** One protected file a turn changed. */
 export type GuardHit = { path: string; change: "added" | "changed" | "deleted" };
@@ -368,6 +374,7 @@ export type RemoteJob =
   | { kind: "start"; workspace_id: string; session_id: string; prompt: string }
   | { kind: "confirm"; token: string; from?: "link" | "editor"; repo: string; repo_path: string; adds_repo: boolean; prompt: string; agent: string; base: string | null; plan: boolean }
   | { kind: "draft"; workspace_id: string; text: string }
+  | { kind: "handoff"; workspace_id: string; session_id: string; agent: Agent; model: string | null }
   | { kind: "error"; text: string };
 
 export const api = {
@@ -485,6 +492,9 @@ export const api = {
   promptContext: (id: string) => invoke<{ branch: string; base: string; files_changed: string }>("prompt_context", { id }),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
+  handoffBrief: (id: string) => invoke<HandoffBrief>("handoff_brief", { id }),
+  handoffStart: (id: string, agent: Agent, model: string | null, effort: string | null, text: string) => invoke<Session>("handoff_start", { id, agent, model, effort, text }),
+  showSession: (id: string) => invoke<Session>("show_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),
   hideSession: (id: string) => invoke<void>("hide_session", { id }),
   appSettings: () => invoke<AppSettings>("app_settings"),

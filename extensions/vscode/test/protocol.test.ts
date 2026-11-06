@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Client, encode, MAX_DRAFT, MAX_EDITOR_PROMPT, NotRunning, Outdated, parseAnswer, Refused, since, socketPath } from "../src/protocol";
+import { Client, encode, MAX_DRAFT, MAX_EDITOR_PROMPT, NotRunning, Outdated, parseAnswer, PROTOCOL, Refused, since, socketPath } from "../src/protocol";
 import { launchers } from "../src/launch";
 
 describe("requests", () => {
@@ -25,7 +25,10 @@ describe("requests", () => {
     const rs = fs.readFileSync(path.join(__dirname, "../../../src-tauri/src/remote.rs"), "utf8");
     expect(rs).toContain(`pub const MAX_EDITOR_PROMPT: usize = ${MAX_EDITOR_PROMPT.toLocaleString("en").replace(/,/g, "_")};`);
     expect(rs).toContain(`pub const MAX_DRAFT: usize = ${MAX_DRAFT.toLocaleString("en").replace(/,/g, "_")};`);
-    expect(rs).toContain("pub const PROTOCOL: u32 = 2;");
+    // The app may add commands the extension doesn't use (3 added `handoff`), never drop ours.
+    const app = Number(/pub const PROTOCOL: u32 = (\d+);/.exec(rs)?.[1]);
+    expect(app).toBeGreaterThanOrEqual(PROTOCOL);
+    expect(rs).toContain("pub const MIN_PROTOCOL: u32 = 1;");
   });
 });
 

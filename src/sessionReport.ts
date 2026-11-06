@@ -194,6 +194,9 @@ export function buildReport(src: ReportSource, opts: ReportOptions = DEFAULT_OPT
         case "rewind":
           items.push({ kind: "note", text: home(ev.text), bad: false });
           break;
+        case "handoff":
+          items.push({ kind: "note", text: `${ev.dir === "to" ? "Handed off to" : "Continued from"} ${agentName(ev.agent)}.`, bad: false });
+          break;
         // Thinking, approvals and their answers stay out: they repeat what the timeline shows.
         default:
           break;
