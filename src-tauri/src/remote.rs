@@ -52,6 +52,12 @@ pub enum Request {
     Open { cwd: Option<String>, query: String },
     /// What needs you right now.
     Status,
+    /// Line up a task in the queue for the repo at `repo` (or the one at `cwd`).
+    #[serde(rename = "queue_add")]
+    QueueAdd { cwd: String, repo: Option<String>, task: QueueTask },
+    /// The queue, in order.
+    #[serde(rename = "queue_ls")]
+    QueueLs,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,6 +96,49 @@ impl Task {
         if let Some(b) = &self.base
             && !crate::safe::branch_name(b) {
                 return Err(format!("\"{b}\" isn't a valid branch name."));
+            }
+        Ok(())
+    }
+}
+
+/// A task for the queue from the command line. The repo comes from where you run it (or --repo).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueTask {
+    pub prompt: String,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub base: Option<String>,
+    /// plan, ask, acceptEdits or bypassPermissions. None: your default for that agent.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// The agent to use while `agent` is out of usage.
+    #[serde(default)]
+    pub fallback: Option<String>,
+    #[serde(default)]
+    pub checks: bool,
+    #[serde(default)]
+    pub pr: bool,
+    #[serde(default)]
+    pub autopilot: bool,
+}
+
+impl QueueTask {
+    pub fn validate(&self) -> Result<(), String> {
+        Task { prompt: self.prompt.clone(), agent: self.agent.clone(), base: self.base.clone(), plan: false }
+            .validate(crate::queue::MAX_PROMPT)
+            .map_err(|e| e.replace("nekotrail new", "nekotrail queue add"))?;
+        if let Some(f) = &self.fallback {
+            if !crate::agent::ALL.iter().any(|x| x.id() == f) {
+                return Err(format!("There's no agent called \"{f}\". Use one of: {}.", agent_ids().join(", ")));
+            }
+            if Some(f) == self.agent.as_ref() || (self.agent.is_none() && f == "claude") {
+                return Err("The fallback has to be a different agent from the one running the task.".into());
+            }
+        }
+        if let Some(m) = &self.mode
+            && !crate::queue::MODES.contains(&m.as_str()) {
+                return Err(format!("\"{m}\" isn't a mode. Use plan, ask, edits or auto."));
             }
         Ok(())
     }
@@ -560,7 +609,37 @@ mod server {
                 let needs: Vec<Value> = rows.into_iter().filter(|r| !r["needs"].as_array().is_none_or(|a| a.is_empty())).collect();
                 Ok(json!({"working": working, "needs": needs}))
             }
+            Request::QueueAdd { cwd, repo, task } => queue_add(app, &st, cwd, repo, task),
+            Request::QueueLs => {
+                let repos = st.db().repos().map_err(crate::e)?;
+                let q = st.queue.lock().unwrap();
+                let tasks: Vec<Value> = q.tasks.iter().map(|t| json!({
+                    "id": t.id, "title": t.title(), "state": t.state, "step": t.step, "note": t.note,
+                    "agent": t.ran_with.clone().unwrap_or_else(|| t.agent.clone()),
+                    "repo": repos.iter().find(|r| r.id == t.repo_id).map(|r| r.name.clone()),
+                })).collect();
+                Ok(json!({"paused": q.paused, "tasks": tasks}))
+            }
         }
+    }
+
+    fn queue_add(app: &AppHandle, st: &AppState, cwd: String, repo: Option<String>, task: QueueTask) -> Result<Value, String> {
+        use crate::queue::{State, Then};
+        task.validate()?;
+        let (r, _) = repo_for(st, repo.as_deref().unwrap_or(&cwd), true)?.ok_or("That folder isn't a git repo.")?;
+        let agent = crate::agent::get(task.agent.as_deref().unwrap_or("claude")).id().to_string();
+        // Your default mode for that agent (Settings, Agents), like a new workspace.
+        let mode = task.mode.clone()
+            .or_else(|| st.db().setting(&format!("{agent}_mode")).ok().flatten().filter(|m| crate::queue::MODES.contains(&m.as_str())))
+            .unwrap_or_else(|| "acceptEdits".into());
+        let new = crate::queue::NewTask {
+            prompt: task.prompt, repo_id: r.id.clone(), base: task.base, agent: agent.clone(), model: None, effort: None, mode,
+            fallback: task.fallback, then: Then { checks: task.checks, draft_pr: task.pr, autopilot: task.autopilot },
+        };
+        let t = crate::queuerun::add(app, new)?;
+        let q = st.queue.lock().unwrap();
+        let ahead = q.tasks.iter().take_while(|x| x.id != t.id).filter(|x| x.state == State::Queued).count();
+        Ok(json!({"repo": r.name, "agent": agent, "state": t.state, "ahead": ahead, "paused": q.paused}))
     }
 
     /// Every active workspace with its state, agent, PR and what it needs from you.
@@ -683,6 +762,24 @@ mod tests {
         assert!(decode(r#"{"cmd":"status"}"#).is_err());
         assert!(decode(r#"{"v":1,"cmd":"rm"}"#).is_err());
         assert!(decode("not json").is_err());
+    }
+
+    #[test]
+    fn queue_requests_round_trip_and_are_checked() {
+        let task = QueueTask { prompt: "fix it".into(), agent: Some("codex".into()), fallback: Some("claude".into()), mode: Some("plan".into()), checks: true, pr: true, ..Default::default() };
+        let req = Request::QueueAdd { cwd: "/r".into(), repo: None, task: task.clone() };
+        let line = encode(&req);
+        assert!(line.contains("\"cmd\":\"queue_add\""));
+        assert_eq!(decode(&line).unwrap(), req);
+        assert_eq!(decode(&encode(&Request::QueueLs)).unwrap(), Request::QueueLs);
+        assert!(task.validate().is_ok());
+        let bad = |f: fn(&mut QueueTask)| { let mut t = task.clone(); f(&mut t); t.validate().unwrap_err() };
+        assert!(bad(|t| t.prompt = " ".into()).contains("nekotrail queue add"));
+        assert!(bad(|t| t.fallback = Some("codex".into())).contains("different agent"));
+        assert!(bad(|t| { t.agent = None; t.fallback = Some("claude".into()) }).contains("different agent"));
+        assert!(bad(|t| t.fallback = Some("skynet".into())).contains("skynet"));
+        assert!(bad(|t| t.mode = Some("yolo".into())).contains("plan, ask, edits or auto"));
+        assert!(bad(|t| t.base = Some("-x".into())).contains("branch"));
     }
 
     #[test]
@@ -826,7 +923,7 @@ mod tests {
         crate::AppState {
             store: Mutex::new(crate::store::Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: home.to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: crate::checks::Checks::new(home.join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: crate::checks::Checks::new(home.join("checks")), queue: Default::default(),
         }
     }
 

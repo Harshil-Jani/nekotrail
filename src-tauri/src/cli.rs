@@ -2,7 +2,7 @@
 //! small script that Settings, General installs. It parses the arguments, starts the app if it
 //! isn't running, and asks it over the Unix socket in `remote`.
 
-use crate::remote::{self, Request, Task};
+use crate::remote::{self, QueueTask, Request, Task};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -21,6 +21,16 @@ Usage:
   nekotrail ls [--all] [--json]  Workspaces in this repo (or every repo): state, agent, PR
   nekotrail open <name>          Show a workspace, by name, branch or title
   nekotrail status [--json]      What needs you
+  nekotrail queue add \"<task>\"   Line up a task. nekotrail runs a few at a time, each in its own workspace
+      --agent <name>             Agent to use. Default: claude
+      --fallback <name>          Agent to use while the first is out of usage
+      --repo <path>              Repo to work in. Default: the one you're in
+      --base <branch>            Branch to start from
+      --mode <plan|ask|edits|auto>  Default: your default mode for that agent. ask waits for you to start it
+      --checks                   Then run the repo's checks
+      --pr                       Then open a draft PR
+      --autopilot                Then open a draft PR and let autopilot get it green
+  nekotrail queue [--json]       The queue, in order
   nekotrail --help | --version
 
 nekotrail starts if it isn't running. For a folder named new, ls, open or status, write ./new.
@@ -37,6 +47,8 @@ pub enum Action {
     Ls { all: bool, json: bool },
     Open { query: String },
     Status { json: bool },
+    QueueAdd { repo: Option<String>, task: QueueTask },
+    QueueLs { json: bool },
 }
 
 /// Parse the arguments after `nekotrail`. Pure, so every form is tested.
@@ -66,6 +78,18 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
             let f = no_more("status", &["--json"])?;
             Ok(Action::Status { json: !f.is_empty() })
         }
+        "queue" => match rest.first().map(String::as_str) {
+            Some("add") => parse_queue_add(&rest[1..]),
+            None | Some("ls" | "list" | "--json") => {
+                let flags = if rest.first().is_some_and(|r| r != "--json") { &rest[1..] } else { rest };
+                match flags.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+                    [] => Ok(Action::QueueLs { json: false }),
+                    ["--json"] => Ok(Action::QueueLs { json: true }),
+                    _ => Err("nekotrail queue takes add or --json. Run nekotrail --help.".into()),
+                }
+            }
+            Some(other) => Err(format!("nekotrail queue doesn't know \"{other}\". Try nekotrail queue add \"<task>\".")),
+        },
         "open" => {
             let words: Vec<&str> = rest.iter().map(String::as_str).filter(|w| *w != "--").collect();
             if words.is_empty() {
@@ -114,6 +138,58 @@ fn parse_new(args: &[String]) -> Result<Action, String> {
     Ok(Action::New { task })
 }
 
+/// `edits` for `acceptEdits`, and the like. None for a mode nekotrail doesn't have.
+pub fn mode_name(m: &str) -> Option<&'static str> {
+    match m.to_ascii_lowercase().as_str() {
+        "plan" => Some("plan"),
+        "ask" | "ask-before-changes" => Some("ask"),
+        "edits" | "accept-edits" | "acceptedits" | "auto-accept" => Some("acceptEdits"),
+        "auto" | "full-auto" | "bypasspermissions" | "yolo" => Some("bypassPermissions"),
+        _ => None,
+    }
+}
+
+fn parse_queue_add(args: &[String]) -> Result<Action, String> {
+    let mut task = QueueTask::default();
+    let mut repo = None;
+    let mut words: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    let mut flags_done = false;
+    while let Some(a) = it.next() {
+        if flags_done {
+            words.push(a.clone());
+            continue;
+        }
+        let (flag, inline) = match a.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (a.as_str(), None),
+        };
+        let mut value = |name: &str, example: &str| -> Result<String, String> {
+            inline.clone().or_else(|| it.next().cloned()).filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} needs a value, for example {name} {example}."))
+        };
+        match flag {
+            "--" => flags_done = true,
+            "--agent" | "-a" => task.agent = Some(value("--agent", "codex")?),
+            "--fallback" => task.fallback = Some(value("--fallback", "codex")?),
+            "--base" | "-b" => task.base = Some(value("--base", "main")?),
+            "--repo" | "-r" => repo = Some(value("--repo", ".")?),
+            "--mode" | "-m" => {
+                let m = value("--mode", "auto")?;
+                task.mode = Some(mode_name(&m).ok_or_else(|| format!("\"{m}\" isn't a mode. Use plan, ask, edits or auto."))?.to_string());
+            }
+            "--plan" | "-p" => task.mode = Some("plan".into()),
+            "--checks" => task.checks = true,
+            "--pr" | "--draft-pr" => task.pr = true,
+            "--autopilot" => task.autopilot = true,
+            f if f.starts_with('-') && f.len() > 1 => return Err(format!("nekotrail queue add doesn't know \"{f}\". Run nekotrail --help.")),
+            _ => words.push(a.clone()),
+        }
+    }
+    task.prompt = words.join(" ");
+    task.validate()?;
+    Ok(Action::QueueAdd { repo, task })
+}
+
 /// `~`, `.` and relative paths, made absolute against `cwd`.
 pub fn absolute(path: &str, cwd: &Path, home: Option<&Path>) -> PathBuf {
     let p = match (path.strip_prefix('~'), home) {
@@ -134,6 +210,12 @@ pub fn request(action: &Action, cwd: &Path, home: Option<&Path>) -> Option<Reque
         Action::Ls { all, .. } => Request::Ls { cwd: here, all: *all },
         Action::Open { query } => Request::Open { cwd: here, query: query.clone() },
         Action::Status { .. } => Request::Status,
+        Action::QueueAdd { repo, task } => Request::QueueAdd {
+            cwd: cwd.to_string_lossy().to_string(),
+            repo: repo.as_deref().map(|r| absolute(r, cwd, home).to_string_lossy().to_string()),
+            task: task.clone(),
+        },
+        Action::QueueLs { .. } => Request::QueueLs,
     })
 }
 
@@ -203,6 +285,56 @@ pub fn format_status(data: &Value) -> String {
     out
 }
 
+/// What `queue add` says back.
+pub fn format_queued(data: &Value) -> String {
+    let s = |k: &str| data[k].as_str().unwrap_or("").to_string();
+    let agent = crate::queue::agent_name(&s("agent"));
+    if data["state"] == "waiting" {
+        return format!("Added to the queue in {} for {agent}. It waits for you to start it in nekotrail, because it asks before changes.\n", s("repo"));
+    }
+    let when = match data["ahead"].as_u64().unwrap_or(0) {
+        0 => "It starts as soon as a slot is free.".to_string(),
+        1 => "1 task is ahead of it.".to_string(),
+        n => format!("{n} tasks are ahead of it."),
+    };
+    let paused = if data["paused"] == true { " The queue is paused: resume it in nekotrail's Queue view." } else { "" };
+    format!("Queued in {} for {agent}. {when}{paused}\n", s("repo"))
+}
+
+/// `queue`: one line per task, in order.
+pub fn format_queue(data: &Value) -> String {
+    let rows = data["tasks"].as_array().cloned().unwrap_or_default();
+    if rows.is_empty() {
+        return "The queue is empty. Add a task: nekotrail queue add \"<task>\"\n".into();
+    }
+    let s = |v: &Value| v.as_str().unwrap_or("").to_string();
+    let state = |r: &Value| match (r["state"].as_str().unwrap_or(""), r["step"].as_str().unwrap_or("")) {
+        ("queued", _) => "queued",
+        ("waiting", _) => "waits for you",
+        ("starting", _) | ("running", "") => "running",
+        ("running", _) => "setup",
+        ("then", "checks") => "checks",
+        ("then", "pr") => "opening PR",
+        ("then", _) => "autopilot",
+        ("done", _) => "done",
+        ("needs_you", _) => "needs you",
+        _ => "failed",
+    };
+    let mut table: Vec<[String; 4]> = vec![["STATE".into(), "REPO".into(), "AGENT".into(), "TASK".into()]];
+    for r in &rows {
+        table.push([state(r).into(), s(&r["repo"]), crate::queue::agent_name(&s(&r["agent"])).into(), cut(&s(&r["title"]), 60)]);
+    }
+    let w: Vec<usize> = (0..3).map(|c| table.iter().map(|l| l[c].chars().count()).max().unwrap_or(0)).collect();
+    let mut out = String::new();
+    for l in table {
+        out.push_str(&format!("{:<a$}  {:<b$}  {:<c$}  {}\n", l[0], l[1], l[2], l[3], a = w[0], b = w[1], c = w[2]));
+    }
+    if data["paused"] == true {
+        out.push_str("The queue is paused. Resume it in nekotrail's Queue view.\n");
+    }
+    out
+}
+
 fn format_done(action: &Action, data: &Value) -> String {
     let s = |k: &str| data[k].as_str().unwrap_or("").to_string();
     match action {
@@ -210,7 +342,9 @@ fn format_done(action: &Action, data: &Value) -> String {
         Action::Add { .. } => format!("Showing {} in nekotrail.\n", s("repo")),
         Action::New { .. } => format!("Started {} in {} with {} (branch {}).\nIts folder: {}\n", s("workspace"), s("repo"), s("agent"), s("branch"), s("path")),
         Action::Open { .. } => format!("Showing {} in nekotrail.\n", s("workspace")),
-        Action::Ls { json: true, .. } | Action::Status { json: true } => format!("{}\n", serde_json::to_string_pretty(data).unwrap_or_default()),
+        Action::Ls { json: true, .. } | Action::Status { json: true } | Action::QueueLs { json: true } => format!("{}\n", serde_json::to_string_pretty(data).unwrap_or_default()),
+        Action::QueueAdd { .. } => format_queued(data),
+        Action::QueueLs { .. } => format_queue(data),
         Action::Ls { .. } => format_ls(data),
         Action::Status { .. } => format_status(data),
         _ => String::new(),
@@ -307,7 +441,8 @@ pub fn main(args: Vec<String>) -> i32 {
         return 1;
     };
     let Some(req) = request(&action, &cwd, dirs::home_dir().as_deref()) else { return 0 };
-    let background = matches!(action, Action::Ls { .. } | Action::Status { .. });
+    // Reading, or lining up work for later: nekotrail stays behind your terminal.
+    let background = matches!(action, Action::Ls { .. } | Action::Status { .. } | Action::QueueAdd { .. } | Action::QueueLs { .. });
     match ask(&req, background) {
         Ok(data) => {
             print!("{}", format_done(&action, &data));
@@ -495,6 +630,48 @@ mod tests {
         assert_eq!(p(&["new", "--agent=gemini", "-b", "dev", "fix it"]), new("fix it", Some("gemini"), Some("dev"), false));
         // After --, a task may start with a dash.
         assert_eq!(p(&["new", "--", "--weird", "task"]), new("--weird task", None, None, false));
+    }
+
+    #[test]
+    fn parses_queue() {
+        let add = |args: &[&str]| match p(args) { Ok(Action::QueueAdd { repo, task }) => (repo, task), other => panic!("{other:?}") };
+        let (repo, t) = add(&["queue", "add", "fix", "the", "bug"]);
+        assert_eq!((repo, t.prompt.as_str(), t.agent, t.mode), (None, "fix the bug", None, None));
+        let (repo, t) = add(&["queue", "add", "fix it", "--agent", "codex", "--fallback=claude", "--repo", "../api", "--base", "dev", "--mode", "auto", "--checks", "--pr", "--autopilot"]);
+        assert_eq!(repo.as_deref(), Some("../api"));
+        assert_eq!((t.agent.as_deref(), t.fallback.as_deref(), t.base.as_deref(), t.mode.as_deref()), (Some("codex"), Some("claude"), Some("dev"), Some("bypassPermissions")));
+        assert!(t.checks && t.pr && t.autopilot);
+        assert_eq!(add(&["queue", "add", "x", "-m", "edits"]).1.mode.as_deref(), Some("acceptEdits"));
+        assert_eq!(add(&["queue", "add", "x", "--plan"]).1.mode.as_deref(), Some("plan"));
+        assert_eq!(add(&["queue", "add", "--", "--weird"]).1.prompt, "--weird");
+        assert_eq!(p(&["queue"]), Ok(Action::QueueLs { json: false }));
+        assert_eq!(p(&["queue", "ls", "--json"]), Ok(Action::QueueLs { json: true }));
+        assert_eq!(p(&["queue", "--json"]), Ok(Action::QueueLs { json: true }));
+        assert!(p(&["queue", "add"]).unwrap_err().contains("nekotrail queue add"));
+        assert!(p(&["queue", "add", "x", "--mode", "yolo2"]).unwrap_err().contains("plan, ask, edits or auto"));
+        assert!(p(&["queue", "add", "x", "--agent", "codex", "--fallback", "codex"]).unwrap_err().contains("different agent"));
+        assert!(p(&["queue", "add", "x", "--force"]).unwrap_err().contains("--force"));
+        assert!(p(&["queue", "rm"]).is_err());
+        let cwd = Path::new("/work/app");
+        let req = request(&Action::QueueAdd { repo: Some("../api".into()), task: QueueTask { prompt: "x".into(), ..Default::default() } }, cwd, None).unwrap();
+        assert!(matches!(req, Request::QueueAdd { cwd, repo: Some(r), .. } if cwd == "/work/app" && r == "/work/app/../api"));
+    }
+
+    #[test]
+    fn formats_the_queue() {
+        assert!(format_queue(&json!({"tasks": [], "paused": false})).contains("queue is empty"));
+        let out = format_queue(&json!({"paused": true, "tasks": [
+            {"title": "Fix the login bug", "state": "running", "step": "", "agent": "codex", "repo": "api"},
+            {"title": "Add dark mode", "state": "waiting", "step": "", "agent": "claude", "repo": "web"},
+            {"title": "Bump deps", "state": "then", "step": "autopilot", "agent": "claude", "repo": "web"},
+        ]}));
+        let lines: Vec<&str> = out.lines().collect();
+        assert!(lines[0].starts_with("STATE") && lines[1].starts_with("running ") && lines[1].contains("Codex"));
+        assert!(lines[2].starts_with("waits for you") && lines[3].starts_with("autopilot"));
+        assert!(out.ends_with("Queue view.\n"));
+        assert_eq!(format_queued(&json!({"repo": "api", "agent": "codex", "state": "queued", "ahead": 2, "paused": false})), "Queued in api for Codex. 2 tasks are ahead of it.\n");
+        assert!(format_queued(&json!({"repo": "api", "agent": "claude", "state": "queued", "ahead": 0, "paused": true})).contains("paused"));
+        assert!(format_queued(&json!({"repo": "api", "agent": "claude", "state": "waiting", "ahead": 0})).contains("waits for you to start it"));
     }
 
     #[test]

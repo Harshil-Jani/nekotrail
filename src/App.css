@@ -1894,3 +1894,67 @@ button.link.split-hunk-name { font-weight: 400; }
 .rules-preview { min-height: 0; overflow-y: auto; padding: var(--s1) var(--s3); border-radius: var(--r-md); background: var(--surface); font-size: 13px; line-height: 1.5; }
 textarea.rules-task { flex: 1; min-height: 200px; resize: none; padding: var(--s3); border-radius: var(--r-md); border: none; box-shadow: inset 0 0 0 0.5px var(--line-strong); background: var(--field); color: var(--text); font: inherit; line-height: 1.5; }
 textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--line-strong), var(--ring); }
+
+/* ---------- task queue ---------- */
+.queue-entry { padding-top: var(--s2); }
+.queue-entry .ws-mark { align-self: center; margin-top: 0; }
+.queue-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--wait-soft); color: var(--wait); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.tq { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.tq-head .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tq-head > button { flex-shrink: 0; }
+.tq-limits { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; margin-right: var(--s1); }
+.tq-limits label { display: inline-flex; align-items: center; gap: 6px; }
+.tq-limits select { height: 22px; font-size: 12px; padding: 0 22px 0 8px; background-position: right 7px center; }
+.tq-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4) var(--s5) var(--s6); display: flex; flex-direction: column; gap: var(--s4); }
+.tq-body > * { width: 100%; max-width: 860px; margin-left: auto; margin-right: auto; flex-shrink: 0; }
+.tq-banner { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-lg); background: var(--surface); font-size: 12.5px; min-height: 40px; }
+.tq-banner svg { color: var(--muted); flex-shrink: 0; }
+.tq-banner.limit { background: var(--wait-soft); }
+.tq-banner.limit svg { color: var(--wait); }
+.tq-section h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--s2); padding: 0 var(--s1); height: 22px; font-size: 13px; font-weight: 600; }
+.tq-section h2 .num { color: var(--muted); font-weight: 500; }
+.tq-section h2 button { height: 22px; font-size: 12px; }
+.tq-hint { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.tq-list { border-radius: var(--r-lg); background: var(--surface); }
+.tq-row { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; column-gap: var(--s2); padding: 9px var(--s3) 9px var(--s2); min-height: 56px; border-radius: var(--r-lg); }
+.tq-row + .tq-row::before { content: ""; position: absolute; top: 0; left: 44px; right: 0; height: 0.5px; background: var(--line); }
+.tq-row.next { cursor: grab; }
+.tq-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-ring) !important; }
+.tq-row.dragging { opacity: 0.45; }
+.tq-row.drop-above::after, .tq-row.drop-below::after { content: ""; position: absolute; left: var(--s2); right: var(--s2); height: 2px; border-radius: 1px; background: var(--accent); z-index: 1; }
+.tq-row.drop-above::after { top: -1px; }
+.tq-row.drop-below::after { bottom: -1px; }
+.tq-mark { display: flex; align-items: center; justify-content: center; gap: 1px; align-self: start; margin-top: 2px; color: var(--muted); }
+.tq-mark .grip { color: var(--faint); margin-left: -4px; }
+.tq-n { font-size: 11px; font-weight: 600; color: var(--muted); min-width: 10px; }
+.tq-mark .good { color: var(--good); }
+.tq-mark .bad { color: var(--bad); }
+.tq-mark .wait { color: var(--wait); }
+.tq-mark .spinner { margin-top: 2px; }
+.tq-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tq-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-meta, .tq-status { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-status.good { color: var(--good-text); }
+.tq-status.bad { color: var(--bad-text); }
+.tq-status.wait { color: var(--wait); }
+.tq-actions { display: flex; align-items: center; gap: 6px; }
+.tq-actions .icon { width: 26px; height: 26px; }
+.tq-actions .hover-only, .tq-row.next .tq-actions .icon { opacity: 0; transition: opacity 0.15s var(--ease); }
+.tq-row:hover .tq-actions .hover-only, .tq-row:hover .tq-actions .icon, .tq-row:focus-within .tq-actions .hover-only, .tq-row:focus-within .tq-actions .icon { opacity: 1; }
+.tq-empty { margin: var(--s7) auto 0; max-width: 440px; }
+.tq-empty p { margin: 0; }
+.tq-empty > svg { color: var(--accent-text); }
+.tq-cli { font-size: 12px; }
+.tq-cli code { font-size: 11.5px; padding: 1px 5px; border-radius: var(--r-xs); background: var(--surface); color: var(--text); }
+.tq-form { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--r-xl); background: var(--surface); }
+.tq-form textarea { width: 100%; resize: vertical; min-height: 68px; padding: var(--s2) 10px; border-radius: var(--r-md); line-height: 1.45; }
+.tq-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2) var(--s3); }
+.tq-form-grid label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tq-form-grid label > span { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tq-form-grid select, .tq-form-grid input { width: 100%; min-width: 0; }
+.tq-then { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: 12.5px; }
+.tq-then > .muted { font-size: 11px; font-weight: 600; }
+.tq-then label { display: inline-flex; align-items: center; gap: 6px; }
+.tq-then input { margin: 0; }
+.tq-form-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px var(--s2); border-radius: var(--r); background: var(--wait-soft); color: var(--text); font-size: 12px; }
+.tq-form-note svg { color: var(--wait); flex-shrink: 0; }

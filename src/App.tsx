@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause } from "lucide-react";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
@@ -22,6 +22,8 @@ import { SearchSheet } from "./components/SearchSheet";
 import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
+import { Queue } from "./components/Queue";
+import { counts as queueCounts, stillGoing } from "./queue";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
@@ -91,7 +93,10 @@ export default function App() {
   // Deep link: ?ws=<id>&tab=<tab>&view=sky (used by workspace links and the preview page).
   const params = new URLSearchParams(window.location.search);
   const [selected, setSelected] = useState<string | null>(params.get("ws"));
-  const [view, setView] = useState<"workspace" | "sky" | "board">((params.get("view") as "sky" | "board") || "workspace");
+  const [view, setView] = useState<"workspace" | "sky" | "board" | "queue">((params.get("view") as "sky" | "board" | "queue") || "workspace");
+  // The task queue: counts for the sidebar, and a nudge that opens its Add form.
+  const [queueInfo, setQueueInfo] = useState<{ running: number; next: number; needs: number; paused: boolean }>({ running: 0, next: 0, needs: 0, paused: false });
+  const [queueAdd, setQueueAdd] = useState(params.has("queueAdd") ? 1 : 0);
   const [sections, setSections] = useState<Section[]>([]);
   const [autopilot, setAutopilotMap] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -122,7 +127,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
   const navRef = useRef<(d: -1 | 1) => void>(() => {});
   // Back / forward through places you've been (workspace, view, tab), like a browser. ⌘[ and ⌘].
-  type Place = { view: "workspace" | "sky" | "board"; selected: string | null; tab: Tab };
+  type Place = { view: "workspace" | "sky" | "board" | "queue"; selected: string | null; tab: Tab };
   const history = useRef<{ stack: Place[]; at: number; moving: boolean }>({ stack: [], at: -1, moving: false });
   const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
@@ -354,6 +359,41 @@ export default function App() {
     window.addEventListener("focus", focus);
     return () => { un.then((f) => f()); document.removeEventListener("visibilitychange", vis); window.removeEventListener("focus", focus); };
   }, []);
+  // The task queue: counts for the sidebar row, and the summary of what ran while you were away.
+  // It shows once, when the app opens or when you come back after a while; seeing the Queue view
+  // counts as having seen it.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    const loadQueue = () => api.queueView().then((v) => {
+      setQueueInfo({ ...queueCounts(v.tasks), paused: v.paused });
+      if (viewRef.current === "queue" && document.hasFocus()) api.queueSummarySeen().catch(() => {});
+    }).catch(() => {});
+    let asking = false;
+    const summary = async () => {
+      if (asking || viewRef.current === "queue") return;
+      const s = await api.queueSummary().catch(() => null);
+      if (!s || s.done + s.needs_you + s.failed === 0) return;
+      asking = true;
+      await api.queueSummarySeen().catch(() => {});
+      const more = stillGoing(s);
+      const go = await ask({ title: "While you were away", body: `From the queue: ${s.text}.${more ? `\n${more}` : ""}`, ok: "Open queue", cancel: "Not now" });
+      asking = false;
+      if (go) setView("queue");
+    };
+    loadQueue();
+    summary();
+    // Back after 20 minutes or more away: the night's work is the first thing you see.
+    let away = 0;
+    const onBlur = () => { away = Date.now(); };
+    const onFocus = () => { if (away && Date.now() - away > 20 * 60_000) summary(); away = 0; };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    const un = listen("task-queue", loadQueue);
+    return () => { window.removeEventListener("blur", onBlur); window.removeEventListener("focus", onFocus); un.then((f) => f()); };
+  }, []);
+  useEffect(() => { if (view === "queue") api.queueSummarySeen().catch(() => {}); }, [view]);
+
   // Open PRs waiting for your review, from the same poller (`review-requests` events).
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
   const [reviewBusy, setReviewBusy] = useState<string | null>(null);
@@ -1102,6 +1142,11 @@ export default function App() {
       { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
       { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex gemini success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
       { id: "board", group: "Go", label: "Open board", hint: keyHint("⌘⇧K"), keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
+      { id: "queue", group: "Go", label: "Open queue", keywords: "task queue overnight later batch line up sleep", icon: <ListOrdered size={15} />, run: () => setView("queue") },
+      { id: "queue-add", group: "Create", label: "Add task to queue", keywords: "queue later overnight batch line up sleep", icon: <ListPlus size={15} />, run: () => { setView("queue"); setQueueAdd((n) => n + 1); } },
+      queueInfo.paused
+        ? { id: "queue-resume", group: "App", label: "Resume the queue", keywords: "task queue start", icon: <Play size={15} />, run: () => api.queueSetPaused(false).catch((e) => say(errText(e), true)) }
+        : { id: "queue-pause", group: "App", label: "Pause the queue", keywords: "task queue stop hold", icon: <Pause size={15} />, run: () => api.queueSetPaused(true).then(() => say("Paused the queue. Running tasks finish; nothing new starts.")).catch((e) => say(errText(e), true)) },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
@@ -1204,6 +1249,9 @@ export default function App() {
         onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(displayName(sky, w)); }}
         onArchive={(id) => archive({ id })}
         onBoard={() => setView("board")}
+        queue={queueInfo}
+        queueOpen={view === "queue"}
+        onQueue={() => setView("queue")}
         ram={ram}
         lowDiskMb={freeMb !== null && freeMb < 3072 ? freeMb : null}
         onStorage={() => setStorage(true)}
@@ -1239,6 +1287,15 @@ export default function App() {
             onOpen={select}
             onSetStatus={(id, st) => api.setWorkspaceStatus(id, st).then(refresh)}
             onNew={() => openNew()}
+          />
+        )}
+        {view === "queue" && (
+          <Queue
+            repos={repos}
+            initialRepo={ws?.repo_id ?? getSettings().repoFilter[0]}
+            addNonce={queueAdd}
+            onOpen={select}
+            onSay={(text, bad) => say(text, bad)}
           />
         )}
         {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}
