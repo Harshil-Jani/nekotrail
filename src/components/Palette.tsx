@@ -10,6 +10,8 @@ export type Command = {
   hint?: string;
   icon?: React.ReactNode;
   run: () => void;
+  /** Only listed before you type (the Recent group), so search results have no duplicates. */
+  emptyOnly?: boolean;
 };
 
 /** Score a command against the query: label prefix > word prefix > substring > in-order letters. */
@@ -34,6 +36,7 @@ export function Palette({ commands, onClose, placeholder = "Jump to a workspace 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
     return commands
+      .filter((c) => !query || !c.emptyOnly)
       .map((c, i) => ({ c, s: score(c, query), i }))
       .filter((x) => x.s >= 0)
       .sort((a, b) => a.s - b.s || a.i - b.i)

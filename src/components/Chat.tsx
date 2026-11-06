@@ -249,7 +249,7 @@ function ApprovalCard({ r }: { r: Extract<Row, { type: "approval" }> }) {
     );
   }
   return (
-    <div className="approval-card" data-approval={live ? r.request_id : undefined}>
+    <div className={`approval-card ${live ? "" : "stale"}`} data-approval={live ? r.request_id : undefined}>
       <div className="plan-head"><ShieldQuestion size={15} /><b>{r.tool} wants your OK</b></div>
       <pre className="approval-input">{r.input}</pre>
       {error && <p className="muted">{error}</p>}
@@ -573,7 +573,12 @@ export function Chat({
     }
     return null;
   }, [rows]);
-  const [todosOpen, setTodosOpen] = useState(true);
+  // A plan or a tool call is waiting for your answer: fold the todo list so the dock never covers its buttons.
+  const answerPending = latestPlanIdx >= 0 || (anyBusy && rows.some((r) => r.type === "approval" && !r.answer));
+  const [todosChoice, setTodosChoice] = useState<boolean | null>(null);
+  useEffect(() => { if (answerPending) setTodosChoice(null); }, [answerPending]);
+  const todosOpen = todosChoice ?? !answerPending;
+  const setTodosOpen = (f: (o: boolean) => boolean) => setTodosChoice(f(todosOpen));
   const hits = useMemo(() => {
     const q = (search ?? "").trim().toLowerCase();
     if (!q) return [] as number[];
@@ -846,6 +851,7 @@ export function Chat({
         </RewindCtx.Provider>
       </div>
 
+      {((todos && todos.length > 0) || queue.length > 0) && <div className="chat-dock">
       {todos && todos.length > 0 && (
         <div className="todos">
           <button className="todos-head" onClick={() => setTodosOpen((o) => !o)} aria-expanded={todosOpen}>
@@ -884,6 +890,7 @@ export function Chat({
           ))}
         </div>
       )}
+      </div>}
       {error && <div className="banner error">{error}</div>}
       {note && <div className="banner">{note}</div>}
       {mcpOpen && session && <McpSheet workspaceId={workspaceId} agent={session.agent} onClose={() => setMcpOpen(false)} />}

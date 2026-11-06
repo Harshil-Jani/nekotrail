@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { api, displayName, statusOf, STATUS_LABEL, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
+import { ask } from "./Confirm";
 
 type Props = {
   repos: Repo[];
@@ -67,7 +68,7 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
   useEffect(() => { api.repoGithub(repo.id).then(setGh); }, [repo.id]);
   return (
     <div className="repo-head">
-      <button className="fold" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${repo.name}` : `Collapse ${repo.name}`}>
+      <button className="fold" tabIndex={-1} onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${repo.name}` : `Collapse ${repo.name}`}>
         {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
       </button>
       {gh?.owner_avatar ? (
@@ -83,8 +84,8 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
         </span>
       )}
       <span className="repo-actions">
-        <button className="icon" title="Edit repo scripts" aria-label={`Edit ${repo.name} scripts`} onClick={onSettings}><Settings2 size={16} /></button>
-        <button className="icon" title="Create workspace (⌘N)" aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
+        <button className="icon" tabIndex={-1} title="Edit repo scripts" aria-label={`Edit ${repo.name} scripts`} onClick={onSettings}><Settings2 size={16} /></button>
+        <button className="icon" tabIndex={-1} title="Create workspace (⌘N)" aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
       </span>
     </div>
   );
@@ -111,7 +112,14 @@ export function Sidebar(p: Props) {
   const [moveOpen, setMoveOpen] = useState(false);
   const [over, setOver] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [editing, setEditing] = useState<{ id: string | null; name: string } | null>(null);
+  // A section being named. `id` null is a new one; `move` puts that workspace into it once it exists.
+  const [editing, setEditing] = useState<{ id: string | null; name: string; move?: string } | null>(null);
+  // "Add sidebar section" from the palette opens the same inline field.
+  useEffect(() => {
+    const open = () => { if (p.groupBy !== "repo") p.onGroupBy("repo"); setEditing({ id: null, name: "" }); };
+    window.addEventListener("nekotrail-new-section", open);
+    return () => window.removeEventListener("nekotrail-new-section", open);
+  }, [p.groupBy]);
   const [secMenu, setSecMenu] = useState<string | null>(null);
   useEffect(() => {
     if (!ctx) return;
@@ -145,14 +153,17 @@ export function Sidebar(p: Props) {
     setEditing(null);
     if (!name) return;
     if (target) await api.renameSection(target, name);
-    else await api.createSection(name);
+    else {
+      const sec = await api.createSection(name);
+      if (editing.move) await api.setSection(editing.move, sec.id);
+    }
     p.onChanged();
   };
   const sectionHead = (id: string, name: string, count: number, icon: React.ReactNode, menu?: boolean) => {
     const folded = collapsed.includes(`sec:${id}`) && !q;
     return (
       <div className={`repo-head section-head ${over === id ? "drop" : ""}`} {...drop(id === "pinned" ? "pinned" : id)}>
-        <button className="fold" onClick={() => toggleCollapsed(`sec:${id}`)} aria-expanded={!folded} aria-label={folded ? `Expand ${name}` : `Collapse ${name}`}>
+        <button className="fold" tabIndex={-1} onClick={() => toggleCollapsed(`sec:${id}`)} aria-expanded={!folded} aria-label={folded ? `Expand ${name}` : `Collapse ${name}`}>
           {folded ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         </button>
         {icon}
@@ -166,11 +177,16 @@ export function Sidebar(p: Props) {
         {menu && (
           <span className="repo-actions">
             <span className="git-menu">
-              <button className="icon" aria-label={`${name} options`} onClick={() => setSecMenu((m) => (m === id ? null : id))}><Ellipsis size={14} /></button>
+              <button className="icon" tabIndex={-1} aria-label={`${name} options`} onClick={() => setSecMenu((m) => (m === id ? null : id))}><Ellipsis size={14} /></button>
               {secMenu === id && (
                 <span className="menu sec-menu" role="menu" onMouseLeave={() => setSecMenu(null)}>
                   <button role="menuitem" onClick={() => { setSecMenu(null); setEditing({ id, name }); }}><Pencil size={14} /><span>Rename section</span></button>
-                  <button role="menuitem" onClick={async () => { setSecMenu(null); await api.deleteSection(id); p.onChanged(); }}><Trash2 size={14} /><span>Delete section</span></button>
+                  <button role="menuitem" onClick={async () => {
+                    setSecMenu(null);
+                    if (!(await ask({ title: `Delete the section ${name}?`, body: "Its workspaces move back under their repos. Nothing else changes.", ok: "Delete section", danger: true }))) return;
+                    await api.deleteSection(id);
+                    p.onChanged();
+                  }}><Trash2 size={14} /><span>Delete section</span></button>
                 </span>
               )}
             </span>
@@ -187,12 +203,18 @@ export function Sidebar(p: Props) {
   const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
   const total = p.sky.stars.length;
   const repoName = (id: string) => p.repos.find((r) => r.id === id)?.name ?? "";
-  const row = (w: Workspace) => {
+  /** One workspace row. `smart` rows repeat a workspace in a smart group (Needs you) and are never shown selected. */
+  const row = (w: Workspace, smart = false) => {
     const l = p.lines[w.id];
+    const on = !smart && p.selected === w.id;
     return (
       <button
         key={w.id}
-        className={`ws ${p.selected === w.id ? "selected" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
+        role="option"
+        aria-selected={on}
+        tabIndex={-1}
+        data-id={w.id}
+        className={`ws ${on ? "selected" : ""} ${smart ? "smart" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
         onClick={() => p.onSelect(w.id)}
         draggable={w.state === "active"}
         onDragStart={(e) => { e.dataTransfer.setData(DRAG, w.id); e.dataTransfer.effectAllowed = "move"; setDragging(true); }}
@@ -208,6 +230,47 @@ export function Sidebar(p: Props) {
         {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}
       </button>
     );
+  };
+
+  // The list is one tab stop (roving tabindex). Arrows move between rows and group headers, Left and
+  // Right fold a group, Return opens. The focused item is kept across renders; else the selected row.
+  const list = useRef<HTMLDivElement>(null);
+  const kb = useRef<HTMLElement | null>(null);
+  const ITEMS = ".fold, .ws, .ws-empty";
+  useLayoutEffect(() => {
+    const items = Array.from(list.current?.querySelectorAll<HTMLElement>(ITEMS) ?? []);
+    const want = (kb.current && items.includes(kb.current) ? kb.current : null)
+      ?? items.find((x) => x.classList.contains("selected")) ?? items.find((x) => x.classList.contains("ws")) ?? items[0];
+    for (const x of items) x.tabIndex = x === want ? 0 : -1;
+  });
+  const onListKey = (e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).closest("input, textarea, .menu")) return;
+    const items = Array.from(list.current?.querySelectorAll<HTMLElement>(ITEMS) ?? []);
+    const cur = (e.target as HTMLElement).closest<HTMLElement>(ITEMS);
+    const i = cur ? items.indexOf(cur) : -1;
+    const focus = (el?: HTMLElement | null) => {
+      if (!el) return;
+      e.preventDefault();
+      kb.current = el;
+      for (const x of items) x.tabIndex = x === el ? 0 : -1;
+      el.focus();
+      el.scrollIntoView({ block: "nearest" });
+    };
+    const foldOf = (el: HTMLElement | null) => el?.classList.contains("fold") ? el : el?.closest("section")?.querySelector<HTMLElement>(".fold") ?? null;
+    if (e.key === "ArrowDown") return focus(items[i + 1]);
+    if (e.key === "ArrowUp") return focus(items[Math.max(0, i - 1)]);
+    if (e.key === "Home") return focus(items[0]);
+    if (e.key === "End") return focus(items[items.length - 1]);
+    if (e.key === "ArrowLeft") {
+      const f = foldOf(cur);
+      if (!f) return;
+      if (f.getAttribute("aria-expanded") === "true") f.click();
+      return focus(f);
+    }
+    if (e.key === "ArrowRight" && cur?.classList.contains("fold")) {
+      if (cur.getAttribute("aria-expanded") === "false") { e.preventDefault(); cur.click(); return; }
+      return focus(items[i + 1]);
+    }
   };
 
   return (
@@ -273,7 +336,8 @@ export function Sidebar(p: Props) {
         </button>
         <button className="icon" onClick={p.onAddRepo} title="Add local repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
       </div>
-      <div className="sidebar-scroll">
+      <div className="sidebar-scroll" role="listbox" aria-label="Workspaces" ref={list} onKeyDown={onListKey}
+        onFocus={(e) => { const el = (e.target as HTMLElement).closest<HTMLElement>(ITEMS); if (el) kb.current = el; }}>
         {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
         {p.groupBy === "repo" && p.repos.length > 0 && (() => {
           const live = p.workspaces.filter((w) => w.state === "active" && inFilter(w) && match(w));
@@ -286,13 +350,13 @@ export function Sidebar(p: Props) {
               {(pinned.length > 0 || over === "pinned") && (
                 <section className="repo">
                   {sectionHead("pinned", "Pinned", pinned.length, <Pin size={12} className="muted" />)}
-                  {!folded("pinned") && pinned.map(row)}
+                  {!folded("pinned") && pinned.map((w) => row(w))}
                 </section>
               )}
               {news.length > 0 && (
                 <section className="repo needs-you">
                   <div className="repo-head status-head"><span className="unread" /><span className="repo-name">Needs you</span><span className="repo-meta num">{news.length}</span></div>
-                  {news.map(row)}
+                  {news.map((w) => row(w, true))}
                 </section>
               )}
               {p.sections.map((sec) => {
@@ -300,7 +364,7 @@ export function Sidebar(p: Props) {
                 return (
                   <section key={sec.id} className="repo">
                     {sectionHead(sec.id, sec.name, ws.length, null, true)}
-                    {!folded(sec.id) && ws.map(row)}
+                    {!folded(sec.id) && ws.map((w) => row(w))}
                     {!folded(sec.id) && ws.length === 0 && (dragging
                       ? <div className={`drop-hint ${over === sec.id ? "drop" : ""}`} {...drop(sec.id)}>Drop here</div>
                       : <p className="section-empty muted">Empty. Drag a workspace onto the name.</p>)}
@@ -326,7 +390,7 @@ export function Sidebar(p: Props) {
               return (
                 <section key={r.id} className="repo" {...drop("")}>
                   <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} collapsed={folded} onToggle={() => toggleCollapsed(r.id)} count={ws.length} />
-                  {!folded && ws.map(row)}
+                  {!folded && ws.map((w) => row(w))}
                   {!folded && ws.length === 0 && !q && <button className="ws-empty" onClick={() => p.onNewWorkspace(r.id)}><Plus size={13} />Create workspace</button>}
                 </section>
               );
@@ -337,7 +401,7 @@ export function Sidebar(p: Props) {
               return (
                 <section key={st} className="repo">
                   <div className="repo-head status-head"><span className={`status-dot st-${st}`} /><span className="repo-name">{STATUS_LABEL[st]}</span><span className="repo-meta num">{ws.length}</span></div>
-                  {ws.map(row)}
+                  {ws.map((w) => row(w))}
                 </section>
               );
             })}
@@ -346,7 +410,7 @@ export function Sidebar(p: Props) {
           return (
             <section className="repo archived-group">
               <div className="repo-head status-head"><Archive size={12} className="muted" /><span className="repo-name">Archived</span><span className="repo-meta num">{archived.length || ""}</span></div>
-              {archived.map(row)}
+              {archived.map((w) => row(w))}
               {archived.length === 0 && <p className="muted archived-empty">Nothing archived yet. Archiving removes a workspace's folder and keeps its branch, so you can restore it here.</p>}
             </section>
           );
@@ -383,7 +447,7 @@ export function Sidebar(p: Props) {
                 </button>
               ))}
               {ctx.w.section_id && <button role="menuitem" onClick={() => act(() => api.setSection(ctx.w.id, ""))}><span className="check-space" /><span>Remove from section</span></button>}
-              <button role="menuitem" onClick={() => act(async () => { const name = prompt("Section name"); if (name?.trim()) { const sec = await api.createSection(name); await api.setSection(ctx.w.id, sec.id); } })}>
+              <button role="menuitem" onClick={() => { const move = ctx.w.id; setCtx(null); setMoveOpen(false); if (p.groupBy !== "repo") p.onGroupBy("repo"); setEditing({ id: null, name: "", move }); }}>
                 <Plus size={14} /><span>Add section…</span>
               </button>
             </div>

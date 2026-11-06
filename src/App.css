@@ -198,7 +198,14 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .pane { position: absolute; inset: 0; display: flex; flex-direction: column; }
 
 /* PR bar */
-.prbar { display: flex; align-items: center; gap: var(--s2); padding: 4px var(--s4); border-bottom: 0.5px solid var(--line-strong); flex-wrap: wrap; min-height: 40px; }
+.prbar { display: flex; align-items: center; gap: var(--s2); padding: 4px var(--s4); border-bottom: 0.5px solid var(--line-strong); flex-wrap: nowrap; min-height: 40px; }
+/* One line at any width: the branch and the overlap note shorten first, then reviewers and comments hide. */
+.prbar:has(> .pr-form, > .merged-banner) { flex-wrap: wrap; }
+.prbar > * { flex-shrink: 0; }
+.prbar > .spacer { flex-shrink: 1; min-width: 0; }
+.prbar > button.branch, .prbar > .overlap { flex-shrink: 1; min-width: 0; }
+.branch-text, .pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1200px) { .prbar .reviewers, .prbar > .pr-comments { display: none; } }
 .branch { font-family: var(--mono); font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: var(--s1); }
 .pill { display: inline-flex; align-items: center; gap: var(--s1); padding: 1px var(--s2); border-radius: var(--pill); font-size: 12px; font-weight: 600; background: var(--raised); }
 .pill.good { color: var(--good); background: var(--good-soft); }
@@ -371,6 +378,12 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .modal-backdrop { position: fixed; inset: 0; background: light-dark(rgba(0, 0, 0, 0.18), light-dark(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.4))); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { background: var(--bg); border-radius: var(--radius); padding: var(--s6); width: 600px; display: flex; flex-direction: column; gap: var(--s4); box-shadow: 0 8px 32px light-dark(rgba(0, 0, 0, 0.18), light-dark(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.4))); }
 .modal h2 { margin: 0; font-size: 20px; }
+/* Confirm sheet for destructive actions: above every other overlay. */
+.confirm-backdrop { z-index: 60; }
+.modal.confirm { width: min(420px, calc(100vw - 48px)); }
+.modal.confirm p { margin: 0; line-height: 1.5; }
+button.danger-fill { background: #d70015; color: #fff; box-shadow: var(--shadow-control); font-weight: 600; }
+button.danger-fill:hover { background: #e3001a; }
 .field { display: flex; flex-direction: column; gap: var(--s1); font-size: 14px; font-weight: 600; }
 .field textarea { font-family: var(--mono); font-size: 13px; font-weight: 400; }
 .banner.error { color: var(--bad); padding: var(--s2) var(--s6); white-space: pre-wrap; font-size: 14px; }
@@ -503,6 +516,8 @@ button.good-btn:hover { background: var(--good); }
 .plan-head { display: flex; align-items: center; gap: var(--s2); color: var(--accent-text); font-size: 12px; }
 .plan-card .row .muted { font-size: 12px; }
 .todos { max-width: 780px; width: calc(100% - 48px); margin: 0 auto var(--s2); border: 0.5px solid var(--line-strong); background: var(--surface); }
+/* The todo and queue dock never takes more than 30% of the chat; it scrolls inside. */
+.chat-dock { flex-shrink: 0; max-height: 30vh; overflow-y: auto; padding-top: var(--s2); }
 .todos-head { width: 100%; border: none; justify-content: flex-start; font-size: 12px; font-weight: 600; color: var(--muted); padding: 5px var(--s3); }
 .todos ul { list-style: none; margin: 0; padding: 0 var(--s3) var(--s2); display: flex; flex-direction: column; gap: 3px; max-height: 160px; overflow-y: auto; }
 .todo { display: flex; align-items: center; gap: var(--s2); font-size: 12.5px; }

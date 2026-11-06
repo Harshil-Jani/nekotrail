@@ -71,8 +71,8 @@ export function PrBar({
   refreshKey: number;
   /** Send a prompt to the agent right away. */
   onSendAgent: (prompt: string) => void;
-  /** `auto` is true when archiving by itself after a merge. */
-  onArchive: (auto?: boolean) => void;
+  /** `auto` is true when archiving by itself after a merge; `id` is set once it is no longer the open workspace. */
+  onArchive: (auto?: boolean, id?: string) => void;
   onSay: (text: string, error?: boolean) => void;
   /** Agent turns autopilot has used on this PR; undefined when it's off. */
   autopilot?: number;
@@ -101,14 +101,30 @@ export function PrBar({
     return () => clearInterval(t);
   }, [ws.id, refreshKey]);
 
-  // Optional: tidy up by itself once the PR merges.
-  const archivedFor = useRef<string | null>(null);
+  // Files changed against the target branch: Create PR needs at least one.
+  const [fileCount, setFileCount] = useState<number | null>(null);
+  useEffect(() => { setFileCount(null); api.changes(ws.id).then((c) => setFileCount(c.length)).catch(() => {}); }, [ws.id, refreshKey]);
+
+  // Optional: tidy up by itself once the PR merges. Only when this session watched it go from open to
+  // merged (not for a PR that was already merged when you opened it), and only once you have moved on
+  // to another workspace, so the merged banner never vanishes under you.
+  const sawOpen = useRef<Set<string>>(new Set());
+  const pendingArchive = useRef<string | null>(null);
+  const archiveRef = useRef(onArchive);
+  archiveRef.current = onArchive;
   useEffect(() => {
-    if (pr?.state === "MERGED" && getSettings().archiveOnMerge && archivedFor.current !== ws.id) {
-      archivedFor.current = ws.id;
-      onArchive(true);
+    if (pr?.state === "OPEN") sawOpen.current.add(ws.id);
+    if (pr?.state === "MERGED" && sawOpen.current.has(ws.id) && getSettings().archiveOnMerge) {
+      sawOpen.current.delete(ws.id);
+      pendingArchive.current = ws.id;
     }
   }, [pr?.state, ws.id]);
+  useEffect(() => {
+    const id = pendingArchive.current;
+    if (id && id !== ws.id) { pendingArchive.current = null; archiveRef.current(true, id); }
+    // Leaving for the board, the sky or the welcome unmounts the bar: archive then too.
+    return () => { if (pendingArchive.current === ws.id) { pendingArchive.current = null; archiveRef.current(true, ws.id); } };
+  }, [ws.id]);
 
   const task = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -143,8 +159,8 @@ export function PrBar({
     : [];
 
   const actions: Record<string, Action> = {
-    createPr: { id: "createPr", label: "Create PR", keys: "⌘⇧P", icon: <GitPullRequest size={15} />, run: () => onSendAgent(agentPrompts.createPr(ws, repo)), disabled: !!pr && pr.state !== "CLOSED" },
-    manualPr: { id: "manualPr", label: "Write the PR myself", keys: "", icon: <GitPullRequest size={15} />, run: () => setForm({ title: "", body: "", draft: false }), disabled: !!pr && pr.state !== "CLOSED" },
+    createPr: { id: "createPr", label: "Create PR", keys: "⌘⇧P", icon: <GitPullRequest size={15} />, run: () => onSendAgent(agentPrompts.createPr(ws, repo)), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
+    manualPr: { id: "manualPr", label: "Write the PR myself", keys: "", icon: <GitPullRequest size={15} />, run: () => setForm({ title: "", body: "", draft: false }), disabled: (!!pr && pr.state !== "CLOSED") || fileCount === 0 },
     commitPush: { id: "commitPush", label: "Commit and push", keys: "⌘⇧Y", icon: <Upload size={15} />, run: () => task("push", async () => onSay(`Pushed: ${await api.commitPush(ws.id)}`)) },
     pull: {
       id: "pull", label: `Pull latest ${ws.target_branch}`, keys: "⌘⇧L", icon: <ArrowDownToLine size={15} />,
@@ -199,6 +215,8 @@ export function PrBar({
     : open && !actions.merge.disabled ? actions.merge
     : open && !actions.mergeWhenGreen.disabled ? actions.mergeWhenGreen
     : null;
+  // Why Create PR is greyed out, same pattern as Merge below.
+  const noChanges = fileCount === 0 && (!pr || pr.state === "CLOSED") ? "No changes yet. Ask the agent for a change first." : null;
   // Why Merge is greyed out, said in words.
   const mergeBlocked = !open ? null
     : pr?.isDraft ? "Draft PR. Mark it ready on GitHub first."
@@ -252,12 +270,12 @@ export function PrBar({
         />
       ) : (
         <button className="branch" title={pr ? `${ws.branch} into ${ws.target_branch}` : "Rename branch"} onClick={() => !pr && setRenaming(ws.branch)}>
-          <GitBranch size={14} />{ws.branch} → {ws.target_branch}
+          <GitBranch size={14} /><span className="branch-text">{ws.branch} → {ws.target_branch}</span>
         </button>
       )}
       {overlap.length > 0 && (
-        <span className="pill wait" title={overlap.map((o) => `${nameOf(o.workspace_id)}: ${o.files.join(", ")}`).join("\n")}>
-          <TriangleAlert size={13} />Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}
+        <span className="pill wait overlap" title={overlap.map((o) => `${nameOf(o.workspace_id)}: ${o.files.join(", ")}`).join("\n")}>
+          <TriangleAlert size={13} /><span className="pill-text">Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
         </span>
       )}
       <span className="spacer" />
@@ -268,7 +286,7 @@ export function PrBar({
           <PrState pr={pr} />
           <button className="link num" onClick={() => openUrl(pr.url)} title={pr.title}>#{pr.number}</button>
           <span className="num"><span className="add">+{pr.additions}</span> <span className="del">-{pr.deletions}</span></span>
-          {pr.comments.length > 0 && <span className="check num"><MessageSquare size={14} />{pr.comments.length}</span>}
+          {pr.comments.length > 0 && <span className="check num pr-comments" title={`${pr.comments.length} comments`}><MessageSquare size={14} />{pr.comments.length}</span>}
           {reviewers.length > 0 && (
             <span className="reviewers" aria-label="Reviewers">
               {reviewers.map((r) => (
@@ -291,7 +309,8 @@ export function PrBar({
       {pr !== undefined && pr?.state !== "MERGED" && (
         <span className="git-actions">
           {primary && (
-            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy} title={primary.keys ? `${primary.label} (${primary.keys})` : undefined}>
+            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy || !!primary.disabled}
+              title={primary.id === "createPr" && noChanges ? noChanges : primary.keys ? `${primary.label} (${primary.keys})` : undefined}>
               {busy ? <span className="spinner" /> : primary.icon}{primary.label}
             </button>
           )}
@@ -303,9 +322,9 @@ export function PrBar({
               <span className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
                 {Object.values(actions).filter((a) => a.id !== primary?.id && a.id !== "conflicts" && !(a.id === "mergeWhenGreen" && a.disabled)).map((a) => (
                   <button key={a.id} role="menuitem" disabled={a.disabled || !!busy} onClick={() => { setMenu(false); a.run(); }}
-                    title={a.id === "merge" && mergeBlocked ? mergeBlocked : undefined}>
+                    title={a.id === "merge" && mergeBlocked ? mergeBlocked : a.id === "manualPr" && noChanges ? noChanges : undefined}>
                     {a.icon}
-                    <span>{a.label}{a.id === "merge" && mergeBlocked && <small className="why">{mergeBlocked}</small>}</span>
+                    <span>{a.label}{a.id === "merge" && mergeBlocked && <small className="why">{mergeBlocked}</small>}{a.id === "manualPr" && noChanges && <small className="why">{noChanges}</small>}</span>
                     {a.keys && <kbd>{a.keys}</kbd>}
                   </button>
                 ))}
