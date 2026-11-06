@@ -2231,7 +2231,9 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .linear-search svg { position: absolute; left: var(--s2); color: var(--muted); pointer-events: none; }
 .linear-search input { width: 100%; padding-left: 26px; }
 .linear-filters .seg { flex-shrink: 0; align-self: center; }
-.linear-filters select { flex-shrink: 0; max-width: 150px; }
+.linear-filters select { flex-shrink: 0; width: 136px; }
+/* A link inside a list message is text, not a list row. */
+.nw-list p button.link { margin: 0; padding: 0; min-height: 0; height: auto; border-radius: 0; }
 .nw-list button.linear-row { align-items: baseline; }
 .linear-id { flex-shrink: 0; min-width: 64px; font-size: 12px; text-align: left; }
 .linear-meta { flex-shrink: 0; max-width: 40%; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

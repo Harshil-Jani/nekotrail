@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { api, errText } from "../api";
-import { DEFAULT_FILTER, STATE_FILTERS, emptyText, issueMeta, type LinearFilter, type LinearIssue, type LinearStatus, type LinearTeam } from "../linear";
+import { DEFAULT_FILTER, STATE_FILTERS, emptyText, issueMeta, issueRef, type LinearFilter, type LinearIssue, type LinearStatus, type LinearTeam } from "../linear";
 
 /**
  * New workspace, Linear: issues assigned to you (or anyone's), with search, team and state.
@@ -77,7 +77,11 @@ export function LinearPicker({ picked, onPick, onOpenSettings }: {
         {issues === null && <p className="muted"><span className="spinner" /> Loading Linear issues…</p>}
         {issues?.length === 0 && (error
           ? <p className="bad" role="alert">Couldn't load issues. {error} <button className="link" onClick={() => setTries((n) => n + 1)}>Try again</button></p>
-          : <p className="muted">{emptyText(filter, team?.name)}</p>)}
+          : <p className="muted">
+              {emptyText(filter, team?.name)}
+              {!filter.anyone && !issueRef(filter.query) && <button className="link" onClick={() => set({ anyone: true })}>Show anyone's issues</button>}
+              {filter.anyone && filter.state !== "all" && !issueRef(filter.query) && <button className="link" onClick={() => set({ state: "all" })}>Show any state</button>}
+            </p>)}
         {issues?.map((i) => (
           <button key={i.id} role="option" aria-selected={picked?.id === i.id} className={`linear-row ${picked?.id === i.id ? "on" : ""}`} onClick={() => onPick(i)}>
             <span className="num muted linear-id">{i.identifier}</span>
