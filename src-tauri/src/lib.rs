@@ -2314,7 +2314,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
-            home: dir.path().to_path_buf(), branch_prefix: "me".into(), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
