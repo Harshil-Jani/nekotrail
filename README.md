@@ -65,7 +65,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
 ## Why
 
 - **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. It can't be shut down or acquired away.
-- **Bring your own agent.** It drives the official `claude`, `codex` and `gemini` CLIs with your own logins, settings and subscriptions.
+- **Bring your own agent.** It drives the official `claude`, `codex`, `gemini` and `opencode` CLIs with your own logins, settings and subscriptions. OpenCode runs over the Agent Client Protocol, so more ACP agents are a small addition.
 - **One click from Conductor.** It imports your repos, active workspaces and chats from a local Conductor install. It only reads Conductor's data and moves nothing, and imported chats continue the same agent session.
 
 ## What it does

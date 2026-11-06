@@ -6,7 +6,7 @@ import { agentName } from "../agents";
 /**
  * Asks before running commands a repo brings with it, the first time and whenever they change:
  * the setup/run commands in its nekotrail.json, or the agent config (hooks, MCP servers, env) that
- * Claude, Codex or Gemini would run as soon as a chat starts.
+ * Claude, Codex, Gemini or OpenCode would run as soon as a chat starts.
  */
 export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; trust?: ScriptTrust; agent?: AgentConfigTrust; onAnswer: (run: boolean) => void }) {
   useEffect(() => {

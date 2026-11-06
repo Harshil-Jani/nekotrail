@@ -71,12 +71,12 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
               warn={!!other}
               title={AGENT_INFO[a].full}
               detail={d[a]?.ok ? d[a].version : other ? `optional, ${AGENT_INFO[other].full} is set up` : "not found"}
-              fix={<><Cmd text={AGENT_INFO[a].install} /><span className="muted">Then run <code>{a}</code> once to sign in.</span></>}
+              fix={<><Cmd text={AGENT_INFO[a].install} /><span className="muted">Then run <code>{AGENT_INFO[a].setup}</code> once to sign in.</span></>}
             />
           );
         })}
       </ul>
-      {!agentOk && <p className="muted">You need at least one of Claude Code, Codex or Gemini CLI. nekotrail uses your own login and subscription.</p>}
+      {!agentOk && <p className="muted">You need at least one of Claude Code, Codex, Gemini CLI or OpenCode. nekotrail uses your own login and subscription.</p>}
     </section>
   );
 }
