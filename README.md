@@ -18,25 +18,39 @@
 
 ---
 
-nekotrail is an open-source, local-first desktop app for running Claude Code and Codex in parallel. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a real terminal, notes, and a PR bar with live GitHub status.
+nekotrail is an open-source, local-first desktop app for running Claude Code, Codex, Gemini CLI and OpenCode in parallel. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
+
+**Moving from Conductor?** nekotrail imports your repos, active workspaces and chats from a local Conductor install in one click, and Conductor's shortcuts still work. It only reads Conductor's data, and imported chats continue the same agent session.
 
 **The night sky.** Every workspace is named after a star in one of eight cat constellations. Starting a workspace lights its star; merging its PR makes it shine, and lines appear between neighbouring stars once both have shipped. Ship enough and a whole cat appears in your sky. One of them, Felis, is a real constellation: astronomer Jérôme Lalande drew a cat among the stars in 1799.
 
 ## Tour
 
-Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
+Screenshots use sample data from `preview.html`. Light and dark follow your Mac, or pick one in Settings.
 
-**Start a workspace.** Type the task and press Enter. Pick Claude, Codex, or Both to race them. Start from an issue, an open PR or an existing branch.
-<img src="docs/screenshots/new-workspace.png" width="900" alt="New workspace panel with the task box, agent picker and sources">
+**Start a workspace.** Type the task and press Enter. Pick Claude, Codex, Gemini or OpenCode, or Claude + Codex to race them. Start from an issue, an open PR, an existing branch, or on top of another workspace.
+<img src="docs/screenshots/new-workspace.png" width="900" alt="New workspace panel with the task box, the Claude, Codex, Gemini, OpenCode and Claude + Codex picker, and sources">
 
 **Choose the model and how hard it thinks.** One picker for the model and its intelligence level (⌘/).
 <img src="docs/screenshots/model-picker.png" width="900" alt="Model and intelligence picker in the chat box">
 
-**Approve the plan, or split it.** Approve with one click (⌘⇧↵), or split a numbered plan into parallel workspaces. In "Ask before changes" mode, every edit and command waits for your Allow (↵) or Deny (⌫).
-<img src="docs/screenshots/plan.png" width="900" alt="Plan card with Approve and build, a live todo list and queued messages">
+**Approve the plan, or split it.** Approve with one click (⌘⇧↵), or split a numbered plan into parallel workspaces.
+<img src="docs/screenshots/plan.png" width="900" alt="Plan card with Approve and build, Split into 3 workspaces, a todo list and queued messages">
 
-**Review the changes.** Line numbers, comments on any line, GitHub review comments inline, side by side.
-<img src="docs/screenshots/changes.png" width="900" alt="Changes tab with a diff, a review comment and GitHub comments">
+**Or approve each change.** In "Ask before changes" mode, every edit and command waits for your Allow (↵), Deny (⌫) or Allow for this chat. Here it's OpenCode, which nekotrail drives over the Agent Client Protocol.
+<img src="docs/screenshots/opencode.png" width="900" alt="An OpenCode chat in Ask before changes mode, waiting on an edit with Deny, Allow for this chat and Allow">
+
+**Review the agent like a pull request.** Click a line number (shift-click or drag for more lines) to comment. Send review hands every comment to the agent in one message, with the file, line and code. Comments on lines the agent has since changed are marked Outdated. GitHub review comments show inline too.
+<img src="docs/screenshots/changes.png" width="900" alt="Changes tab with draft review comments on lines, an Outdated comment, GitHub comments inline and the Send review button">
+
+**Rewind to here.** Every message you send saves your files first. Rewind puts them back, says how many files change before it does anything, and can be undone. `.env`, `node_modules` and other ignored files are never touched.
+<img src="docs/screenshots/rewind.png" width="900" alt="Rewind sheet: 2 files go back to how they were before the message, 1 commit comes off the branch">
+
+**See your app, and mark it up.** The Preview tab (⌘4) shows your running app inside the workspace. Annotate freezes the page, lets you draw boxes and arrows and add a note, and drops it into your chat as a screenshot the agent can see. Preview only loads local addresses.
+<img src="docs/screenshots/preview.png" width="900" alt="Preview tab in Annotate mode with a box and an arrow drawn on a sample app and a note for the agent">
+
+**Stack work on work.** Start a workspace on top of another one: its PR builds on the unmerged branch, and the PR bar links the parent. When the parent merges, one click moves it onto main, rebases it and points its PR there.
+<img src="docs/screenshots/stacked.png" width="900" alt="PR bar of a stacked workspace showing On Mochi #482 merged, with a Move onto main banner">
 
 **See everything on a board.** Backlog, In progress, In review, Done. Drag to change status (⌘⇧K).
 <img src="docs/screenshots/board.png" width="900" alt="Kanban board of workspaces">
@@ -53,8 +67,8 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
 **Do anything from the keyboard.** ⌘K jumps to any workspace or action.
 <img src="docs/screenshots/palette.png" width="900" alt="Command palette">
 
-**Check your MCP servers.** Type `/mcp` in any chat.
-<img src="docs/screenshots/mcp.png" width="900" alt="MCP servers sheet with connection status">
+**Check your MCP servers.** Type `/mcp` in any chat. Copying a server or skill from one agent to another, as shown here, is in the next release (see the [changelog](CHANGELOG.md)).
+<img src="docs/screenshots/mcp.png" width="900" alt="MCP servers and skills sheet with connection status and which agents have each one">
 
 **Light up the night sky.** Every workspace lights a star; every merged PR makes it shine.
 <img src="docs/screenshots/night-sky.png" width="900" alt="Night sky with constellations">
@@ -65,7 +79,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
 ## Why
 
 - **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. It can't be shut down or acquired away.
-- **Bring your own agent.** It drives the official `claude`, `codex`, `gemini` and `opencode` CLIs with your own logins, settings and subscriptions. OpenCode runs over the Agent Client Protocol, so more ACP agents are a small addition.
+- **Bring any agent.** It drives Claude Code, Codex, Gemini CLI and OpenCode through their official `claude`, `codex`, `gemini` and `opencode` CLIs, with your own logins, settings and subscriptions. OpenCode runs over the Agent Client Protocol (ACP), so more ACP agents are one registry entry.
 - **One click from Conductor.** It imports your repos, active workspaces and chats from a local Conductor install. It only reads Conductor's data and moves nothing, and imported chats continue the same agent session.
 
 ## What it does
@@ -74,15 +88,18 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac.
 |---|---|
 | Start | Open a local repo, clone one of your GitHub repos, or import from Conductor (it shows what it will bring over first). Start a workspace from a task, a GitHub issue, an open PR or a branch. |
 | Workspaces | One git worktree and branch per task, named after the task. Archive removes the folder and keeps the branch; restore brings it back. |
-| Chat | Claude Code or Codex, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
-| Bake-off | Pick "Both" and Claude and Codex each get the same task in their own workspace. Compare files, turns, time and cost side by side, keep the better one. |
+| Chat | Claude Code, Codex, Gemini CLI or OpenCode, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
+| Bake-off | Pick "Claude + Codex" and each gets the same task in its own workspace. Compare files, turns, time and cost side by side, keep the better one. |
 | Second opinion | One click asks the other agent to review the branch read-only. Its `file:line` findings become review comments in Changes, ready to send back. |
-| Checkpoints | Every message snapshots the workspace first. Hover a message and click **Rewind files to here** to undo everything the agent did from that point, commits included. |
-| Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line and send all your comments to the agent as one review. |
+| Checkpoints | Every message you send saves your files first. Hover it and click **Rewind to here** to put them back, including untracked and staged files. It tells you how many files change first, and Undo brings the newer state back. Each workspace keeps its last 50. |
+| Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line or range and send all your comments to the agent as one review; comments on lines it has since changed are marked Outdated. Discard one file (the old copy goes to the Trash) and filter long file lists. |
+| Preview | Your running app inside the workspace (⌘4), localhost only. Annotate draws boxes, arrows and a note on a frozen page and attaches it to the chat. Nothing running? Start the Run script from Preview. |
+| Stacks | Start a workspace on top of another. The PR bar links the parent, and when the parent merges, one click moves it onto main and retargets its PR. The sidebar marks workspaces that change the same files and suggests which to merge first. |
 | Terminal | A real login shell in the workspace folder. |
 | PRs | One button for the next step: the agent opens the PR, fixes failing checks from their logs, or resolves conflicts; then squash and merge. Also commit and push, pull latest, agent review, and GitHub review comments shown in the diff. Start a workspace from any open PR. |
 | Scripts | Setup, run and archive scripts per repo, each in its own terminal tab. Commit a `nekotrail.json` to share them with your team. Every workspace gets its own ports (`NEKOTRAIL_PORT` and the next 9). |
 | Repo settings | Instructions for every chat, review and PR prompts, `.env` files copied into new workspaces, environment variables. |
+| Appearance | Light, Dark or Follow system, zoom from 80% to 150%, and your choice of monospace font and size for code and the terminal. |
 | GitHub | Your avatar and name, repo owner avatars and stars, PR authors and reviewers, all through your `gh` login. |
 | Night sky | 50 stars in 8 cat constellations. Workspaces light stars, merged PRs make them shine and draw the lines. |
 
@@ -104,7 +121,7 @@ Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/ne
 
 **Updates.** nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the next release from the download link once by hand: those versions can't update themselves yet.
 
-nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code) or [`codex`](https://github.com/openai/codex).
+nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai).
 
 To build it yourself:
 
@@ -128,7 +145,7 @@ Conductor's shortcuts still work, so muscle memory carries over. The full list i
 | ⌘N / ⌘⇧N | New workspace / from a pull request or branch |
 | ⌃1 to ⌃9, ⌘⌥↑ / ⌘⌥↓ | Switch workspace |
 | ⌘⌥L | Next workspace with news |
-| ⌘1 / ⌘2 / ⌘3 | Chat / Changes / Terminal (⌘L, ⌘⇧D and ⌘J also work) |
+| ⌘1 / ⌘2 / ⌘3 / ⌘4 | Chat / Changes / Terminal / Preview (⌘L, ⌘⇧D and ⌘J also work) |
 | ⌘⇧P / ⌘⇧Y / ⌘⇧M | Create PR / commit and push / merge |
 | ⌘⇧R / ⌘⇧X / ⌘⇧L | Agent review / fix failing checks / pull latest |
 | ⌘R / ⌘⇧B | Run or stop the app / open localhost |
@@ -148,10 +165,12 @@ again whenever they change. An archive command you never approved is skipped.
 
 The same goes for agent config a repo commits that would run commands as soon as a chat starts: hooks,
 `apiKeyHelper` and `env` in `.claude/settings.json`, servers in `.mcp.json`, and `mcp_servers`,
-`shell_environment_policy.set` and `.codex/rules` for Codex. Claude and Codex skip their own trust prompt
-when run headless, so nekotrail lists what would run before the first message. Until you trust it, agents
-run with that repo config off (`claude --setting-sources user`, and Codex with the folder marked
-untrusted), while your own settings and MCP servers stay on.
+`shell_environment_policy.set` and `.codex/rules` for Codex, hooks, MCP servers and risky `.env` variables for
+Gemini, and MCP servers, plugins, custom tools, formatters and `allow` permissions for OpenCode. Claude and
+Codex skip their own trust prompt when run headless, so nekotrail lists what would run before the first message.
+Until you trust it, Claude, Codex and OpenCode run with that repo config off (`claude --setting-sources user`,
+Codex with the folder marked untrusted), and Gemini asks before it runs, while your own settings and MCP
+servers stay on.
 
 ## Develop
 
@@ -166,8 +185,8 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 
 ## Status
 
-Early (v0.2). Built and used daily on macOS. Feedback and PRs welcome.
+Early (0.12). Built and used daily on macOS. Feedback and PRs welcome.
 
 ## License
 
-MIT. nekotrail is an independent project and is not affiliated with Conductor, Anthropic or OpenAI.
+MIT. nekotrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.
