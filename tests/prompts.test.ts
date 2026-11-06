@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { activeRange, applyEdit, fuzzy, render, startFill, step, stops, unfilled, type Seg } from "../src/prompts";
+import { activeRange, applyEdit, forNewWorkspace, fuzzy, render, startFill, step, stops, unfilled, type Seg } from "../src/prompts";
 
 const t = (text: string): Seg => ({ t: "text", text });
 const f = (name: string, def: string | null = null): Seg => ({ t: "field", name, default: def, builtin: ["branch", "base", "files_changed", "selection"].includes(name) });
@@ -70,5 +70,13 @@ describe("filling blanks", () => {
   test("no blanks left to fill: plain text, no fill", () => {
     expect(startFill([t("Tests for "), f("files_changed")], { files_changed: "a.ts\nb.ts" })).toEqual({ fill: null, text: "Tests for a.ts\nb.ts" });
     expect(startFill([t("Just text")]).fill).toBeNull();
+  });
+});
+
+describe("prompts New workspace offers", () => {
+  const p = (name: string, segs: Seg[], scope: "personal" | "repo" | "claude" = "personal") => ({ name, description: "", text: "", segs, scope }) as any;
+  test("drops Claude commands and prompts that need a Changes selection", () => {
+    const list = [p("fix", [t("Fix "), f("ticket")]), p("explain", [t("Explain "), f("selection")]), p("ship", [t("ship")], "claude"), p("rel", [f("branch")], "repo")];
+    expect(forNewWorkspace(list).map((x: { name: string }) => x.name)).toEqual(["fix", "rel"]);
   });
 });

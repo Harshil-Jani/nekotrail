@@ -1723,8 +1723,13 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .prompt-fields { display: flex; flex-direction: column; gap: var(--s3); }
 .prompt-fields label { display: flex; flex-direction: column; gap: 4px; }
 .prompt-fields label > span:first-child { font-size: 11px; font-weight: 600; color: var(--muted); }
-.prompt-name-input { display: flex; align-items: center; gap: 4px; }
-.prompt-name-input input { flex: 1; }
+.prompt-name-input {
+  display: flex; align-items: center; height: 26px; padding-left: 8px; border-radius: var(--r);
+  background: var(--field); box-shadow: 0 0 0 0.5px var(--line-strong), var(--shadow-control);
+}
+.prompt-name-input > span { font-family: var(--mono); }
+.prompt-name-input:focus-within { box-shadow: var(--ring); }
+.prompt-name-input input { flex: 1; min-width: 0; padding-left: 0; background: none; box-shadow: none !important; font-family: var(--mono); }
 .prompt-fields textarea { font-size: 13px; line-height: 1.5; resize: vertical; min-height: 96px; }
 .prompts-head { align-items: center; gap: var(--s1); margin-bottom: var(--s2); }
 .prompts-head h3 { margin: 0; }

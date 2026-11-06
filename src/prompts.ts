@@ -70,6 +70,10 @@ export type Fill = {
   at: number;
 };
 
+/** Prompts New workspace can offer: not Claude's own commands, and not ones built on a Changes selection, which a new workspace can't have. */
+export const forNewWorkspace = (list: PromptEntry[]): PromptEntry[] =>
+  list.filter((p) => p.scope !== "claude" && !p.segs.some((s) => s.t === "field" && s.builtin && s.name === "selection"));
+
 /** Built-in values the app knows right now. Missing or empty ones become tab-stops like any blank. */
 export type Builtins = Partial<Record<"branch" | "base" | "files_changed" | "selection", string>>;
 

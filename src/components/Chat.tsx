@@ -450,7 +450,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
         <div className="msg done checks-note">
           {bad ? <CircleX size={14} className="bad" /> : <ListChecks size={14} className="ok" />}
           <span>Checks: {turnLine(r.results)}</span>
-          {back.length > 0 && <span className="bad-text">{back.join(" and ")} passed before and {back.length === 1 ? "fails" : "fail"} now.</span>}
+          {back.length > 0 && <span className="bad-text">{back.join(" and ").replace(/^./, (c) => c.toUpperCase())} passed before and {back.length === 1 ? "fails" : "fail"} now.</span>}
           {bad && <button className="link" onClick={() => window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: "checks" }))}>Open Checks</button>}
         </div>
       );

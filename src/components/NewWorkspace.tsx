@@ -8,7 +8,7 @@ import { AGENTS, AGENT_INFO, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
-import { fuzzy, loadPrompts, type PromptEntry } from "../prompts";
+import { forNewWorkspace, fuzzy, loadPrompts, type PromptEntry } from "../prompts";
 import { FillBar, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
 
 const MODES: { value: PermissionMode; label: string }[] = [
@@ -127,7 +127,7 @@ export function NewWorkspace({
   // `/name` inserts a saved prompt (yours or this repo's), blanks first, like the chat box.
   const area = useRef<HTMLTextAreaElement>(null);
   const [prompts, setPrompts] = useState<PromptEntry[]>([]);
-  useEffect(() => { loadPrompts({ repo: repoId }).then((l) => setPrompts(l.filter((x) => x.scope !== "claude"))).catch(() => setPrompts([])); }, [repoId]);
+  useEffect(() => { loadPrompts({ repo: repoId }).then((l) => setPrompts(forNewWorkspace(l))).catch(() => setPrompts([])); }, [repoId]);
   const [slash, setSlash] = useState<{ items: SlashItem[]; sel: number } | null>(null);
   const [blankNote, setBlankNote] = useState<string | null>(null);
   const pf = usePromptFill(area, prompt, setPrompt);
