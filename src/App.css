@@ -257,9 +257,9 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .msg-user-wrap { align-self: flex-end; max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .msg-user-wrap .msg.user { max-width: 100%; }
 .rewind { border: none; padding: 2px 4px; font-size: 11.5px; font-weight: 500; color: var(--muted); opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s var(--ease); }
-.msg-user-wrap:hover .rewind, .rewind:focus-visible, .rewind.armed { opacity: 1; }
+.msg-user-wrap:hover .rewind, .rewind:focus-visible, .msg.rewound .rewind { opacity: 1; }
 .rewind:hover { color: var(--text); background: none; }
-.rewind.armed { color: var(--accent-text); }
+.msg.rewound .rewound-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg.note { color: var(--muted); font-size: 12.5px; display: flex; align-items: center; gap: var(--s2); padding: var(--s1) 0; border-top: 1px dashed var(--line-strong); border-bottom: 1px dashed var(--line-strong); }
 .msg.assistant { overflow-wrap: anywhere; }
 .msg.assistant p { margin: 0 0 var(--s3); }
@@ -693,7 +693,8 @@ button.good-btn:hover { background: var(--good); }
 .msg.note { border: none; background: var(--surface); border-radius: var(--r-md); padding: 6px var(--s3); }
 .rewind { height: 20px; padding: 0 6px; background: transparent; box-shadow: none; font-size: 11px; border-radius: var(--r-xs); }
 .rewind:hover { background: var(--hover); }
-.rewind.armed { color: var(--accent-text); background: var(--accent-soft); }
+.rewind:disabled { opacity: 0; }
+.msg-user-wrap:hover .rewind:disabled, .msg.rewound .rewind:disabled { opacity: 0.45; }
 .earlier { align-self: center; }
 
 /* Composer: one rounded field, controls inside, like Messages */

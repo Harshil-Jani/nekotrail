@@ -6,6 +6,7 @@ import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { McpSheet } from "./McpSheet";
+import { ask } from "./Confirm";
 import { getSettings } from "../settings";
 import { AGENTS, AGENT_INFO, agentName, otherAgent } from "../agents";
 
@@ -66,6 +67,7 @@ function ContextMeter({ tokens, window }: { tokens: number; window: number }) {
 
 type Row =
   | { type: "user"; text: string; checkpoint?: string | null }
+  | { type: "rewind"; text: string; undo: string }
   | { type: "text" | "thinking" | "error" | "note"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { type: "tool"; name: string; input: string; output?: string; is_error?: boolean; pending: boolean }
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> }
@@ -105,6 +107,9 @@ function toRows(events: ChatEvent[]): Row[] {
       case "user":
         rows.push({ type: "user", text: ev.text, checkpoint: ev.checkpoint });
         break;
+      case "rewind":
+        rows.push({ type: "rewind", text: ev.text, undo: ev.undo });
+        break;
       default:
         rows.push("fix" in ev && ev.fix ? { type: ev.kind, text: ev.text, fix: ev.fix, agent: ev.agent } : { type: ev.kind, text: ev.text });
     }
@@ -114,7 +119,10 @@ function toRows(events: ChatEvent[]): Row[] {
 
 /** Rewind handler shared through context, so memoized rows don't re-render when it changes. */
 type ChatCtxValue = {
-  rewind: (checkpoint: string) => Promise<void>;
+  /** Rewind files to `checkpoint`, after the confirm sheet. `prompt` is the message it was taken before, or null to undo a rewind. */
+  rewind: (checkpoint: string, prompt: string | null) => Promise<void>;
+  /** Checkpoints that still exist (null while loading: show them all). */
+  live: Set<string> | null;
   disabled: boolean;
   /** Approve a plan: switch the chat to auto-accept edits and tell the agent to go. */
   approvePlan: () => void;
@@ -140,7 +148,7 @@ export function parseFindings(text: string): Finding[] {
   }
   return out;
 }
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {} });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {} });
 
 function FindingsButton({ text }: { text: string }) {
   const { addFindings } = useContext(RewindCtx);
@@ -267,29 +275,24 @@ function ApprovalCard({ r }: { r: Extract<Row, { type: "approval" }> }) {
   );
 }
 
-/** Two-step button: the first click arms it, the second (within 4s) rewinds. No modal needed. */
-function RewindButton({ checkpoint }: { checkpoint: string }) {
-  const { rewind, disabled } = useContext(RewindCtx);
-  const [armed, setArmed] = useState(false);
+/** Quiet "Rewind to here" under a message (or "Undo" on a rewind marker). The confirm sheet says
+ *  what changes before anything does. Hidden once the checkpoint was pruned. */
+function RewindButton({ checkpoint, prompt, label = "Rewind to here" }: { checkpoint: string; prompt: string | null; label?: string }) {
+  const { rewind, disabled, live } = useContext(RewindCtx);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
-  }, [armed]);
+  if (live && !live.has(checkpoint)) return null;
   return (
     <button
-      className={`rewind ${armed ? "armed" : ""}`}
+      className="rewind"
       disabled={disabled || busy}
-      title={disabled ? "Stop the agent to rewind" : "Undo file changes made since this message"}
+      title={disabled ? "Stop the agent to rewind" : prompt === null ? "Put the files back as they were right before this rewind" : "Put the files back as they were before this message"}
       onClick={async () => {
-        if (!armed) return setArmed(true);
         setBusy(true);
-        try { await rewind(checkpoint); } finally { setBusy(false); setArmed(false); }
+        try { await rewind(checkpoint, prompt); } finally { setBusy(false); }
       }}
     >
       <History size={13} />
-      {armed ? "Click again to undo the changes" : "Rewind files to here"}
+      {label}
     </button>
   );
 }
@@ -314,11 +317,19 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       return (
         <div className="msg-user-wrap">
           <div className="msg user">{r.text}</div>
-          {r.checkpoint && <RewindButton checkpoint={r.checkpoint} />}
+          {r.checkpoint && <RewindButton checkpoint={r.checkpoint} prompt={r.text} />}
         </div>
       );
     case "note":
       return <div className="msg note"><History size={14} />{r.text}</div>;
+    case "rewind":
+      return (
+        <div className="msg note rewound">
+          <History size={14} />
+          <span className="rewound-text">{r.text}</span>
+          <RewindButton checkpoint={r.undo} prompt={null} label="Undo" />
+        </div>
+      );
     case "text":
       if (r.fix) return <FixCard fix={r.fix} agent={r.agent ?? "claude"} text={r.text} />;
       return (
@@ -419,6 +430,18 @@ export function Chat({
   const busy = !!active && running.has(active);
   const anyBusy = sessions.some((s) => running.has(s.id));
 
+  // Which checkpoints in this chat can still be rewound to (workspaces keep their last 50).
+  const checkpointKey = useMemo(() => events.flatMap((ev) => ev.kind === "user" && ev.checkpoint ? [ev.checkpoint] : ev.kind === "rewind" ? [ev.undo] : []).join(","), [events]);
+  const [liveCheckpoints, setLiveCheckpoints] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    if (!checkpointKey) return setLiveCheckpoints(null);
+    let gone = false;
+    api.liveCheckpoints(workspaceId, checkpointKey.split(","))
+      .then((ids) => { if (!gone) setLiveCheckpoints(new Set(ids)); })
+      .catch(() => { if (!gone) setLiveCheckpoints(null); });
+    return () => { gone = true; };
+  }, [workspaceId, checkpointKey, anyBusy]);
+
   // @-mentions: the file list loads the first time "@" is typed in this workspace.
   const files = useRef<string[] | null>(null);
   useEffect(() => { files.current = null; }, [workspaceId]);
@@ -502,13 +525,30 @@ export function Chat({
     expandAll,
     query: (search ?? "").trim().toLowerCase(),
     disabled: anyBusy,
-    rewind: async (checkpoint: string) => {
+    live: liveCheckpoints,
+    rewind: async (checkpoint: string, prompt: string | null) => {
       const { active } = live.current;
       if (!active) return;
       setError(null);
-      try { await api.restoreCheckpoint(active, checkpoint); } catch (e) { setError(errText(e)); }
+      try {
+        const { files, commits } = await api.checkpointPreview(active, checkpoint);
+        if (files === 0 && commits === 0) {
+          await ask({ title: "Nothing to rewind", body: prompt === null ? "Your files already match how they were before the rewind." : "Your files already match how they were before this message.", ok: "OK", notice: true });
+          return;
+        }
+        const first = (prompt ?? "").split("\n").find((l) => l.trim())?.trim() ?? "";
+        const short = first.length > 60 ? `${first.slice(0, 59)}…` : first;
+        const what = `${files} ${files === 1 ? "file goes" : "files go"} back to how ${files === 1 ? "it was" : "they were"}`;
+        const off = commits ? ` ${commits} ${commits === 1 ? "commit comes" : "commits come"} off the branch.` : "";
+        const ok = await ask({
+          title: prompt === null ? "Undo this rewind?" : "Rewind files to before this message?",
+          body: `${what} ${prompt === null ? "right before the rewind" : `before "${short}"`}.${off} Your current files are saved first, so you can undo this. Ignored files like .env and node_modules are not touched.`,
+          ok: prompt === null ? "Undo rewind" : "Rewind",
+        });
+        if (ok) await api.restoreCheckpoint(active, checkpoint);
+      } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, expandAll, search]);
+  }), [anyBusy, expandAll, search, liveCheckpoints]);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);

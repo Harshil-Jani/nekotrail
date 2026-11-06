@@ -240,61 +240,252 @@ impl Drop for TempIndex {
     }
 }
 
-/// Snapshot every tracked and untracked (not ignored) file plus HEAD, as a commit kept alive under
-/// `refname`. Returns the checkpoint commit id.
-pub fn checkpoint(ws: &Path, refname: &str) -> Result<String> {
-    let idx = TempIndex::new();
-    // Start from a copy of the real index: its stat cache means `add -A` only re-hashes files
-    // that changed, which keeps snapshots fast in large repos.
-    let real = git(ws, &["rev-parse", "--path-format=absolute", "--git-path", "index"])?;
-    if std::fs::copy(&real, &idx.0).is_err() {
-        git_idx(ws, &idx.0, &["read-tree", "HEAD"])?;
+/// Run git and return raw stdout, optionally with its own index and `stdin`. Paths from `-z`
+/// output are bytes, not UTF-8, so file names with any characters round-trip exactly.
+fn git_bytes(dir: &Path, index: Option<&Path>, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(dir).args(args);
+    if let Some(i) = index {
+        cmd.env("GIT_INDEX_FILE", i);
     }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
+    let mut child = cmd.spawn().with_context(|| format!("running git {}", args.join(" ")))?;
+    if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        pipe.write_all(data)?;
+    }
+    let out = child.wait_with_output()?;
+    if !out.status.success() {
+        bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(out.stdout)
+}
+
+/// How many checkpoints each workspace keeps. Older ones are dropped as new turns start.
+pub const CHECKPOINT_KEEP: usize = 50;
+const CHECKPOINT_SUBJECT: &str = "nekotrail checkpoint";
+
+fn ref_safe(id: &str) -> String {
+    id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect()
+}
+
+/// Private ref folder holding one workspace's checkpoints. Refs are shared by every worktree of a
+/// repo, so the workspace id keeps them apart. They never show up as branches or tags.
+pub fn checkpoint_prefix(workspace_id: &str) -> String {
+    format!("refs/nekotrail/checkpoints/{}/", ref_safe(workspace_id))
+}
+
+/// The ref the first version of checkpoints used: one chain per workspace.
+pub fn legacy_checkpoint_ref(workspace_id: &str) -> String {
+    format!("refs/nekotrail/{}", ref_safe(workspace_id))
+}
+
+/// Trees for the worktree (tracked + untracked, not ignored) and for the user's staging area
+/// (`None` when it matches HEAD or has conflicts), plus HEAD. Works on a copy of the real index,
+/// so the user's index is never written.
+fn snapshot(ws: &Path) -> Result<(String, Option<String>, String)> {
+    let idx = TempIndex::new();
+    let info = git(ws, &["rev-parse", "--path-format=absolute", "--git-path", "index", "HEAD", "HEAD^{tree}"])?;
+    let mut lines = info.lines().map(String::from);
+    let (real, head, head_tree) = (lines.next().unwrap_or_default(), lines.next().unwrap_or_default(), lines.next().unwrap_or_default());
+    // Starting from a copy keeps its stat cache: `add -A` only re-hashes files that changed,
+    // which is what keeps this fast in large repos.
+    let staged = if std::fs::copy(&real, &idx.0).is_ok() {
+        // Fails while a merge has conflicts; then there is no single staged tree to keep.
+        git_idx(ws, &idx.0, &["write-tree"]).ok().filter(|t| *t != head_tree)
+    } else {
+        git_idx(ws, &idx.0, &["read-tree", "HEAD"])?;
+        None
+    };
     git_idx(ws, &idx.0, &["add", "-A", "."])?;
     let tree = git_idx(ws, &idx.0, &["write-tree"])?;
-    let head = git(ws, &["rev-parse", "HEAD"])?;
-    let mut args = vec!["commit-tree", tree.as_str(), "-p", head.as_str()];
-    let prev = git(ws, &["rev-parse", "--verify", "--quiet", refname]).ok();
-    if let Some(p) = prev.as_deref() {
-        args.extend(["-p", p]);
-    }
-    args.extend(["-m", "nekotrail checkpoint"]);
-    let commit = Command::new("git")
+    Ok((tree, staged, head))
+}
+
+fn commit_tree(ws: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git")
         .arg("-C")
         .arg(ws)
-        .args(&args)
+        .arg("commit-tree")
+        .args(args)
         .env("GIT_AUTHOR_NAME", "nekotrail")
         .env("GIT_AUTHOR_EMAIL", "nekotrail@localhost")
         .env("GIT_COMMITTER_NAME", "nekotrail")
         .env("GIT_COMMITTER_EMAIL", "nekotrail@localhost")
         .output()?;
-    if !commit.status.success() {
-        bail!("git commit-tree failed: {}", String::from_utf8_lossy(&commit.stderr).trim());
+    if !out.status.success() {
+        bail!("git commit-tree failed: {}", String::from_utf8_lossy(&out.stderr).trim());
     }
-    let commit = String::from_utf8_lossy(&commit.stdout).trim().to_string();
-    git(ws, &["update-ref", refname, &commit])?;
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Snapshot every tracked and untracked (not ignored) file, the staging area and HEAD as a commit
+/// under `<prefix><time>-<id>`. Returns the commit id. Call `prune_checkpoints` afterwards (off
+/// the hot path) to keep only the newest `CHECKPOINT_KEEP`.
+/// The user's index, branch, stash and ignored files (.env, node_modules) are never touched.
+/// About 6 git calls: measured 0.11 s on a 120-file repo and 0.25 s on a 15,000-file repo with
+/// 30,000 ignored files, roughly two `git status` runs.
+pub fn checkpoint(ws: &Path, prefix: &str) -> Result<String> {
+    let (tree, staged, head) = snapshot(ws)?;
+    // A staging area that differs from HEAD rides along as a second parent, so it stays reachable
+    // as long as the checkpoint does, and a rewind can put it back exactly.
+    let staged_commit = match staged.as_deref() {
+        Some(t) => Some(commit_tree(ws, &[t, "-p", &head, "-m", "nekotrail staged"])?),
+        None => None,
+    };
+    // "staged" names the tree to restore into the index; "staged HEAD" means nothing was staged.
+    let message = format!("{CHECKPOINT_SUBJECT}\n\nstaged {}", staged.as_deref().unwrap_or("HEAD"));
+    let mut args = vec![tree.as_str(), "-p", head.as_str()];
+    if let Some(s) = staged_commit.as_deref() {
+        args.extend(["-p", s]);
+    }
+    args.extend(["-m", message.as_str()]);
+    let commit = commit_tree(ws, &args)?;
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    git(ws, &["update-ref", &format!("{prefix}{millis:015}-{}", &commit[..12]), &commit])?;
     Ok(commit)
 }
 
-/// Put the worktree back exactly as it was at `checkpoint`: same files, same contents, same HEAD.
-/// Files created since are deleted; ignored files (build output, node_modules) are left alone.
-pub fn restore_checkpoint(ws: &Path, checkpoint: &str) -> Result<()> {
-    let tree = format!("{checkpoint}^{{tree}}");
-    let head = git(ws, &["rev-parse", &format!("{checkpoint}^1")])?;
-    let keep: std::collections::HashSet<String> =
-        git(ws, &["ls-tree", "-r", "--name-only", &tree])?.lines().map(String::from).collect();
-    let now = git(ws, &["ls-files", "-co", "--exclude-standard"])?;
-    for f in now.lines().filter(|f| !f.is_empty() && !keep.contains(*f)) {
-        let _ = std::fs::remove_file(ws.join(f));
+/// Checkpoint refs under `prefix` as (ref, commit), oldest first (names start with a zero-padded
+/// timestamp, so name order is time order).
+pub fn checkpoint_refs(dir: &Path, prefix: &str) -> Result<Vec<(String, String)>> {
+    let out = git(dir, &["for-each-ref", "--format=%(refname) %(objectname)", prefix])?;
+    let mut v: Vec<(String, String)> = out
+        .lines()
+        .filter_map(|l| l.split_once(' ').map(|(r, o)| (r.to_string(), o.to_string())))
+        .collect();
+    v.sort();
+    Ok(v)
+}
+
+/// Drop all but the newest `keep` checkpoints under `prefix`. Returns how many were dropped.
+/// Only refs are deleted; git's own garbage collection frees the snapshots later.
+pub fn prune_checkpoints(dir: &Path, prefix: &str, keep: usize) -> Result<usize> {
+    let refs = checkpoint_refs(dir, prefix)?;
+    let drop = refs.len().saturating_sub(keep);
+    if drop == 0 {
+        return Ok(0);
     }
-    let idx = TempIndex::new();
-    git_idx(ws, &idx.0, &["read-tree", &tree])?;
-    git_idx(ws, &idx.0, &["checkout-index", "-a", "-f"])?;
-    // If the agent committed since, move the branch back too. The worktree already matches.
+    let script: String = refs[..drop].iter().map(|(r, o)| format!("delete {r} {o}\n")).collect();
+    git_bytes(dir, None, &["update-ref", "--stdin"], Some(script.as_bytes()))?;
+    Ok(drop)
+}
+
+/// True when `id` is a checkpoint commit nekotrail made, not just any commit the caller names.
+pub fn is_checkpoint(ws: &Path, id: &str) -> bool {
+    git(ws, &["log", "-1", "--format=%an%x09%s", id, "--"])
+        .map(|o| o == format!("nekotrail\t{CHECKPOINT_SUBJECT}"))
+        .unwrap_or(false)
+}
+
+/// Which of `ids` still exist in the repo, in one git call however many there are.
+pub fn existing_commits(ws: &Path, ids: &[String]) -> Result<Vec<String>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let input: String = ids.iter().map(|i| format!("{i}\n")).collect();
+    let out = git_bytes(ws, None, &["cat-file", "--batch-check=%(objectname) %(objecttype)"], Some(input.as_bytes()))?;
+    Ok(String::from_utf8_lossy(&out).lines().filter_map(|l| l.strip_suffix(" commit").map(String::from)).collect())
+}
+
+/// Paths that differ between two trees as (status letter, path). With `renames`, a rename
+/// counts once (its new path).
+fn tree_changes(ws: &Path, from: &str, to: &str, renames: bool) -> Result<Vec<(u8, Vec<u8>)>> {
+    let args = ["diff-tree", "-r", "-z", "--name-status", if renames { "-M" } else { "--no-renames" }, from, to];
+    let out = git_bytes(ws, None, &args, None)?;
+    let mut parts = out.split(|b| *b == 0).filter(|p| !p.is_empty());
+    let mut v = vec![];
+    while let Some(status) = parts.next() {
+        let s = status.first().copied().unwrap_or(b'M');
+        let mut path = parts.next().unwrap_or_default().to_vec();
+        if s == b'R' || s == b'C' {
+            path = parts.next().unwrap_or_default().to_vec();
+        }
+        v.push((s, path));
+    }
+    Ok(v)
+}
+
+/// What rewinding to `checkpoint` would do: (files that change, commits taken off the branch).
+pub fn checkpoint_preview(ws: &Path, checkpoint: &str) -> Result<(usize, usize)> {
+    let (now, _, head) = snapshot(ws)?;
+    let files = tree_changes(ws, &now, &format!("{checkpoint}^{{tree}}"), true)?.len();
+    let base = git(ws, &["rev-parse", &format!("{checkpoint}^1")])?;
+    let commits = if base == head {
+        0
+    } else {
+        git(ws, &["rev-list", "--count", &format!("{base}..{head}")])?.parse().unwrap_or(0)
+    };
+    Ok((files, commits))
+}
+
+/// Put the worktree back exactly as it was at `checkpoint`: same files, same staging area, same
+/// HEAD. First saves a fresh checkpoint of the current state under `prefix`, so the rewind can
+/// itself be undone; if that fails, nothing is touched. Only files that differ are written, so
+/// editors and file watchers see the smallest change. Ignored files are never read or touched.
+/// Returns (undo checkpoint, files changed).
+pub fn rewind(ws: &Path, prefix: &str, to: &str) -> Result<(String, usize)> {
+    use std::os::unix::ffi::OsStrExt;
+    let undo = checkpoint(ws, prefix).context("couldn't save the current files first, so nothing was changed")?;
+    let _ = prune_checkpoints(ws, prefix, CHECKPOINT_KEEP);
+    let target = format!("{to}^{{tree}}");
+    let changes = tree_changes(ws, &format!("{undo}^{{tree}}"), &target, false)?;
+    let mut write: Vec<u8> = vec![];
+    for (status, path) in &changes {
+        let rel = Path::new(std::ffi::OsStr::from_bytes(path));
+        if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            continue;
+        }
+        if *status == b'D' {
+            // Created after the checkpoint: remove it (files and links only, never a folder).
+            let p = ws.join(rel);
+            if std::fs::symlink_metadata(&p).map(|m| !m.is_dir()).unwrap_or(false) {
+                std::fs::remove_file(&p)?;
+                // Tidy folders this left empty, up to the workspace root.
+                let mut dir = p.parent();
+                while let Some(d) = dir.filter(|d| d.starts_with(ws) && *d != ws) {
+                    if std::fs::remove_dir(d).is_err() {
+                        break;
+                    }
+                    dir = d.parent();
+                }
+            }
+        } else {
+            write.extend_from_slice(path);
+            write.push(0);
+        }
+    }
+    if !write.is_empty() {
+        let idx = TempIndex::new();
+        git_idx(ws, &idx.0, &["read-tree", &target])?;
+        git_bytes(ws, Some(&idx.0), &["checkout-index", "-f", "-z", "--stdin"], Some(&write))?;
+    }
+    // If the agent committed since, move the branch back too (those commits stay reachable from
+    // the undo checkpoint). Then put the staging area back as it was.
+    let head = git(ws, &["rev-parse", &format!("{to}^1")])?;
     if git(ws, &["rev-parse", "HEAD"])? != head {
-        git(ws, &["reset", "-q", "--mixed", &head])?;
+        git(ws, &["update-ref", "-m", "nekotrail: rewind", "HEAD", &head])?;
     }
-    Ok(())
+    let body = git(ws, &["log", "-1", "--format=%b", to])?;
+    match body.lines().find_map(|l| l.strip_prefix("staged ")) {
+        Some("HEAD") => {
+            git(ws, &["reset", "-q", "--mixed", &head])?;
+        }
+        Some(staged) => {
+            git(ws, &["read-tree", staged])?;
+        }
+        // Checkpoints from 0.10 and earlier did not keep the staging area: match HEAD instead.
+        None => {
+            git(ws, &["reset", "-q", "--mixed", &head])?;
+        }
+    }
+    let _ = git(ws, &["update-index", "-q", "--refresh"]);
+    Ok((undo, changes.len()))
 }
 
 /// Fetch `origin/<target>` and merge it in. Returns "up-to-date", "merged" or "conflicts"
@@ -701,33 +892,179 @@ pub mod tests {
     fn checkpoint_round_trip() {
         let repo = init_repo();
         let r = repo.path();
+        let prefix = checkpoint_prefix("ws-1");
         std::fs::write(r.join("a.txt"), "user edit\n").unwrap();
         std::fs::write(r.join("draft.txt"), "untracked\n").unwrap();
         git(r, &["add", "a.txt"]).unwrap(); // something staged, to prove the real index is untouched
         let staged_before = git(r, &["diff", "--cached", "--name-only"]).unwrap();
+        let status_before = git(r, &["status", "--porcelain"]).unwrap();
         let head_before = git(r, &["rev-parse", "HEAD"]).unwrap();
+        let branch_before = current_branch(r).unwrap();
 
-        let cp = checkpoint(r, "refs/nekotrail/test").unwrap();
+        let cp = checkpoint(r, &prefix).unwrap();
+        assert!(is_checkpoint(r, &cp));
+        assert!(!is_checkpoint(r, &head_before), "an ordinary commit is not a checkpoint");
         assert_eq!(git(r, &["diff", "--cached", "--name-only"]).unwrap(), staged_before);
+        assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), status_before);
+        assert_eq!(git(r, &["branch", "--list"]).unwrap().lines().count(), 1, "no new branches");
+        assert!(git(r, &["stash", "list"]).unwrap().is_empty());
+        assert_eq!(checkpoint_refs(r, &prefix).unwrap().len(), 1);
+        assert_eq!(checkpoint_preview(r, &cp).unwrap(), (0, 0));
 
-        // The "agent" edits, deletes, creates and commits.
+        // The "agent" edits, deletes, creates (in a new folder) and commits.
         std::fs::write(r.join("a.txt"), "agent edit\n").unwrap();
         std::fs::remove_file(r.join("draft.txt")).unwrap();
-        std::fs::write(r.join("new.rs"), "fn main() {}\n").unwrap();
+        std::fs::create_dir_all(r.join("src/deep")).unwrap();
+        std::fs::write(r.join("src/deep/new.rs"), "fn main() {}\n").unwrap();
         git(r, &["add", "-A"]).unwrap();
         git(r, &["commit", "-qm", "agent"]).unwrap();
         std::fs::write(r.join("later.txt"), "x\n").unwrap();
+        assert_eq!(checkpoint_preview(r, &cp).unwrap(), (4, 1));
 
-        restore_checkpoint(r, &cp).unwrap();
+        let (undo, n) = rewind(r, &prefix, &cp).unwrap();
+        assert_eq!(n, 4);
         assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "user edit\n");
         assert_eq!(std::fs::read_to_string(r.join("draft.txt")).unwrap(), "untracked\n");
-        assert!(!r.join("new.rs").exists());
+        assert!(!r.join("src/deep/new.rs").exists() && !r.join("src").exists(), "empty folders are tidied");
         assert!(!r.join("later.txt").exists());
         assert_eq!(git(r, &["rev-parse", "HEAD"]).unwrap(), head_before);
+        assert_eq!(current_branch(r).unwrap(), branch_before);
+        // Exactly as before: same staged file, draft.txt untracked again.
+        assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), status_before);
 
-        // A second checkpoint chains onto the first, so both stay reachable.
-        let cp2 = checkpoint(r, "refs/nekotrail/test").unwrap();
-        assert!(git(r, &["merge-base", "--is-ancestor", &cp, &cp2]).is_ok());
+        // The rewind is itself undoable: back to the agent's state, commit included.
+        assert!(is_checkpoint(r, &undo));
+        rewind(r, &prefix, &undo).unwrap();
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "agent edit\n");
+        assert!(r.join("src/deep/new.rs").exists() && r.join("later.txt").exists());
+        assert!(!r.join("draft.txt").exists());
+        assert_eq!(git(r, &["log", "-1", "--format=%s"]).unwrap(), "agent");
+        assert_eq!(checkpoint_refs(r, &prefix).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn rewind_handles_renames_and_odd_names() {
+        let repo = init_repo();
+        let r = repo.path();
+        let prefix = checkpoint_prefix("ws-2");
+        std::fs::write(r.join("old name.txt"), "content\n").unwrap();
+        std::fs::write(r.join("café ü.txt"), "unicode\n").unwrap();
+        git(r, &["add", "."]).unwrap();
+        git(r, &["commit", "-qm", "files"]).unwrap();
+        let cp = checkpoint(r, &prefix).unwrap();
+
+        git(r, &["mv", "old name.txt", "new name.txt"]).unwrap(); // staged rename
+        std::fs::rename(r.join("café ü.txt"), r.join("naïve.txt")).unwrap(); // unstaged rename
+        std::fs::write(r.join("ünï.txt"), "created\n").unwrap();
+        // A rename counts once in the preview.
+        assert_eq!(checkpoint_preview(r, &cp).unwrap().0, 3);
+
+        rewind(r, &prefix, &cp).unwrap();
+        assert_eq!(std::fs::read_to_string(r.join("old name.txt")).unwrap(), "content\n");
+        assert_eq!(std::fs::read_to_string(r.join("café ü.txt")).unwrap(), "unicode\n");
+        assert!(!r.join("new name.txt").exists() && !r.join("naïve.txt").exists() && !r.join("ünï.txt").exists());
+        assert!(git(r, &["status", "--porcelain"]).unwrap().is_empty(), "index matches HEAD again");
+    }
+
+    #[test]
+    fn checkpoints_leave_ignored_files_alone() {
+        let repo = init_repo();
+        let r = repo.path();
+        let prefix = checkpoint_prefix("ws-3");
+        std::fs::write(r.join(".gitignore"), ".env\nnode_modules/\n").unwrap();
+        git(r, &["add", ".gitignore"]).unwrap();
+        git(r, &["commit", "-qm", "ignore"]).unwrap();
+        std::fs::write(r.join(".env"), "SECRET=before\n").unwrap();
+        std::fs::create_dir_all(r.join("node_modules/pkg")).unwrap();
+        std::fs::write(r.join("node_modules/pkg/index.js"), "before").unwrap();
+
+        let cp = checkpoint(r, &prefix).unwrap();
+        let files = git(r, &["ls-tree", "-r", "--name-only", &cp]).unwrap();
+        assert!(!files.contains(".env") && !files.contains("node_modules"), "ignored files are never snapshotted: {files}");
+
+        // Ignored files change and appear after the checkpoint; a rewind must not touch any of them.
+        std::fs::write(r.join(".env"), "SECRET=after\n").unwrap();
+        std::fs::write(r.join("node_modules/pkg/index.js"), "after").unwrap();
+        std::fs::write(r.join("node_modules/pkg/new.js"), "new").unwrap();
+        std::fs::write(r.join("a.txt"), "agent\n").unwrap();
+        assert_eq!(checkpoint_preview(r, &cp).unwrap().0, 1);
+
+        rewind(r, &prefix, &cp).unwrap();
+        assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "one\n");
+        assert_eq!(std::fs::read_to_string(r.join(".env")).unwrap(), "SECRET=after\n");
+        assert_eq!(std::fs::read_to_string(r.join("node_modules/pkg/index.js")).unwrap(), "after");
+        assert!(r.join("node_modules/pkg/new.js").exists());
+    }
+
+    #[test]
+    fn checkpoints_are_capped_and_pruned() {
+        let repo = init_repo();
+        let r = repo.path();
+        let prefix = checkpoint_prefix("ws-4");
+        let other = checkpoint_prefix("ws-5");
+        let theirs = checkpoint(r, &other).unwrap();
+        let mut ids = vec![];
+        for i in 0..(CHECKPOINT_KEEP + 3) {
+            std::fs::write(r.join("a.txt"), format!("{i}\n")).unwrap();
+            ids.push(checkpoint(r, &prefix).unwrap());
+            prune_checkpoints(r, &prefix, CHECKPOINT_KEEP).unwrap();
+        }
+        let refs = checkpoint_refs(r, &prefix).unwrap();
+        assert_eq!(refs.len(), CHECKPOINT_KEEP);
+        // The newest are the ones kept, in order.
+        let kept: Vec<&String> = refs.iter().map(|(_, o)| o).collect();
+        assert_eq!(kept, ids[3..].iter().collect::<Vec<_>>());
+        // Archiving drops the workspace's checkpoints and nobody else's.
+        assert_eq!(prune_checkpoints(r, &prefix, 0).unwrap(), CHECKPOINT_KEEP);
+        assert!(checkpoint_refs(r, &prefix).unwrap().is_empty());
+        assert_eq!(checkpoint_refs(r, &other).unwrap(), vec![(checkpoint_refs(r, &other).unwrap()[0].0.clone(), theirs.clone())]);
+        // Existence check in one call (pruned snapshots stay until git gc).
+        let missing = "0".repeat(40);
+        assert_eq!(existing_commits(r, &[theirs.clone(), missing]).unwrap(), vec![theirs]);
+    }
+
+    /// Timing, not correctness: `NEKOTRAIL_BENCH=<worktree> cargo test checkpoint_speed -- --ignored --nocapture`.
+    /// Takes checkpoints on a real repo and removes its refs again afterwards.
+    #[test]
+    #[ignore]
+    fn checkpoint_speed() {
+        let Ok(dir) = std::env::var("NEKOTRAIL_BENCH") else { return };
+        let r = Path::new(&dir);
+        let prefix = checkpoint_prefix("bench");
+        let time = |label: &str, f: &mut dyn FnMut()| {
+            let mut ms = vec![];
+            for _ in 0..5 {
+                let t = std::time::Instant::now();
+                f();
+                ms.push(t.elapsed().as_secs_f64() * 1000.0);
+            }
+            ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            println!("{label}: median {:.0} ms, worst {:.0} ms", ms[2], ms[4]);
+        };
+        let files = git(r, &["ls-files"]).unwrap().lines().count();
+        println!("{dir}: {files} tracked files");
+        time("checkpoint", &mut || { checkpoint(r, &prefix).unwrap(); });
+        let cp = checkpoint_refs(r, &prefix).unwrap()[0].1.clone();
+        time("preview", &mut || { checkpoint_preview(r, &cp).unwrap(); });
+        prune_checkpoints(r, &prefix, 0).unwrap();
+    }
+
+    #[test]
+    fn checkpoints_work_in_a_worktree() {
+        let repo = init_repo();
+        let wsroot = tempfile::tempdir().unwrap();
+        let ws = wsroot.path().join("tabby");
+        add_worktree(repo.path(), &ws, "me/tabby", "main").unwrap();
+        let prefix = checkpoint_prefix("ws-6");
+        let cp = checkpoint(&ws, &prefix).unwrap();
+        std::fs::write(ws.join("a.txt"), "changed\n").unwrap();
+        std::fs::write(ws.join("b.txt"), "new\n").unwrap();
+        rewind(&ws, &prefix, &cp).unwrap();
+        assert_eq!(std::fs::read_to_string(ws.join("a.txt")).unwrap(), "one\n");
+        assert!(!ws.join("b.txt").exists());
+        // Refs live in the shared repo, so archiving can prune them from the main checkout.
+        assert_eq!(checkpoint_refs(repo.path(), &prefix).unwrap().len(), 2);
+        assert!(git(repo.path(), &["status", "--porcelain"]).unwrap().is_empty());
     }
 
     #[test]

@@ -97,6 +97,8 @@ const events = [
   { kind: "text", text: "Review of the branch:\n- internal/server/http.go:22: 75s is right for the ALB, but the gRPC port sits behind an NLB with a 350s timeout. Fix: make it configurable.\n- internal/server/http_test.go:14: the test sleeps 61s. Fix: inject a clock.\n\nOtherwise ready to merge." },
   { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18, context_tokens: 128000, context_window: 200000 },
 ];
+// ?rewound shows the marker a rewind leaves, with its Undo.
+if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Rewound to before: The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", undo: "def456", files: 2 } as any);
 const pr = {
   number: 482, url: "https://github.com", state: "OPEN", title: "Fix 502s after deploy: outlive the ALB idle timeout", isDraft: false,
   reviewDecision: "REVIEW_REQUIRED", mergeable: "MERGEABLE", additions: 38, deletions: 1, comments: [{}, {}],
@@ -203,6 +205,8 @@ mockIPC(
       case "preview_probe": return location.search.includes("previewDown") ? { up: false, status: null, blocked: null }
         : location.search.includes("previewBlocked") ? { up: true, status: 200, blocked: "x-frame-options" } : null;
       case "preview_snapshot": return fakeSnapshot();
+      case "live_checkpoints": return args.checkpoints;
+      case "checkpoint_preview": return { files: 2, commits: 1 };
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
       default: return null;
     }

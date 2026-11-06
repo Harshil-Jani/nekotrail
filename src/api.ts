@@ -89,6 +89,8 @@ export type Session = {
 export type ChatEvent =
   | { kind: "user"; text: string; checkpoint?: string | null }
   | { kind: "note"; text: string }
+  /** Files were rewound. `undo` is the checkpoint saved just before, so the rewind can be undone. */
+  | { kind: "rewind"; text: string; undo: string; files: number }
   | { kind: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean }
   | { kind: "approval_answer"; request_id: string; allow: boolean; always: boolean }
   | { kind: "text"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
@@ -254,6 +256,10 @@ export const api = {
   send: async (id: string, text: string) => { await beforeTurn(id); return invoke<void>("send", { id, text }); },
   stop: (id: string) => invoke<void>("stop", { id }),
   restoreCheckpoint: (id: string, checkpoint: string) => invoke<void>("restore_checkpoint", { id, checkpoint }),
+  /** What rewinding chat `id` to `checkpoint` would change. Errors if an agent is working or it is gone. */
+  checkpointPreview: (id: string, checkpoint: string) => invoke<{ files: number; commits: number }>("checkpoint_preview", { id, checkpoint }),
+  /** Which of these checkpoints can still be rewound to, for a workspace. */
+  liveCheckpoints: (id: string, checkpoints: string[]) => invoke<string[]>("live_checkpoints", { id, checkpoints }),
   workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),
   saveAttachment: async (id: string, file: File) =>
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
