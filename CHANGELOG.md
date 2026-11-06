@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Gemini CLI**
+- Gemini CLI joins Claude and Codex. Pick it for a new workspace or start a Gemini chat in any workspace; it uses your own Gemini login.
+- Pick Gemini's model (Auto, Pro, Flash, Flash-Lite) in the model picker, and set its defaults for new chats in Settings.
+- The setup check looks for Gemini CLI and shows the install command if it's missing. You still only need one agent.
+- Repo settings that would make Gemini run commands (hooks, MCP servers, risky `.env` variables) ask before Gemini runs, the same way Claude and Codex settings do.
+
 **Changes, overlaps and stacks**
 - Discard one file in Changes. Only that file's uncommitted edits go, and the old copy lands in the Trash, so you can get it back.
 - Filter the changed-file list when a workspace touches lots of files.
