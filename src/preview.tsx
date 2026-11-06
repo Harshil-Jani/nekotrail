@@ -383,6 +383,38 @@ mockIPC(
         { path: "src/pages/pricing.tsx", status: "M", additions: 6, deletions: 2 },
       ] : [];
       case "file_diff": return diff;
+      // Changes, Commit. ?pushed makes the last commit pushed (Amend and Undo off); ?nostaged empties
+      // the staged list; ?busyagent makes Draft message fall back to the file list.
+      case "stage_status": return {
+        staged: location.search.includes("nostaged") ? [] : [{ path: "internal/server/http.go", old_path: null, status: "M", additions: 3, deletions: 1, binary: false, protected: false }],
+        unstaged: [
+          { path: "internal/server/http_test.go", old_path: null, status: "?", additions: 35, deletions: 0, binary: false, protected: false },
+          { path: "deploy/.env.production", old_path: null, status: "M", additions: 1, deletions: 1, binary: false, protected: true },
+          { path: "docs/alb-timeouts.png", old_path: null, status: "M", additions: 0, deletions: 0, binary: true, protected: false },
+        ],
+      };
+      case "stage_diff": return { text: args.path.endsWith(".png") ? "Binary files a/docs/alb-timeouts.png and b/docs/alb-timeouts.png differ" : diff, sig: "preview", binary: args.path.endsWith(".png") };
+      case "head_commit": return { sha: "a1b2c3d4", short: "a1b2c3d", subject: "test(server): cover the idle timeout", message: "test(server): cover the idle timeout", pushed: location.search.includes("pushed"), block: location.search.includes("pushed") ? "The last commit is already pushed. Changing it would rewrite what's on the remote." : null };
+      case "draft_commit_message": return location.search.includes("busyagent")
+        ? { message: "chore(internal): update http.go", source: "local", note: "The agent is busy, so this draft comes from the file list." }
+        : { message: "fix(server): keep idle connections open past the ALB timeout\n\nThe ALB keeps connections for 60s, so a 30s IdleTimeout made it reuse\nconnections we had closed, and clients saw 502s. 75s outlives it.", source: "agent", note: null };
+      case "split_plan": return {
+        hunks: [
+          { path: "internal/server/http.go", key: "k1", header: "@@ -18,7 +18,9 @@ func New(cfg Config) *http.Server {", preview: diff.split("\n").slice(2).join("\n"), additions: 3, deletions: 1, whole: false, protected: false },
+          { path: "internal/server/http_test.go", key: "k2", header: "@@ -0,0 +1,35 @@", preview: "+package server\n+\n+func TestIdleTimeout(t *testing.T) {", additions: 35, deletions: 0, whole: false, protected: false },
+          { path: "deploy/.env.production", key: "k3", header: "@@ -3,1 +3,1 @@", preview: "-IDLE_TIMEOUT=30s\n+IDLE_TIMEOUT=75s", additions: 1, deletions: 1, whole: false, protected: true },
+          { path: "docs/alb-timeouts.png", key: "file:k4", header: "Binary file", preview: "", additions: 0, deletions: 0, whole: true, protected: false },
+        ],
+        groups: [
+          { message: "fix(server): keep idle connections open past the ALB timeout", hunks: [0, 2] },
+          { message: "test(server): cover the idle timeout", hunks: [1] },
+          { message: "", hunks: [3] },
+        ],
+        source: "agent", note: null,
+      };
+      case "stage_apply": case "stage_everything": return null;
+      case "commit_staged": case "split_commit": return "e4f5a6b";
+      case "undo_commit": return "test(server): cover the idle timeout";
       case "repo_prs": return [
         { number: 512, title: "Retry webhooks with backoff", headRefName: "ana/webhook-retry", author: { login: "ana" }, isDraft: false, updatedAt: "" },
         { number: 509, title: "Move ticket SLA timer to the worker", headRefName: "raj/sla-worker", author: { login: "raj" }, isDraft: true, updatedAt: "" },

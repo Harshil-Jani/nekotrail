@@ -155,7 +155,7 @@ pub fn changes_since(ws: &Path, base: &str) -> Result<Vec<FileChange>> {
 }
 
 /// Lines in a new file, without reading huge ones whole (counts the first 2 MB).
-fn count_lines(p: &Path) -> u32 {
+pub(crate) fn count_lines(p: &Path) -> u32 {
     use std::io::Read;
     let Ok(f) = std::fs::File::open(p) else { return 0 };
     let mut buf = Vec::new();
