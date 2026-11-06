@@ -174,9 +174,36 @@ pub async fn snapshot_png(webview: tauri::Webview) -> Result<Vec<u8>, String> {
         .map_err(|_| "The snapshot took too long.".to_string())?
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Linux: WebKitGTK's snapshot of the visible page, subframes included, as a PNG. Its pixel size can
+/// differ from the macOS one; the Preview tab measures the scale from the image, so the crop holds.
+#[cfg(target_os = "linux")]
+pub async fn snapshot_png(webview: tauri::Webview) -> Result<Vec<u8>, String> {
+    use std::sync::mpsc;
+    use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
+
+    let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
+    webview
+        .with_webview(move |pw| {
+            // Runs on the GTK main thread, which owns the main context the snapshot call needs.
+            pw.inner().snapshot(SnapshotRegion::Visible, SnapshotOptions::NONE, None::<&webkit2gtk::gio::Cancellable>, move |res| {
+                let out = res.map_err(|e| e.to_string()).and_then(|surface| {
+                    let mut png = Vec::new();
+                    surface.write_to_png(&mut png).map_err(|e| format!("Couldn't turn the snapshot into a PNG: {e}"))?;
+                    Ok(png)
+                });
+                let _ = tx.send(out);
+            });
+        })
+        .map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(10)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|_| "The snapshot took too long.".to_string())?
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub async fn snapshot_png(_webview: tauri::Webview) -> Result<Vec<u8>, String> {
-    Err("Annotate needs macOS for now.".into())
+    Err("Annotate needs macOS or Linux for now.".into())
 }
 
 #[cfg(test)]

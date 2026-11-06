@@ -2,6 +2,9 @@ import { useEffect } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { AgentConfigTrust, ScriptTrust } from "../api";
 import { AGENT_INFO, agentName } from "../agents";
+import { IS_MAC } from "../platform";
+
+const HERE = IS_MAC ? "your Mac" : "your computer";
 
 /**
  * Asks before running commands a repo brings with it, the first time and whenever they change:
@@ -27,7 +30,7 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
         </div>
         {agent ? (
           <p className="muted">
-            This repo commits settings that make the agent run these on your Mac as soon as a chat starts. Anyone who can push
+            This repo commits settings that make the agent run these on {HERE} as soon as a chat starts. Anyone who can push
             to the repo or open a PR can change them. {blocked
               ? <><b>Not now</b> means {agentName(blocked)} won't run in this repo. Claude and Codex still can.</>
               : <><b>Not now</b> still lets you chat: the agent runs without this repo's agent settings (yours stay on).</>}
@@ -35,7 +38,7 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
           </p>
         ) : (
           <p className="muted">
-            This repo's <code>nekotrail.json</code> asks nekotrail to run these commands on your Mac. Anyone who can push to the
+            This repo's <code>nekotrail.json</code> asks nekotrail to run these commands on {HERE}. Anyone who can push to the
             repo or open a PR can change them, so run them only if you trust what they do. You'll be asked again if they change.
           </p>
         )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Heart, Minus, Plus, Volume2, X } from "lucide-react";
 import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
+import { IS_MAC, keyHint } from "../platform";
 import { AGENTS, AGENT_INFO } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { okFullAuto } from "../fullAuto";
@@ -12,30 +13,30 @@ import type { UpdatePhase } from "../useUpdater";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
-  ["⌘K", "Jump anywhere, run any command"],
-  ["⌘N / ⌘⇧N", "Create workspace / from a PR"],
-  ["⌘1 / ⌘2 / ⌘3", "Show chat / changes / terminal"],
-  ["⌃1 to ⌃9", "Go to a workspace in the sidebar"],
-  ["⌘⌥↑ / ⌘⌥↓", "Previous / next workspace"],
-  ["⌘⌥L", "Go to next workspace with news"],
-  ["⌘L / ⌘⇧D / ⌘J", "Also: type in chat / changes / toggle terminal"],
-  ["⌘T", "Start a chat or open a terminal tab"],
-  ["⌘F / ⌘G", "Search this chat / next match"],
-  ["↵ or ⌘↵", "Send message (choose which above)"],
-  ["⌘⇧↵", "Approve the agent's plan"],
-  ["⌘⇧⌫", "Stop the agent"],
-  ["⌃O", "Show or hide every tool call's output"],
-  ["⌘⇧P / ⌘⇧Y / ⌘⇧M", "Create PR / commit and push / merge"],
-  ["⌘⇧L / ⌘⇧R / ⌘⇧X", "Pull latest target branch / review / fix failing checks"],
-  ["⌘⇧G", "Open the PR on GitHub"],
-  ["⌘P", "Open any file"],
-  ["⌘⌥U", "Switch changes: all or uncommitted"],
-  ["⌘R / ⌘⇧B", "Run or stop the app / open it in browser"],
-  ["⌘O", "Open workspace in your editor"],
-  ["⌘⇧A", "Archive workspace"],
-  ["⌘B", "Hide or show the sidebar"],
-  ["⌘+ / ⌘- / ⌘0", "Zoom in / out / reset"],
-  ["⌘,", "Open settings"],
+  [keyHint("⌘K"), "Jump anywhere, run any command"],
+  [keyHint("⌘N / ⌘⇧N"), "Create workspace / from a PR"],
+  [keyHint("⌘1 / ⌘2 / ⌘3"), "Show chat / changes / terminal"],
+  [keyHint("⌃1 to ⌃9"), "Go to a workspace in the sidebar"],
+  [keyHint("⌘⌥↑ / ⌘⌥↓"), "Previous / next workspace"],
+  [keyHint("⌘⌥L"), "Go to next workspace with news"],
+  [keyHint("⌘L / ⌘⇧D / ⌘J"), "Also: type in chat / changes / toggle terminal"],
+  [keyHint("⌘T"), "Start a chat or open a terminal tab"],
+  [keyHint("⌘F / ⌘G"), "Search this chat / next match"],
+  [keyHint("↵ or ⌘↵"), "Send message (choose which above)"],
+  [keyHint("⌘⇧↵"), "Approve the agent's plan"],
+  [keyHint("⌘⇧⌫"), "Stop the agent"],
+  [keyHint("⌃O"), "Show or hide every tool call's output"],
+  [keyHint("⌘⇧P / ⌘⇧Y / ⌘⇧M"), "Create PR / commit and push / merge"],
+  [keyHint("⌘⇧L / ⌘⇧R / ⌘⇧X"), "Pull latest target branch / review / fix failing checks"],
+  [keyHint("⌘⇧G"), "Open the PR on GitHub"],
+  [keyHint("⌘P"), "Open any file"],
+  [keyHint("⌘⌥U"), "Switch changes: all or uncommitted"],
+  [keyHint("⌘R / ⌘⇧B"), "Run or stop the app / open it in browser"],
+  [keyHint("⌘O"), "Open workspace in your editor"],
+  [keyHint("⌘⇧A"), "Archive workspace"],
+  [keyHint("⌘B"), "Hide or show the sidebar"],
+  [keyHint("⌘+ / ⌘- / ⌘0"), "Zoom in / out / reset"],
+  [keyHint("⌘,"), "Open settings"],
   ["@ and /", "Mention a file, run a command"],
 ];
 
@@ -56,7 +57,7 @@ function FontPicker({ label, fonts, font, size, defaultSize, onFont, onSize }: {
   return (
     <span className="font-control">
       <select value={font} onChange={(e) => onFont(e.target.value)} aria-label={`${label} font`}>
-        <option value="">SF Mono (default)</option>
+        <option value="">{IS_MAC ? "SF Mono (default)" : "System monospace (default)"}</option>
         {list.map((f) => <option key={f} value={f}>{f}</option>)}
       </select>
       <select value={size} onChange={(e) => onSize(Number(e.target.value))} aria-label={`${label} size`}>
@@ -85,15 +86,15 @@ function AppearancePane({ s, set }: { s: S; set: <K extends keyof S>(k: K, v: S[
       <div className="setting">
         <span id="zoom-label">Zoom</span>
         <span className="zoom-control">
-          <button className="icon" aria-label="Zoom out" title="Zoom out (⌘-)" disabled={zoom <= ZOOM_MIN} onClick={() => setZoom(stepZoom(zoom, -1))}><Minus size={14} /></button>
+          <button className="icon" aria-label="Zoom out" title={keyHint("Zoom out (⌘-)")} disabled={zoom <= ZOOM_MIN} onClick={() => setZoom(stepZoom(zoom, -1))}><Minus size={14} /></button>
           <select aria-labelledby="zoom-label" value={String(zoom)} onChange={(e) => setZoom(Number(e.target.value))}>
             {!ZOOM_LEVELS.includes(zoom) && <option value={String(zoom)}>{pct(zoom)}</option>}
             {ZOOM_LEVELS.map((z) => <option key={z} value={String(z)}>{pct(z)}{z === 1 ? " (actual size)" : ""}</option>)}
           </select>
-          <button className="icon" aria-label="Zoom in" title="Zoom in (⌘+)" disabled={zoom >= ZOOM_MAX} onClick={() => setZoom(stepZoom(zoom, 1))}><Plus size={14} /></button>
+          <button className="icon" aria-label="Zoom in" title={keyHint("Zoom in (⌘+)")} disabled={zoom >= ZOOM_MAX} onClick={() => setZoom(stepZoom(zoom, 1))}><Plus size={14} /></button>
         </span>
       </div>
-      <p className="muted setting-note">⌘+ and ⌘- zoom anywhere in the app, ⌘0 goes back to 100%.</p>
+      <p className="muted setting-note">{keyHint("⌘+ and ⌘- zoom anywhere in the app, ⌘0 goes back to 100%.")}</p>
     </section>
 
     <section>
@@ -184,7 +185,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
             <input type="checkbox" className="switch" checked={s.needsNotify} onChange={(e) => set("needsNotify", e.target.checked)} />
           </label>
           <label className="setting">
-            <span>Bounce the Dock icon</span>
+            <span>{IS_MAC ? "Bounce the Dock icon" : "Flag the window in the taskbar"}</span>
             <input type="checkbox" className="switch" checked={s.needsBounce} onChange={(e) => set("needsBounce", e.target.checked)} />
           </label>
         </section>
@@ -215,12 +216,12 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
           <label className="setting">
             <span>Send with</span>
             <select value={s.sendKey} onChange={(e) => set("sendKey", e.target.value as S["sendKey"])}>
-              <option value="enter">↵ sends, ⇧↵ new line</option>
-              <option value="cmd-enter">⌘↵ sends, ↵ new line</option>
+              <option value="enter">{keyHint("↵ sends, ⇧↵ new line")}</option>
+              <option value="cmd-enter">{keyHint("⌘↵ sends, ↵ new line")}</option>
             </select>
           </label>
           <label className="setting">
-            <span>Keep the Mac awake while agents work</span>
+            <span>{IS_MAC ? "Keep the Mac awake while agents work" : "Keep the computer awake while agents work"}</span>
             <input type="checkbox" className="switch" checked={backend?.caffeinate !== "off"} onChange={(e) => setB("caffeinate", e.target.checked)} />
           </label>
         </section>
@@ -236,7 +237,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
             <input type="checkbox" className="switch" checked={s.archiveOnMerge} onChange={(e) => set("archiveOnMerge", e.target.checked)} />
           </label>
           <label className="setting">
-            <span>⌘O opens in</span>
+            <span>{keyHint("⌘O opens in")}</span>
             <select value={s.editor} onChange={(e) => set("editor", e.target.value)}>
               {targets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>

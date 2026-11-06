@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
+import { IS_MAC, keyHint, mod } from "../platform";
 import { api, displayName, nameInText, starName, subName, statusOf, STATUS_LABEL, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type Sky, type Workspace } from "../api";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
@@ -87,7 +88,7 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
       )}
       <span className="repo-actions">
         <button className="icon" tabIndex={-1} title="Edit repo scripts" aria-label={`Edit ${repo.name} scripts`} onClick={onSettings}><Settings2 size={16} /></button>
-        <button className="icon" tabIndex={-1} title="Create workspace (⌘N)" aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
+        <button className="icon" tabIndex={-1} title={keyHint("Create workspace (⌘N)")} aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
       </span>
     </div>
   );
@@ -298,7 +299,7 @@ export function Sidebar(p: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head" data-tauri-drag-region>
-        <button className="icon sidebar-toggle" onClick={p.onToggleSidebar} title="Hide sidebar (⌘B)" aria-label="Hide sidebar"><PanelLeft size={16} /></button>
+        <button className="icon sidebar-toggle" onClick={p.onToggleSidebar} title={keyHint("Hide sidebar (⌘B)")} aria-label="Hide sidebar"><PanelLeft size={16} /></button>
         <Mascot size={22} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
@@ -307,8 +308,8 @@ export function Sidebar(p: Props) {
             <MemoryStick size={13} />{p.ram.total_mb >= 1024 ? `${(p.ram.total_mb / 1024).toFixed(2)} GB` : `${p.ram.total_mb} MB`}
           </span>
         )}
-        <button className="icon" onClick={p.onBack} disabled={!p.canBack} title="Back (⌘[)" aria-label="Back"><ArrowLeft size={16} /></button>
-        <button className="icon" onClick={p.onForward} disabled={!p.canForward} title="Forward (⌘])" aria-label="Forward"><ArrowRight size={16} /></button>
+        <button className="icon" onClick={p.onBack} disabled={!p.canBack} title={keyHint("Back (⌘[)")} aria-label="Back"><ArrowLeft size={16} /></button>
+        <button className="icon" onClick={p.onForward} disabled={!p.canForward} title={keyHint("Forward (⌘])")} aria-label="Forward"><ArrowRight size={16} /></button>
       </div>
       {filter.length > 0 && (
         <div className="filter-chips">
@@ -324,7 +325,7 @@ export function Sidebar(p: Props) {
           <Search size={14} />
           <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
         </label>
-        <button className="icon" onClick={p.onBoard} title="Open board (⌘⇧K)" aria-label="Open board"><Kanban size={16} /></button>
+        <button className="icon" onClick={p.onBoard} title={keyHint("Open board (⌘⇧K)")} aria-label="Open board"><Kanban size={16} /></button>
         <span className="filter-wrap">
           <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by repo" aria-label="Filter by repo" aria-expanded={filterOpen}>
             <Filter size={16} />
@@ -339,12 +340,12 @@ export function Sidebar(p: Props) {
                 const n = p.workspaces.filter((w) => w.repo_id === r.id && w.state === "active").length;
                 return (
                   <button key={r.id} role="menuitemcheckbox" aria-checked={on}
-                    onClick={(e) => setFilter(e.metaKey || e.shiftKey ? (on ? filter.filter((x) => x !== r.id) : [...filter, r.id]) : on && filter.length === 1 ? [] : [r.id])}>
+                    onClick={(e) => setFilter(mod(e) || e.shiftKey ? (on ? filter.filter((x) => x !== r.id) : [...filter, r.id]) : on && filter.length === 1 ? [] : [r.id])}>
                     {on ? <Check size={14} /> : <span className="check-space" />}<span>{r.name}</span><span className="muted num">{n}</span>
                   </button>
                 );
               })}
-              <p className="muted menu-hint">Click to show one repo. ⌘-click to add more.</p>
+              <p className="muted menu-hint">Click to show one repo. {IS_MAC ? "⌘-click" : "Ctrl-click"} to add more.</p>
             </span>
           )}
         </span>
@@ -356,7 +357,7 @@ export function Sidebar(p: Props) {
         >
           {p.groupBy === "repo" ? <ListChecks size={17} /> : <FolderGit2 size={17} />}
         </button>
-        <button className="icon" onClick={p.onAddRepo} title="Add local repo (⌘⌥A)" aria-label="Add repo"><Plus size={18} /></button>
+        <button className="icon" onClick={p.onAddRepo} title={keyHint("Add local repo (⌘⌥A)")} aria-label="Add repo"><Plus size={18} /></button>
       </div>
       <div className="sidebar-scroll" role="listbox" aria-label="Workspaces" ref={list} onKeyDown={onListKey}
         onFocus={(e) => { const el = (e.target as HTMLElement).closest<HTMLElement>(ITEMS); if (el) kb.current = el; }}>

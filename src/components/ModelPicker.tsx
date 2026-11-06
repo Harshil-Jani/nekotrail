@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Brain, Check, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { api, type Agent, type ModelCatalog } from "../api";
+import { keyHint, mod } from "../platform";
 import { AGENT_INFO } from "../agents";
 
 let cached: Promise<ModelCatalog> | null = null;
@@ -79,7 +80,7 @@ export function ModelPicker({
   useEffect(() => {
     if (compact) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === "/" && !root.current?.closest(".pane")?.hasAttribute("hidden")) { e.preventDefault(); setOpen((o) => !o); }
+      if (mod(e) && e.key === "/" && !root.current?.closest(".pane")?.hasAttribute("hidden")) { e.preventDefault(); setOpen((o) => !o); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -106,7 +107,7 @@ export function ModelPicker({
 
   return (
     <span className="model-picker" ref={root}>
-      <button className="picker-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title="Pick model and intelligence (⌘/)">
+      <button className="picker-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title={keyHint("Pick model and intelligence (⌘/)")}>
         <Sparkles size={13} />
         <span className="picker-label">{label}</span>
         <ChevronDown size={12} />
@@ -126,7 +127,7 @@ export function ModelPicker({
           )}
           {showOlder && older.map(row)}
           <form className="custom-model" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) { onChange({ model: custom.trim(), effort }); setCustom(""); } }}>
-            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Other model ID, then ↵" aria-label="Other model ID" />
+            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={keyHint("Other model ID, then ↵")} aria-label="Other model ID" />
           </form>
           {plainDefault(defaultModel) && (
             <p className="muted menu-hint">Default uses the model in {AGENT_INFO[agent]?.full ?? "the agent"}'s own config. To pick another, type its ID above.</p>

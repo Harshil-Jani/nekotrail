@@ -19,6 +19,9 @@ pub struct Pty {
 }
 
 const SCROLLBACK: usize = 256 * 1024;
+
+/// The shell when $SHELL is unset: zsh is the macOS default, bash the usual Linux one.
+pub const FALLBACK_SHELL: &str = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" };
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Default, Clone)]
@@ -42,7 +45,7 @@ impl Ptys {
         self.close(id);
         let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let pair = native_pty_system().openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })?;
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| FALLBACK_SHELL.into());
         let mut cmd = CommandBuilder::new(shell);
         match command {
             Some(c) => { cmd.args(["-lc", c]); }

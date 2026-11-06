@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
 import { api, errText, type Agent, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
+import { IS_MAC, keyHint } from "../platform";
 import { AGENTS, AGENT_INFO } from "../agents";
 import { Mascot, type Mood } from "./Mascot";
 
@@ -72,12 +73,12 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
         <button className="quiet" onClick={run} disabled={busy}>{busy ? <span className="spinner" /> : <RotateCw size={13} />}Check again</button>
       </div>
       <ul>
-        <CheckRow ok={d.git.ok} title="git" detail={d.git.version.replace("git version ", "")} fix={<Cmd text="xcode-select --install" />} />
+        <CheckRow ok={d.git.ok} title="git" detail={d.git.version.replace("git version ", "")} fix={<Cmd text={IS_MAC ? "xcode-select --install" : "sudo apt install git"} />} />
         <CheckRow
           ok={d.gh.ok}
           title="GitHub CLI, signed in"
           detail={d.gh.login ? `@${d.gh.login}` : d.gh.installed ? "installed, not signed in" : "not installed"}
-          fix={<>{!d.gh.installed && <Cmd text="brew install gh" />}<Cmd text="gh auth login" /><span className="muted">For PRs, CI status and avatars.</span></>}
+          fix={<>{!d.gh.installed && <Cmd text={IS_MAC ? "brew install gh" : "sudo apt install gh"} />}<Cmd text="gh auth login" /><span className="muted">For PRs, CI status and avatars.</span></>}
         />
         {front.map(row)}
       </ul>
@@ -217,11 +218,11 @@ export function Welcome({
       {!setupRed && setupCard}
 
       <div className="start-actions">
-        {!fresh && <button className="primary" onClick={onNew}><Plus size={15} />Create workspace <kbd>⌘N</kbd></button>}
+        {!fresh && <button className="primary" onClick={onNew}><Plus size={15} />Create workspace <kbd>{keyHint("⌘N")}</kbd></button>}
         <button className={fresh && setup?.allOk ? "primary" : ""} onClick={onAddRepo}><FolderOpen size={15} />Add local repo</button>
         <button onClick={onClone}><GitFork size={15} />Clone repo from GitHub</button>
       </div>
-      {!fresh && <p className="muted">⌘K finds any workspace or action. ⌘⌥L jumps to the next one with news.</p>}
+      {!fresh && <p className="muted">{keyHint("⌘K finds any workspace or action. ⌘⌥L jumps to the next one with news.")}</p>}
     </div>
   );
 }

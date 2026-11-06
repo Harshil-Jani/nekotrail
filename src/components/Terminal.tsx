@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { api } from "../api";
 import { fontStack, TERM_SIZE, TERM_STACK } from "../appearance";
 import { getSettings } from "../settings";
+import { IS_MAC, keyHint, mod } from "../platform";
 
 /**
  * One terminal view. `shell` starts a login shell (or reattaches to the running one);
@@ -30,6 +31,27 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
     t.loadAddon(fit);
     t.open(host.current!);
     fit.fit();
+    // Linux: Ctrl+letter belongs to the shell, so the app's Ctrl+1..4 tab keys are let through, and
+    // copy and paste are Ctrl+Shift+C / Ctrl+Shift+V like in GNOME Terminal. (On a Mac ⌘ never
+    // reaches the shell, so nothing changes there.)
+    if (!IS_MAC) {
+      t.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown" || !e.ctrlKey || e.altKey || e.metaKey) return true;
+        if (!e.shiftKey && /^[1-4]$/.test(e.key)) return false;
+        if (e.shiftKey && e.code === "KeyC") {
+          const sel = t.getSelection();
+          if (sel) navigator.clipboard.writeText(sel).catch(() => {});
+          e.preventDefault();
+          return false;
+        }
+        if (e.shiftKey && e.code === "KeyV") {
+          e.preventDefault();
+          navigator.clipboard.readText().then((text) => { if (text) t.paste(text); }).catch(() => {});
+          return false;
+        }
+        return true;
+      });
+    }
     let live = true;
 
     const onData = t.onData((d) => api.ptyWrite(ptyId, d));
@@ -158,7 +180,8 @@ export function TerminalPanel({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (root.current?.closest(".pane")?.hasAttribute("hidden")) return;
-      if (e.metaKey && !e.shiftKey && e.key.toLowerCase() === "t") { e.preventDefault(); addShell(); }
+      // Linux: Ctrl+T inside the terminal is the shell's, so Ctrl+Shift+T (like GNOME Terminal) works too.
+      if (mod(e) && (IS_MAC ? !e.shiftKey : true) && e.key.toLowerCase() === "t") { e.preventDefault(); addShell(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -185,10 +208,10 @@ export function TerminalPanel({
             )}
           </span>
         ))}
-        <span className="newchat"><button className="icon" title="Open a new terminal (⌘T)" aria-label="Open a new terminal" onClick={addShell}><Plus size={15} /></button></span>
+        <span className="newchat"><button className="icon" title={keyHint("Open a new terminal (⌘T)")} aria-label="Open a new terminal" onClick={addShell}><Plus size={15} /></button></span>
         <span className="spacer" />
         {cur.kind === "run" && (
-          <button className={running.has(runId) ? "danger term-action" : "term-action"} onClick={onRun} title="Run or stop (⌘R)">
+          <button className={running.has(runId) ? "danger term-action" : "term-action"} onClick={onRun} title={keyHint("Run or stop (⌘R)")}>
             {running.has(runId) ? <><Square size={12} />Stop</> : <><Play size={12} />Run</>}
           </button>
         )}

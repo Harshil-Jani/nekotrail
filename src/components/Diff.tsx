@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ExternalLink, MessageSquarePlus, Pencil, RefreshCw, Save, Search, Send, Undo2, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { api, errText, type FileChange } from "../api";
+import { keyHint, mod } from "../platform";
 import { Mascot } from "./Mascot";
 import { ask } from "./Confirm";
 
@@ -119,7 +120,7 @@ function ReviewEdit({ label, draft, onSave, onCancel }: {
         }}
       />
       <div className="row">
-        <span className="muted review-keys">⌘↵ to add, Esc to cancel</span>
+        <span className="muted review-keys">{keyHint("⌘↵ to add, Esc to cancel")}</span>
         <span className="spacer" />
         <button className="quiet" onClick={onCancel}>Cancel</button>
         <button className="primary" onClick={() => onSave(text)} disabled={!text.trim()}>Add comment</button>
@@ -494,7 +495,7 @@ function FileEditor({ workspaceId, path, onDone }: { workspaceId: string; path: 
       <div className="file-head">
         <code>{path}</code>{dirty && <span className="muted">· edited</span>}
         <span className="spacer" />
-        <button onClick={save} disabled={!dirty} title="Save file (⌘S)"><Save size={14} />Save</button>
+        <button onClick={save} disabled={!dirty} title={keyHint("Save file (⌘S)")}><Save size={14} />Save</button>
         <button className="quiet" onClick={async () => { if (!dirty || await ask({ title: "Discard your edits?", body: `Unsaved changes to ${path} are lost.`, ok: "Discard edits", danger: true })) onDone(); }}>Done</button>
       </div>
       {error && <div className="banner error">{error}</div>}
@@ -506,7 +507,7 @@ function FileEditor({ workspaceId, path, onDone }: { workspaceId: string; path: 
           aria-label={`Edit ${path}`}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.metaKey && e.key === "s") { e.preventDefault(); save(); }
+            if (mod(e) && e.key === "s") { e.preventDefault(); save(); }
             if (e.key === "Tab") {
               e.preventDefault();
               const el = e.currentTarget, a = el.selectionStart;
@@ -693,9 +694,9 @@ export function Diff({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (root.current?.closest(".pane")?.hasAttribute("hidden")) return;
-      if (e.metaKey && e.altKey && e.code === "KeyU") { e.preventDefault(); setUncommitted((u) => !u); return; }
+      if (mod(e) && e.altKey && e.code === "KeyU") { e.preventDefault(); setUncommitted((u) => !u); return; }
       const t = e.target as HTMLElement;
-      if (t.closest("textarea, input, select") || e.metaKey || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+      if (t.closest("textarea, input, select") || mod(e) || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
       const { files: fs, open: cur } = nav.current;
       if (!fs?.length) return;
       e.preventDefault();
@@ -728,7 +729,7 @@ export function Diff({
   const scope = (
     <span className="seg scope" role="tablist" aria-label="Which changes">
       <button role="tab" aria-selected={!uncommitted} className={!uncommitted ? "on" : ""} onClick={() => setUncommitted(false)}>All</button>
-      <button role="tab" aria-selected={uncommitted} className={uncommitted ? "on" : ""} onClick={() => setUncommitted(true)} title="Show uncommitted changes only (⌘⌥U)">Uncommitted</button>
+      <button role="tab" aria-selected={uncommitted} className={uncommitted ? "on" : ""} onClick={() => setUncommitted(true)} title={keyHint("Show uncommitted changes only (⌘⌥U)")}>Uncommitted</button>
     </span>
   );
 
@@ -879,7 +880,7 @@ export function Diff({
             />
           </>
         ) : (
-          <div className="empty"><Mascot size={64} mood="sleep" /><h2>No file selected</h2><p>Pick a file from the list, or press ⌘P to open any file.</p></div>
+          <div className="empty"><Mascot size={64} mood="sleep" /><h2>No file selected</h2><p>{keyHint("Pick a file from the list, or press ⌘P to open any file.")}</p></div>
         )}
       </div>
     </div>

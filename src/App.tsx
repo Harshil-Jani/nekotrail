@@ -29,6 +29,7 @@ import { useUpdater } from "./useUpdater";
 import { ask, ConfirmHost } from "./components/Confirm";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { getZoom, setZoom, stepZoom } from "./appearance";
+import { IS_MAC, isOpenIn, isWorkspaceDigit, keyHint, mod } from "./platform";
 import { AGENTS, agentName } from "./agents";
 // Loaded the first time someone opens the Preview tab, so it costs nothing at startup.
 const Preview = lazy(() => import("./components/Preview").then((m) => ({ default: m.Preview })));
@@ -60,7 +61,7 @@ function chatLine(w: Workspace | undefined, chat?: string): string {
 import "./App.css";
 
 type Tab = "chat" | "changes" | "terminal" | "preview" | "notes";
-const TAB_KEYS: Record<Tab, string> = { chat: "⌘1", changes: "⌘2", terminal: "⌘3", preview: "⌘4", notes: "" };
+const TAB_KEYS: Record<Tab, string> = { chat: keyHint("⌘1"), changes: keyHint("⌘2"), terminal: keyHint("⌘3"), preview: keyHint("⌘4"), notes: "" };
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "changes", label: "Changes" },
@@ -788,7 +789,9 @@ export default function App() {
     const v = await getVersion().catch(() => "unknown");
     const text = [
       `nekotrail ${v}`,
-      `macOS: ${navigator.userAgent.match(/Mac OS X [\d_]+/)?.[0]?.replace(/_/g, ".") ?? "unknown"}`,
+      IS_MAC
+        ? `macOS: ${navigator.userAgent.match(/Mac OS X [\d_]+/)?.[0]?.replace(/_/g, ".") ?? "unknown"}`
+        : `Linux: ${navigator.platform || "unknown"}`,
       `git: ${d?.git.version || "missing"}`,
       `gh: ${d?.gh.installed ? (d.gh.ok ? "signed in" : "not signed in") : "missing"}`,
       ...AGENTS.map((a) => `${a}: ${d?.[a]?.version || "missing"}`),
@@ -823,24 +826,24 @@ export default function App() {
     if (ws && ws.state === "active") {
       const here = nameOf(ws);
       c.push(
-        { id: "tab-chat", group: here, label: "Show chat", hint: "⌘1", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
-        { id: "tab-changes", group: here, label: "Show changes", hint: "⌘2", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
-        { id: "tab-term", group: here, label: "Show terminal", hint: "⌘3", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
-        { id: "tab-preview", group: here, label: "Show preview", hint: "⌘4", keywords: "browser localhost app web annotate screenshot", icon: <AppWindow size={15} />, run: () => setTab("preview") },
+        { id: "tab-chat", group: here, label: "Show chat", hint: keyHint("⌘1"), icon: <MessageSquare size={15} />, run: () => setTab("chat") },
+        { id: "tab-changes", group: here, label: "Show changes", hint: keyHint("⌘2"), icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
+        { id: "tab-term", group: here, label: "Show terminal", hint: keyHint("⌘3"), icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "tab-preview", group: here, label: "Show preview", hint: keyHint("⌘4"), keywords: "browser localhost app web annotate screenshot", icon: <AppWindow size={15} />, run: () => setTab("preview") },
         { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: () => runScript() },
-        { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
+        { id: "open-editor", group: here, label: "Open in editor", hint: keyHint("⌘O"), keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
         { id: "commands", group: here, label: "Show commands the agent ran", keywords: "log history shell bash terminal audit", icon: <SquareTerminal size={15} />, run: () => setCommandsFor(ws.id) },
-        { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
+        { id: "open-finder", group: here, label: IS_MAC ? "Show in Finder" : "Show in Files", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
         { id: "pr", group: here, label: "Go to PR actions", keywords: "github pull request create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
         { id: "pin", group: here, label: ws.pinned ? "Unpin workspace" : "Pin workspace to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
-        { id: "archive", group: here, label: "Archive workspace", hint: "⌘⇧A", keywords: "close done remove", icon: <Archive size={15} />, run: () => archive() },
+        { id: "archive", group: here, label: "Archive workspace", hint: keyHint("⌘⇧A"), keywords: "close done remove", icon: <Archive size={15} />, run: () => archive() },
       );
     }
     c.push(
-      { id: "new", group: "Create", label: "Create workspace", hint: "⌘N", keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
-      { id: "new-pr", group: "Create", label: "Create workspace from a PR", hint: "⌘⇧N", keywords: "new pull request", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
+      { id: "new", group: "Create", label: "Create workspace", hint: keyHint("⌘N"), keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
+      { id: "new-pr", group: "Create", label: "Create workspace from a PR", hint: keyHint("⌘⇧N"), keywords: "new pull request", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
       { id: "new-issue", group: "Create", label: "Create workspace from a GitHub issue", keywords: "new", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
       { id: "new-stack", group: "Create", label: "Create workspace stacked on another", keywords: "new stacked pr branch depends", icon: <SquareStack size={15} />, run: () => openNew("stack", ws?.id) },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
@@ -859,15 +862,15 @@ export default function App() {
       });
     }
     c.push(
-      { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "next", group: "Go", label: "Go to next workspace with news", hint: keyHint("⌘⌥L"), icon: <Sparkles size={15} />, run: nextUnread },
       { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
       { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
       { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex gemini success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
-      { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
+      { id: "board", group: "Go", label: "Open board", hint: keyHint("⌘⇧K"), keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
-      { id: "settings", group: "App", label: "Open settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
+      { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
 
     );
     for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
@@ -884,13 +887,13 @@ export default function App() {
   useEffect(() => {
     const sidebarRows = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws:not(.smart)"));
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-        if ((e.target as HTMLElement).closest?.(".xterm")) return; // the shell owns ⌃ keys in the terminal
+      if (isWorkspaceDigit(e)) {
+        if ((e.target as HTMLElement).closest?.(".xterm")) return; // the shell owns ⌃ (Linux: Alt) keys in the terminal
         e.preventDefault();
         sidebarRows()[Number(e.key) - 1]?.click();
         return;
       }
-      if (!e.metaKey) return;
+      if (!mod(e)) return;
       const k = e.key.toLowerCase();
       const go = (fn: () => void) => { e.preventDefault(); fn(); };
       if (k === "k" && !e.shiftKey) return go(() => setPalette((p) => !p));
@@ -915,7 +918,7 @@ export default function App() {
       if (k === "l" && !e.shiftKey && !e.altKey) return go(() => { setTab("chat"); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()); });
       if (k === "a" && e.shiftKey) return go(() => archive());
       if (e.key === "Backspace" && e.shiftKey) return go(() => { for (const id of runningSessions) api.stop(id); });
-      if (k === "o" && !e.shiftKey) return go(() => openInEditor());
+      if (k === "o" && isOpenIn(e)) return go(() => openInEditor());
       if (k === "r" && !e.shiftKey) return go(() => runScript({ stay: tab === "preview" }));
       if (k === "b" && e.shiftKey) return go(openLocal);
       if (k === "p" && !e.shiftKey) return go(() => api.workspaceFiles(ws.id).then(setQuickOpen).catch((er) => say(errText(er), true)));
@@ -968,7 +971,7 @@ export default function App() {
         onToggleSidebar={() => setSidebarHidden((h) => !h)}
       />
       {sidebarHidden && (
-        <button className="icon sidebar-toggle floating" onClick={() => setSidebarHidden(() => false)} title="Show sidebar (⌘B)" aria-label="Show sidebar">
+        <button className="icon sidebar-toggle floating" onClick={() => setSidebarHidden(() => false)} title={keyHint("Show sidebar (⌘B)")} aria-label="Show sidebar">
           <PanelLeft size={16} />
         </button>
       )}
@@ -1049,7 +1052,7 @@ export default function App() {
                 ) : (
                   <>
                     {fold < 3 && urlShown && (
-                      <button className="quiet tb-url" onClick={openLocal} title={`Open ${localUrls[ws.id]} in your browser (⌘⇧B)`} aria-label="Open in browser">
+                      <button className="quiet tb-url" onClick={openLocal} title={`Open ${localUrls[ws.id]} in your browser (${keyHint("⌘⇧B")})`} aria-label="Open in browser">
                         <ExternalLink size={14} />{fold < 1 && <span className="tb-label">{localUrls[ws.id].replace(/^https?:\/\//, "")}</span>}
                       </button>
                     )}
@@ -1057,9 +1060,9 @@ export default function App() {
                       <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results" aria-label="Compare"><Columns2 size={14} />{fold < 1 && "Compare"}</button>
                     )}
                     {fold < 3 && (runLive ? (
-                      <button className="danger" onClick={() => runScript()} title="Stop the run script (⌘R)" aria-label="Stop"><Square size={13} />{fold < 1 && "Stop"}</button>
+                      <button className="danger" onClick={() => runScript()} title={keyHint("Stop the run script (⌘R)")} aria-label="Stop"><Square size={13} />{fold < 1 && "Stop"}</button>
                     ) : (
-                      <button onClick={() => runScript({ stay: tab === "preview" })} title="Run the repo's run script (⌘R)" aria-label="Run"><Play size={14} />{fold < 1 && "Run"}</button>
+                      <button onClick={() => runScript({ stay: tab === "preview" })} title={keyHint("Run the repo's run script (⌘R)")} aria-label="Run"><Play size={14} />{fold < 1 && "Run"}</button>
                     ))}
                     {(repo?.prefs?.actions?.length ?? 0) > 0 && (
                       <span className="git-menu">
@@ -1083,11 +1086,11 @@ export default function App() {
                         <span className="menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
                           {/* What the folded toolbar has no room for. */}
                           {fold >= 3 && <>
-                            {urlShown && <button role="menuitem" onClick={() => { setMoreOpen(false); openLocal(); }}><ExternalLink size={15} /><span>Open {localUrls[ws.id].replace(/^https?:\/\//, "")}</span><kbd>⌘⇧B</kbd></button>}
+                            {urlShown && <button role="menuitem" onClick={() => { setMoreOpen(false); openLocal(); }}><ExternalLink size={15} /><span>Open {localUrls[ws.id].replace(/^https?:\/\//, "")}</span><kbd>{keyHint("⌘⇧B")}</kbd></button>}
                             {paired && <button role="menuitem" onClick={() => { setMoreOpen(false); setComparing(ws.pair_id); }}><Columns2 size={15} /><span>Compare</span></button>}
                             {runLive
-                              ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the Run script</span><kbd>⌘R</kbd></button>
-                              : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>⌘R</kbd></button>}
+                              ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the Run script</span><kbd>{keyHint("⌘R")}</kbd></button>
+                              : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>{keyHint("⌘R")}</kbd></button>}
                             <div className="menu-sep" />
                           </>}
                           {fold >= 1 && openTargets.length > 0 && <>
@@ -1111,7 +1114,7 @@ export default function App() {
                             </button>
                           ))}
                           <div className="menu-sep" />
-                          <button role="menuitem" onClick={() => { setMoreOpen(false); archive(); }}><Archive size={15} /><span>Archive</span><kbd>⌘⇧A</kbd></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); archive(); }}><Archive size={15} /><span>Archive</span><kbd>{keyHint("⌘⇧A")}</kbd></button>
                         </span>
                       )}
                     </span>

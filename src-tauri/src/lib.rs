@@ -6,6 +6,8 @@ pub mod config;
 pub mod git;
 pub mod guard;
 pub mod importer;
+#[cfg(unix)]
+pub mod linux;
 pub mod names;
 pub mod preview;
 pub mod prpoll;
@@ -121,8 +123,9 @@ impl AppState {
 
 /// GUI apps on macOS start without your shell's PATH and env (CLAUDE_CONFIG_DIR, API keys...).
 /// Copy them from a login shell so `claude`, `codex`, `gh` and `git` behave like in your terminal.
+/// Linux desktop launchers have the same gap (nvm, ~/.local/bin and exports from .bashrc or .zshrc).
 fn load_login_env() {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| pty::FALLBACK_SHELL.into());
     let Ok(out) = Command::new(shell).args(["-ilc", "env -0"]).stdin(Stdio::null()).output() else { return };
     for kv in out.stdout.split(|b| *b == 0) {
         let kv = String::from_utf8_lossy(kv);
@@ -792,12 +795,19 @@ async fn write_file(st: State<'_, AppState>, id: String, path: String, content: 
 }
 
 /// Move a file to the macOS Trash, so it can be fished out again.
+#[cfg(target_os = "macos")]
 fn to_trash(p: &Path) -> anyhow::Result<()> {
     use trash::macos::{DeleteMethod, TrashContextExtMacos};
     let mut t = trash::TrashContext::default();
     // The system call, not Finder: no Automation prompt and no sound.
     t.set_delete_method(DeleteMethod::NsFileManager);
     t.delete(p).map_err(|err| anyhow::anyhow!("{err}"))
+}
+
+/// Linux: move a file to the freedesktop.org Trash (the one GNOME Files, Dolphin and others show).
+#[cfg(not(target_os = "macos"))]
+fn to_trash(p: &Path) -> anyhow::Result<()> {
+    trash::delete(p).map_err(|err| anyhow::anyhow!("{err}"))
 }
 
 /// The protected paths for a workspace: the app's list for its repo, plus the `protected` list in
@@ -864,7 +874,7 @@ async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, igno
     .await
 }
 
-/// Discard the uncommitted changes to one file. The current copy goes to the macOS Trash first,
+/// Discard the uncommitted changes to one file. The current copy goes to the system Trash first,
 /// so nothing is ever deleted outright. Returns "trashed" (a new file) or "restored".
 #[tauri::command]
 async fn discard_file(app: AppHandle, id: String, path: String) -> Res<String> {
@@ -908,6 +918,7 @@ fn review_comments_blocking(st: &AppState, id: &str) -> Res<Value> {
     Ok(Value::Array(all))
 }
 
+#[cfg(target_os = "macos")]
 #[tauri::command]
 async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
@@ -923,6 +934,7 @@ async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
 }
 
 /// Apps a workspace can open in: (id, macOS app name).
+#[cfg(target_os = "macos")]
 const OPEN_IN: &[(&str, &str)] = &[
     ("cursor", "Cursor"), ("vscode", "Visual Studio Code"), ("zed", "Zed"), ("windsurf", "Windsurf"),
     ("xcode", "Xcode"), ("intellij", "IntelliJ IDEA"), ("webstorm", "WebStorm"), ("sublime", "Sublime Text"),
@@ -930,6 +942,7 @@ const OPEN_IN: &[(&str, &str)] = &[
 ];
 
 /// Which of those apps are installed, plus Finder.
+#[cfg(target_os = "macos")]
 #[tauri::command]
 fn open_in_targets() -> Vec<Value> {
     let installed = |name: &str| {
@@ -942,6 +955,21 @@ fn open_in_targets() -> Vec<Value> {
     let mut v: Vec<Value> = OPEN_IN.iter().filter(|(_, n)| installed(n)).map(|(k, n)| json!({"id": k, "name": n})).collect();
     v.push(json!({"id": "finder", "name": "Finder"}));
     v
+}
+
+/// Linux: open the workspace with an editor or terminal from PATH, or "finder" in the file manager.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    linux::open_in(Path::new(&ws.path), &app)
+}
+
+/// Linux: the editors and terminals found on PATH, plus the file manager (id "finder").
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn open_in_targets() -> Vec<Value> {
+    linux::open_in_targets()
 }
 
 // ---------- the PR poller ----------
@@ -1434,7 +1462,8 @@ async fn resource_usage() -> Res<Value> {
 }
 
 /// Sum resident memory over `root` and all its descendants. The web view's WebKit helper processes
-/// are started by macOS outside this tree, so they are not counted.
+/// are started by macOS outside this tree, so they are not counted. (On Linux WebKitGTK starts them
+/// as our children, so they are.)
 fn tree_usage(root: u32, rows: &[(u32, u32, u64, String)]) -> Value {
     let mut ours = std::collections::HashSet::from([root]);
     loop {
@@ -2570,8 +2599,14 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             write_stdin(&st.runs, &id, &first);
         }
     // Keep the Mac awake while the agent works (ends by itself when the agent exits).
+    #[cfg(target_os = "macos")]
     if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
         let _ = Command::new("caffeinate").args(["-i", "-w", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    }
+    // Linux: the same through systemd-inhibit, where there is one.
+    #[cfg(not(target_os = "macos"))]
+    if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
+        linux::keep_awake_while(child.id());
     }
     let _ = app.emit("running", json!({"session_id": id, "running": true, "workspace_id": ws.id}));
 
