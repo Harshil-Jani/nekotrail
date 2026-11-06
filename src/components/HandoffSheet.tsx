@@ -116,6 +116,7 @@ export function HandoffSheet({ session, title, multiRepo, busy, initialAgent, in
         <div className="handoff-brief">
           <div className="row">
             <span className="mcp-h">Brief, sent as {agent ? `${agentName(agent)}'s` : "the"} first message</span>
+            <span className="muted export-small">Read it and edit anything before you hand off.</span>
             <span className="spacer" />
             {edited && <button className="quiet handoff-reset" onClick={() => setText(brief!.text)}><RotateCcw size={12} />Start over</button>}
           </div>
@@ -148,7 +149,7 @@ export function HandoffSheet({ session, title, multiRepo, busy, initialAgent, in
         )}
 
         <div className="row export-foot">
-          <span className="muted export-small">A new chat opens in this workspace. Spend caps and protected files apply to it too, and this chat stays as it is.</span>
+          <span className="muted export-small">A new chat opens in this workspace, linked to this one, which stays as it is. Spend caps and protected files still apply.</span>
           <span className="spacer" />
           <button onClick={onClose}>Cancel</button>
           <button className="primary" disabled={!!blocked || !brief || sending} title={blocked ?? undefined} onClick={go}>

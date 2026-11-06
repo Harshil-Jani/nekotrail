@@ -2249,6 +2249,7 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .handoff-why { font-size: 12.5px; }
 .handoff-pick { display: flex; flex-direction: column; gap: var(--s2); }
 .handoff-pick .mcp-h, .handoff-brief .mcp-h { margin: 0; }
+.handoff-brief > .row { gap: var(--s2); flex-wrap: wrap; }
 .seg.handoff-agents { flex-wrap: wrap; }
 .seg.handoff-agents button { height: 26px; padding: 0 var(--s3); font-size: 12.5px; }
 .handoff-model { gap: var(--s2); flex-wrap: wrap; }
