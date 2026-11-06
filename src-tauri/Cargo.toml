@@ -37,6 +37,7 @@ anyhow = "1"
 rand = "0.9"
 sha2 = "0.10"
 toml = "0.8"
+toml_edit = "0.25"
 trash = "5"
 
 # Annotate in the Preview tab snapshots the WKWebView (these crates are already in the tree through wry).

@@ -159,6 +159,20 @@ export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find
 export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
 export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
 
+/** MCP servers and skills across Claude, Codex and Gemini (src-tauri/src/mcpshare.rs). */
+export type McpHas = { agent: Agent; scope: "user" | "local" | "project"; file: string };
+export type McpSecret = { id: string; kind: "env" | "header" | "arg" | "url"; key: string; can_ref: boolean };
+export type McpRow = {
+  name: string; transport: "stdio" | "http" | "sse" | "ws" | null; summary: string; env: string[];
+  has: McpHas[]; from: McpHas; secrets: McpSecret[]; targets: { agent: Agent; ok: boolean; why: string | null }[]; problem: string | null;
+};
+export type SkillShare = { target: "agents" | "claude"; label: string; link: string; to: string; ok: boolean; why: string | null };
+export type SkillRow = { name: string; description: string; has: Agent[]; share: SkillShare[] };
+export type McpOverview = { servers: McpRow[]; skills: SkillRow[]; files: Record<Agent, string>; problems: string[] };
+/** How each secret comes across: as a variable, or a copy of the value. */
+export type SecretChoices = Record<string, "ref" | "copy">;
+export type McpPreview = { file: string; creates: boolean; backup: string | null; snippet: string; notes: string[]; blockers: string[]; asks: string[]; secrets: McpSecret[]; token: string };
+
 /** Runs before every message is sent; App uses it to ask about a repo's agent config first. */
 let beforeTurn: (id: string) => Promise<void> = async () => {};
 export const setBeforeTurn = (f: (id: string) => Promise<void>) => { beforeTurn = f; };
@@ -213,6 +227,12 @@ export const api = {
   setSection: (id: string, section: string) => invoke<void>("set_section", { id, section }),
   modelCatalog: () => invoke<ModelCatalog>("model_catalog"),
   mcpList: (id: string, agent: Agent) => invoke<string>("mcp_list", { id, agent }),
+  mcpShareOverview: (id: string) => invoke<McpOverview>("mcp_share_overview", { id }),
+  mcpSharePreview: (id: string, name: string, target: Agent, choices: SecretChoices) =>
+    invoke<McpPreview>("mcp_share_preview", { id, name, target, choices }),
+  mcpShareApply: (id: string, name: string, target: Agent, choices: SecretChoices, token: string) =>
+    invoke<{ file: string; backup: string | null }>("mcp_share_apply", { id, name, target, choices, token }),
+  skillShare: (name: string, target: "agents" | "claude") => invoke<string>("skill_share", { name, target }),
   slashCommands: (id: string) => invoke<[string, string][]>("slash_commands", { id }),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
