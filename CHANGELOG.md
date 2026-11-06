@@ -3,6 +3,18 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Linear issues**
+- New Integrations pane in Settings: connect Linear with a personal API key. The key is kept in your Keychain (on Linux, your keyring), never in nekotrail's database, logs or exports. Test shows whose key it is.
+- New workspace has a Linear source: your open issues first, with search (type ENG-123 to find any issue), Mine or Anyone, a team and a state.
+- Picking an issue starts the workspace on Linear's branch name for it, names the workspace after it ("ENG-123 Fix the login loop"), and puts the issue's title, description and link in the first message.
+- The PR nekotrail opens for that workspace says "Fixes ENG-123", so Linear links it.
+- The issue moves to In Progress when the agent's first turn starts, if it hasn't started yet. Switch this off in Settings, Integrations. nekotrail never comments on Linear.
+- From your terminal: `nekotrail new --linear ENG-123`, with an optional task after it.
+- A bad key, a rate limit or no network each show a plain message, and never hold up the app.
+- Linear API keys are hidden in exported sessions and away alerts, like other keys.
+
 ## 0.18.0 (2026-11-07)
 
 **VS Code and Cursor extension**
