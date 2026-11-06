@@ -1391,6 +1391,13 @@ body:has(.prbar) .update-sheet { top: 100px; }
   background: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06)); border-radius: 8px;
 }
 .confirm-footer { margin-top: var(--s2); }
+.confirm-facts { margin: var(--s3) 0 0; display: grid; gap: 4px; font-size: 12px; }
+.confirm-facts div { display: grid; grid-template-columns: 56px 1fr; gap: var(--s2); }
+.confirm-facts dt { color: var(--muted); }
+.confirm-facts dd { margin: 0; color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.confirm-quote-wrap { margin-top: var(--s3); position: relative; }
+.confirm-quote-wrap.more .confirm-quote { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
+.confirm-more { margin: 4px 0 0 !important; font-size: 11px; color: var(--accent-text); }
 /* Disabled filled buttons go neutral, as on macOS: half-transparent orange or green turned muddy on dark. */
 button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
   background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08)); color: var(--faint); box-shadow: none; border-color: transparent; opacity: 1;

@@ -825,10 +825,18 @@ export default function App() {
       case "confirm": {
         // A web page can open a link, so a link never starts an agent without this answer.
         const agent = agentName(job.agent);
-        const where = job.adds_repo ? `${job.repo} (${job.repo_path}, which this also adds to nekotrail)` : `${job.repo} (${job.repo_path})`;
+        const facts: [string, string][] = [
+          ["Repo", job.adds_repo ? `${job.repo}, new to nekotrail` : job.repo],
+          ["Folder", job.repo_path],
+          ...(job.base ? [["From", job.base] as [string, string]] : []),
+          ["Agent", job.plan ? `${agent}, in plan mode` : agent],
+        ];
         const go = await ask({
           title: `Start ${agent} from a link?`,
-          body: `A link asks for a new workspace in ${where}${job.base ? `, from ${job.base}` : ""}, with ${agent}${job.plan ? " in plan mode" : ""} working on this task:`,
+          body: job.adds_repo
+            ? "A link asks for a new workspace, and adds this repo to nekotrail first. The agent works on the task below."
+            : "A link asks for a new workspace. The agent works on the task below.",
+          facts,
           quote: job.prompt,
           footer: "Only start it if you opened this link yourself and you trust the task.",
           ok: "Start agent",
