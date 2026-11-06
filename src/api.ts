@@ -3,6 +3,7 @@ import type { PersonalPrompt, PromptEntry, PromptScope } from "./prompts";
 import type { NewQueueTask, QueueSummary, QueueTask, QueueView } from "./queue";
 import type { Budgets, UsageReport } from "./usage";
 import type { AlertSecret, AlertService, AlertsConfig, AlertsView } from "./alerts";
+import type { LinearFilter, LinearIssue, LinearStatus, LinearTeam } from "./linear";
 
 export type Repo = {
   id: string;
@@ -416,6 +417,14 @@ export const api = {
   alertsSetSecret: (id: string, secret: AlertSecret) => invoke<AlertsView>("alerts_set_secret", { id, secret }),
   alertsRemove: (id: string) => invoke<AlertsView>("alerts_remove", { id }),
   alertsTest: (id: string) => invoke<AlertsView>("alerts_test", { id }),
+  /** Linear (Settings, Integrations). The key goes straight to the keychain and never comes back. */
+  linearStatus: () => invoke<LinearStatus>("linear_status"),
+  linearConnect: (key: string) => invoke<LinearStatus>("linear_connect", { key }),
+  linearTest: () => invoke<LinearStatus>("linear_test"),
+  linearDisconnect: () => invoke<LinearStatus>("linear_disconnect"),
+  linearSetMove: (on: boolean) => invoke<LinearStatus>("linear_set_move", { on }),
+  linearTeams: () => invoke<LinearTeam[]>("linear_teams"),
+  linearIssues: (filter: LinearFilter) => invoke<LinearIssue[]>("linear_issues", { filter: { ...filter, team: filter.team || null, query: filter.query.trim() || null } }),
   resourceUsage: () => invoke<{ total_mb: number; top: { name: string; mb: number }[] }>("resource_usage"),
   workspaceStorage: () => invoke<{ workspace_id: string; total_kb: number; cleanable_kb: number; dirs: { path: string; kb: number }[] }[]>("workspace_storage"),
   cleanWorkspace: (id: string) => invoke<number>("clean_workspace", { id }),

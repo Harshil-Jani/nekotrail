@@ -12,6 +12,7 @@ import pkg from "../../package.json";
 import type { UpdatePhase } from "../useUpdater";
 import { PromptsPane } from "./PromptsPane";
 import { AwayAlerts } from "./AwayAlerts";
+import { LinearSettings } from "./LinearSettings";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
@@ -44,8 +45,8 @@ const SHORTCUTS: [string, string][] = [
   ["Tab / ⇧Tab", "Next / previous blank in a prompt"],
 ];
 
-export type Pane = "general" | "appearance" | "notifications" | "agents" | "prompts" | "shortcuts";
-const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["prompts", "Prompts"], ["shortcuts", "Shortcuts"]];
+export type Pane = "general" | "appearance" | "notifications" | "agents" | "integrations" | "prompts" | "shortcuts";
+const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["integrations", "Integrations"], ["prompts", "Prompts"], ["shortcuts", "Shortcuts"]];
 
 const SIZES = [10, 11, 12, 13, 14, 15, 16, 18];
 const CODE_SAMPLE = "const purr = (cat) => cat.nap ?? 0; // {}[]|0O1lI";
@@ -332,6 +333,8 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
         </section>
 
         </>}
+
+        {pane === "integrations" && <LinearSettings />}
 
         {pane === "prompts" && <PromptsPane workspaceId={workspaceId} repoName={repoName} />}
 
