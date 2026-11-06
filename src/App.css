@@ -265,7 +265,8 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .empty h2 { color: var(--text); margin: 0; font-size: 15px; font-weight: 600; }
 .msg { line-height: 1.6; font-size: 13.5px; }
 .msg.user { align-self: flex-end; max-width: 80%; background: var(--raised); color: var(--text); padding: var(--s2) var(--s3); border-radius: var(--r); white-space: pre-wrap; }
-.msg-user-wrap { align-self: flex-end; max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+/* Each row sits in a block wrapper, so align-self alone never applied: margin-left pushes your messages right. */
+.msg-user-wrap { align-self: flex-end; margin-left: auto; width: fit-content; max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .msg-user-wrap .msg.user { max-width: 100%; }
 .rewind { border: none; padding: 2px 4px; font-size: 11.5px; font-weight: 500; color: var(--muted); opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s var(--ease); }
 .msg-user-wrap:hover .rewind, .rewind:focus-visible, .msg.rewound .rewind { opacity: 1; }
