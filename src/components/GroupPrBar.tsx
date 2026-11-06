@@ -83,11 +83,11 @@ export function GroupPrBar({ members, repos, prs, title, refreshKey, onSay, onAr
   });
 
   const primary = missing.length > 0
-    ? <button className="primary" onClick={() => { setMerging(false); setForm({ title, body: "", draft: false }); }} disabled={!!busy}
+    ? <button className={form ? "" : "primary"} onClick={() => { setMerging(false); setForm(form ? null : { title, body: "", draft: false }); }} disabled={!!busy} aria-expanded={!!form}
         title="Push every branch and open one PR per repo, each linking the others">
         <GitPullRequest size={15} /><span className="pb-label">{missing.length === rows.length ? `Create ${rows.length} PRs` : `Create the other ${missing.length === 1 ? "PR" : `${missing.length} PRs`}`}</span>
       </button>
-    : !allMerged && <button className={state.ready ? "good-btn" : ""} onClick={() => { setForm(null); setMerging((m) => !m); }} disabled={!!busy} aria-expanded={merging}
+    : !allMerged && <button className={state.ready && !merging ? "good-btn" : ""} onClick={() => { setForm(null); setMerging((m) => !m); }} disabled={!!busy} aria-expanded={merging}
         title={state.ready ? "Pick the order, then merge every PR" : `Not every PR is green: ${state.waiting.join("; ")}`}>
         <GitMerge size={15} /><span className="pb-label">Merge all</span>
       </button>;
@@ -178,8 +178,10 @@ export function GroupPrBar({ members, repos, prs, title, refreshKey, onSay, onAr
                   <span className="merge-name">{r.name}</span>
                   {r.pr && <button className="link num" onClick={() => openUrl(r.pr!.url).catch(() => {})}>{shortRef(r.pr.url, r.pr.number)}</button>}
                   <span className={`pill ${cls}`}><Icon size={13} />{why ?? "green"}</span>
-                  {step && step.outcome !== "merged" && step.outcome !== "already" && (
-                    <span className={`muted merge-step ${step.outcome}`} title={step.detail}>{step.outcome === "failed" ? `Failed: ${step.detail.split("\n")[0]}` : "Waiting, not merged"}</span>
+                  {step && !(cls === "merged" && (step.outcome === "merged" || step.outcome === "already")) && (
+                    <span className={`muted merge-step ${step.outcome}`} title={step.detail || undefined}>
+                      {step.outcome === "merged" || step.outcome === "already" ? "Merged" : step.outcome === "failed" ? `Failed: ${step.detail.split("\n")[0]}` : "Waiting, not merged"}
+                    </span>
                   )}
                   <span className="spacer" />
                   <button className="icon" aria-label={`Move ${r.name} up`} disabled={i === 0 || !!busy} onClick={() => setOrder((o) => move(o, i, -1))}><ArrowUp size={14} /></button>

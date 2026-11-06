@@ -18,6 +18,7 @@ export function PortsPopover({
   selected,
   task = [],
   label,
+  repoOf,
   onPreview,
   onSay,
   onClose,
@@ -27,6 +28,8 @@ export function PortsPopover({
   task?: string[];
   /** A workspace's name as the sidebar shows it. */
   label: (id: string) => string;
+  /** A workspace's repo name, so each repo of the open task is headed "This task, <repo>". */
+  repoOf?: (id: string) => string;
   /** Show this local address in that workspace's Preview tab. */
   onPreview: (wsId: string, url: string) => void;
   onSay: (text: string, error?: boolean) => void;
@@ -104,7 +107,7 @@ export function PortsPopover({
           return (
             <section key={ws.id} className="ports-ws" aria-label={`Ports of ${label(ws.id)}`}>
               <div className="ports-ws-head">
-                <span className="ports-ws-name">{ws.id === selected ? "This workspace" : label(ws.id)}</span>
+                <span className="ports-ws-name">{task.length > 1 && task.includes(ws.id) && repoOf ? `This task, ${repoOf(ws.id)}` : ws.id === selected ? "This workspace" : label(ws.id)}</span>
                 <span className="mono faint">{blockRange(ws)}</span>
               </div>
               {ws.problems.map((p, i) => (

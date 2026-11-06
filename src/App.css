@@ -213,6 +213,8 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .prbar:has(> .pr-form, > .merged-banner) { flex-wrap: wrap; }
 /* With a banner under it the bar wraps, so min-height no longer centres the first line: pad it to the same 40 px. */
 .prbar:has(> .merged-banner) { padding-top: 7px; }
+/* With a form open the bar wraps: keep its first line where it sits when closed (as the merged banner does). */
+.prbar:has(> .pr-form) { padding-top: 7px; }
 .prbar > * { flex-shrink: 0; }
 .prbar > .spacer { flex-shrink: 1; min-width: 0; }
 .prbar > button.branch, .prbar > .overlap { flex-shrink: 1; min-width: 0; }
@@ -1963,7 +1965,8 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .nw-multi-title { font-weight: 700; font-size: 15px; padding: var(--s1) 0; }
 .nw-repos { gap: 2px; }
 .nw-repo-row { display: flex; align-items: center; gap: var(--s2); min-height: 32px; margin: 0 6px; padding: 0 var(--s3) 0 var(--s2); border-radius: var(--r-md); }
-.nw-repo-row.on { background: var(--accent-soft); }
+/* Ticks carry the choice: an orange fill on every picked row read as three alerts. */
+.nw-repo-row:hover { background: var(--hover); }
 .nw-repo-row label { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); cursor: pointer; }
 .nw-repo-row label:has(input:disabled) { cursor: default; color: var(--faint); }
 .nw-repo-row .nw-pr-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1998,3 +2001,4 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .merge-row .pill.good { color: var(--good); }
 .merge-step { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .merge-step.failed { color: var(--bad); }
+.merge-step.merged, .merge-step.already { color: var(--good-text); font-weight: 500; }

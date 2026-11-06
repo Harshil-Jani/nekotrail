@@ -537,6 +537,7 @@ export function Chat({
   readOnly = false,
   reviewPr = 0,
   history,
+  taskRepos,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -557,6 +558,8 @@ export function Chat({
   reviewPr?: number;
   /** A History workspace (read-only): the main checkout these terminal chats ran in. */
   history?: string;
+  /** A multi-repo task: its repos, the main one (where this chat runs) first. */
+  taskRepos?: string[];
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -1240,6 +1243,8 @@ export function Chat({
                 ? `${agentName(session?.agent)} reads this PR's code and can't change it. Ask it to explain a change or look for a bug. Findings go to Changes as drafts, and nothing reaches GitHub until you submit.`
                 : session?.agent_session_id
                 ? "This chat came over from Conductor. New messages continue the same agent session."
+                : taskRepos && taskRepos.length > 1
+                ? `Describe a change across these ${taskRepos.length} repos. ${agentName(session?.agent)} works in ${taskRepos[0]} and can read and change the others, all on this task's branch.`
                 : `Describe a change, a bug or a plan. ${agentName(session?.agent)} works in this workspace's own branch, so nothing touches your main checkout.`}
             </p>
           </div>

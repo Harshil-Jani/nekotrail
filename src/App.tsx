@@ -1480,7 +1480,7 @@ export default function App() {
                     {/* Folded away, the button moves into ⋯; the popover still opens from here. */}
                     <span className="tb-ports-wrap">
                       {fold < 3 && <button className="quiet tb-ports" onClick={() => setPortsOpen((o) => !o)} aria-expanded={portsOpen} title="Ports: what each workspace's app listens on" aria-label="Ports"><Network size={14} />{fold < 1 && "Ports"}</button>}
-                      {portsOpen && <PortsPopover selected={viewWs?.id ?? ws.id} task={members.map((m) => m.id)} label={wsLabel} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
+                      {portsOpen && <PortsPopover selected={viewWs?.id ?? ws.id} task={members.map((m) => m.id)} label={wsLabel} repoOf={(id) => repoNameOf(workspaces.find((w) => w.id === id)?.repo_id ?? "")} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
                     </span>
                     {fold < 3 && paired && (
                       <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results" aria-label="Compare"><Columns2 size={14} />{fold < 1 && "Compare"}</button>
@@ -1607,7 +1607,7 @@ export default function App() {
               ) : (
                 <>
                   <div className="pane" hidden={tab !== "chat"}>
-                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} />
+                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} taskRepos={isTask ? members.map((m) => repoNameOf(m.repo_id)) : undefined} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
                     {tab === "changes" && viewWs && perRepo(

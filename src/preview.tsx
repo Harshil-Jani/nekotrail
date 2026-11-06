@@ -459,6 +459,22 @@ const queueView = () => {
 };
 const queueChanged = () => setTimeout(() => emit("task-queue", {}), 0);
 
+// What the PR poller would have pushed by now: one view per workspace.
+const prFor = (id: string) => {
+  if (id === "w1") return pr;
+  // Comet's PR is the draft the sidebar shows, with the same +120 -31 as its files.
+  if (id === "w2") return { ...pr, number: 479, isDraft: true, additions: 120, deletions: 31, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };
+  if (id === "w4") return { ...pr, number: 471, state: "MERGED", additions: 6, deletions: 2, latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }], reviewRequests: [] };
+  if (id.startsWith("g") && multi !== "nopr") {
+    const n = { g1: 512, g2: 96, g3: 14 }[id]!;
+    const repo = { g1: "pawprint-api", g2: "pawprint-web", g3: "pawprint-types" }[id]!;
+    const running = multi !== "green" && id === "g2";
+    return { ...pr, number: n, url: `https://github.com/pawprint/${repo}/pull/${n}`, state: multiMerged.has(id) ? "MERGED" : "OPEN", title: "Export orders as CSV",
+      statusCheckRollup: running ? [{ name: "build", conclusion: "SUCCESS" }, { name: "e2e", status: "IN_PROGRESS", conclusion: null }] : [{ name: "build", conclusion: "SUCCESS" }] };
+  }
+  return null;
+};
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
@@ -502,21 +518,6 @@ mockIPC(
       case "session_events": return args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_cache": {
-        // What the PR poller would have pushed by now: one view per workspace.
-        const prFor = (id: string) => {
-          if (id === "w1") return pr;
-          // Comet's PR is the draft the sidebar shows, with the same +120 -31 as its files.
-          if (id === "w2") return { ...pr, number: 479, isDraft: true, additions: 120, deletions: 31, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };
-          if (id === "w4") return { ...pr, number: 471, state: "MERGED", additions: 6, deletions: 2, latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }], reviewRequests: [] };
-          if (id.startsWith("g") && multi !== "nopr") {
-            const n = { g1: 512, g2: 96, g3: 14 }[id]!;
-            const repo = { g1: "pawprint-api", g2: "pawprint-web", g3: "pawprint-types" }[id]!;
-            const running = multi !== "green" && id === "g2";
-            return { ...pr, number: n, url: `https://github.com/pawprint/${repo}/pull/${n}`, state: multiMerged.has(id) ? "MERGED" : "OPEN", title: "Export orders as CSV",
-              statusCheckRollup: running ? [{ name: "build", conclusion: "SUCCESS" }, { name: "e2e", status: "IN_PROGRESS", conclusion: null }] : [{ name: "build", conclusion: "SUCCESS" }] };
-          }
-          return null;
-        };
         return Object.fromEntries(["w1", "w2", "w3", "w4", "w5", ...(multi !== null ? ["g1", "g2", "g3"] : [])].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
       }
       // Files per workspace add up to line_counts below. Dash (w3) and Pip (w5) have no changes yet.
@@ -595,6 +596,8 @@ mockIPC(
         const steps = order.map((id, i) => ({ workspace_id: id, name: { g1: "pawprint-api", g2: "pawprint-web", g3: "pawprint-types" }[id as "g1"], detail: "",
           outcome: fail && i > order.indexOf(fail) ? "skipped" : id === fail ? "failed" : "merged" }));
         for (const s of steps) if (s.outcome === "merged") multiMerged.add(s.workspace_id);
+        // The poller would push each merged PR's new state.
+        setTimeout(() => steps.forEach((st) => { if (st.outcome === "merged") emit("pr", { workspace_id: st.workspace_id, pr: prFor(st.workspace_id) }); }), 300);
         if (fail) steps[order.indexOf(fail)].detail = "Pull request is not mergeable: the base branch policy prohibits the merge.";
         return steps;
       }
