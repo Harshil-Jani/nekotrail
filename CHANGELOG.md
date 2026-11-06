@@ -3,6 +3,17 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Faster, quieter GitHub checks**
+- The PR bar, sidebar, board and autopilot share one GitHub check: one `gh` call per repo for all its workspaces. It runs every 20 s while checks run or autopilot is on, every 5 min otherwise, and pauses while the window is hidden.
+- PR state updates right after you push, open a PR, merge, or an agent finishes a turn. Running out of GitHub API quota no longer shows errors; nekotrail waits for the reset and keeps the last answer.
+
+**Share MCP servers and skills**
+- The MCP sheet (`/mcp`) shows every server your agents have and copies one into another agent in one click. It shows exactly what goes in, backs up your settings file first, and changes nothing else in it.
+- Values that look like secrets are never copied without asking: bring each one across as a variable from your shell, or copy the value.
+- Share Claude skills with Codex and Gemini in one click. It's a link in `~/.agents/skills`, so the skill lives in one place and edits show up for every agent.
+
 ## 0.12.0 (2026-11-06)
 
 **OpenCode, and any ACP agent**
