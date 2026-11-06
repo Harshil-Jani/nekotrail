@@ -11,6 +11,8 @@ import { okFullAuto } from "../fullAuto";
 import { forNewWorkspace, fuzzy, loadPrompts, type PromptEntry } from "../prompts";
 import { FillBar, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
 import { MAX_REPOS, MIN_REPOS, MULTI_REPO_AGENTS, multiRepoNote, togglePick } from "../multiRepo";
+import { LinearPicker } from "./LinearPicker";
+import { createLabel, linearFrom, type LinearIssue } from "../linear";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
@@ -22,13 +24,13 @@ const MODES: { value: PermissionMode; label: string }[] = [
 export type NewWorkspaceRequest = {
   /** "both" runs a bake-off: the same task in two workspaces, one per agent. */
   repoId: string; prompt: string; agent: Agent | "both"; model: string | null; effort?: string | null; mode: PermissionMode;
-  /** "pr:123", "branch:name" or "workspace:<id>" (stack on it) to start from existing work; empty for a fresh branch. */
+  /** "pr:123", "branch:name", "workspace:<id>" (stack on it) or "linear:ENG-123" (a Linear issue's branch) to start from existing work; empty for a fresh branch. */
   from?: string;
   /** A multi-repo task: 2 to 5 repos, the main one (where the chat runs) first. `repoId` is the main one. */
   repoIds?: string[];
 };
 
-export type Source = "task" | "multi" | "pr" | "branch" | "issue" | "stack";
+export type Source = "task" | "multi" | "pr" | "branch" | "issue" | "linear" | "stack";
 /** An active workspace a new one can be stacked on. */
 /** `name` for the list, `text` inside a sentence (a task title comes quoted), `star` under it. */
 export type StackTarget = { id: string; repo_id: string; name: string; text: string; star: string; branch: string };
@@ -47,6 +49,7 @@ export function NewWorkspace({
   initialStack,
   onCreate,
   onClose,
+  onOpenSettings,
 }: {
   repos: Repo[];
   initialRepo: string;
@@ -57,6 +60,8 @@ export function NewWorkspace({
   initialStack?: string;
   onCreate: (r: NewWorkspaceRequest) => Promise<void>;
   onClose: () => void;
+  /** Settings, Integrations, from the Linear source when Linear isn't connected yet. */
+  onOpenSettings?: () => void;
 }) {
   // Remember the last choices so the next workspace starts the same way.
   const saved = JSON.parse(localStorage.getItem("nekotrail.new") || "{}");
@@ -74,6 +79,7 @@ export function NewWorkspace({
   const [branch, setBranch] = useState("");
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuePick, setIssuePick] = useState<number | null>(null);
+  const [linearPick, setLinearPick] = useState<LinearIssue | null>(null);
   const [stackPick, setStackPick] = useState<string | null>(initialStack ?? null);
   // Several repos: the ones ticked, in order; the first is the main one, where the chat runs.
   const [picked, setPicked] = useState<string[]>([initialRepo]);
@@ -107,7 +113,7 @@ export function NewWorkspace({
     localStorage.setItem("nekotrail.new", JSON.stringify({ agent, model, mode, effort }));
     try {
       const from = source === "pr" && prPick ? `pr:${prPick}` : source === "branch" && branch.trim() ? `branch:${branch.trim()}`
-        : source === "stack" && stackOn ? `workspace:${stackOn.id}` : undefined;
+        : source === "stack" && stackOn ? `workspace:${stackOn.id}` : source === "linear" && linearPick ? linearFrom(linearPick.identifier) : undefined;
       if (multi) await onCreate({ repoId: picked[0], repoIds: picked, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode });
       else await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode, from });
     } finally {
@@ -207,7 +213,7 @@ export function NewWorkspace({
           )}
         </div>
         <nav className="seg nw-source" role="tablist" aria-label="Start from">
-          {([["task", "New branch"], ["multi", "Several repos"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"], ["stack", "On a workspace"]] as [Source, string][]).map(([id, label]) => (
+          {([["task", "New branch"], ["multi", "Several repos"], ["issue", "Issue"], ["linear", "Linear"], ["pr", "PR"], ["branch", "Existing branch"], ["stack", "On a workspace"]] as [Source, string][]).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={source === id} className={source === id ? "on" : ""} onClick={() => setSource(id)}>{label}</button>
           ))}
         </nav>
@@ -265,6 +271,9 @@ export function NewWorkspace({
             ))}
           </div>
         )}
+        {source === "linear" && (
+          <LinearPicker picked={linearPick} onPick={(i) => { setLinearPick(i); setPrompt(i.seed); }} onOpenSettings={onOpenSettings} />
+        )}
         {source === "stack" && (
           <>
             <div className="nw-list" role="listbox" aria-label="Workspaces to stack on">
@@ -321,7 +330,7 @@ export function NewWorkspace({
             }
           }}
           placeholder={multi ? "What should the agent change across these repos? Type / for a saved prompt."
-            : source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Type / for a saved prompt. Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
+            : source === "task" || source === "issue" || source === "linear" ? `What should the agent do in ${repo?.name ?? "this repo"}? Type / for a saved prompt. Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
           aria-label="What the agent should do"
         />
         {blankNote && <p className="muted nw-note" role="status">{blankNote}</p>}
@@ -339,9 +348,9 @@ export function NewWorkspace({
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">{keyHint("⇧↵ new line · Esc to close")}</span>
-          <button className="primary" onClick={submit} disabled={busy || (multi ? picked.length < MIN_REPOS : !repo) || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "stack" && !stackOn)}>
+          <button className="primary" onClick={submit} disabled={busy || (multi ? picked.length < MIN_REPOS : !repo) || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "linear" && !linearPick) || (source === "stack" && !stackOn)}>
             {busy ? <span className="spinner" /> : null}
-            {multi ? (picked.length < MIN_REPOS ? "Pick at least two repos" : `Create task in ${picked.length} repos`) : source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? "Create stacked workspace" : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
+            {multi ? (picked.length < MIN_REPOS ? "Pick at least two repos" : `Create task in ${picked.length} repos`) : source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "linear" ? createLabel(linearPick?.identifier ?? null) : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? "Create stacked workspace" : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
             <CornerDownLeft size={14} />
           </button>
         </div>

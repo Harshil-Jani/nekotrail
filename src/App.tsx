@@ -1317,6 +1317,7 @@ export default function App() {
       { id: "new", group: "Create", label: "Create workspace", hint: keyHint("⌘N"), keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
       { id: "new-pr", group: "Create", label: "Create workspace from a PR", hint: keyHint("⌘⇧N"), keywords: "new pull request", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
       { id: "new-issue", group: "Create", label: "Create workspace from a GitHub issue", keywords: "new", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
+      { id: "new-linear", group: "Create", label: "Create workspace from a Linear issue", keywords: "new linear ticket", icon: <GitPullRequest size={15} />, run: () => openNew("linear") },
       { id: "new-stack", group: "Create", label: "Create workspace stacked on another", keywords: "new stacked pr branch depends", icon: <SquareStack size={15} />, run: () => openNew("stack", ws?.id) },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
       { id: "update", group: "App", label: "Check for updates", keywords: "upgrade new version release download", icon: <Download size={15} />, run: () => updater.checkNow(true) },
@@ -1803,6 +1804,7 @@ export default function App() {
           stackTargets={workspaces.filter((w) => w.state === "active").map((w) => ({ id: w.id, repo_id: w.repo_id, name: displayName(sky, w), text: nameInText(sky, w), star: subName(sky, w), branch: w.branch }))}
           initialStack={newStack}
           onClose={() => { setNewFor(null); setNewSource("task"); setNewStack(undefined); }}
+          onOpenSettings={() => { setNewFor(null); setNewSource("task"); setSettingsPane("integrations"); setSettingsOpen(true); }}
         />
       )}
       {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} agent={trustAsk.agent} onAnswer={trustAsk.answer} />}

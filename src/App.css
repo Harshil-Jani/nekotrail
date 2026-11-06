@@ -481,7 +481,7 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 0.
 @keyframes rise { from { opacity: 0; transform: translateY(-6px) scale(0.99); } }
 
 /* ---------- settings (⌘,) ---------- */
-.modal.settings { width: 560px; height: min(600px, 86vh); overflow: hidden; border: 0.5px solid var(--line-strong); }
+.modal.settings { width: min(624px, calc(100vw - 48px)); height: min(600px, 86vh); overflow: hidden; border: 0.5px solid var(--line-strong); }
 /* Four panes, Mac style: a centred segmented control on top, the pane scrolls, the footer stays. */
 .settings-head .icon { margin: -4px -8px 0 0; }
 .seg.settings-panes { align-self: center; }
@@ -2224,3 +2224,19 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
 .confirm-quote.code { font-family: var(--mono); font-size: 12px; line-height: 1.5; }
 /* With a chat open the composer fills the bottom, so a toast sits under the toolbar and chat tabs instead of over Send. */
 body:has(.composer) .toast { bottom: auto; top: 140px; }
+
+/* ---------- Linear: New workspace's issue list and Settings, Integrations. ---------- */
+.linear-filters { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4) var(--s2); }
+.linear-search { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; }
+.linear-search svg { position: absolute; left: var(--s2); color: var(--muted); pointer-events: none; }
+.linear-search input { width: 100%; padding-left: 26px; }
+.linear-filters .seg { flex-shrink: 0; align-self: center; }
+.linear-filters select { flex-shrink: 0; max-width: 150px; }
+.nw-list button.linear-row { align-items: baseline; }
+.linear-id { flex-shrink: 0; min-width: 64px; font-size: 12px; text-align: left; }
+.linear-meta { flex-shrink: 0; max-width: 40%; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-list p.bad { color: var(--bad); flex-wrap: wrap; }
+.nw-note code { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.linear-connect { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s4); border-bottom: 0.5px solid var(--line-strong); }
+.linear-connect p { margin: 0; line-height: 1.45; }
+.linear-account { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
