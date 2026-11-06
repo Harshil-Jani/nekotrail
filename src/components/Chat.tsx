@@ -1092,9 +1092,12 @@ export function Chat({
               <input type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
             </label>
             <span className="spacer" />
+            {/* One group, kept at the right edge even when the controls wrap. */}
+            <span className="composer-send">
             <span className="muted" style={{ fontSize: 13 }}>{getSettings().sendKey === "enter" ? "↵" : "⌘↵"}</span>
             {busy && <button className="danger" onClick={() => active && api.stop(active)}><Square size={14} />Stop</button>}
             <button className="accent" onClick={submit} disabled={!draft.trim()}>{busy ? "Queue" : "Send"}</button>
+            </span>
           </div>
         </div>
       </div>

@@ -1317,6 +1317,10 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .composer-bar { flex-wrap: wrap; row-gap: 4px; }
 .composer-bar .model-picker { min-width: 0; max-width: 100%; }
 .composer-bar .picker-btn { max-width: 100%; }
-.composer-bar > .spacer + span { margin-left: auto; }
 /* Status dots in menus stay dots: menu labels stretch every span, which drew them as long bars. */
 .menu .status-dot { flex: none; width: 8px; height: 8px; margin: 0 3px; }
+.composer-send { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+/* Fully folded and still too narrow (smallest window at 150%): wrap rather than clip. */
+.prbar.pb-5 { flex-wrap: wrap; row-gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+.ws-header.tb-min .tab { padding: 0 6px; }
+.app:not(.no-sidebar) .ws-header.tb-min { padding-right: var(--s2); }
