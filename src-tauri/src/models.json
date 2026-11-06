@@ -368,5 +368,185 @@
     "new": false
    }
   ]
+ },
+ "cursor": {
+  "label": "Cursor CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "copilot": {
+  "label": "GitHub Copilot CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "goose": {
+  "label": "Goose",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "qwen": {
+  "label": "Qwen Code",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "kimi": {
+  "label": "Kimi Code CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "auggie": {
+  "label": "Auggie CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "grok": {
+  "label": "Grok Build",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "kiro": {
+  "label": "Kiro CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "droid": {
+  "label": "Factory Droid",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "vibe": {
+  "label": "Mistral Vibe",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "cline": {
+  "label": "Cline CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
+ },
+ "kilo": {
+  "label": "Kilo CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
  }
 }

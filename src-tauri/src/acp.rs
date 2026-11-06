@@ -13,11 +13,17 @@
 //! "method not found". OpenCode 1.19 still sends `fs/write_text_file` after an approved edit, to
 //! sync an editor; it has written the file itself by then and carries on.
 //!
-//! Adding an ACP agent is one `AcpAgent` entry (command, args, name) in `agent::ALL`, plus its
-//! line in `src/agents.ts` and `models.json`.
+//! What differs between agents is handled generically: plan mode may be a URI (`...#plan`);
+//! "Ask before changes" is an env var or a session config option the entry names, and a turn
+//! that can't get one stops rather than run without asking; "Auto-accept edits" answers read and
+//! edit requests inside the worktree itself and shows a card for the rest; an agent that wants
+//! `authenticate` before `session/new` gets it once, only after it says "auth required".
+//!
+//! Adding an ACP agent is one `AcpAgent` entry (command, args, name, repo config) in
+//! `agent::ALL`, plus its line in `src/agents.ts` and `models.json`.
 
 use crate::agent::{clip, Agent, Checked, Parser, TurnSpec};
-use crate::agentcfg::Item;
+use crate::agentcfg::{env_file, scan, whole, Item, RepoFile};
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -48,20 +54,36 @@ pub struct AcpAgent {
     pub config_off_env: &'static [(&'static str, &'static str)],
     /// Environment for "Ask before changes": the agent asks before edits, commands and fetches.
     pub ask_env: &'static [(&'static str, &'static str)],
+    /// A session config option set for "Ask before changes" (`configId`, `value`), when the agent
+    /// offers one that makes it ask (Copilot's `allow_all` off). A turn whose agent doesn't offer
+    /// it stops instead of running without asking.
+    pub ask_option: Option<(&'static str, &'static str)>,
+    /// The ACP auth method that signs in with the CLI's own saved login, for agents that answer
+    /// `session/new` with "auth required" until the client calls `authenticate` (Cursor). Only
+    /// tried after that error, so a signed-out CLI never starts a browser login unasked.
+    pub auth_method: Option<&'static str>,
+    /// What the setup check runs to see the CLI is there (empty: `bin --version`).
+    pub probe: &'static [&'static str],
     /// What the repo's config for this agent would run, and its fingerprint (see `agentcfg`).
-    pub repo_config: ConfigCheck,
+    pub repo_config: RepoConfig,
 }
 
 /// What a repo's config for an agent would run, and its fingerprint (`agentcfg::check_*`).
 pub type ConfigCheck = fn(&Path) -> Option<(Vec<Item>, String)>;
 
-fn no_repo_config(_: &Path) -> Option<(Vec<Item>, String)> {
-    None
+/// How nekotrail finds the repo config an ACP agent would run.
+pub enum RepoConfig {
+    /// It reads none that can run commands.
+    None,
+    /// A check of its own (OpenCode).
+    Check(ConfigCheck),
+    /// The files its docs say it reads, read conservatively (`agentcfg::check_files`).
+    Files(&'static [RepoFile]),
 }
 
 impl AcpAgent {
     /// Defaults for a new entry: `AcpAgent { id: "cursor", name: "Cursor", bin: "cursor-agent", ..AcpAgent::BASE }`.
-    /// Give it a `repo_config` check before shipping if its repo config can run commands.
+    /// Give it a `repo_config` before shipping if its repo config can run commands.
     pub const BASE: AcpAgent = AcpAgent {
         id: "",
         name: "",
@@ -70,8 +92,16 @@ impl AcpAgent {
         login: "",
         config_off_env: &[],
         ask_env: &[],
-        repo_config: no_repo_config,
+        ask_option: None,
+        auth_method: None,
+        probe: &[],
+        repo_config: RepoConfig::None,
     };
+
+    /// Can "Ask before changes" be promised for this agent?
+    pub fn asks(&self) -> bool {
+        !self.ask_env.is_empty() || self.ask_option.is_some()
+    }
 }
 
 /// OpenCode (`opencode acp`). `OPENCODE_DISABLE_PROJECT_CONFIG` skips the repo's `opencode.json`,
@@ -85,8 +115,176 @@ pub static OPENCODE: AcpAgent = AcpAgent {
     login: "opencode auth login",
     config_off_env: &[("OPENCODE_DISABLE_PROJECT_CONFIG", "1")],
     ask_env: &[("OPENCODE_PERMISSION", r#"{"edit":"ask","bash":"ask","webfetch":"ask"}"#)],
-    repo_config: crate::agentcfg::check_opencode,
+    repo_config: RepoConfig::Check(crate::agentcfg::check_opencode),
+    ..AcpAgent::BASE
 };
+
+// The agents below come from the ACP registry (github.com/agentclientprotocol/registry) and each
+// vendor's own docs, checked 2026-11-06. Only Copilot (1.0.103) and Grok Build (1.0.70) were on
+// this Mac; their `initialize` and `session/new` answers were read live. None documents a switch
+// to load a folder without its repo config, so `config_off_env` is empty for all of them and an
+// untrusted config stops their turn; `agentcfg` says how their files are read.
+
+/// Cursor CLI. `cursor-agent`, not `agent`: Grok Build installs a binary called `agent` too.
+/// Cursor's documented flow calls `authenticate` with `cursor_login` before `session/new`.
+pub static CURSOR: AcpAgent = AcpAgent {
+    id: "cursor",
+    name: "Cursor",
+    bin: "cursor-agent",
+    login: "cursor-agent login",
+    auth_method: Some("cursor_login"),
+    repo_config: RepoConfig::Files(&[scan(".cursor/cli.json"), scan(".cursor/mcp.json"), scan(".cursor/hooks.json")]),
+    ..AcpAgent::BASE
+};
+
+/// GitHub Copilot CLI (`copilot --acp`). Offers `allow_all` (off: it asks before writes and
+/// commands), plan mode as `...session-modes#plan`, and its models over ACP. It also keeps its
+/// own folder trust: in a folder it hasn't trusted, `copilot mcp list` skipped the repo's
+/// `.mcp.json` and `.github/mcp.json`.
+pub static COPILOT: AcpAgent = AcpAgent {
+    id: "copilot",
+    name: "Copilot",
+    bin: "copilot",
+    args: &["--acp"],
+    login: "copilot login",
+    ask_option: Some(("allow_all", "off")),
+    repo_config: RepoConfig::Files(&[
+        scan(".github/hooks/"),
+        scan(".github/copilot/settings.json"),
+        scan(".github/copilot/settings.local.json"),
+        scan(".mcp.json"),
+        scan(".github/mcp.json"),
+        scan(".github/lsp.json"),
+    ]),
+    ..AcpAgent::BASE
+};
+
+/// Goose (`goose acp`). Its extensions live in the user's config; recipes in `.goose/` can name
+/// commands, so that folder is read whole.
+pub static GOOSE: AcpAgent = AcpAgent {
+    id: "goose",
+    name: "Goose",
+    bin: "goose",
+    login: "goose configure",
+    repo_config: RepoConfig::Files(&[whole(".goose/")]),
+    ..AcpAgent::BASE
+};
+
+/// Qwen Code (`qwen --acp`), a Gemini CLI fork: the same settings shape, under `.qwen/`.
+pub static QWEN: AcpAgent = AcpAgent {
+    id: "qwen",
+    name: "Qwen Code",
+    bin: "qwen",
+    args: &["--acp"],
+    login: "qwen",
+    repo_config: RepoConfig::Files(&[scan(".qwen/settings.json"), env_file(".qwen/.env"), env_file(".env")]),
+    ..AcpAgent::BASE
+};
+
+/// Moonshot's Kimi Code CLI (`kimi acp`). Sign-in is `/login` inside `kimi`.
+pub static KIMI: AcpAgent = AcpAgent {
+    id: "kimi",
+    name: "Kimi",
+    bin: "kimi",
+    login: "kimi",
+    repo_config: RepoConfig::Files(&[scan(".kimi/")]),
+    ..AcpAgent::BASE
+};
+
+/// Augment's Auggie CLI (`auggie --acp`).
+pub static AUGGIE: AcpAgent = AcpAgent {
+    id: "auggie",
+    name: "Auggie",
+    bin: "auggie",
+    args: &["--acp"],
+    login: "auggie login",
+    repo_config: RepoConfig::Files(&[scan(".augment/settings.json"), scan(".augment/settings.local.json"), scan(".augment/mcp.json"), whole(".augment/hooks/")]),
+    ..AcpAgent::BASE
+};
+
+/// xAI's Grok Build (`grok agent stdio`). `grok inspect` shows it also loads Claude Code's and
+/// Cursor's repo config (MCP servers, hooks), so those files count as its own too.
+pub static GROK: AcpAgent = AcpAgent {
+    id: "grok",
+    name: "Grok",
+    bin: "grok",
+    args: &["agent", "stdio"],
+    login: "grok login",
+    repo_config: RepoConfig::Files(&[
+        scan(".grok/"),
+        scan(".claude/settings.json"),
+        scan(".claude/settings.local.json"),
+        scan(".mcp.json"),
+        scan(".cursor/mcp.json"),
+        scan(".cursor/hooks.json"),
+    ]),
+    ..AcpAgent::BASE
+};
+
+/// Amazon's Kiro CLI (`kiro-cli acp`).
+pub static KIRO: AcpAgent = AcpAgent {
+    id: "kiro",
+    name: "Kiro",
+    bin: "kiro-cli",
+    login: "kiro-cli login",
+    repo_config: RepoConfig::Files(&[scan(".kiro/settings/"), scan(".kiro/agents/"), scan(".kiro/hooks/")]),
+    ..AcpAgent::BASE
+};
+
+/// Factory's Droid (`droid exec --output-format acp`, as Factory's own Zed guide runs it).
+pub static DROID: AcpAgent = AcpAgent {
+    id: "droid",
+    name: "Droid",
+    bin: "droid",
+    args: &["exec", "--output-format", "acp"],
+    login: "droid",
+    repo_config: RepoConfig::Files(&[scan(".factory/settings.json"), scan(".factory/settings.local.json"), scan(".factory/mcp.json"), whole(".factory/hooks/")]),
+    ..AcpAgent::BASE
+};
+
+/// Mistral Vibe. Its ACP server is its own binary, `vibe-acp`, installed with `vibe`.
+pub static VIBE: AcpAgent = AcpAgent {
+    id: "vibe",
+    name: "Vibe",
+    bin: "vibe-acp",
+    args: &[],
+    login: "vibe --setup",
+    probe: &["vibe", "--version"],
+    repo_config: RepoConfig::Files(&[scan(".vibe/config.toml"), scan(".vibe/hooks.toml"), scan(".vibe/agents/")]),
+    ..AcpAgent::BASE
+};
+
+/// Cline CLI (`cline --acp`). Its hooks are scripts in `.clinerules/hooks/`.
+pub static CLINE: AcpAgent = AcpAgent {
+    id: "cline",
+    name: "Cline",
+    bin: "cline",
+    args: &["--acp"],
+    login: "cline auth",
+    repo_config: RepoConfig::Files(&[whole(".clinerules/hooks/")]),
+    ..AcpAgent::BASE
+};
+
+/// Kilo CLI (`kilo acp`), an OpenCode fork: its own files, and OpenCode's in case it still reads them.
+pub static KILO: AcpAgent = AcpAgent {
+    id: "kilo",
+    name: "Kilo",
+    bin: "kilo",
+    login: "kilo auth login",
+    repo_config: RepoConfig::Files(&[
+        scan("kilo.json"),
+        scan("kilo.jsonc"),
+        scan(".kilo/"),
+        scan(".kilocode/mcp.json"),
+        scan("opencode.json"),
+        scan("opencode.jsonc"),
+        scan(".opencode/"),
+    ]),
+    ..AcpAgent::BASE
+};
+
+/// The ACP agents after OpenCode, in the order the UI lists them.
+pub static MORE: [&AcpAgent; 12] = [&CURSOR, &COPILOT, &GOOSE, &QWEN, &KIMI, &AUGGIE, &GROK, &KIRO, &DROID, &VIBE, &CLINE, &KILO];
 
 impl Agent for AcpAgent {
     fn id(&self) -> &'static str {
@@ -116,7 +314,17 @@ impl Agent for AcpAgent {
         None
     }
     fn repo_config(&self, dir: &Path) -> Option<(Vec<Item>, String)> {
-        (self.repo_config)(dir)
+        match self.repo_config {
+            RepoConfig::None => None,
+            RepoConfig::Check(f) => f(dir),
+            RepoConfig::Files(files) => crate::agentcfg::check_files(self.id, self.name, files, dir),
+        }
+    }
+    fn probe(&self) -> (&'static str, &'static [&'static str]) {
+        match self.probe.split_first() {
+            Some((bin, args)) => (bin, args),
+            None => (self.bin, &["--version"]),
+        }
     }
     fn needs_trusted_config(&self) -> Option<String> {
         self.config_off_env.is_empty().then(|| {
@@ -140,9 +348,26 @@ enum Step {
     New,
     /// `session/resume` or `session/load`.
     Continue,
+    /// `authenticate`, after the chat couldn't open without it.
+    Auth,
     Config,
     Prompt,
 }
+
+/// Is this mode id plan mode? Plain `plan`, or a URI ending in `#plan` (Copilot).
+fn is_plan(mode: &str) -> bool {
+    mode == "plan" || mode.ends_with("#plan") || mode.ends_with("/plan")
+}
+
+/// Modes that approve everything by themselves. Leaving plan mode never lands on one of these.
+fn runs_unattended(mode: &str) -> bool {
+    let m = mode.to_ascii_lowercase();
+    ["autopilot", "yolo", "bypass", "allow-all", "allow_all", "auto-approve", "full"].iter().any(|w| m.contains(w))
+}
+
+/// Tool kinds that only read or edit files in the worktree: what "Auto-accept edits" lets through
+/// without a card. Commands, deletes, moves and fetches still ask.
+const EDIT_KINDS: [&str; 4] = ["edit", "read", "search", "think"];
 
 /// A tool call as the agent has described it so far. Agents announce a call first and fill in
 /// its input with updates, so it reaches the chat once there is something to show.
@@ -181,11 +406,22 @@ pub struct Client {
     plan: bool,
     /// Full auto: permission requests are allowed without asking.
     auto_allow: bool,
+    /// "Auto-accept edits": requests to read or edit files are allowed without asking.
+    auto_edits: bool,
+    /// "Ask before changes", and the config option that makes this agent ask.
+    ask: Option<(&'static str, &'static str)>,
+    /// "Ask before changes" for an agent with no way to promise it.
+    ask_missing: bool,
+    auth_method: Option<&'static str>,
+    /// `authenticate` was tried once this turn.
+    authed: bool,
     next_id: u64,
     out: Vec<String>,
     waiting: HashMap<u64, Step>,
     config: VecDeque<(&'static str, Value)>,
     caps: Value,
+    /// `authMethods` from `initialize`.
+    auth_methods: Value,
     session: Option<String>,
     /// `session/load` replays the whole chat as updates first; the chat already shows it.
     replaying: bool,
@@ -225,11 +461,17 @@ impl Client {
             model: ok.model.filter(|m| *m != "default").map(str::to_string),
             plan: spec.permission_mode == "plan",
             auto_allow: spec.permission_mode == "bypassPermissions",
+            auto_edits: spec.permission_mode == "acceptEdits",
+            ask: agent.ask_option.filter(|_| spec.permission_mode == "ask"),
+            ask_missing: spec.permission_mode == "ask" && !agent.asks(),
+            auth_method: agent.auth_method,
+            authed: false,
             next_id: 0,
             out: vec![],
             waiting: HashMap::new(),
             config: VecDeque::new(),
             caps: Value::Null,
+            auth_methods: Value::Null,
             session: None,
             replaying: false,
             prompt_sent: false,
@@ -325,6 +567,18 @@ impl Client {
         self.new_session();
     }
 
+    /// After "auth required": sign in once with the agent's saved-login method, if it has one and
+    /// offered it, then open the chat again. False when there is nothing to try.
+    fn authenticate(&mut self) -> bool {
+        let Some(method) = self.auth_method.filter(|_| !self.authed) else { return false };
+        if !self.auth_methods.as_array().is_some_and(|all| all.iter().any(|m| m["id"] == method)) {
+            return false;
+        }
+        self.authed = true;
+        self.request("authenticate", json!({"methodId": method}), Step::Auth);
+        true
+    }
+
     fn new_session(&mut self) {
         self.resume = None;
         let params = json!({"cwd": self.cwd, "mcpServers": []});
@@ -360,13 +614,33 @@ impl Client {
         } else {
             None
         };
-        let has_plan = modes.as_ref().is_some_and(|(_, _, all)| all.iter().any(|m| m == "plan"));
-        if self.plan && !has_plan {
+        let plan_mode = modes.as_ref().and_then(|(_, _, all)| all.iter().find(|m| is_plan(m)).cloned());
+        if self.plan && plan_mode.is_none() {
             return self.fail(format!("{} has no plan mode, so it can't promise to only read. Pick another mode for this chat.", self.name), ev);
         }
+        if self.ask_missing {
+            return self.fail(format!("{} can't promise to ask before every change. Pick another mode for this chat.", self.name), ev);
+        }
+        if let Some((id, value)) = self.ask {
+            match find(id) {
+                Some(o) if o["options"].as_array().is_some_and(|all| all.iter().any(|v| v["value"] == value)) => {
+                    if o["currentValue"] != value {
+                        self.config.push_back(("session/set_config_option", json!({"sessionId": sid, "configId": o["id"], "value": value})));
+                    }
+                }
+                _ => return self.fail(format!("{} didn't offer its \"ask first\" setting this time, so it can't promise to ask before every change. Pick another mode for this chat.", self.name), ev),
+            }
+        }
         if let Some((option, current, all)) = modes {
-            // Plan mode stays with the agent's chat, so a later turn in another mode switches back.
-            let want = if self.plan { Some("plan".to_string()) } else if current == "plan" { all.iter().find(|m| *m != "plan").cloned() } else { None };
+            // Plan mode stays with the agent's chat, so a later turn in another mode switches back,
+            // to a mode that still asks (never one that approves everything by itself).
+            let want = if self.plan {
+                plan_mode
+            } else if is_plan(&current) {
+                all.iter().find(|m| !is_plan(m) && !runs_unattended(m)).or_else(|| all.iter().find(|m| !is_plan(m))).cloned()
+            } else {
+                None
+            };
             if let Some(w) = want.filter(|w| *w != current) {
                 self.config.push_back(match option {
                     Some(id) => ("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": w})),
@@ -403,12 +677,16 @@ impl Client {
                     return self.fail(format!("{} speaks ACP version {v}, and nekotrail speaks version {PROTOCOL_VERSION}. Update both to the latest version.", self.name), ev);
                 }
                 self.caps = r["agentCapabilities"].clone();
+                self.auth_methods = r["authMethods"].clone();
                 self.open(ev);
             }
             Step::Continue => {
                 self.replaying = false;
                 if !err.is_null() {
                     if err["code"].as_i64() == Some(AUTH_REQUIRED) {
+                        if self.authenticate() {
+                            return;
+                        }
                         return self.fail(self.error_text(err), ev);
                     }
                     ev.push(json!({"kind": "note", "text": format!("Couldn't pick up the earlier {} conversation ({}), so this message starts a new one.", self.name, err["message"].as_str().unwrap_or("unknown error"))}));
@@ -419,6 +697,9 @@ impl Client {
             }
             Step::New => {
                 if !err.is_null() {
+                    if err["code"].as_i64() == Some(AUTH_REQUIRED) && self.authenticate() {
+                        return;
+                    }
                     return self.fail(self.error_text(err), ev);
                 }
                 let Some(id) = r["sessionId"].as_str().filter(|s| !s.is_empty()) else {
@@ -427,6 +708,15 @@ impl Client {
                 self.session = Some(id.to_string());
                 ev.push(json!({"kind": "session", "agent_session_id": id}));
                 self.configure(r, ev);
+            }
+            Step::Auth => {
+                if !err.is_null() {
+                    // The saved login didn't work either: the user has to sign in again.
+                    let mut e = err.clone();
+                    e["code"] = json!(AUTH_REQUIRED);
+                    return self.fail(self.error_text(&e), ev);
+                }
+                self.open(ev);
             }
             Step::Config => {
                 if !err.is_null() {
@@ -484,6 +774,11 @@ impl Client {
         }
         if self.auto_allow
             && let Some(o) = pick(&options, &["allow_once", "allow_always"]) {
+                return self.reply(id, json!({"outcome": {"outcome": "selected", "optionId": o}}));
+            }
+        if self.auto_edits
+            && self.tools.get(&tid).is_some_and(|t| self.in_worktree_edit(t))
+            && let Some(o) = pick(&options, &["allow_once"]) {
                 return self.reply(id, json!({"outcome": {"outcome": "selected", "optionId": o}}));
             }
         let rid = approval_id();
@@ -545,6 +840,18 @@ impl Client {
             t.done = true;
             ev.push(json!({"kind": "tool_result", "id": id, "output": clip(&out), "is_error": t.status == "failed"}));
         }
+    }
+
+    /// A read or an edit ("Auto-accept edits" lets it through) whose every file is in the worktree.
+    /// No locations means we can't tell where it writes, so it asks.
+    fn in_worktree_edit(&self, t: &Tool) -> bool {
+        let Some(locs) = t.locations.as_array().filter(|l| !l.is_empty()) else { return false };
+        EDIT_KINDS.contains(&t.kind.as_str())
+            && locs.iter().all(|l| {
+                let p = l["path"].as_str().unwrap_or("");
+                // A relative path, or one with `..` in it, could point anywhere.
+                !p.split('/').any(|c| c == "..") && [&self.cwd_real, &self.cwd].iter().any(|root| p.strip_prefix(root.as_str()).is_some_and(|r| r.starts_with('/')))
+            })
     }
 
     /// A path inside the worktree, relative to it.
@@ -783,7 +1090,7 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Write};
 
-    static FAKE: AcpAgent = AcpAgent { id: "fake", name: "Fake", bin: "fake-acp", login: "fake login", ..AcpAgent::BASE };
+    static FAKE: AcpAgent = AcpAgent { id: "fake", name: "Fake", bin: "fake-acp", login: "fake login", ask_env: &[("FAKE_ASK", "1")], ..AcpAgent::BASE };
 
     fn spec<'a>(cwd: &'a Path, mode: &'a str, session: Option<&'a str>, model: Option<&'a str>) -> TurnSpec<'a> {
         TurnSpec { fork: false, agent: "fake", prompt: "hi", agent_session_id: session, model, permission_mode: mode, cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true }
@@ -1078,6 +1385,177 @@ mod tests {
         assert_eq!(out.last().unwrap()["method"], "session/new");
     }
 
+    /// A client for `agent` that has had `initialize` (with `init`) answered.
+    fn client_for(agent: &AcpAgent, cwd: &Path, mode: &str, model: Option<&str>, init: &str) -> Client {
+        let s = spec(cwd, mode, None, model);
+        let mut c = Client::new(agent, &s, &Checked { model, effort: None, session: None });
+        c.line(init);
+        sent(&mut c);
+        c
+    }
+
+    /// Copilot CLI 1.0.103's real `initialize` and `session/new` answers (models trimmed).
+    const COPILOT_INIT: &str = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"auth":{"logout":{}},"loadSession":true,"sessionCapabilities":{"close":{},"list":{}}},"authMethods":[{"id":"copilot-login","name":"Log in with Copilot CLI","description":"Run `copilot login` in the terminal"}]}}"#;
+    fn copilot_new(mode: &str, allow_all: &str) -> String {
+        let m = |x: &str| format!("https://agentclientprotocol.com/protocol/session-modes#{x}");
+        json!({"jsonrpc": "2.0", "id": 2, "result": {"sessionId": "c1",
+            "models": {"availableModels": [{"modelId": "auto", "name": "Auto"}], "currentModelId": "auto"},
+            "configOptions": [
+                {"type": "select", "id": "mode", "name": "Mode", "category": "mode", "currentValue": m(mode), "options": [{"value": m("autopilot")}, {"value": m("agent")}, {"value": m("plan")}]},
+                {"type": "select", "id": "model", "name": "Model", "category": "model", "currentValue": "auto", "options": [{"value": "auto"}]},
+                {"type": "select", "id": "allow_all", "name": "Allow All", "category": "permissions", "currentValue": allow_all, "options": [{"value": "on"}, {"value": "off"}]}],
+            "modes": {"availableModes": [{"id": m("autopilot")}, {"id": m("agent")}, {"id": m("plan")}], "currentModeId": m(mode)}}}).to_string()
+    }
+
+    #[test]
+    fn copilot_plan_mode_is_a_uri_and_ask_keeps_allow_all_off() {
+        let w = Path::new("/w");
+        // Plan mode is `...#plan`, set through its config option.
+        let mut c = client_for(&COPILOT, w, "plan", None, COPILOT_INIT);
+        c.line(&copilot_new("agent", "off"));
+        let m = sent(&mut c);
+        assert_eq!((m[0]["method"].as_str(), m[0]["params"]["configId"].as_str()), (Some("session/set_config_option"), Some("mode")));
+        assert_eq!(m[0]["params"]["value"], "https://agentclientprotocol.com/protocol/session-modes#plan");
+        // Leaving plan goes back to a mode that asks, never autopilot (listed first here).
+        let mut c = client_for(&COPILOT, w, "acceptEdits", None, COPILOT_INIT);
+        c.line(&copilot_new("plan", "off"));
+        let m = sent(&mut c);
+        assert_eq!(m[0]["params"]["value"], "https://agentclientprotocol.com/protocol/session-modes#agent");
+        // "Ask before changes" switches allow_all off when a chat had it on, and leaves it otherwise.
+        let mut c = client_for(&COPILOT, w, "ask", None, COPILOT_INIT);
+        c.line(&copilot_new("agent", "on"));
+        let m = sent(&mut c);
+        assert_eq!((m[0]["params"]["configId"].as_str(), m[0]["params"]["value"].as_str()), (Some("allow_all"), Some("off")));
+        let mut c = client_for(&COPILOT, w, "ask", None, COPILOT_INIT);
+        c.line(&copilot_new("agent", "off"));
+        assert_eq!(sent(&mut c)[0]["method"], "session/prompt");
+        // A Copilot that stops offering it can't promise to ask: no turn.
+        let mut c = client_for(&COPILOT, w, "ask", None, COPILOT_INIT);
+        let ev = c.line(r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"c1","configOptions":[]}}"#);
+        assert_eq!(kinds(&ev), ["session", "error", "done"]);
+        assert!(ev[1]["text"].as_str().unwrap().contains("can't promise to ask"));
+        // A model typed in the picker goes through its model option.
+        let mut c = client_for(&COPILOT, w, "acceptEdits", Some("gpt-6-sol"), COPILOT_INIT);
+        c.line(&copilot_new("agent", "off"));
+        let m = sent(&mut c);
+        assert_eq!((m[0]["params"]["configId"].as_str(), m[0]["params"]["value"].as_str()), (Some("model"), Some("gpt-6-sol")));
+    }
+
+    #[test]
+    fn ask_mode_needs_a_way_to_ask() {
+        // Cursor has no env or option nekotrail can rely on, so "Ask before changes" stops the turn.
+        assert!(!CURSOR.asks() && COPILOT.asks() && OPENCODE.asks());
+        let mut c = client_for(&CURSOR, Path::new("/w"), "ask", None, INIT);
+        let ev = c.line(r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s1","modes":{"currentModeId":"agent","availableModes":[{"id":"agent"},{"id":"plan"},{"id":"ask"}]}}}"#);
+        assert_eq!(kinds(&ev), ["session", "error", "done"]);
+        assert!(!sent(&mut c).iter().any(|m| m["method"] == "session/prompt"));
+        // Its plan mode works through the older `modes` object.
+        let mut c = client_for(&CURSOR, Path::new("/w"), "plan", None, INIT);
+        c.line(r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s1","modes":{"currentModeId":"agent","availableModes":[{"id":"agent"},{"id":"plan"},{"id":"ask"}]}}}"#);
+        let m = sent(&mut c);
+        assert_eq!((m[0]["method"].as_str(), m[0]["params"]["modeId"].as_str()), (Some("session/set_mode"), Some("plan")));
+    }
+
+    #[test]
+    fn auth_required_tries_the_saved_login_once() {
+        let init = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true},"authMethods":[{"id":"cursor_login","name":"Cursor login"}]}}"#;
+        let auth = r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"Authentication required"}}"#;
+        let mut c = client_for(&CURSOR, Path::new("/w"), "acceptEdits", None, init);
+        assert!(c.line(auth).is_empty());
+        let a = sent(&mut c);
+        assert_eq!((a[0]["method"].as_str(), a[0]["params"]["methodId"].as_str()), (Some("authenticate"), Some("cursor_login")));
+        c.line(&json!({"jsonrpc": "2.0", "id": a[0]["id"], "result": {}}).to_string());
+        let n = sent(&mut c);
+        assert_eq!(n[0]["method"], "session/new", "the chat opens again after signing in");
+        // Still not signed in: one try only, then the sign-in message.
+        let ev = c.line(&json!({"jsonrpc": "2.0", "id": n[0]["id"], "error": {"code": -32000, "message": "Authentication required"}}).to_string());
+        assert_eq!(kinds(&ev), ["error", "done"]);
+        assert_eq!(ev[0]["text"], "Cursor is not logged in. Run `cursor-agent login` in a terminal, then send again.");
+        // `authenticate` itself failing says the same.
+        let mut c = client_for(&CURSOR, Path::new("/w"), "acceptEdits", None, init);
+        c.line(auth);
+        let ev = c.line(r#"{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"No saved login"}}"#);
+        assert!(ev[0]["text"].as_str().unwrap().contains("not logged in"), "{ev:?}");
+        // Agents without a saved-login method (Grok's only method signs in from scratch), or
+        // whose `initialize` didn't offer it, never get `authenticate`.
+        for (agent, init) in [(&GROK, r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{},"authMethods":[{"id":"grok.com","name":"Grok"}]}}"#), (&CURSOR, INIT)] {
+            let mut c = client_for(agent, Path::new("/w"), "acceptEdits", None, init);
+            let ev = c.line(auth);
+            assert_eq!(kinds(&ev), ["error", "done"]);
+            assert!(!sent(&mut c).iter().any(|m| m["method"] == "authenticate"));
+        }
+    }
+
+    #[test]
+    fn accept_edits_answers_worktree_edits_and_asks_for_the_rest() {
+        let w = Path::new("/w/ws");
+        let opts = json!([{"optionId": "once", "kind": "allow_once", "name": "Allow"}, {"optionId": "always", "kind": "allow_always", "name": "Always"}, {"optionId": "no", "kind": "reject_once", "name": "Reject"}]);
+        let ask = |kind: &str, path: &str| json!({"jsonrpc": "2.0", "id": 5, "method": "session/request_permission", "params": {"sessionId": "s1", "toolCall": {"toolCallId": format!("{kind}{path}"), "title": "x", "kind": kind, "locations": if path.is_empty() { json!([]) } else { json!([{"path": path}]) }}, "options": opts}}).to_string();
+        for (kind, path, auto) in [
+            ("edit", "/w/ws/src/a.rs", true),
+            ("read", "/w/ws/README.md", true),
+            ("edit", "/w/ws/../other/a.rs", false),
+            ("edit", "/w/wsx/a.rs", false),
+            ("edit", "/Users/me/.zshrc", false),
+            ("edit", "", false),
+            ("execute", "/w/ws", false),
+            ("delete", "/w/ws/a.rs", false),
+        ] {
+            let (mut c, _) = started(w, "acceptEdits", None);
+            sent(&mut c);
+            let ev = c.line(&ask(kind, path));
+            if auto {
+                assert_eq!(kinds(&ev), ["tool"], "{kind} {path}");
+                assert_eq!(sent(&mut c)[0]["result"]["outcome"]["optionId"], "once", "never stretched to always");
+            } else {
+                assert_eq!(kinds(&ev), ["tool", "approval"], "{kind} {path}");
+            }
+        }
+        // "Ask before changes" asks for edits too.
+        let (mut c, _) = started(w, "ask", None);
+        sent(&mut c);
+        assert_eq!(kinds(&c.line(&ask("edit", "/w/ws/a.rs"))), ["tool", "approval"]);
+    }
+
+    #[test]
+    fn every_acp_entry_builds_its_command() {
+        let cwd = Path::new("/tmp");
+        let want: [(&str, &str, &[&str]); 12] = [
+            ("cursor", "cursor-agent", &["acp"]),
+            ("copilot", "copilot", &["--acp"]),
+            ("goose", "goose", &["acp"]),
+            ("qwen", "qwen", &["--acp"]),
+            ("kimi", "kimi", &["acp"]),
+            ("auggie", "auggie", &["--acp"]),
+            ("grok", "grok", &["agent", "stdio"]),
+            ("kiro", "kiro-cli", &["acp"]),
+            ("droid", "droid", &["exec", "--output-format", "acp"]),
+            ("vibe", "vibe-acp", &[]),
+            ("cline", "cline", &["--acp"]),
+            ("kilo", "kilo", &["acp"]),
+        ];
+        assert_eq!(MORE.map(|a| a.id), want.map(|w| w.0));
+        for (id, bin, args) in want {
+            let a = crate::agent::get(id);
+            assert_eq!((a.id(), a.bin()), (id, bin));
+            let entry = MORE.iter().find(|e| e.id == id).unwrap();
+            assert!(!entry.name.is_empty() && !entry.login.is_empty(), "{id}");
+            assert!(entry.config_off_env.is_empty() && a.needs_trusted_config().unwrap().contains(entry.name), "{id}: no documented way to skip repo config");
+            assert!(matches!(entry.repo_config, RepoConfig::Files(f) if !f.is_empty()), "{id} reads repo config conservatively");
+            for mode in ["plan", "ask", "acceptEdits", "bypassPermissions"] {
+                let env = [("FOO".to_string(), "1".to_string())];
+                let s = TurnSpec { fork: false, agent: id, prompt: "--yolo", agent_session_id: Some("--resume"), model: Some("x/y"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config: false };
+                let c = crate::agent::command(&s);
+                assert_eq!(c.get_program(), bin);
+                let got: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
+                assert_eq!(got, args, "{id} {mode}: prompt, model and session go over the protocol, never argv");
+                let envs: Vec<_> = c.get_envs().map(|(k, _)| k.to_string_lossy().to_string()).collect();
+                assert_eq!(envs, ["FOO"], "{id} {mode}");
+                assert!(crate::agent::interactive(&s));
+            }
+        }
+    }
+
     // ---------- a fake ACP agent over real stdio ----------
 
     const FAKE_ENV: &str = "NEKOTRAIL_FAKE_ACP";
@@ -1101,11 +1579,18 @@ mod tests {
         };
         let up = |u: Value| json!({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "fake-1", "update": u}});
         let say = |t: &str| up(json!({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": t}}));
+        // "auth": like Cursor, no chat until the client calls `authenticate` with the saved login.
+        let mut authed = scenario != "auth";
         while let Some(line) = lines.next() {
             let Ok(m) = serde_json::from_str::<Value>(&line) else { continue };
             let id = m["id"].clone();
             match m["method"].as_str().unwrap_or("") {
-                "initialize" => send(json!({"jsonrpc": "2.0", "id": id, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": false}, "authMethods": []}})),
+                "initialize" => send(json!({"jsonrpc": "2.0", "id": id, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": false}, "authMethods": [{"id": "fake_login", "name": "Saved login"}]}})),
+                "authenticate" => {
+                    authed = m["params"]["methodId"] == "fake_login";
+                    send(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+                }
+                "session/new" if !authed => send(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "Authentication required"}})),
                 "session/new" => {
                     let cwd = m["params"]["cwd"].as_str().unwrap_or("");
                     send(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": "fake-1", "configOptions": [
@@ -1115,7 +1600,7 @@ mod tests {
                 "session/prompt" => {
                     let text = m["params"]["prompt"][0]["text"].as_str().unwrap_or("").to_string();
                     match scenario {
-                        "chat" => {
+                        "chat" | "auth" => {
                             send(say("You said: "));
                             send(say(&text));
                             send(up(json!({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "bash", "kind": "execute", "status": "pending", "rawInput": {}})));
@@ -1189,10 +1674,14 @@ mod tests {
     /// The turn loop `lib.rs` runs, minus the app: write what the client sends, feed it every
     /// line, let `react` answer approvals or press Stop, close stdin once the turn is answered.
     fn drive(scenario: &str, mode: &str, react: impl FnMut(&Value, &mut dyn Parser) -> Vec<String>) -> Run {
+        drive_as(&FAKE, scenario, mode, react)
+    }
+
+    fn drive_as(agent: &AcpAgent, scenario: &str, mode: &str, react: impl FnMut(&Value, &mut dyn Parser) -> Vec<String>) -> Run {
         let d = tempfile::tempdir().unwrap();
         let mut cmd = Command::new(std::env::current_exe().unwrap());
         cmd.args(["--exact", "acp::tests::fake_acp_agent", "--nocapture", "--test-threads=1", "-q"]).env(FAKE_ENV, scenario);
-        drive_command(cmd, &FAKE, d.path(), mode, "hello", react)
+        drive_command(cmd, agent, d.path(), mode, "hello", react)
     }
 
     fn drive_command(mut cmd: Command, agent: &AcpAgent, cwd: &Path, mode: &str, prompt: &str, mut react: impl FnMut(&Value, &mut dyn Parser) -> Vec<String>) -> Run {
@@ -1268,6 +1757,19 @@ mod tests {
     }
 
     #[test]
+    fn stdio_signs_in_with_the_saved_login_when_asked() {
+        static FAKE_AUTH: AcpAgent = AcpAgent { id: "fake", name: "Fake", bin: "fake-acp", login: "fake login", auth_method: Some("fake_login"), ..AcpAgent::BASE };
+        let r = drive_as(&FAKE_AUTH, "auth", "acceptEdits", |_, _| vec![]);
+        assert_eq!(kinds(&r.events), ["session", "text", "tool", "tool_result", "tool", "tool_result", "text", "done"], "{:?}", r.events);
+        assert_eq!(r.events.last().unwrap()["is_error"], false);
+        // Without a saved-login method the same agent ends the turn with the sign-in hint.
+        let r = drive_as(&FAKE, "auth", "acceptEdits", |_, _| vec![]);
+        assert_eq!(kinds(&r.events), ["error", "done"]);
+        assert_eq!(r.events[0]["text"], "Fake is not logged in. Run `fake login` in a terminal, then send again.");
+        assert!(r.status.success());
+    }
+
+    #[test]
     fn stdio_cancel() {
         let mut asked = false;
         let r = drive("cancel", "ask", |ev, p| {
@@ -1325,6 +1827,41 @@ mod tests {
         assert_eq!(std::fs::read_to_string(d.path().join("b.txt")).unwrap().trim(), "bye");
         assert!(!d.path().join("pwned").exists(), "the repo's MCP server must not start");
         assert!(r.status.success());
+    }
+
+    /// A real turn with any other ACP agent that is installed and signed in, through the command
+    /// nekotrail builds: `NEKOTRAIL_REAL_ACP=copilot cargo test real_acp_turn -- --ignored --nocapture`.
+    /// `NEKOTRAIL_REAL_MODE` picks the mode (default "ask", where every change is approved here).
+    #[test]
+    #[ignore]
+    fn real_acp_turn() {
+        let id = std::env::var("NEKOTRAIL_REAL_ACP").expect("set NEKOTRAIL_REAL_ACP to an agent id");
+        let mode = std::env::var("NEKOTRAIL_REAL_MODE").unwrap_or_else(|_| "ask".into());
+        let agent = MORE.iter().find(|a| a.id == id).expect("an ACP agent id");
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("a.txt"), "hi\n").unwrap();
+        let spec = TurnSpec { fork: false, agent: agent.id, prompt: "", agent_session_id: None, model: None, permission_mode: &mode, cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
+        let built = crate::agent::command(&spec);
+        let mut cmd = Command::new(built.get_program());
+        cmd.args(built.get_args());
+        let mut asked = vec![];
+        let r = drive_command(cmd, agent, d.path(), &mode, "Run the shell command `cat a.txt`, then create a file b.txt containing the word bye, then reply with just DONE.", |ev, p| {
+            if ev["kind"] != "approval" {
+                return vec![];
+            }
+            asked.push(format!("{} {}", ev["tool"].as_str().unwrap_or(""), ev["input"].as_str().unwrap_or("")));
+            vec![p.answer(ev["request_id"].as_str().unwrap(), true, false).unwrap().unwrap()]
+        });
+        for e in &r.events {
+            eprintln!("{e}");
+        }
+        eprintln!("asked: {asked:?}\nstderr: {}", r.stderr.lines().take(8).collect::<Vec<_>>().join("\n"));
+        assert_eq!(r.events.last().unwrap()["kind"], "done");
+        assert_eq!(r.events.last().unwrap()["is_error"], false);
+        assert_eq!(std::fs::read_to_string(d.path().join("b.txt")).unwrap().trim(), "bye");
+        if mode == "ask" {
+            assert!(asked.iter().any(|a| a.contains("b.txt")), "the edit waited for Allow: {asked:?}");
+        }
     }
 
     #[test]

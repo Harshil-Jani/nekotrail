@@ -3,7 +3,9 @@ import { api as backend } from "../api";
 import { ModelPicker } from "./ModelPicker";
 import { ChevronDown, CornerDownLeft } from "lucide-react";
 import type { Agent, PermissionMode, Repo } from "../api";
-import { AGENTS, AGENT_INFO } from "../agents";
+import { AGENTS, AGENT_INFO, splitAgents } from "../agents";
+import { useInstalledAgents } from "../useInstalledAgents";
+import { AgentMenuItems } from "./AgentMenuItems";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
@@ -53,7 +55,7 @@ export function NewWorkspace({
   const saved = JSON.parse(localStorage.getItem("nekotrail.new") || "{}");
   const [repoId, setRepoId] = useState(initialRepo);
   const [prompt, setPrompt] = useState("");
-  const [agent, setAgent] = useState<Agent | "both">(saved.agent ?? "claude");
+  const [agent, setAgent] = useState<Agent | "both">(saved.agent === "both" || AGENTS.includes(saved.agent) ? saved.agent : "claude");
   const [model, setModel] = useState<string>(saved.model ?? "");
   const [effort, setEffort] = useState<string | null>(saved.effort ?? null);
   const [mode, setMode] = useState<PermissionMode>(saved.mode ?? "acceptEdits");
@@ -118,6 +120,15 @@ export function NewWorkspace({
   const onPointerUp = () => { drag.current = null; };
 
   const repo = repos.find((r) => r.id === repoId);
+  const installed = useInstalledAgents();
+  const split = splitAgents(installed, agent === "both" ? null : agent);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const choose = (a: Agent | "both") => {
+    // A model id belongs to one CLI, so a different agent starts on its own default.
+    const cli = (x: Agent | "both") => (x === "both" ? "claude" : x);
+    if (cli(a) !== cli(agent)) { setModel(""); setEffort(null); }
+    setAgent(a);
+  };
 
   return (
     <div className="nw-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -138,18 +149,25 @@ export function NewWorkspace({
           </label>
           <span className="spacer" />
           <div className="nw-agent" role="radiogroup" aria-label="Agent">
-            {([...AGENTS, "both"] as (Agent | "both")[]).map((a) => (
-              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => {
-                // A model id belongs to one CLI, so a different agent starts on its own default.
-                const cli = (x: Agent | "both") => (x === "both" ? "claude" : x);
-                if (cli(a) !== cli(agent)) { setModel(""); setEffort(null); }
-                setAgent(a);
-              }}
+            {([...split.shown, "both"] as (Agent | "both")[]).map((a) => (
+              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => choose(a)}
                 title={a === "both" ? "Run Claude and Codex side by side, then keep the better one" : undefined}>
                 {a === "both" ? "Claude + Codex" : AGENT_INFO[a].name}
               </button>
             ))}
           </div>
+          {(split.installed.length > 0 || split.missing.length > 0) && (
+            <span className="nw-more">
+              <button className="quiet" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)} title="Other agents: Cursor, Copilot, Goose and more">
+                More<ChevronDown size={12} />
+              </button>
+              {moreOpen && (
+                <span className="menu nw-more-menu" role="menu" aria-label="More agents" onMouseLeave={() => setMoreOpen(false)}>
+                  <AgentMenuItems split={split} known={installed !== null} pick={(a) => { setMoreOpen(false); choose(a); }} label={(a) => AGENT_INFO[a].full} />
+                </span>
+              )}
+            </span>
+          )}
         </div>
         <nav className="seg nw-source" role="tablist" aria-label="Start from">
           {([["task", "New branch"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"], ["stack", "On a workspace"]] as [Source, string][]).map(([id, label]) => (

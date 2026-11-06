@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { AgentConfigTrust, ScriptTrust } from "../api";
-import { agentName } from "../agents";
+import { AGENT_INFO, agentName } from "../agents";
 
 /**
  * Asks before running commands a repo brings with it, the first time and whenever they change:
@@ -14,8 +14,9 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onAnswer]);
-  // Gemini has no way to run with a repo's settings off, so "Not now" means no Gemini here.
-  const gemini = agent?.items.some((it) => it.agent === "gemini");
+  // Gemini, Cursor, Copilot and the other ACP agents but OpenCode can't run with a repo's
+  // settings off, so "Not now" means that agent doesn't run here.
+  const blocked = agent?.items.map((it) => it.agent).find((a) => AGENT_INFO[a] && !AGENT_INFO[a].configOff);
   const rows = trust ? (["setup", "run", "archive"] as const).filter((k) => trust[k]) : [];
   return (
     <div className="modal-backdrop" onClick={() => onAnswer(false)}>
@@ -27,8 +28,8 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
         {agent ? (
           <p className="muted">
             This repo commits settings that make the agent run these on your Mac as soon as a chat starts. Anyone who can push
-            to the repo or open a PR can change them. {gemini
-              ? <><b>Not now</b> means Gemini won't run in this repo. Claude and Codex still can.</>
+            to the repo or open a PR can change them. {blocked
+              ? <><b>Not now</b> means {agentName(blocked)} won't run in this repo. Claude and Codex still can.</>
               : <><b>Not now</b> still lets you chat: the agent runs without this repo's agent settings (yours stay on).</>}
             {" "}You'll be asked again if they change.
           </p>

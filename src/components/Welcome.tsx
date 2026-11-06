@@ -47,6 +47,22 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
   const otherOk = (a: Agent) => AGENTS.find((b) => b !== a && d[b]?.ok);
   const allOk = d.git.ok && d.gh.ok && agentOk;
   if (allOk && compact) return null;
+  // The first four agents and every installed one get a row; the rest fold away.
+  const front = AGENTS.filter((a, i) => i < 4 || d[a]?.ok);
+  const rest = AGENTS.filter((a) => !front.includes(a));
+  const row = (a: Agent) => {
+    const other = otherOk(a);
+    return (
+      <CheckRow
+        key={a}
+        ok={!!d[a]?.ok}
+        warn={!!other}
+        title={AGENT_INFO[a].full}
+        detail={d[a]?.ok ? d[a].version : other ? `optional, ${AGENT_INFO[other].full} is set up` : "not found"}
+        fix={<><Cmd text={AGENT_INFO[a].install} /><span className="muted">Then run <code>{AGENT_INFO[a].setup}</code> once to sign in.</span></>}
+      />
+    );
+  };
   return (
     <section className="setup-check">
       <div className="row">
@@ -62,21 +78,15 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
           detail={d.gh.login ? `@${d.gh.login}` : d.gh.installed ? "installed, not signed in" : "not installed"}
           fix={<>{!d.gh.installed && <Cmd text="brew install gh" />}<Cmd text="gh auth login" /><span className="muted">For PRs, CI status and avatars.</span></>}
         />
-        {AGENTS.map((a) => {
-          const other = otherOk(a);
-          return (
-            <CheckRow
-              key={a}
-              ok={!!d[a]?.ok}
-              warn={!!other}
-              title={AGENT_INFO[a].full}
-              detail={d[a]?.ok ? d[a].version : other ? `optional, ${AGENT_INFO[other].full} is set up` : "not found"}
-              fix={<><Cmd text={AGENT_INFO[a].install} /><span className="muted">Then run <code>{AGENT_INFO[a].setup}</code> once to sign in.</span></>}
-            />
-          );
-        })}
+        {front.map(row)}
       </ul>
-      {!agentOk && <p className="muted">You need at least one of Claude Code, Codex, Gemini CLI or OpenCode. nekotrail uses your own login and subscription.</p>}
+      {rest.length > 0 && (
+        <details className="setup-more">
+          <summary className="muted">More agents, not on this Mac: {rest.map((a) => AGENT_INFO[a].name).join(", ")}</summary>
+          <ul>{rest.map(row)}</ul>
+        </details>
+      )}
+      {!agentOk && <p className="muted">You need at least one agent, such as Claude Code, Codex, Gemini CLI or OpenCode. nekotrail uses your own login and subscription.</p>}
     </section>
   );
 }

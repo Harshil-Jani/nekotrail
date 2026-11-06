@@ -342,6 +342,10 @@ pub trait Agent: Sync {
     fn bin(&self) -> &'static str {
         self.id()
     }
+    /// What the setup check runs to see the CLI is installed: `<bin> --version` by default.
+    fn probe(&self) -> (&'static str, &'static [&'static str]) {
+        (self.bin(), &["--version"])
+    }
     /// The CLI and its arguments for one turn. `command` adds env, cwd and stdin.
     fn build(&self, spec: &TurnSpec, ok: &Checked) -> Command;
     /// A fresh reader for one turn's stdout.
@@ -385,7 +389,10 @@ pub struct Codex;
 pub struct Gemini;
 
 /// Every agent, in the order the UI lists them. ACP agents are `acp::AcpAgent` entries.
-pub static ALL: [&dyn Agent; 4] = [&Claude, &Codex, &Gemini, &crate::acp::OPENCODE];
+pub static ALL: [&dyn Agent; 16] = {
+    use crate::acp::*;
+    [&Claude, &Codex, &Gemini, &OPENCODE, &CURSOR, &COPILOT, &GOOSE, &QWEN, &KIMI, &AUGGIE, &GROK, &KIRO, &DROID, &VIBE, &CLINE, &KILO]
+};
 
 /// The agent for a stored id. Anything unknown is Claude, as it always was.
 pub fn get(id: &str) -> &'static dyn Agent {
@@ -732,22 +739,35 @@ mod tests {
     #[test]
     fn registry() {
         let ids: Vec<_> = ALL.iter().map(|a| a.id()).collect();
-        assert_eq!(ids, ["claude", "codex", "gemini", "opencode"]);
+        let acp = ["opencode", "cursor", "copilot", "goose", "qwen", "kimi", "auggie", "grok", "kiro", "droid", "vibe", "cline", "kilo"];
+        assert_eq!(ids, [&["claude", "codex", "gemini"][..], &acp[..]].concat());
         for a in ALL {
             assert_eq!(get(a.id()).id(), a.id());
         }
+        // Ids are unique, and so are the CLIs (Cursor is `cursor-agent`: Grok Build owns `agent`).
+        let mut bins: Vec<_> = ALL.iter().map(|a| a.bin()).collect();
+        bins.sort();
+        bins.dedup();
+        assert_eq!(bins.len(), ALL.len());
+        assert!(!bins.contains(&"agent"));
         // Old or unknown values keep meaning Claude, as before.
         assert_eq!(get("").id(), "claude");
         assert_eq!(get("amp").id(), "claude");
         // Claude asks mid-turn in "ask" mode; ACP agents keep stdin open for every turn.
         let ask: Vec<_> = ALL.iter().filter(|a| a.interactive("ask")).map(|a| a.id()).collect();
-        assert_eq!(ask, ["claude", "opencode"]);
-        assert_eq!(ALL.iter().filter(|a| a.interactive("acceptEdits")).map(|a| a.id()).collect::<Vec<_>>(), ["opencode"]);
+        assert_eq!(ask, [&["claude"][..], &acp[..]].concat());
+        assert_eq!(ALL.iter().filter(|a| a.interactive("acceptEdits")).map(|a| a.id()).collect::<Vec<_>>(), acp);
         // Only Claude forks.
         assert!(!get("claude").interactive("acceptEdits"));
         let forks: Vec<_> = ALL.iter().filter(|a| a.forks()).map(|a| a.id()).collect();
         assert_eq!(forks, ["claude"]);
-        assert_eq!(ALL.iter().filter(|a| a.needs_trusted_config().is_some()).map(|a| a.id()).collect::<Vec<_>>(), ["gemini"]);
+        // Only OpenCode can run with an untrusted repo config switched off; the rest stop instead.
+        let stop: Vec<_> = ALL.iter().filter(|a| a.needs_trusted_config().is_some()).map(|a| a.id()).collect();
+        assert_eq!(stop, [&["gemini"][..], &acp[1..]].concat());
+        // The setup check asks each CLI for its version; Vibe's ACP server is a second binary.
+        assert_eq!(get("cursor").probe(), ("cursor-agent", &["--version"][..]));
+        assert_eq!(get("vibe").probe(), ("vibe", &["--version"][..]));
+        assert_eq!((get("vibe").bin(), get("claude").probe().0), ("vibe-acp", "claude"));
     }
 
     #[test]

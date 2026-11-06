@@ -2314,6 +2314,21 @@ fn probe(cmd: &str, args: &[&str]) -> (bool, String) {
     }
 }
 
+/// The agents whose CLI is on PATH, found without running anything, so the agent pickers can
+/// list them first and fold the rest under "More agents".
+#[tauri::command]
+fn installed_agents() -> Vec<&'static str> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    agent::ALL.iter().filter(|a| on_path(&dirs, a.bin())).map(|a| a.id()).collect()
+}
+
+/// An executable file called `bin` in one of `dirs`.
+fn on_path(dirs: &[PathBuf], bin: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    dirs.iter().any(|d| std::fs::metadata(d.join(bin)).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0))
+}
+
 /// First-run check: git, GitHub CLI login, and the agent CLIs.
 #[tauri::command]
 async fn doctor() -> Res<Value> {
@@ -2331,9 +2346,13 @@ fn doctor_blocking() -> Value {
         "gh": {"installed": gh_installed, "ok": gh_ok, "login": login},
     });
     // One entry per agent CLI, keyed by its id. A missing one is ok: false with no version.
-    for a in agent::ALL {
-        let (ok, version) = probe(a.bin(), &["--version"]);
-        out[a.id()] = json!({"ok": ok, "version": version});
+    // Sixteen CLIs, some of them Node start-ups: ask them all at once.
+    let found: Vec<(&str, (bool, String))> = std::thread::scope(|s| {
+        let jobs: Vec<_> = agent::ALL.iter().map(|a| (a.id(), s.spawn(move || { let (bin, args) = a.probe(); probe(bin, args) }))).collect();
+        jobs.into_iter().map(|(id, j)| (id, j.join().unwrap_or((false, String::new())))).collect()
+    });
+    for (id, (ok, version)) in found {
+        out[id] = json!({"ok": ok, "version": version});
     }
     out
 }
@@ -2827,7 +2846,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work
@@ -2941,6 +2960,23 @@ mod tests {
         assert!(ws.path().join(".env.local").exists());
         assert!(ws.path().join("apps/web/.env").exists());
         assert!(!ws.path().join("README.md").exists());
+    }
+
+    #[test]
+    fn installed_means_an_executable_on_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let bin = d.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(bin.join("cursor-agent"), "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(bin.join("cursor-agent"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(bin.join("goose"), "not executable").unwrap();
+        std::fs::create_dir(bin.join("qwen")).unwrap();
+        let dirs = [d.path().join("missing"), bin];
+        assert!(on_path(&dirs, "cursor-agent"));
+        assert!(!on_path(&dirs, "goose"), "not executable");
+        assert!(!on_path(&dirs, "qwen"), "a folder");
+        assert!(!on_path(&dirs, "kimi"));
     }
 
     #[test]

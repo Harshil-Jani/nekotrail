@@ -646,6 +646,8 @@ button.good-btn:hover { background: var(--good); }
 .setup-check { width: 100%; max-width: 560px; border: 0.5px solid var(--line-strong); background: var(--surface); padding: var(--s3) var(--s4); margin: var(--s3) 0; }
 .setup-check h2 { margin: 0; font-size: 15px; }
 .setup-check ul { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.setup-more { margin-top: var(--s2); }
+.setup-more summary { cursor: pointer; font-size: 12px; }
 .check-row { display: flex; gap: var(--s2); align-items: flex-start; font-size: 13px; }
 .check-row > svg { margin-top: 2px; flex-shrink: 0; }
 .check-row.ok > svg { color: var(--good); }
@@ -800,6 +802,17 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .nw-agent { gap: 2px; padding: 2px; border-radius: var(--r-md); background: var(--hover); border: none; }
 .nw-agent button { height: 22px; border: none; border-radius: var(--r); background: transparent; box-shadow: none; color: var(--muted); }
 .nw-agent button.on { background: var(--raised); color: var(--text); box-shadow: var(--shadow-control), 0 0 0 0.5px var(--line); }
+/* "More agents": the agents not up front, in a menu that scrolls instead of running off a short window. */
+.nw-more { position: relative; flex-shrink: 0; }
+.nw-more > button { height: 26px; gap: 2px; padding: 0 var(--s2); font-size: 13px; }
+.nw-more-menu { min-width: 200px; max-height: min(420px, 60vh); overflow-y: auto; cursor: default; }
+.nw-more-menu > * { flex-shrink: 0; }
+.nw-more-menu button { width: 100%; justify-content: flex-start; text-align: left; }
+.nw-more-menu .menu-icon-space { flex: none; }
+.newchat-more { display: flex; flex-direction: column; }
+/* With "More agents" open the + menu is long: it scrolls rather than run off a short window. */
+.chat-tabs .newchat-menu { max-height: calc(100vh - 140px); overflow-y: auto; }
+.chat-tabs .newchat-menu > *, .newchat-more > * { flex-shrink: 0; }
 .nw-prompt { box-shadow: none !important; background: transparent; }
 .nw-list button { height: auto; min-height: 32px; border-radius: var(--r-md); margin: 0 6px; background: transparent; box-shadow: none; }
 .nw-list button.on { background: var(--accent-soft); box-shadow: none; }

@@ -74,7 +74,10 @@ export type StackParent = {
 
 export type Section = { id: string; name: string; sort: number };
 
-export type Agent = "claude" | "codex" | "gemini" | "opencode";
+/** Every agent CLI nekotrail drives (src/agents.ts lists them in order). */
+export type Agent = McpAgent | "cursor" | "copilot" | "goose" | "qwen" | "kimi" | "auggie" | "grok" | "kiro" | "droid" | "vibe" | "cline" | "kilo";
+/** The agents MCP server and skill sharing knows (src-tauri/src/mcpshare.rs). */
+export type McpAgent = "claude" | "codex" | "gemini" | "opencode";
 export type PermissionMode = "plan" | "default" | "ask" | "acceptEdits" | "bypassPermissions";
 
 export type Session = {
@@ -193,20 +196,20 @@ export const starFor = (sky: Sky, name: string) => {
 };
 export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find((c) => c.slug === star.constellation)!;
 
-/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/; .gemini/ and .env for Gemini; opencode.json and .opencode/ for OpenCode) would run, not trusted yet. */
+/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/; .gemini/ and .env for Gemini; opencode.json and .opencode/ for OpenCode; each other ACP agent's own files) would run, not trusted yet. */
 export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
 export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
 
 /** MCP servers and skills across Claude, Codex, Gemini and OpenCode (src-tauri/src/mcpshare.rs). */
-export type McpHas = { agent: Agent; scope: "user" | "local" | "project"; file: string };
+export type McpHas = { agent: McpAgent; scope: "user" | "local" | "project"; file: string };
 export type McpSecret = { id: string; kind: "env" | "header" | "arg" | "url"; key: string; can_ref: boolean };
 export type McpRow = {
   name: string; transport: "stdio" | "http" | "sse" | "ws" | null; summary: string; env: string[];
-  has: McpHas[]; from: McpHas; secrets: McpSecret[]; targets: { agent: Agent; ok: boolean; why: string | null }[]; problem: string | null;
+  has: McpHas[]; from: McpHas; secrets: McpSecret[]; targets: { agent: McpAgent; ok: boolean; why: string | null }[]; problem: string | null;
 };
 export type SkillShare = { target: "agents" | "claude"; label: string; link: string; to: string; ok: boolean; why: string | null };
-export type SkillRow = { name: string; description: string; has: Agent[]; share: SkillShare[] };
-export type McpOverview = { servers: McpRow[]; skills: SkillRow[]; files: Record<Agent, string>; opencode_skill_dirs: string[]; problems: string[] };
+export type SkillRow = { name: string; description: string; has: McpAgent[]; share: SkillShare[] };
+export type McpOverview = { servers: McpRow[]; skills: SkillRow[]; files: Record<McpAgent, string>; opencode_skill_dirs: string[]; problems: string[] };
 /** How each secret comes across: as a variable, or a copy of the value. */
 export type SecretChoices = Record<string, "ref" | "copy">;
 export type McpPreview = { file: string; creates: boolean; backup: string | null; snippet: string; notes: string[]; blockers: string[]; asks: string[]; secrets: McpSecret[]; token: string };
@@ -266,9 +269,9 @@ export const api = {
   modelCatalog: () => invoke<ModelCatalog>("model_catalog"),
   mcpList: (id: string, agent: Agent) => invoke<string>("mcp_list", { id, agent }),
   mcpShareOverview: (id: string) => invoke<McpOverview>("mcp_share_overview", { id }),
-  mcpSharePreview: (id: string, name: string, target: Agent, choices: SecretChoices) =>
+  mcpSharePreview: (id: string, name: string, target: McpAgent, choices: SecretChoices) =>
     invoke<McpPreview>("mcp_share_preview", { id, name, target, choices }),
-  mcpShareApply: (id: string, name: string, target: Agent, choices: SecretChoices, token: string) =>
+  mcpShareApply: (id: string, name: string, target: McpAgent, choices: SecretChoices, token: string) =>
     invoke<{ file: string; backup: string | null }>("mcp_share_apply", { id, name, target, choices, token }),
   skillShare: (name: string, target: "agents" | "claude") => invoke<string>("skill_share", { name, target }),
   slashCommands: (id: string) => invoke<[string, string][]>("slash_commands", { id }),
@@ -342,6 +345,8 @@ export const api = {
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),
   ptyClose: (id: string) => invoke<void>("pty_close", { id }),
   doctor: () => invoke<Doctor>("doctor"),
+  /** Agents whose CLI is on PATH (nothing is run): pickers list these first. */
+  installedAgents: () => invoke<Agent[]>("installed_agents"),
   githubRepos: () => invoke<{ nameWithOwner: string; description: string; pushedAt: string; isPrivate: boolean }[]>("github_repos"),
   cloneRepo: (spec: string) => invoke<Repo>("clone_repo", { spec }),
   importPreview: () => invoke<ImportReport>("import_preview"),
