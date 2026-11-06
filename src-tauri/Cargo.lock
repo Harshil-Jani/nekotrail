@@ -2212,8 +2212,12 @@ name = "nekotrail"
 version = "0.10.1"
 dependencies = [
  "anyhow",
+ "block2",
  "chrono",
  "dirs 6.0.0",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "portable-pty",
  "rand 0.9.5",
  "rusqlite",

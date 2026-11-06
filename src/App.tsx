@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow } from "lucide-react";
 import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -24,6 +24,8 @@ import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { Settings } from "./components/Settings";
 import { chime, getSettings, saveSettings, ting } from "./settings";
+// Loaded the first time someone opens the Preview tab, so it costs nothing at startup.
+const Preview = lazy(() => import("./components/Preview").then((m) => ({ default: m.Preview })));
 import { UserAttentionType } from "@tauri-apps/api/window";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
@@ -39,12 +41,13 @@ async function notify(title: string, body: string) {
 }
 import "./App.css";
 
-type Tab = "chat" | "changes" | "terminal" | "notes";
-const TAB_KEYS: Record<Tab, string> = { chat: "⌘L", changes: "⌘⇧D", terminal: "⌘J", notes: "" };
+type Tab = "chat" | "changes" | "terminal" | "preview" | "notes";
+const TAB_KEYS: Record<Tab, string> = { chat: "⌘L", changes: "⌘⇧D", terminal: "⌘J", preview: "⌘⌥P", notes: "" };
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "changes", label: "Changes" },
   { id: "terminal", label: "Terminal" },
+  { id: "preview", label: "Preview" },
   { id: "notes", label: "Notes" },
 ];
 
@@ -101,6 +104,7 @@ export default function App() {
   const [canImport, setCanImport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inject, setInject] = useState<{ text: string; nonce: number } | undefined>();
+  const [append, setAppend] = useState<{ text: string; nonce: number } | undefined>();
   // Run and setup scripts that are alive (pty ids), the terminal tab to show, and dev-server URLs.
   const [livePtys, setLivePtys] = useState<Set<string>>(new Set());
   const [termFocus, setTermFocus] = useState<{ tab: string; nonce: number } | undefined>();
@@ -152,6 +156,7 @@ export default function App() {
     else if (a === "run") runScript();
     else if (a === "diff") setTab("changes");
     else if (a === "terminal") setTab("terminal");
+    else if (a === "preview") setTab("preview");
   };
   useEffect(() => {
     const on = (e: Event) => actionRef.current((e as CustomEvent<string>).detail);
@@ -198,6 +203,11 @@ export default function App() {
     setTermFocus({ tab: tabName, nonce: Date.now() });
   };
   const [notes, setNotes] = useState("");
+  // Workspaces whose Preview tab has been opened; only those keep a live page.
+  const [previewOn, setPreviewOn] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (tab === "preview" && selected) setPreviewOn((s) => (s.has(selected) ? s : new Set(s).add(selected)));
+  }, [tab, selected]);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [sidebarW, setSidebarW] = useState(() => Math.max(244, Number(localStorage.getItem("nekotrail.sidebar")) || 264));
   const [resizing, setResizing] = useState(false);
@@ -598,7 +608,7 @@ export default function App() {
   };
 
   // ⌘R: start the run script, or stop it if it is running.
-  const runScript = async () => {
+  const runScript = async (opts?: { stay?: boolean }) => {
     if (!ws) return;
     const id = `${ws.id}:run`;
     if (livePtys.has(id)) {
@@ -608,7 +618,7 @@ export default function App() {
     }
     const s = await api.workspaceScripts(ws.id);
     if (!s.run) return setSettingsFor(ws.repo_id);
-    setTab("terminal");
+    if (!opts?.stay) setTab("terminal");
     await startPty(id, ws.path, s.run, "run");
   };
   const rerunSetup = async () => {
@@ -681,9 +691,10 @@ export default function App() {
         { id: "tab-chat", group: here, label: "Show chat", hint: "⌘L", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
         { id: "tab-changes", group: here, label: "Show changes", hint: "⌘⇧D", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
         { id: "tab-term", group: here, label: "Show terminal", hint: "⌘J", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "tab-preview", group: here, label: "Show preview", hint: "⌘⌥P", keywords: "browser localhost app web annotate screenshot", icon: <AppWindow size={15} />, run: () => setTab("preview") },
         { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
-        { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: runScript },
+        { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: () => runScript() },
         { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
         { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
         { id: "pr", group: here, label: "Go to PR actions", keywords: "github pull request create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
@@ -754,17 +765,18 @@ export default function App() {
       if (!ws) return;
       if (k === "j" && !e.shiftKey) return go(() => setTab((t) => (t === "terminal" ? "chat" : "terminal")));
       if (k === "d" && e.shiftKey) return go(() => setTab("changes"));
+      if (e.altKey && !e.shiftKey && e.code === "KeyP") return go(() => setTab((t) => (t === "preview" ? "chat" : "preview")));
       if (k === "l" && !e.shiftKey && !e.altKey) return go(() => { setTab("chat"); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()); });
       if (k === "a" && e.shiftKey) return go(() => archive());
       if (e.key === "Backspace" && e.shiftKey) return go(() => { for (const id of runningSessions) api.stop(id); });
       if (k === "o" && !e.shiftKey) return go(() => openInEditor());
-      if (k === "r" && !e.shiftKey) return go(runScript);
+      if (k === "r" && !e.shiftKey) return go(() => runScript({ stay: tab === "preview" }));
       if (k === "b" && e.shiftKey) return go(openLocal);
       if (k === "p" && !e.shiftKey) return go(() => api.workspaceFiles(ws.id).then(setQuickOpen).catch((er) => say(errText(er), true)));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls, runningSessions]);
+  }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls, runningSessions, tab]);
 
   const settingsRepo = repos.find((r) => r.id === settingsFor);
 
@@ -897,9 +909,9 @@ export default function App() {
                       <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Columns2 size={14} />Compare</button>
                     )}
                     {livePtys.has(`${ws.id}:run`) ? (
-                      <button className="danger" onClick={runScript} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
+                      <button className="danger" onClick={() => runScript()} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
                     ) : (
-                      <button onClick={runScript} title="Run the repo's run script (⌘R)"><Play size={14} />Run</button>
+                      <button onClick={() => runScript({ stay: tab === "preview" })} title="Run the repo's run script (⌘R)"><Play size={14} />Run</button>
                     )}
                     {(repo?.prefs?.actions?.length ?? 0) > 0 && (
                       <span className="git-menu">
@@ -974,13 +986,29 @@ export default function App() {
               ) : (
                 <>
                   <div className="pane" hidden={tab !== "chat"}>
-                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} />
+                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
                     {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={refreshKey} focusFile={focusFile} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
-                    <TerminalPanel key={ws.id} wsId={ws.id} cwd={ws.path} running={livePtys} focus={termFocus} onRun={runScript} onSetup={rerunSetup} />
+                    <TerminalPanel key={ws.id} wsId={ws.id} cwd={ws.path} running={livePtys} focus={termFocus} onRun={() => runScript()} onSetup={rerunSetup} />
+                  </div>
+                  <div className="pane" hidden={tab !== "preview"}>
+                    {previewOn.has(ws.id) && (
+                      <Suspense fallback={null}>
+                        <Preview
+                          key={ws.id}
+                          workspaceId={ws.id}
+                          detected={localUrls[ws.id]}
+                          running={livePtys.has(`${ws.id}:run`)}
+                          active={tab === "preview"}
+                          onRun={() => runScript({ stay: true })}
+                          onAttach={(text) => { setTab("chat"); setAppend({ text, nonce: Date.now() }); say("Screenshot attached. Add anything else and send."); }}
+                          onSay={say}
+                        />
+                      </Suspense>
+                    )}
                   </div>
                   <div className="pane" hidden={tab !== "notes"}>
                     <textarea

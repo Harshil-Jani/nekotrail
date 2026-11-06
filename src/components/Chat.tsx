@@ -375,12 +375,15 @@ export function Chat({
   running,
   onRunningChange,
   inject,
+  append,
 }: {
   workspaceId: string;
   running: Set<string>;
   onRunningChange: () => void;
   /** Text to drop into the composer (from PR buttons), for the user to review and send. */
   inject?: { text: string; nonce: number };
+  /** Text to add to the end of the draft without replacing it (Annotate in the Preview tab). */
+  append?: { text: string; nonce: number };
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -546,6 +549,11 @@ export function Chat({
   useEffect(() => {
     if (inject?.text) setDraft(inject.text);
   }, [inject?.nonce]);
+  useEffect(() => {
+    if (!append?.text) return;
+    setDraft((d) => `${d}${d && !/\s$/.test(d) ? "\n" : ""}${append.text} `);
+    requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+  }, [append?.nonce]);
 
   const rows = useMemo(() => toRows(events), [events]);
   const [liveTokens, setLiveTokens] = useState<number | null>(null);
@@ -627,7 +635,7 @@ export function Chat({
       case "/run":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: arg ? `run:${arg}` : "run" }));
         return true;
-      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal":
+      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal": case "/preview":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: cmd.slice(1) }));
         return true;
       case "/add-dir": {
@@ -711,6 +719,7 @@ export function Chat({
     ["/pr", "Commit, push and create the PR (⌘⇧P)"], ["/merge", "Merge the PR (⌘⇧M)"], ["/pull", "Merge the latest target branch (⌘⇧L)"],
     ["/fix-ci", "Fix failing checks from their logs (⌘⇧X)"],
     ["/run", "Run or stop the app (⌘R), or /run test for a named action"], ["/diff", "Show the changes (⌘⇧D)"], ["/terminal", "Open the terminal (⌘J)"],
+    ["/preview", "Show the running app (⌘⌥P)"],
     ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
     ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];

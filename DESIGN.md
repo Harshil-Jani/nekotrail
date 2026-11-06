@@ -16,7 +16,7 @@ nekotrail follows Apple's macOS Human Interface Guidelines: it should feel like 
 - **Window:** overlay title bar. The traffic lights sit in the sidebar head (84px left inset). The 52px toolbar and sidebar head are drag regions.
 - **Sidebar:** a source list with 11px section headers, inset rounded rows and grey selection. Repo actions appear on hover.
 - **Toolbar:** title and subtitle on the left; Compare, Run, Open in and a "⋯" menu on the right.
-- **Tabs:** Chat, Changes and Terminal form a segmented control. Chat and terminal sessions are compact rounded tabs.
+- **Tabs:** Chat, Changes, Terminal and Preview form a segmented control. Preview shows the workspace's local dev server; Annotate marks it up in cat orange. Chat and terminal sessions are compact rounded tabs.
 - **Buttons:** push buttons are 26px. The primary action is accent-filled. Quiet and icon buttons are borderless with a hover fill. Merge is system green.
 - **Composer:** one 12px rounded field with its controls inside: agent, one model and intelligence picker ("Opus 5.5 · High", ⌘/), permissions, attach, context ring and Send.
 - **Menus:** 5px inset, 24px rows, and the accent fill on hover, as in macOS menus.

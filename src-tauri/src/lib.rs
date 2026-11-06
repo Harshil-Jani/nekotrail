@@ -3,6 +3,7 @@ pub mod config;
 pub mod git;
 pub mod importer;
 pub mod names;
+pub mod preview;
 pub mod pty;
 pub mod store;
 
@@ -1594,6 +1595,19 @@ async fn save_attachment(st: State<'_, AppState>, id: String, name: String, byte
     Ok(rel)
 }
 
+/// Preview tab: is the dev server at `url` up, and does it allow being shown in a frame?
+/// Local addresses only; anything else is refused.
+#[tauri::command]
+async fn preview_probe(url: String) -> Res<preview::Probe> {
+    tauri::async_runtime::spawn_blocking(move || preview::probe(&url)).await.map_err(e)?
+}
+
+/// Annotate: a PNG of the app window's web view as it looks right now (the UI crops it to the preview).
+#[tauri::command]
+async fn preview_snapshot(webview: tauri::Webview) -> Res<tauri::ipc::Response> {
+    Ok(tauri::ipc::Response::new(preview::snapshot_png(webview).await?))
+}
+
 fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
     let _ = app.emit("agent", json!({"session_id": session_id, "event": ev}));
 }
@@ -2045,7 +2059,7 @@ pub fn run() {
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
-            restore_checkpoint, workspace_files, save_attachment,
+            restore_checkpoint, workspace_files, save_attachment, preview_probe, preview_snapshot,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
