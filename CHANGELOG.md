@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.13.0 (2026-11-06)
 
 **Protected files**
 - Protect files per repo (`.env*`, `migrations/**`, `infra/**`) in Repo settings or in `nekotrail.json`. The repo file can add to your list but never remove from it.
