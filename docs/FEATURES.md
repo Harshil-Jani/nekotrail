@@ -32,7 +32,7 @@ This list was built from Conductor's public changelog (about 150 entries, July 2
 2. **Edit files in the diff view.**
 3. **Mid-turn tool approval** (needs Claude Code's streaming input mode).
 4. **Notarized builds and auto-update.**
-5. **Browser preview and port forwarding** for web apps.
+5. **Port forwarding** for web apps. (The Preview tab already shows localhost dev servers, with Annotate.)
 6. **Workspace links** (`nekotrail://ws/<id>`) to share in chat.
 
 ## Skipping for now

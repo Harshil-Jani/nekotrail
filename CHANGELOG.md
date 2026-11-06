@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Preview**
+- New Preview tab (⌘4): see your running app inside the workspace, with reload, open in browser and a localhost-only address bar.
+- Annotate: freeze the page, draw boxes and arrows, add a note, and it lands in your chat draft as a screenshot the agent can see.
+- Nothing running? Start the Run script from Preview in one click. It shows your app as soon as the server answers.
+- Preview only ever loads local addresses, even if you click a link inside your app.
+
 **Updates**
 - nekotrail now tells you when a new version is out: a small card with the cat, what's new, and Update or Not now. "Not now" waits a day before asking about that version again; a newer one asks right away.
 - Update downloads in the background while you keep working. If agents or terminal commands are running, it says how many and lets you restart now or once everything is idle.

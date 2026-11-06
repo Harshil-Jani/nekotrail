@@ -244,6 +244,10 @@ export const api = {
   workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),
   saveAttachment: async (id: string, file: File) =>
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
+  /** Preview tab: is a local dev server up, and will it show inside a frame? Local addresses only. */
+  previewProbe: (url: string) => invoke<{ up: boolean; status: number | null; blocked: string | null }>("preview_probe", { url }),
+  /** PNG of the whole app web view right now, at screen resolution (Annotate crops it). */
+  previewSnapshot: () => invoke<ArrayBuffer>("preview_snapshot"),
   /** Start a shell, or reattach to a running one; returns what it printed so far. */
   ptyOpen: (id: string, cwd: string, cols: number, rows: number) => invoke<string>("pty_open", { id, cwd, cols, rows }),
   /** Run the workspace's setup or run script; `id` is `<workspace id>:<script>`. The backend looks the command up. */

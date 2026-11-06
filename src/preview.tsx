@@ -6,6 +6,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import catalog from "../src-tauri/src/models.json";
 import { highlights } from "./updateNotes";
@@ -191,11 +192,51 @@ mockIPC(
         { agent: "claude", file: ".mcp.json", what: "MCP server db", command: "npx -y @acme/db-mcp --readonly" },
         { agent: "codex", file: ".codex/config.toml", what: "shell env", command: "ZDOTDIR=./tools/shell" },
       ] } : null;
+      // Preview tab. ?previewUrl=http://localhost:5173 pretends the Run script printed that address;
+      // ?previewDown and ?previewBlocked show those states. The snapshot is a drawn stand-in,
+      // since a browser page can't photograph a cross-origin frame (the app does it natively).
+      case "preview_probe": return location.search.includes("previewDown") ? { up: false, status: null, blocked: null }
+        : location.search.includes("previewBlocked") ? { up: true, status: 200, blocked: "x-frame-options" } : null;
+      case "preview_snapshot": return fakeSnapshot();
+      case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
       default: return null;
     }
   },
   { shouldMockEvents: true },
 );
+
+/** A window-sized PNG with a plain made-up page where the preview frame is. */
+async function fakeSnapshot(): Promise<ArrayBuffer> {
+  const s = 2;
+  const c = document.createElement("canvas");
+  c.width = window.innerWidth * s;
+  c.height = window.innerHeight * s;
+  const g = c.getContext("2d")!;
+  g.scale(s, s);
+  const r = document.querySelector(".preview-frame")!.getBoundingClientRect();
+  g.fillStyle = "#ffffff";
+  g.fillRect(r.left, r.top, r.width, r.height);
+  g.fillStyle = "#1d1d1f";
+  g.fillRect(r.left, r.top, r.width, 56);
+  g.fillStyle = "#ffffff";
+  g.font = "600 16px -apple-system, sans-serif";
+  g.fillText("Pawprint", r.left + 24, r.top + 34);
+  g.fillStyle = "#1d1d1f";
+  g.font = "700 32px -apple-system, sans-serif";
+  g.fillText("Tickets", r.left + 24, r.top + 120);
+  for (let i = 0; i < 5; i++) {
+    g.fillStyle = i % 2 ? "#f5f5f7" : "#ffffff";
+    g.fillRect(r.left + 24, r.top + 150 + i * 44, r.width - 48, 44);
+    g.fillStyle = "#3a3a3c";
+    g.font = "14px -apple-system, sans-serif";
+    g.fillText(`#${1040 + i}  Gateway returns 502 after deploy`, r.left + 36, r.top + 177 + i * 44);
+  }
+  const blob: Blob = await new Promise((res) => c.toBlob((b) => res(b!), "image/png"));
+  return blob.arrayBuffer();
+}
+
+const previewUrl = new URLSearchParams(location.search).get("previewUrl");
+if (previewUrl) setTimeout(() => emit("pty", { id: "w1:run", data: `listening on ${previewUrl}\r\n` }), 400);
 
 // A small slice of the sky from src-tauri/src/names.rs, enough for screenshots.
 const SKY = {
