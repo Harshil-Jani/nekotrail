@@ -261,7 +261,7 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
                       const c = costText(r);
                       return (
                         <tr key={r.key}>
-                          <th scope="row" className={by === "model" ? "mono" : undefined}>{keyName(by, r.key, repoName, today, yesterday)}</th>
+                          <th scope="row" className={by === "model" && r.key ? "mono" : undefined}>{keyName(by, r.key, repoName, today, yesterday)}</th>
                           <td className="num">{r.turns.toLocaleString()}</td>
                           <td className="num">{tokenText(r)}</td>
                           <td className="num">{r.token_turns ? tokens(r.cached) : <span className="muted">Not reported</span>}</td>
