@@ -1309,3 +1309,7 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .menu-icon-space { width: 13px; flex-shrink: 0; display: inline-block; }
 .preview-empty p code { white-space: nowrap; }
 .confirm-body { display: flex; flex-direction: column; gap: var(--s2); }
+/* Disabled filled buttons go neutral, as on macOS: half-transparent orange or green turned muddy on dark. */
+button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
+  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08)); color: var(--faint); box-shadow: none; border-color: transparent; opacity: 1;
+}
