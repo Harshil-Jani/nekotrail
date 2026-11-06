@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.18.0 (2026-11-07)
 
 **VS Code and Cursor extension**
 - New extension (`extensions/vscode`): lists the open repo's workspaces with state, agent, PR and needs-you. Click one to see its changes in the editor's diff view, or open its worktree in a new window.
