@@ -55,7 +55,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
             {!all && !error && <p className="muted"><span className="spinner" /> Reading your Claude, Codex, Gemini and OpenCode settings…</p>}
             {all && (
               <>
-                <AgentHead title="Servers" />
+                <AgentHead title="Servers" cols={all.servers.length > 0} />
                 {all.servers.length === 0 && <p className="muted">None of your agents has an MCP server yet.</p>}
                 {all.servers.length > 0 && (
                   <ul className="mcp-list">
@@ -91,7 +91,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
                   <details className="mcp-raw-wrap"><summary className="muted">What {bin} says</summary><pre className="mcp-raw">{text}</pre></details>
                 )}
                 {liveError && <p className="muted">Couldn't ask {bin} which servers it reaches: {liveError}</p>}
-                <AgentHead title="Skills" />
+                <AgentHead title="Skills" cols={all.skills.length > 0} />
                 <Skills skills={all.skills} opencodeNote={opencodeSkillsNote(all.opencode_skill_dirs)} onDone={(m) => { setDone(m); load(); }} />
               </>
             )}
@@ -255,11 +255,11 @@ function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencode
 }
 
 /** The section label with the agent column names over the cells below it. */
-function AgentHead({ title }: { title: string }) {
+function AgentHead({ title, cols }: { title: string; cols: boolean }) {
   return (
     <div className="mcp-head">
       <h3 className="mcp-h">{title}</h3>
-      <div className="mcp-agents" aria-hidden>{AGENTS.map((a) => <span key={a}>{agentName(a)}</span>)}</div>
+      {cols && <div className="mcp-agents" aria-hidden>{AGENTS.map((a) => <span key={a}>{agentName(a)}</span>)}</div>}
     </div>
   );
 }
