@@ -2270,7 +2270,9 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 /* The line a hand-off leaves in each chat, pointing at the other one. */
 .msg.note.handoff-mark { color: var(--text); }
 .msg.note.handoff-mark svg { color: var(--accent-text); flex-shrink: 0; }
-.msg.note.handoff-mark button.link { font-size: 12.5px; }
+.msg.note.handoff-mark .handoff-mark-text { font-weight: 600; }
+.msg.note.handoff-mark button.link { font-size: 12.5px; display: inline-flex; align-items: center; gap: 2px; }
+.msg.note.handoff-mark button.link svg { color: inherit; }
 /* The brief a hand-off sent, folded at the top of the chat that picked it up. */
 .msg.user.handoff-brief-msg { white-space: normal; min-width: 280px; }
 .handoff-brief-msg summary { cursor: pointer; font-weight: 600; font-size: 13px; }

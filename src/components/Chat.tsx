@@ -434,7 +434,11 @@ function HandoffMark({ ev }: { ev: Extract<ChatEvent, { kind: "handoff" }> }) {
   return (
     <div className="msg note handoff-mark" role="note">
       <ArrowRightLeft size={14} aria-hidden />
-      <button className="link" onClick={() => openChat(ev.session_id)} title={ev.dir === "to" ? "Open the chat that carries on" : "Open the chat this one continues"}>{markerText(ev)}</button>
+      <span className="handoff-mark-text">{markerText(ev)}</span>
+      <span className="spacer" />
+      <button className="link" onClick={() => openChat(ev.session_id)} title={ev.dir === "to" ? "Open the chat that carries on" : "Open the chat this one continues"}>
+        Open {agentName(ev.agent)}'s chat<ChevronRight size={13} aria-hidden />
+      </button>
     </div>
   );
 }
