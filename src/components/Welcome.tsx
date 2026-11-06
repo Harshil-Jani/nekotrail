@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
-import { api, errText, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
+import { api, errText, type Agent, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
+import { AGENTS, AGENT_INFO } from "../agents";
 import { Mascot, type Mood } from "./Mascot";
 
 /** A command the user can copy, for anything that has to be installed or signed in. */
@@ -35,13 +36,15 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
   const run = () => {
     setBusy(true);
     api.doctor()
-      .then((x) => { setD(x); onStatus?.({ allOk: x.git.ok && x.gh.ok && (x.claude.ok || x.codex.ok), ghOk: x.gh.ok }); })
+      .then((x) => { setD(x); onStatus?.({ allOk: x.git.ok && x.gh.ok && AGENTS.some((a) => x[a]?.ok), ghOk: x.gh.ok }); })
       .catch(() => {})
       .finally(() => setBusy(false));
   };
   useEffect(run, []);
   if (!d) return <p className="muted"><span className="spinner" /> Checking your setup…</p>;
-  const agentOk = d.claude.ok || d.codex.ok;
+  const agentOk = AGENTS.some((a) => d[a]?.ok);
+  // The first other agent that works, for "optional, Codex is set up".
+  const otherOk = (a: Agent) => AGENTS.find((b) => b !== a && d[b]?.ok);
   const allOk = d.git.ok && d.gh.ok && agentOk;
   if (allOk && compact) return null;
   return (
@@ -59,22 +62,21 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
           detail={d.gh.login ? `@${d.gh.login}` : d.gh.installed ? "installed, not signed in" : "not installed"}
           fix={<>{!d.gh.installed && <Cmd text="brew install gh" />}<Cmd text="gh auth login" /><span className="muted">For PRs, CI status and avatars.</span></>}
         />
-        <CheckRow
-          ok={d.claude.ok}
-          warn={d.codex.ok}
-          title="Claude Code"
-          detail={d.claude.ok ? d.claude.version : d.codex.ok ? "optional, Codex is set up" : "not found"}
-          fix={<><Cmd text="npm install -g @anthropic-ai/claude-code" /><span className="muted">Then run <code>claude</code> once to sign in.</span></>}
-        />
-        <CheckRow
-          ok={d.codex.ok}
-          warn={d.claude.ok}
-          title="Codex"
-          detail={d.codex.ok ? d.codex.version : d.claude.ok ? "optional, Claude Code is set up" : "not found"}
-          fix={<><Cmd text="npm install -g @openai/codex" /><span className="muted">Then run <code>codex</code> once to sign in.</span></>}
-        />
+        {AGENTS.map((a) => {
+          const other = otherOk(a);
+          return (
+            <CheckRow
+              key={a}
+              ok={!!d[a]?.ok}
+              warn={!!other}
+              title={AGENT_INFO[a].full}
+              detail={d[a]?.ok ? d[a].version : other ? `optional, ${AGENT_INFO[other].full} is set up` : "not found"}
+              fix={<><Cmd text={AGENT_INFO[a].install} /><span className="muted">Then run <code>{a}</code> once to sign in.</span></>}
+            />
+          );
+        })}
       </ul>
-      {!agentOk && <p className="muted">You need at least one of Claude Code or Codex. nekotrail uses your own login and subscription.</p>}
+      {!agentOk && <p className="muted">You need at least one of Claude Code, Codex or Gemini CLI. nekotrail uses your own login and subscription.</p>}
     </section>
   );
 }

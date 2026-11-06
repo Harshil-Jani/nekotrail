@@ -5,6 +5,7 @@ import { api, avatar, errText, type Pr, type Repo, type Workspace } from "../api
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
 import { getSettings } from "../settings";
+import { agentName, otherAgent } from "../agents";
 
 type Checks = { cls: "good" | "bad" | "wait"; text: string; names: string[] };
 
@@ -178,9 +179,9 @@ export function PrBar({
       id: "second", label: "Get a second opinion from the other agent", keys: "", icon: <ScanSearch size={15} />,
       run: () => task("second", async () => {
         const last = (await api.sessions(ws.id)).pop();
-        const other = last?.agent === "codex" ? "claude" : "codex";
-        await api.startChat(ws.id, other, "plan", `Review by ${other === "codex" ? "Codex" : "Claude"}`, agentPrompts.secondOpinion(ws, repo));
-        onSay(`${other === "codex" ? "Codex" : "Claude"} is reviewing in a new read-only chat. Add its findings to your review from there.`);
+        const other = otherAgent(last?.agent);
+        await api.startChat(ws.id, other, "plan", `Review by ${agentName(other)}`, agentPrompts.secondOpinion(ws, repo));
+        onSay(`${agentName(other)} is reviewing in a new read-only chat. Add its findings to your review from there.`);
       }),
     },
     fix: {

@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { AgentConfigTrust, ScriptTrust } from "../api";
+import { agentName } from "../agents";
 
 /**
  * Asks before running commands a repo brings with it, the first time and whenever they change:
  * the setup/run commands in its nekotrail.json, or the agent config (hooks, MCP servers, env) that
- * Claude or Codex would run as soon as a chat starts.
+ * Claude, Codex or Gemini would run as soon as a chat starts.
  */
 export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; trust?: ScriptTrust; agent?: AgentConfigTrust; onAnswer: (run: boolean) => void }) {
   useEffect(() => {
@@ -13,6 +14,8 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onAnswer]);
+  // Gemini has no way to run with a repo's settings off, so "Not now" means no Gemini here.
+  const gemini = agent?.items.some((it) => it.agent === "gemini");
   const rows = trust ? (["setup", "run", "archive"] as const).filter((k) => trust[k]) : [];
   return (
     <div className="modal-backdrop" onClick={() => onAnswer(false)}>
@@ -24,8 +27,10 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
         {agent ? (
           <p className="muted">
             This repo commits settings that make the agent run these on your Mac as soon as a chat starts. Anyone who can push
-            to the repo or open a PR can change them. <b>Not now</b> still lets you chat: the agent runs without this repo's
-            agent settings (yours stay on). You'll be asked again if they change.
+            to the repo or open a PR can change them. {gemini
+              ? <><b>Not now</b> means Gemini won't run in this repo. Claude and Codex still can.</>
+              : <><b>Not now</b> still lets you chat: the agent runs without this repo's agent settings (yours stay on).</>}
+            {" "}You'll be asked again if they change.
           </p>
         ) : (
           <p className="muted">
@@ -42,7 +47,7 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
           ))}
           {agent?.items.map((it, i) => (
             <div key={i}>
-              <dt>{it.agent === "codex" ? "Codex" : "Claude"}: {it.what} <span className="muted">in {it.file}</span></dt>
+              <dt>{agentName(it.agent)}: {it.what} <span className="muted">in {it.file}</span></dt>
               <dd><pre>{it.command}</pre></dd>
             </div>
           ))}

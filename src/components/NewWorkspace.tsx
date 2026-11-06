@@ -3,6 +3,7 @@ import { api as backend } from "../api";
 import { ModelPicker } from "./ModelPicker";
 import { ChevronDown, CornerDownLeft } from "lucide-react";
 import type { Agent, PermissionMode, Repo } from "../api";
+import { AGENTS, AGENT_INFO } from "../agents";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
@@ -124,10 +125,15 @@ export function NewWorkspace({
           </label>
           <span className="spacer" />
           <div className="nw-agent" role="radiogroup" aria-label="Agent">
-            {(["claude", "codex", "both"] as (Agent | "both")[]).map((a) => (
-              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => setAgent(a)}
+            {([...AGENTS, "both"] as (Agent | "both")[]).map((a) => (
+              <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? "on" : ""} onClick={() => {
+                // A model id belongs to one CLI, so a different agent starts on its own default.
+                const cli = (x: Agent | "both") => (x === "both" ? "claude" : x);
+                if (cli(a) !== cli(agent)) { setModel(""); setEffort(null); }
+                setAgent(a);
+              }}
                 title={a === "both" ? "Run Claude and Codex side by side, then keep the better one" : undefined}>
-                {a === "claude" ? "Claude" : a === "codex" ? "Codex" : "Both"}
+                {a === "both" ? "Both" : AGENT_INFO[a].name}
               </button>
             ))}
           </div>
@@ -189,14 +195,14 @@ export function NewWorkspace({
         />
         <div className="nw-foot">
           <ModelPicker
-            agent={agent === "codex" ? "codex" : "claude"}
+            agent={agent === "both" ? "claude" : agent}
             model={model || null}
             effort={effort}
             onChange={(n) => { setModel(n.model ?? ""); setEffort(n.effort); }}
             compact
           />
           <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)} aria-label="Permissions">
-            {MODES.filter((m) => m.value !== "ask" || agent === "claude").map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {MODES.filter((m) => m.value !== "ask" || (agent !== "both" && AGENT_INFO[agent].ask)).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">⇧↵ new line · Esc to close</span>

@@ -27,6 +27,7 @@ import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
 import { ask, ConfirmHost } from "./components/Confirm";
 import { chime, getSettings, saveSettings, ting } from "./settings";
+import { AGENTS, agentName } from "./agents";
 // Loaded the first time someone opens the Preview tab, so it costs nothing at startup.
 const Preview = lazy(() => import("./components/Preview").then((m) => ({ default: m.Preview })));
 import { UserAttentionType } from "@tauri-apps/api/window";
@@ -240,6 +241,8 @@ export default function App() {
           const run = await new Promise<boolean>((answer) => setTrustAsk({ repo: t.repo || "this repo", agent: t, answer }));
           setTrustAsk(null);
           if (run) await api.trustAgentConfig(id, t.fingerprint).catch((e) => say(errText(e), true));
+          // Gemini can't run with these off, so its "Not now" isn't kept: the next send asks again.
+          else if (t.items.some((it) => it.agent === "gemini")) agentAsks.current.delete(t.fingerprint);
         });
         agentAsks.current.set(t.fingerprint, asking);
       }
@@ -561,7 +564,7 @@ export default function App() {
     }
     const parts: string[] = [];
     if (last) {
-      const who = last.agent === "codex" ? "Codex" : "Claude";
+      const who = agentName(last.agent);
       const t = last.ms ? (last.ms >= 60_000 ? `${Math.floor(last.ms / 60_000)}m ${Math.round((last.ms % 60_000) / 1000)}s` : `${Math.round(last.ms / 1000)}s`) : "";
       parts.push(`${who} ${last.error ? "stopped with an error" : "finished"}${t ? ` in ${t}` : ""}${last.cost ? ` for $${last.cost.toFixed(2)}` : ""}`);
     }
@@ -606,7 +609,7 @@ export default function App() {
         await api.setPair(made.map((w) => w.id));
         if (prompt) {
           const base = prompt.split("\n")[0].slice(0, 40);
-          await Promise.all(made.map((w, i) => api.setWorkspaceTitle(w.id, `${base} (${agents[i] === "claude" ? "Claude" : "Codex"})`)));
+          await Promise.all(made.map((w, i) => api.setWorkspaceTitle(w.id, `${base} (${agentName(agents[i])})`)));
         }
       }
       const sessions = prompt
@@ -752,8 +755,7 @@ export default function App() {
       `macOS: ${navigator.userAgent.match(/Mac OS X [\d_]+/)?.[0]?.replace(/_/g, ".") ?? "unknown"}`,
       `git: ${d?.git.version || "missing"}`,
       `gh: ${d?.gh.installed ? (d.gh.ok ? "signed in" : "not signed in") : "missing"}`,
-      `claude: ${d?.claude.version || "missing"}`,
-      `codex: ${d?.codex.version || "missing"}`,
+      ...AGENTS.map((a) => `${a}: ${d?.[a]?.version || "missing"}`),
       `repos: ${repos.length}, workspaces: ${workspaces.filter((w) => w.state === "active").length} active, ${workspaces.filter((w) => w.state === "archived").length} archived`,
       `memory: ${ram ? `${ram.total_mb} MB` : "unknown"}`,
     ].join("\n");
@@ -804,7 +806,7 @@ export default function App() {
       { id: "new-issue", group: "Create", label: "Create workspace from a GitHub issue", keywords: "new", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
       { id: "update", group: "App", label: "Check for updates", keywords: "upgrade new version release download", icon: <Download size={15} />, run: () => updater.checkNow(true) },
-      { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
+      { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex, Gemini)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
     const active = workspaces.filter((w) => w.state === "active");
@@ -820,7 +822,7 @@ export default function App() {
       { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
       { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
       { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
-      { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
+      { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex gemini success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
       { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },

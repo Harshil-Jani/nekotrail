@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { api } from "../api";
+import { agentName } from "../agents";
 
 type Row = Awaited<ReturnType<typeof api.agentScorecard>>[number];
 
@@ -13,7 +14,7 @@ export function Scorecard({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const name = (a: string) => (a === "codex" ? "Codex" : "Claude");
+  const name = agentName;
   const fmt = (ms: number) => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${Math.round(ms / 1000)} s`);
   return (
     <div className="modal-backdrop" onClick={onClose}>
