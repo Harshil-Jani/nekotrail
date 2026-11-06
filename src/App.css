@@ -1318,6 +1318,8 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .file-diff .review-loose .review-comment { position: static; margin: 0; max-width: min(720px, calc(100cqw - 32px)); }
 .review-comment.loose { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .review-quote { margin: 4px 0; padding: 6px var(--s2); border-radius: var(--r); background: var(--bg); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow-x: auto; color: var(--muted); }
+/* The code a suggestion would put on those lines, as GitHub shows it: added-line green, monospace. */
+.review-suggestion { margin: 4px 0; padding: 6px var(--s2); border-radius: var(--r); background: var(--add-bg); box-shadow: inset 2px 0 0 var(--good); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow-x: auto; color: var(--text); tab-size: 2; }
 .chip.outdated { background: var(--wait-soft); color: var(--wait); border-radius: var(--r-xs); padding: 0 5px; font-size: 11px; }
 .review-where .chip { border-radius: var(--r-xs); padding: 0 5px; font-size: 11px; }
 .review-where .chip:not(.outdated) { background: var(--hover); color: var(--muted); }
@@ -1539,6 +1541,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .modal.submit-review > p { margin: 0; }
 .modal.submit-review textarea { min-height: 96px; resize: vertical; font-size: 13px; }
 .modal.submit-review .submit-plan { font-size: 12px; }
+.modal.submit-review .submit-blocker { margin: 0; font-size: 12px; color: var(--accent-text); }
 .review-comment > .icon { flex-shrink: 0; }
 
 /* Ports popover (toolbar): every workspace's ports and who listens on them */

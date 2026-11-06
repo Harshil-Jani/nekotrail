@@ -45,5 +45,24 @@ export function requestMeta(req: ReviewRequest, repoName?: string): string {
   return [`#${req.number}`, `@${req.author.login}`, repoName, req.isDraft ? "draft" : ""].filter(Boolean).join(" · ");
 }
 
+/**
+ * A comment split into prose and ```suggestion blocks, so the card shows the suggested code as code
+ * instead of the raw fence. The text that goes to GitHub is unchanged.
+ */
+export function suggestionParts(text: string): { kind: "text" | "suggestion"; text: string }[] {
+  const out: { kind: "text" | "suggestion"; text: string }[] = [];
+  const re = /^[ \t]*(`{3,})suggestion[ \t]*\n([\s\S]*?)\n?^[ \t]*\1[ \t]*$/gm;
+  let at = 0;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const before = text.slice(at, m.index).trim();
+    if (before) out.push({ kind: "text", text: before });
+    out.push({ kind: "suggestion", text: m[2] });
+    at = m.index + m[0].length;
+  }
+  const rest = text.slice(at).trim();
+  if (rest || !out.length) out.push({ kind: "text", text: rest || text });
+  return out;
+}
+
 /** Has a ```suggestion block (GitHub applies it in one click). */
 export const hasSuggestion = (text: string) => /^\s*`{3,}suggestion\s*$/m.test(text);

@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { hasSuggestion, planLine, requestMeta, reviewAgent, reviewWorkspaceFor, submitBlocker } from "../src/review";
+import { hasSuggestion, planLine, requestMeta, reviewAgent, reviewWorkspaceFor, submitBlocker, suggestionParts } from "../src/review";
 import type { ReviewRequest, Workspace } from "../src/api";
 
 const ws = (id: string, review_pr: number, state: Workspace["state"] = "active", repo_id = "r"): Workspace => ({
@@ -53,5 +53,23 @@ describe("submitting a review", () => {
     expect(hasSuggestion("Fix.\n\n```suggestion\nx\n```")).toBe(true);
     expect(hasSuggestion("Fix.\n\n````suggestion\nx\n````")).toBe(true);
     expect(hasSuggestion("```ts\nx\n```")).toBe(false);
+  });
+});
+
+describe("suggestionParts", () => {
+  test("splits prose from the suggested code", () => {
+    expect(suggestionParts("Read it from config.\n\n```suggestion\n\tIdleTimeout: cfg.IdleTimeout,\n```")).toEqual([
+      { kind: "text", text: "Read it from config." },
+      { kind: "suggestion", text: "\tIdleTimeout: cfg.IdleTimeout," },
+    ]);
+  });
+  test("keeps text after the block", () => {
+    expect(suggestionParts("a\n```suggestion\nx\n```\nb").map((p) => p.kind)).toEqual(["text", "suggestion", "text"]);
+  });
+  test("an empty suggestion deletes the lines", () => {
+    expect(suggestionParts("```suggestion\n```")).toEqual([{ kind: "suggestion", text: "" }]);
+  });
+  test("plain comments stay as they are", () => {
+    expect(suggestionParts("Is 5s enough?")).toEqual([{ kind: "text", text: "Is 5s enough?" }]);
   });
 });

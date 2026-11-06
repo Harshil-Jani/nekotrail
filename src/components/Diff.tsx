@@ -4,7 +4,7 @@ import { ChevronDown, ExternalLink, Lock, MessageSquarePlus, Pencil, RefreshCw, 
 import { Avatar } from "./Avatar";
 import { api, errText, type FileChange, type ReviewPlan, type ReviewVerdict } from "../api";
 import { keyHint, mod } from "../platform";
-import { hasSuggestion, planLine, submitBlocker, VERDICTS } from "../review";
+import { hasSuggestion, planLine, submitBlocker, suggestionParts, VERDICTS } from "../review";
 import { Mascot } from "./Mascot";
 import { ask } from "./Confirm";
 
@@ -156,7 +156,9 @@ function CommentCard({ c, onRemove, onEdit, loose }: { c: ReviewComment; onRemov
           </span>
         )}
         {loose && c.code && <pre className="review-quote">{c.code}</pre>}
-        <span className="review-text">{c.text}</span>
+        {suggestionParts(c.text).map((p, i) => p.kind === "suggestion"
+          ? <pre key={i} className="review-suggestion" aria-label="Suggested change">{p.text}</pre>
+          : <span key={i} className="review-text">{p.text}</span>)}
       </div>
       <button className="icon" aria-label="Edit comment" title="Edit comment" onClick={() => { draft.current = c.text; setEditing(true); }}><Pencil size={13} /></button>
       <button className="icon" aria-label="Delete comment" title="Delete comment" onClick={() => onRemove(c.id)}><X size={13} /></button>
@@ -916,14 +918,14 @@ export function Diff({
               {reviewPr > 0
                 ? <span className="chip read-only" title="This workspace reviews someone else's PR. Nothing is pushed from it."><Lock size={11} />Read only</span>
                 : <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit file</button>}
-              <button
+              {!reviewPr && <button
                 className="quiet"
                 onClick={() => discard(open)}
                 disabled={!dirty.has(open) || discarding !== null}
                 title={dirty.has(open) ? "Discard the uncommitted changes to this file" : "Only uncommitted changes can be discarded. This file's changes are committed."}
               >
                 {discarding === open ? <span className="spinner" /> : <Undo2 size={13} />}Discard
-              </button>
+              </button>}
             </div>
             <DiffLines
               file={open}
@@ -1007,6 +1009,7 @@ function SubmitReview({ workspaceId, count, onClose, onDone }: {
           onKeyDown={(e) => { if (e.key === "Enter" && mod(e)) { e.preventDefault(); submit(); } }}
         />
         <p className="muted submit-plan">{plan ? planLine(plan) : error ? "" : "Checking which lines are in the PR..."}</p>
+        {blocker && <p className="submit-blocker" role="status">{blocker}</p>}
         {error && <div className="banner error" role="alert">{error}</div>}
         <div className="row">
           <span className="muted">Posts to GitHub as you, then archives this workspace.</span>
