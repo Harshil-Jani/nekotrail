@@ -124,7 +124,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
       >
         <span className="tq-mark" aria-hidden>
           {kind === "running" ? (asking ? <Hand size={15} className="wait" /> : <span className="spinner" />)
-            : kind === "next" ? (t.state === "waiting" ? <Hand size={15} className="wait" /> : <><GripVertical size={14} className="grip" /><span className="tq-n num">{n}</span></>)
+            : kind === "next" ? <><GripVertical size={14} className="grip" /><span className="tq-n num">{n}</span></>
             : t.state === "done" ? <CheckCircle2 size={15} className="good" />
             : t.state === "needs_you" ? <AlertCircle size={15} className="wait" />
             : <XCircle size={15} className="bad" />}
@@ -135,10 +135,10 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
           <span className={`tq-status ${tone}`}>{status}</span>
         </span>
         <span className="tq-actions">
-          {kind === "next" && t.state === "waiting" && <button className="primary" onClick={() => act(api.queueStartNow(t.id))} title="Start it now. It needs you there to answer it.">Start</button>}
+          {kind === "next" && t.state === "waiting" && <button onClick={() => act(api.queueStartNow(t.id))} title="Start it now. It needs you there to answer it."><Hand size={13} className="wait" />Start</button>}
           {kind === "next" && t.state === "queued" && <button className="quiet hover-only" onClick={() => act(api.queueStartNow(t.id))} title="Start it now, ahead of the line and the limits">Start now</button>}
           {(kind === "running" || kind === "finished") && t.workspace_id && <button onClick={() => onOpen(t.workspace_id!)}>Open</button>}
-          {kind === "finished" && t.state !== "done" && <button onClick={() => retry(t)} title={t.workspace_id ? "Run it again in its workspace" : "Run it again in a new workspace"}><RotateCw size={13} />Retry</button>}
+          {kind === "finished" && t.state === "failed" && <button onClick={() => retry(t)} title={t.workspace_id ? "Run it again in its workspace" : "Run it again in a new workspace"}><RotateCw size={13} />Retry</button>}
           {kind !== "running" && <button className="icon" onClick={() => remove(t)} aria-label="Remove from the queue" title="Remove from the queue"><Trash2 size={14} /></button>}
         </span>
       </div>

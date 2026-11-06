@@ -23,7 +23,7 @@ import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
 import { Queue } from "./components/Queue";
-import { counts as queueCounts, stillGoing } from "./queue";
+import { counts as queueCounts } from "./queue";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
@@ -382,10 +382,9 @@ export default function App() {
       if (!s || s.done + s.needs_you + s.failed === 0) return;
       asking = true;
       await api.queueSummarySeen().catch(() => {});
-      const more = stillGoing(s);
-      const go = await ask({ title: "While you were away", body: `From the queue: ${s.text}.${more ? `\n${more}` : ""}`, ok: "Open queue", cancel: "Not now" });
+      // A toast, not a sheet: it reports, nothing needs deciding, and the sidebar row keeps what's still going.
+      say(`While you were away: ${s.text}.`, false, { label: "Open queue", run: () => setView("queue") });
       asking = false;
-      if (go) setView("queue");
     };
     loadQueue();
     summary();
