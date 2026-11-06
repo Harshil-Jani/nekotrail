@@ -161,7 +161,7 @@ function FilesPane({ ov, onSource, onEdit }: { ov: RulesOverview; onSource: (s: 
       <ul className="rules-agents">
         {ov.agents.map((a) => (
           <li key={a.agent}>
-            <span className={`rules-dot ${a.gets_source ? "good" : "wait"}`} aria-label={a.gets_source ? `Reads ${src}` : `Doesn't read ${src}`} />
+            <span className={`rules-dot ${a.gets_source ? "good" : "wait"}`} role="img" aria-label={a.gets_source ? `Reads ${src}` : `Doesn't read ${src}`} title={a.gets_source ? `Reads ${src}` : `Doesn't read ${src}`} />
             <b>{agentName(a.agent)}</b>
             <span className="rules-reads">{a.reads.length ? a.reads.map((r) => <code key={r}>{r}</code>) : <span className="muted">No rules file here</span>}</span>
             {a.doc && <button className="icon" aria-label={`${agentName(a.agent)} docs`} title="Where this comes from" onClick={() => openUrl(a.doc).catch(() => {})}><ExternalLink size={12} /></button>}
@@ -202,6 +202,7 @@ function PlanPanel({ workspaceId, ov, readOnly, onBack, onDone }: { workspaceId:
     return () => { live = false; };
   }, [workspaceId, req, rev]);
   const writes = toWrite(plan);
+  const unconfirmed = writes.filter((i) => i.needs_confirm && !confirmed.includes(i.path)).map((i) => i.path);
   const apply = async () => {
     if (!plan) return;
     setBusy(true);
@@ -265,7 +266,7 @@ function PlanPanel({ workspaceId, ov, readOnly, onBack, onDone }: { workspaceId:
         )}
       </div>
       <div className="row">
-        <span className="muted rules-foot">{writes.length === 0 ? "Nothing to change." : `Writes ${files(writes.length)}, backs up the old ones, commits nothing.`}</span>
+        <span className="muted rules-foot">{writes.length === 0 ? "Nothing to change." : unconfirmed.length ? `Tick the box under ${unconfirmed.join(" and ")} to replace ${unconfirmed.length === 1 ? "its" : "their"} text, or pick another option.` : `Writes ${files(writes.length)}, backs up the old ones, commits nothing.`}</span>
         <span className="spacer" />
         <button onClick={onBack}>Cancel</button>
         <button className="primary" disabled={readOnly || busy || !canApply(plan, confirmed)} onClick={apply}>{busy ? "Writing…" : writes.length ? `Write ${files(writes.length)}` : "Write"}</button>

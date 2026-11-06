@@ -1830,21 +1830,22 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .split-group > .subject-hint { padding-left: 30px; }
 .split-hunks { list-style: none; margin: 0; padding: 0 0 0 30px; display: flex; flex-direction: column; gap: 2px; }
 .split-hunk { display: flex; align-items: center; gap: var(--s2); font-size: 12px; min-height: 26px; }
-.split-hunk-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0; height: auto; color: var(--text); font-weight: 400; }
-.split-hunk-name code { font-size: 12px; font-weight: 600; }
-.split-hunk-name .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
-.split-hunk select { font-size: 12px; height: 24px; padding: 0 var(--s6) 0 var(--s2); flex-shrink: 0; }
-.split-peek { margin: var(--s1) 0 var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-family: var(--mono); font-size: 11.5px; max-height: 220px; overflow: auto; white-space: pre; }
 button.link.split-hunk-name { font-weight: 400; }
 .split-hunk-name .muted.prose { font-family: inherit; font-size: 12px; }
 .split-peek .pk-hunk { color: var(--muted); }
 .split-peek .pk-add { color: var(--good-text); }
 .split-peek .pk-del { color: var(--bad-text); }
+.split-hunk-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0; height: auto; color: var(--text); font-weight: 400; }
+.split-hunk-name code { font-size: 12px; font-weight: 600; }
+.split-hunk-name .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.split-hunk select { font-size: 12px; height: 24px; padding: 0 var(--s6) 0 var(--s2); flex-shrink: 0; }
+.split-peek { margin: var(--s1) 0 var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-family: var(--mono); font-size: 11.5px; max-height: 220px; overflow: auto; white-space: pre; }
 .split-why { font-size: 12px; }
 
 /* ---------- Rules: one set of project rules for every agent ---------- */
 .modal-backdrop:has(> .modal.rules) { align-items: flex-start; padding-top: 6vh; }
-.modal.rules { width: min(860px, calc(100vw - 48px)); max-height: 88vh; min-height: min(560px, 88vh); }
+/* One fixed height for every tab, so switching Files, Edit rules and This task never resizes the sheet. */
+.modal.rules { width: min(860px, calc(100vw - 48px)); height: min(760px, 88vh); }
 .modal.rules > .seg { display: flex; }
 .rules-where { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rules-body { display: flex; flex-direction: column; gap: var(--s3); min-height: 0; flex: 1; overflow-y: auto; margin: 0 calc(-1 * var(--s2)); padding: 0 var(--s2); }
@@ -1880,16 +1881,16 @@ button.link.split-hunk-name { font-weight: 400; }
 .rules-agents > li { display: flex; align-items: center; gap: var(--s2); padding: 5px var(--s3); min-height: 30px; }
 .rules-agents b { width: 76px; flex: none; font-weight: 600; }
 .rules-reads { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); }
-.rules-reads code { font-family: var(--mono); font-size: 12px; }
+.rules-reads code { font-family: var(--mono); font-size: 12px; padding: 1px 6px; border-radius: var(--r-xs); background: var(--hover); }
 .rules-agents button.icon { width: 22px; height: 22px; color: var(--muted); }
 .rules-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .rules-dot.good { background: var(--good); }
 .rules-dot.wait { background: transparent; box-shadow: inset 0 0 0 1.5px var(--wait); }
 .rules-confirm { display: flex; align-items: center; gap: var(--s2); font-weight: 600; color: var(--bad-text); }
 .rules-edit-bar select { max-width: 360px; }
-.rules-editor { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); flex: 1; min-height: 340px; }
-.rules-editor textarea { resize: none; min-height: 340px; height: 100%; padding: var(--s3); border-radius: var(--r-md); border: none; box-shadow: inset 0 0 0 0.5px var(--line-strong); background: var(--field); color: var(--text); font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+.rules-editor { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr); gap: var(--s3); flex: 1; min-height: 240px; }
+.rules-editor textarea { resize: none; min-height: 0; height: 100%; padding: var(--s3); border-radius: var(--r-md); border: none; box-shadow: inset 0 0 0 0.5px var(--line-strong); background: var(--field); color: var(--text); font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
 .rules-editor textarea:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--line-strong), var(--ring); }
-.rules-preview { min-height: 340px; max-height: 56vh; overflow-y: auto; padding: var(--s1) var(--s3); border-radius: var(--r-md); background: var(--surface); font-size: 13px; line-height: 1.5; }
-textarea.rules-task { min-height: 200px; resize: vertical; padding: var(--s3); border-radius: var(--r-md); border: none; box-shadow: inset 0 0 0 0.5px var(--line-strong); background: var(--field); color: var(--text); font: inherit; line-height: 1.5; }
+.rules-preview { min-height: 0; overflow-y: auto; padding: var(--s1) var(--s3); border-radius: var(--r-md); background: var(--surface); font-size: 13px; line-height: 1.5; }
+textarea.rules-task { flex: 1; min-height: 200px; resize: none; padding: var(--s3); border-radius: var(--r-md); border: none; box-shadow: inset 0 0 0 0.5px var(--line-strong); background: var(--field); color: var(--text); font: inherit; line-height: 1.5; }
 textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--line-strong), var(--ring); }
