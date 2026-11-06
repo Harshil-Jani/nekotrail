@@ -3,7 +3,10 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.12.1 (2026-11-06)
+
+**Sponsor**
+- nekotrail is free and open source. If it saves you time, you can now sponsor it on GitHub Sponsors: Settings, next to the version, or "Sponsor nekotrail" in ⌘K.
 
 **Faster, quieter GitHub checks**
 - The PR bar, sidebar, board and autopilot share one GitHub check: one `gh` call per repo for all its workspaces. It runs every 20 s while checks run or autopilot is on, every 5 min otherwise, and pauses while the window is hidden.
