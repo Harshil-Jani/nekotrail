@@ -21,9 +21,9 @@ pub const BUILTINS: [&str; 4] = ["branch", "base", "files_changed", "selection"]
 
 /// The chat box's own commands. A prompt can't take one of these names.
 /// Kept in step with the chat box by `every_chat_command_is_reserved`.
-pub const RESERVED: [&str; 22] = [
+pub const RESERVED: [&str; 23] = [
     "mcp", "model", "intelligence", "effort", "plan", "auto", "review", "second-opinion", "pr", "merge", "pull", "fix-ci",
-    "run", "diff", "terminal", "preview", "checks", "fork", "clear", "compact", "add-dir", "prompts",
+    "run", "diff", "terminal", "preview", "checks", "fork", "handoff", "clear", "compact", "add-dir", "prompts",
 ];
 
 const MAX_NAME: usize = 40;
