@@ -3,6 +3,18 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Hand off to another agent**
+- New Hand off to another agent (a chat's + menu, ⌘K, or /handoff): another agent, Codex, Gemini or any you have installed, carries on the task in the same workspace and branch, so you don't explain it again.
+- Pick the agent and its model, then read the brief nekotrail wrote before anything is sent, and edit it if you like. It has the original task, what you said since, the agent's last messages, the files changed against the target branch (every repo of a multi-repo task), the last checks, the commands still failing, its last steps, and its todo list or plan.
+- The brief is built on your Mac from the chat itself, with no model asked to summarise, and stays under about 6,000 characters: older steps and long messages are shortened first. Things that look like tokens, keys, passwords or emails are hidden, as in Export session, and paths in your home folder show as ~.
+- When an agent runs out of usage, or nekotrail stops it going in circles, the card in the chat offers the hand-off.
+- The new chat keeps this chat's mode. An agent that can't ask before each change starts in Plan instead of Ask before changes, so a hand-off never gives an agent more room. Spend caps and protected files apply to it as before.
+- The old chat ends with "Handed off to Codex" and the new one starts with "Continued from Claude", each opening the other. The brief sits folded at the top of the new chat, and Export session notes the hand-off.
+- From a terminal: `nekotrail handoff <workspace> --to codex` opens the hand-off in nekotrail with its brief to read, and `--now` sends it straight away. `.` is the workspace you're in.
+- The old "Continue in" button on an out-of-usage card, which pasted the raw transcript into the message box, is replaced by the hand-off.
+
 ## 0.19.0 (2026-11-07)
 
 **Linear issues**
@@ -325,7 +337,6 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Welcome puts setup first while something is missing and has one main button. The Conductor import card can be dismissed.
 - Compare agents, the board and Changes fit 1100 px windows; a closed PR counts as Done on the board.
 - Higher contrast for diff line numbers, +/- counts, shortcut hints, the merge button, warnings and orange labels (all 4.5:1 or more). The terminal background matches its frame. "New" on a model lasts 30 days.
-
 
 ## 0.10.1 (2026-11-06)
 
