@@ -148,7 +148,8 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
   const empty = view.tasks.length === 0;
   return (
     <div className="tq">
-      <QueueHead view={view} onAdd={() => setAdding(true)} act={act} />
+      {/* Empty, the page's own Add task is the one button; paused, the banner's Resume is. */}
+      <QueueHead view={view} onAdd={empty && !adding ? null : () => setAdding(true)} act={act} />
       <div className="tq-body">
         {view.paused && (
           <div className="tq-banner">
@@ -210,7 +211,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
   );
 }
 
-function QueueHead({ view, onAdd, act }: { view: QueueView | null; onAdd: () => void; act: (p: Promise<unknown>) => void }) {
+function QueueHead({ view, onAdd, act }: { view: QueueView | null; onAdd: (() => void) | null; act: (p: Promise<unknown>) => void }) {
   const g = view ? groups(view.tasks) : null;
   const line = !g ? "" : g.running.length + g.next.length === 0 ? "Nothing waiting." : [g.running.length && `${g.running.length} running`, g.next.length && `${g.next.length} up next`].filter(Boolean).join(", ") + ".";
   const opts = (cur: number) => [...new Set([...LIMITS, cur])].sort((a, b) => a - b);
@@ -229,10 +230,8 @@ function QueueHead({ view, onAdd, act }: { view: QueueView | null; onAdd: () => 
           </select> per repo</label>
         </span>
       )}
-      {view && (view.paused
-        ? <button onClick={() => act(api.queueSetPaused(false))}><Play size={13} />Resume</button>
-        : <button onClick={() => act(api.queueSetPaused(true))} title="Running tasks finish; nothing new starts"><Pause size={13} />Pause</button>)}
-      <button className="primary" onClick={onAdd}><Plus size={14} />Add task</button>
+      {view && !view.paused && view.tasks.length > 0 && <button onClick={() => act(api.queueSetPaused(true))} title="Running tasks finish; nothing new starts"><Pause size={13} />Pause</button>}
+      {onAdd && <button className="primary" onClick={onAdd}><Plus size={14} />Add task</button>}
     </div>
   );
 }
