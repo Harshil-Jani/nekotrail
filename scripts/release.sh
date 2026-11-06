@@ -30,4 +30,14 @@ git add CHANGELOG.md package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
 git commit -qm "Release v$v"
 git tag -a "v$v" -m "nekotrail v$v"
 git push -q origin HEAD:main "v$v"
+
+# Create the release page now with our own gh login. Since v0.13.0 the workflow's token is refused
+# when it tries to create a release ("Resource not accessible by integration"); tauri-action then
+# finds this page by its tag and only uploads the app and latest.json to it.
+notes="$(mktemp)"
+awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > "$notes"
+printf '\n### Install\nDownload the `.dmg` below, open it and drag nekotrail to Applications. The app is not notarized yet: on first launch, right-click it and choose Open, or run `xattr -dr com.apple.quarantine /Applications/nekotrail.app`.\n' >> "$notes"
+gh release create "v$v" --title "nekotrail v$v" --notes-file "$notes" --verify-tag >/dev/null \
+  || echo "Couldn't create the release page; the workflow will try. Check https://github.com/Harshil-Jani/nekotrail/releases" >&2
+rm -f "$notes"
 echo "Pushed v$v. The macOS build takes about 15 minutes: https://github.com/Harshil-Jani/nekotrail/actions"
