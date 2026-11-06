@@ -110,7 +110,8 @@ export function ExportSheet({ ws, repoName, star, initialChat, pr, onClose, onSa
     onSay("The summary is in the PR description. Check it, then press Push and create PR.");
     onClose();
   };
-  const prOff = ws.review_pr > 0 ? "This is a review of someone else's PR." : ws.imported_from === "terminal-history" ? "History has no PR." : null;
+  const prOff = ws.review_pr > 0 ? "This is a review of someone else's PR." : ws.imported_from === "terminal-history" ? "History has no PR."
+    : data && chatsWithEvents.length === 0 ? "Nothing to sum up yet: no chat here has a message." : null;
 
   const toggle = (k: keyof typeof opts, label: string, note: string) => (
     <label className="export-toggle">

@@ -36,15 +36,18 @@ export function Board({
     <div className="board">
       <div className="board-head" data-tauri-drag-region>
         <h1>Board</h1>
-        <span className="muted">{live.length} workspaces{repoFilter.length ? ` in ${repoFilter.map(repoName).join(", ")}` : ""}. Drag a card to change its status.</span>
+        {live.length > 0 && <span className="muted">{live.length} workspaces{repoFilter.length ? ` in ${repoFilter.map(repoName).join(", ")}` : ""}. Drag a card to change its status.</span>}
         <span className="spacer" />
-        <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>
+        {/* Empty, the page's own button is the one to press. */}
+        {live.length > 0 && <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>}
       </div>
       {live.length === 0 ? (
         <div className="empty board-empty">
           <h2>{repoFilter.length ? "No workspaces in this repo yet" : "No workspaces yet"}</h2>
           <p>Each task you start becomes a card here, and moves along as its PR goes from draft to merged.</p>
-          <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>
+          {repos.length
+            ? <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>
+            : <><p className="muted">Add a repo first: every workspace is a copy of one.</p><button className="primary" onClick={onNew}><Plus size={14} />Add a repo</button></>}
         </div>
       ) : (
       <div className="board-cols">

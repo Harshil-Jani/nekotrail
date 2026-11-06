@@ -20,6 +20,7 @@ export function NightSky({
   workspaces,
   onOpen,
   onNew,
+  hasRepos,
 }: {
   sky: Sky;
   lit: Set<string>;
@@ -28,6 +29,8 @@ export function NightSky({
   onOpen: (workspaceId: string) => void;
   /** Offered while no star is lit yet. */
   onNew?: () => void;
+  /** With no repos yet, the first step is adding one. */
+  hasRepos?: boolean;
 }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -154,13 +157,13 @@ export function NightSky({
           </>
         ) : (
           <>
-            {lit.size === 0 && onNew && <button className="primary sky-first" onClick={onNew}>Create a workspace to light your first star</button>}
             <p className="story">Every workspace lights a star. Merge its PR and the star shines; when two neighbours both shine, the line between them appears. Finish a constellation to complete its cat.</p>
             <p className="legend">
               <svg width="10" height="10" aria-hidden><circle cx="5" cy="5" r="3" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>not lit
               <svg width="10" height="10" aria-hidden><circle cx="5" cy="5" r="3.5" fill="#e8eaee" /></svg>lit
               <svg width="12" height="12" aria-hidden><circle cx="6" cy="6" r="4.5" fill="#ff9a4d" /></svg>shining
             </p>
+            {lit.size === 0 && onNew && <button className="primary sky-first" onClick={onNew}>{hasRepos === false ? "Add a repo to light your first star" : "Create a workspace to light your first star"}</button>}
           </>
         )}
       </div>
