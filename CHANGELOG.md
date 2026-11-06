@@ -3,6 +3,16 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Export session**
+- New Export session (⋯ menu, ⌘K, or a chat's + menu): a report of what the agent did, with the task, the plan, a timeline with one line per command or file and failed commands marked, the changed files with key hunks, checks, time, cost and the PR link.
+- Copy or save it as Markdown, or save one HTML file that works offline in light and dark, with no scripts and nothing loaded from the web.
+- Before you share, a preview lets you leave out tool outputs and file contents. Things that look like tokens, keys, passwords, .env values or emails are hidden, and you can show any one of them again. Paths in your home folder show as ~.
+- Add to PR description puts a short summary (what changed, how it was tested, which agent, cost) in the PR form. Nothing is posted until you press Push and create PR.
+- A small "Made with nekotrail" line ends each export. Switch it off in Settings, General.
+- Fix: Export prompts in Settings can save its file again.
+
 ## 0.16.0 (2026-11-07)
 
 **Tasks across repos**
