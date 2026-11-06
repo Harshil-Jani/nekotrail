@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, MoveUpRight, PenLine, Play, RectangleHorizontal, RotateCw, Undo2 } from "lucide-react";
+import { ExternalLink, MoveUpRight, PenLine, Play, RectangleHorizontal, RotateCw, Settings2, Undo2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errText } from "../api";
 import { snapshotScale } from "../appearance";
@@ -96,6 +96,7 @@ export function Preview({
   running,
   active,
   onRun,
+  onSetup,
   onAttach,
   onSay,
 }: {
@@ -107,6 +108,8 @@ export function Preview({
   /** The Preview tab is the one showing (polls only then). */
   active: boolean;
   onRun: () => void;
+  /** Open the repo's settings, where the Run script is set. */
+  onSetup: () => void;
   /** Text for the chat composer, with the saved screenshot's @path. */
   onAttach: (text: string) => void;
   onSay: (text: string, error?: boolean) => void;
@@ -123,6 +126,15 @@ export function Preview({
   const fieldRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setField(src ?? ""); setFieldError(false); }, [src]);
+
+  // Without a Run script there is nothing to start: say how to set one instead of offering Start.
+  const [hasRun, setHasRun] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let live = true;
+    api.workspaceScripts(workspaceId).then((s) => { if (live) setHasRun(!!s.run); }).catch(() => { if (live) setHasRun(null); });
+    return () => { live = false; };
+  }, [workspaceId, active]);
 
   // Is anything answering? While it isn't, check again every 2 seconds (dev servers take a moment).
   useEffect(() => {
@@ -341,11 +353,18 @@ export function Preview({
                   <h2>Waiting for your app</h2>
                   <p>It shows up here as soon as the Run script prints a localhost address. You can also type one above.</p>
                 </>
+              ) : hasRun === false ? (
+                <>
+                  <h2>No Run script for this repo yet</h2>
+                  <p>Add the command that starts your dev server, like <code>npm run dev</code>, in the repo's settings. Your app shows up here as soon as it prints a localhost address.</p>
+                  <button onClick={onSetup}><Settings2 size={14} />Set a Run script</button>
+                  <button className="link" onClick={() => fieldRef.current?.focus()}>Or type a localhost address</button>
+                </>
               ) : (
                 <>
                   <h2>Nothing running yet</h2>
                   <p>Start the Run script and your app shows up here, ready to click through and mark up for the agent.</p>
-                  <button className="primary" onClick={onRun}><Play size={14} />Start Run script</button>
+                  <button onClick={onRun}><Play size={14} />Start Run script</button>
                   <button className="link" onClick={() => fieldRef.current?.focus()}>Or type a localhost address</button>
                 </>
               )
@@ -366,8 +385,10 @@ export function Preview({
             ) : (
               <>
                 <h2>Nothing answers at {short(src)}</h2>
-                <p>Start the Run script, or check the address.</p>
-                <button className="primary" onClick={onRun}><Play size={14} />Start Run script</button>
+                <p>{hasRun === false ? "This repo has no Run script yet. Set one, or check the address." : "Start the Run script, or check the address."}</p>
+                {hasRun === false
+                  ? <button onClick={onSetup}><Settings2 size={14} />Set a Run script</button>
+                  : <button onClick={onRun}><Play size={14} />Start Run script</button>}
                 <button className="link" onClick={() => setReload((n) => n + 1)}>Try again</button>
               </>
             )}

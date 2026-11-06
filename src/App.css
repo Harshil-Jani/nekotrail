@@ -1304,3 +1304,4 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .chat-tabs .newchat-menu { z-index: 20; }
 .chat-tab > button[role="tab"] .spinner { margin-right: 6px; vertical-align: -2px; }
 .menu-icon-space { width: 13px; flex-shrink: 0; display: inline-block; }
+.preview-empty p code { white-space: nowrap; }

@@ -1136,6 +1136,7 @@ export default function App() {
                           running={livePtys.has(`${ws.id}:run`)}
                           active={tab === "preview"}
                           onRun={() => runScript({ stay: true })}
+                          onSetup={() => setSettingsFor(ws.repo_id)}
                           onAttach={(text) => { setTab("chat"); setAppend({ text, nonce: Date.now() }); say("Screenshot attached. Add anything else and send."); }}
                           onSay={say}
                         />
