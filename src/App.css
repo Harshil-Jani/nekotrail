@@ -1556,7 +1556,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 /* Ports popover (toolbar): every workspace's ports and who listens on them */
 .tb-ports-wrap { position: relative; display: inline-flex; }
 .ports-pop {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; width: 440px; max-height: min(70vh, 560px);
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; width: 440px; max-height: min(calc(100vh - 72px), 680px);
   display: flex; flex-direction: column; border-radius: var(--r-lg);
   background: light-dark(rgba(246, 246, 248, 0.94), rgba(44, 44, 46, 0.94));
   backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
