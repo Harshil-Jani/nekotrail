@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.17.0 (2026-11-07)
 
 **Spend you can trust**
 - New Usage view (sidebar, ⌘K): tokens, API-equivalent cost, turns and time per day, repo, agent and model, each agent's usage limit and when it resets, and Export CSV. Kept on your Mac only.
