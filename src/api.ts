@@ -323,6 +323,23 @@ export type McpOverview = { servers: McpRow[]; skills: SkillRow[]; files: Record
 export type SecretChoices = Record<string, "ref" | "copy">;
 export type McpPreview = { file: string; creates: boolean; backup: string | null; snippet: string; notes: string[]; blockers: string[]; asks: string[]; secrets: McpSecret[]; token: string };
 
+/** Project rules files across agents (src-tauri/src/rules.rs). */
+export type RuleState = "source" | "same" | "points" | "copy" | "stale" | "edited" | "differs" | "empty" | "missing" | "folder";
+export type RuleDiffLine = { op: "same" | "add" | "del" | "gap"; text: string };
+export type RuleFile = {
+  path: string; role: "shared" | "personal" | "override" | "scoped"; dir: boolean; exists: boolean;
+  readers: { agent: Agent; active: boolean; when: string }[]; note: string; state: RuleState;
+  link: string | null; points_to: string | null; via: "import" | "link" | "note" | null; diff: RuleDiffLine[]; lines: number; files: string[];
+};
+export type RuleAgentRow = { agent: Agent; reads: string[]; gets_source: boolean; doc: string };
+export type RulesOverview = { source: string; source_exists: boolean; sources: string[]; files: RuleFile[]; agents: RuleAgentRow[]; warnings: string[] };
+export type RuleHow = "import" | "symlink" | "note" | "copy" | "keep" | "source";
+export type RulesRequest = { source: string; seed: string | null; choices: Record<string, RuleHow> };
+export type RulePlanItem = { path: string; how: RuleHow; options: RuleHow[]; status: "create" | "update" | "replace" | "same" | "keep"; needs_confirm: boolean; why: string; diff: RuleDiffLine[]; new: string; exists: boolean };
+export type RulesPlan = { source: string; items: RulePlanItem[]; notes: string[]; token: string };
+export type RulesApplied = { written: string[]; backup: string | null };
+export type RuleOpened = { path: string; text: string; exists: boolean; hash: string; link: string | null; generated_from: string | null };
+
 /** Runs before every message is sent; App uses it to ask about a repo's agent config first. */
 let beforeTurn: (id: string) => Promise<void> = async () => {};
 export const setBeforeTurn = (f: (id: string) => Promise<void>) => { beforeTurn = f; };
@@ -394,6 +411,13 @@ export const api = {
     invoke<McpPreview>("mcp_share_preview", { id, name, target, choices }),
   mcpShareApply: (id: string, name: string, target: McpAgent, choices: SecretChoices, token: string) =>
     invoke<{ file: string; backup: string | null }>("mcp_share_apply", { id, name, target, choices, token }),
+  rulesOverview: (id: string, source?: string) => invoke<RulesOverview>("rules_overview", { id, source: source ?? null }),
+  rulesPlan: (id: string, req: RulesRequest) => invoke<RulesPlan>("rules_plan", { id, req }),
+  rulesApply: (id: string, req: RulesRequest, token: string, confirmed: string[]) => invoke<RulesApplied>("rules_apply", { id, req, token, confirmed }),
+  rulesOpen: (id: string, path: string) => invoke<RuleOpened>("rules_open", { id, path }),
+  rulesSave: (id: string, path: string, text: string, hash: string) => invoke<RulesApplied>("rules_save", { id, path, text, hash }),
+  taskRules: (id: string) => invoke<string>("task_rules", { id }),
+  setTaskRules: (id: string, text: string) => invoke<void>("set_task_rules", { id, text }),
   skillShare: (name: string, target: "agents" | "claude") => invoke<string>("skill_share", { name, target }),
   promptsList: (id?: string, repo?: string) => invoke<{ entries: PromptEntry[]; saved: boolean }>("prompts_list", { id: id ?? null, repo: repo ?? null }),
   promptsSave: (list: PersonalPrompt[]) => invoke<void>("prompts_save", { list }),

@@ -335,6 +335,71 @@ function promptEntries() {
   return all.sort((a, b) => a.name.localeCompare(b.name) || Number(!!a.hidden_by) - Number(!!b.hidden_by));
 }
 
+// The Rules sheet (?rules=w1, &rulesPane=edit|task, &rulesPlan to open the plan): AGENTS.md as the
+// source, a CLAUDE.md that drifted, Copilot's file saying the same, a Cursor rules folder.
+const rulesAgents = "claude codex gemini opencode cursor copilot goose qwen kimi auggie grok kiro droid vibe cline kilo".split(" ");
+const agentsMdText = "# acme-api\n\n## Build and test\n- `make dev` runs the API on $PORT.\n- `make test` before every commit.\n\n## Style\n- Go 1.23, gofmt, no new dependencies without asking.\n- Errors wrap with `fmt.Errorf(\"...: %w\", err)`.\n\n## Don't\n- Touch `migrations/` by hand.\n";
+const claudeMdText = "# acme-api\n\n## Build and test\n- `make dev` runs the API on port 3000.\n- `make test` before every commit.\n\n## Style\n- Go 1.22, gofmt.\n- Errors wrap with `fmt.Errorf(\"...: %w\", err)`.\n\n## Claude\n- Use plan mode for anything under `billing/`.\n";
+let rulesText: Record<string, string> = { "AGENTS.md": agentsMdText, "CLAUDE.md": claudeMdText, ".github/copilot-instructions.md": agentsMdText };
+let taskRulesText = "Keep the change under 200 lines. Don't change the public API.";
+const rulesReaders = (path: string) => {
+  const r = (agent: string, active = true, when = "") => ({ agent, active, when });
+  if (path === "AGENTS.md") return rulesAgents.map((a) => a === "claude" ? r(a, false, "only when there's no CLAUDE.md or CLAUDE.local.md") : a === "gemini" ? r(a, false, "only when context.fileName in .gemini/settings.json lists it") : r(a));
+  if (path === "CLAUDE.md") return [r("claude"), r("opencode", false, "only when there's no AGENTS.md"), r("cursor"), r("copilot"), r("auggie", false, "only when there's no AGENTS.md"), r("droid")];
+  if (path === "GEMINI.md") return [r("gemini", false), r("copilot", false)];
+  if (path === ".github/copilot-instructions.md") return [r("copilot")];
+  return [r("cursor")];
+};
+const rulesDiff = [
+  { op: "gap", text: "3 same lines" },
+  { op: "del", text: "- `make dev` runs the API on $PORT." },
+  { op: "add", text: "- `make dev` runs the API on port 3000." },
+  { op: "same", text: "- `make test` before every commit." },
+  { op: "same", text: "" },
+  { op: "same", text: "## Style" },
+  { op: "del", text: "- Go 1.23, gofmt, no new dependencies without asking." },
+  { op: "add", text: "- Go 1.22, gofmt." },
+  { op: "same", text: "- Errors wrap with `fmt.Errorf(\"...: %w\", err)`." },
+  { op: "same", text: "" },
+  { op: "del", text: "## Don't" },
+  { op: "del", text: "- Touch `migrations/` by hand." },
+  { op: "add", text: "## Claude" },
+  { op: "add", text: "- Use plan mode for anything under `billing/`." },
+];
+const rulesOverview = () => ({
+  source: "AGENTS.md", source_exists: true, sources: ["AGENTS.md", "CLAUDE.md"],
+  warnings: [],
+  files: [
+    { path: "AGENTS.md", role: "shared", dir: false, exists: true, readers: rulesReaders("AGENTS.md"), note: "", state: "source", link: null, points_to: null, via: null, diff: [], lines: 13, files: [] },
+    { path: "CLAUDE.md", role: "shared", dir: false, exists: true, readers: rulesReaders("CLAUDE.md"), note: "", state: "differs", link: null, points_to: null, via: null, diff: rulesDiff, lines: 12, files: [] },
+    { path: "GEMINI.md", role: "shared", dir: false, exists: false, readers: rulesReaders("GEMINI.md"), note: "", state: "missing", link: null, points_to: null, via: null, diff: [], lines: 0, files: [] },
+    { path: ".github/copilot-instructions.md", role: "shared", dir: false, exists: true, readers: rulesReaders(".github/copilot-instructions.md"), note: "", state: "same", link: null, points_to: null, via: null, diff: [], lines: 13, files: [] },
+    { path: ".cursor/rules", role: "scoped", dir: true, exists: true, readers: rulesReaders(".cursor/rules"), note: "", state: "folder", link: null, points_to: null, via: null, diff: [], lines: 0, files: [".cursor/rules/go.mdc", ".cursor/rules/sql.mdc"] },
+  ],
+  agents: rulesAgents.map((agent) => {
+    const reads = agent === "claude" ? ["CLAUDE.md"] : agent === "gemini" ? [] : agent === "copilot" ? ["AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"] : agent === "cursor" ? ["AGENTS.md", "CLAUDE.md", ".cursor/rules/"] : ["AGENTS.md"];
+    return { agent, reads, gets_source: agent !== "claude" && agent !== "gemini", doc: "https://example.com" };
+  }),
+});
+const rulesPlan = (req: any) => {
+  const how = (p: string, d: string) => req.choices?.[p] ?? d;
+  const gem = how("GEMINI.md", "keep");
+  return {
+    source: "AGENTS.md", token: "t", notes: [],
+    items: [
+      { path: "CLAUDE.md", how: how("CLAUDE.md", "import"), options: ["import", "copy", "symlink", "keep"], status: how("CLAUDE.md", "import") === "keep" ? "keep" : "replace", needs_confirm: how("CLAUDE.md", "import") !== "keep", exists: true,
+        why: "Claude doesn't read AGENTS.md, so this file imports it.", new: "",
+        diff: [...claudeMdText.trimEnd().split("\n").map((t) => ({ op: "del", text: t })), { op: "add", text: "<!-- Claude reads this file, so it imports AGENTS.md. Edit AGENTS.md, not this file. -->" }, { op: "add", text: "@AGENTS.md" }] },
+      { path: "GEMINI.md", how: gem, options: ["import", "copy", "symlink", "keep"], status: gem === "keep" ? "keep" : "create", needs_confirm: false, exists: false,
+        why: gem === "keep" ? "Gemini doesn't read AGENTS.md. Pick Import it to make this file." : "Gemini doesn't read AGENTS.md, so this file imports it.", new: "",
+        diff: gem === "keep" ? [] : [{ op: "add", text: "<!-- Gemini reads this file, so it imports AGENTS.md. Edit AGENTS.md, not this file. -->" }, { op: "add", text: "@./AGENTS.md" }] },
+      { path: ".github/copilot-instructions.md", how: how(".github/copilot-instructions.md", "note"), options: ["note", "keep"], status: "replace", needs_confirm: false, exists: true,
+        why: "Copilot reads AGENTS.md too, so this only needs to say where the rules are.", new: "",
+        diff: [{ op: "gap", text: "13 lines, the same as AGENTS.md" }, { op: "add", text: "<!-- nekotrail:points-to AGENTS.md -->" }, { op: "add", text: "This project's rules live in AGENTS.md, which Copilot also reads. Edit AGENTS.md, not this file." }] },
+    ],
+  };
+};
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
@@ -491,6 +556,13 @@ mockIPC(
         return { file: args.target === "opencode" ? "~/.config/opencode/opencode.json" : "~/.codex/config.toml", backup: args.target === "opencode" ? null : "~/.codex/config.toml.bak-nekotrail-20261106-142233" };
       // ?dirty: archiving asks first, as if the workspace had uncommitted changes.
       case "archive_workspace": if (location.search.includes("dirty") && !args.force) throw "DIRTY"; return null;
+      case "rules_overview": return rulesOverview();
+      case "rules_plan": return rulesPlan(args.req);
+      case "rules_apply": return { written: ["CLAUDE.md", ".github/copilot-instructions.md"], backup: "~/Library/Application Support/dev.nekotrail.app/rules-backups/mochi-20261106-142200" };
+      case "rules_open": { const t = rulesText[args.path] ?? ""; return { path: args.path, text: t, exists: args.path in rulesText, hash: "h", link: null, generated_from: null }; }
+      case "rules_save": rulesText[args.path] = args.text; return { written: [args.path], backup: null };
+      case "task_rules": return taskRulesText;
+      case "set_task_rules": taskRulesText = args.text; return null;
       case "skill_share": return "~/.agents/skills/triage";
       case "prompts_list": return { entries: promptEntries(), saved: personalPrompts !== null };
       case "prompts_save": personalPrompts = args.list; return null;

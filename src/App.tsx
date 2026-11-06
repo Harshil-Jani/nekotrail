@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText } from "lucide-react";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
@@ -25,6 +25,7 @@ import { Board } from "./components/Board";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
+import { RulesSheet } from "./components/RulesSheet";
 import { Settings, type Pane as SettingsPane } from "./components/Settings";
 import { loadPrompts, type PromptEntry } from "./prompts";
 import { TrustSheet } from "./components/TrustSheet";
@@ -391,6 +392,8 @@ export default function App() {
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
   const [commandsFor, setCommandsFor] = useState<string | null>(params.get("commands")); // workspace id
+  // The Rules sheet: workspace id and the pane it opens on.
+  const [rulesFor, setRulesFor] = useState<{ id: string; pane: "files" | "edit" | "task" } | null>(params.get("rules") ? { id: params.get("rules")!, pane: (params.get("rulesPane") as "files" | "edit" | "task") ?? "files" } : null);
   // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
   const [freeMb, setFreeMb] = useState<number | null>(null);
   useEffect(() => {
@@ -1029,6 +1032,9 @@ export default function App() {
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: () => runScript() },
         { id: "open-editor", group: here, label: "Open in editor", hint: keyHint("⌘O"), keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
+        { id: "rules", group: here, label: "Project rules", keywords: "agents.md claude.md gemini.md copilot instructions cursor rules sync", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "files" }) },
+        { id: "rules-edit", group: here, label: "Edit rules", keywords: "agents.md claude.md markdown", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "edit" }) },
+        { id: "rules-task", group: here, label: "Rules for this task", keywords: "workspace note first prompt instructions", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "task" }) },
         { id: "commands", group: here, label: "Show commands the agent ran", keywords: "log history shell bash terminal audit", icon: <SquareTerminal size={15} />, run: () => setCommandsFor(ws.id) },
         { id: "open-finder", group: here, label: IS_MAC ? "Show in Finder" : "Show in Files", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
         { id: "pr", group: here, label: "Go to PR actions", keywords: "github pull request create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
@@ -1337,6 +1343,7 @@ export default function App() {
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setRulesFor({ id: ws.id, pane: "files" }); }}><ScrollText size={15} /><span>Rules</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setCommandsFor(ws.id); }}><SquareTerminal size={15} /><span>Commands the agent ran</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); const pr = prs[ws.id]?.pr; if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
@@ -1524,6 +1531,10 @@ export default function App() {
       {commandsFor && (() => {
         const w = workspaces.find((x) => x.id === commandsFor);
         return <CommandsLog workspaceId={commandsFor} name={w ? displayName(sky, w) : "this workspace"} onClose={() => setCommandsFor(null)} />;
+      })()}
+      {rulesFor && (() => {
+        const w = workspaces.find((x) => x.id === rulesFor.id);
+        return <RulesSheet workspaceId={rulesFor.id} initialPane={rulesFor.pane} name={w ? displayName(sky, w) : "this workspace"} readOnly={!w || w.state !== "active" || w.review_pr > 0} onClose={() => setRulesFor(null)} />;
       })()}
       {storage && <Storage names={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : id; }} onClose={() => setStorage(false)} onSay={say} />}
       {comparing && (
