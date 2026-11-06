@@ -15,6 +15,7 @@ pub mod prpoll;
 pub mod pty;
 pub mod radar;
 pub mod remote;
+pub mod review;
 pub mod safe;
 pub mod search;
 pub mod store;
@@ -113,6 +114,10 @@ struct PrCache {
     asked: std::collections::HashSet<(String, String)>,
     /// The last `pr` event each workspace got, so only changes go out.
     sent: HashMap<String, Value>,
+    /// Open PRs waiting for your review, per repo id (from the same poll, one extra query).
+    requests: HashMap<String, Vec<Value>>,
+    /// The last `review-requests` event, so it only goes out on a change.
+    sent_requests: Option<Value>,
 }
 
 impl AppState {
@@ -370,6 +375,10 @@ fn workspace_env(repo: &Repo, ws: &Workspace) -> Vec<(String, String)> {
         ("NEKOTRAIL_DEFAULT_BRANCH".to_string(), ws.target_branch.clone()),
     ];
     env.extend(repo.prefs.env.iter().cloned());
+    // A review workspace never pushes, whoever runs git in it: agent, terminal or script.
+    if ws.review_pr > 0 {
+        env.extend(review::read_only_env());
+    }
     env
 }
 
@@ -560,7 +569,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         title: String::new(),
         status: String::new(),
         pair_id: String::new(),
-        section_id: String::new(), parent_id, title_source: String::new(),
+        section_id: String::new(), parent_id, title_source: String::new(), review_pr: 0,
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
     ensure_local_excludes(&root, &prefs.copy_files);
@@ -573,6 +582,11 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
 /// Refuses when there is uncommitted work unless `force` is set.
 #[tauri::command]
 async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> Res<()> {
+    archive_blocking(&st, &id, force)
+}
+
+fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
+    let id = id.to_string();
     let ws = st.db().workspace(&id).map_err(e)?;
     let path = Path::new(&ws.path);
     if path.exists() {
@@ -581,7 +595,7 @@ async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> 
         }
         let repo = st.db().repo(&ws.repo_id).map_err(e)?;
         // A repo archive command the user never approved is skipped, not run (archiving can be automatic).
-        if let Ok(Some(script)) = script_to_run(&st, &ws, "archive") {
+        if let Ok(Some(script)) = script_to_run(st, &ws, "archive") {
             let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
                 .args(["-lc", &script])
                 .current_dir(path)
@@ -662,6 +676,7 @@ async fn set_workspace_status(st: State<'_, AppState>, id: String, status: Strin
 #[tauri::command]
 async fn rename_branch(st: State<'_, AppState>, id: String, branch: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    review::refuse_in_review(ws.review_pr)?;
     let dir = Path::new(&ws.path);
     let branch = branch.trim().to_string();
     if branch.is_empty() || branch == ws.branch {
@@ -908,7 +923,7 @@ async fn pr_review_comments(st: State<'_, AppState>, id: String) -> Res<Value> {
 
 fn review_comments_blocking(st: &AppState, id: &str) -> Res<Value> {
     let ws = st.db().workspace(id).map_err(e)?;
-    let n = gh(&ws.path, &["pr", "view", &ws.branch, "--json", "number", "--jq", ".number"])?;
+    let n = if ws.review_pr > 0 { ws.review_pr.to_string() } else { gh(&ws.path, &["pr", "view", &ws.branch, "--json", "number", "--jq", ".number"])? };
     let out = gh(&ws.path, &[
         "api", "--paginate", &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", n.trim()),
         "--jq", "[.[] | {id, path, line: (.line // .original_line), side, body, user: .user.login, avatar: .user.avatar_url, url: .html_url, reply_to: .in_reply_to_id, outdated: (.line == null)}]",
@@ -977,6 +992,204 @@ fn open_in_targets() -> Vec<Value> {
     linux::open_in_targets()
 }
 
+// ---------- reviewing other people's PRs ----------
+
+fn review_key(id: &str) -> String {
+    format!("review:{id}")
+}
+
+/// A review workspace and what was saved when it started: number, url, title, author, base,
+/// head_sha (the commit the comments go on) and merge_base (where the PR's diff starts).
+fn review_info(st: &AppState, id: &str) -> Res<(Workspace, Value)> {
+    let ws = st.db().workspace(id).map_err(e)?;
+    if ws.review_pr <= 0 {
+        return Err("This isn't a review workspace.".into());
+    }
+    let info = st.db().setting(&review_key(id)).map_err(e)?.and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let info = info.filter(|i| i["head_sha"].is_string() && i["merge_base"].is_string());
+    Ok((ws, info.ok_or("This review lost its details. Archive it and start the review again.")?))
+}
+
+/// The PR's diff, from the repo folder (the commits are there even once the worktree is gone).
+fn review_files(repo: &Repo, info: &Value) -> Res<Vec<review::FileDiff>> {
+    let (mb, head) = (info["merge_base"].as_str().unwrap_or(""), info["head_sha"].as_str().unwrap_or(""));
+    review::pr_diff(Path::new(&repo.root_path), mb, head).map_err(e)
+}
+
+/// The agent's findings from one turn in a review workspace become draft comments in Changes.
+fn review_findings_in(app: &AppHandle, st: &AppState, workspace_id: &str, text: &str) {
+    let found = review::parse_findings(text);
+    if found.is_empty() {
+        return;
+    }
+    let comments: Vec<store::ReviewComment> = found
+        .iter()
+        .map(|f| store::ReviewComment {
+            id: review::finding_id(workspace_id, f), file: f.file.clone(), side: f.side.clone(),
+            line: f.line, end_line: f.end_line, code: String::new(), text: review::finding_text(f),
+        })
+        .collect();
+    if st.db().add_review_comments(workspace_id, &comments).is_ok() {
+        let _ = app.emit("review-findings", json!({"workspace_id": workspace_id, "count": comments.len()}));
+    }
+}
+
+/// Every PR waiting for your review, across repos, each with its repo id. From the poller's cache.
+fn review_requests_list(st: &AppState) -> Value {
+    let repos = st.db().repos().unwrap_or_default();
+    let c = st.prs.lock().unwrap();
+    let mut out: Vec<Value> = vec![];
+    for r in &repos {
+        for pr in c.requests.get(&r.id).into_iter().flatten() {
+            let mut v = pr.clone();
+            v["repo_id"] = json!(r.id);
+            out.push(v);
+        }
+    }
+    Value::Array(out)
+}
+
+fn review_requests_emit(app: &AppHandle, st: &AppState) {
+    let list = review_requests_list(st);
+    let changed = {
+        let mut c = st.prs.lock().unwrap();
+        let changed = c.sent_requests.as_ref() != Some(&list);
+        if changed { c.sent_requests = Some(list.clone()); }
+        changed
+    };
+    if changed {
+        let _ = app.emit("review-requests", list);
+    }
+}
+
+#[tauri::command]
+async fn review_requests(app: AppHandle) -> Res<Value> {
+    blocking(app, |st| Ok(review_requests_list(st))).await
+}
+
+/// Check the PR's head out in a new read-only workspace (or find the one already open for it).
+/// Returns the workspace, the prompt for the agent, and whether it already existed.
+fn prepare_review(st: &AppState, repo_id: &str, number: u64) -> Res<(Workspace, String, bool)> {
+    if number == 0 {
+        return Err("That isn't a PR number.".into());
+    }
+    let repo = st.db().repo(repo_id).map_err(e)?;
+    if let Some(w) = st.db().workspaces(false).map_err(e)?.into_iter().find(|w| w.repo_id == repo.id && w.review_pr == number as i64) {
+        return Ok((w, String::new(), true));
+    }
+    let n = number.to_string();
+    let pr: Value = serde_json::from_str(&gh(&repo.root_path, &["pr", "view", &n, "--json", "number,title,url,body,author,headRefOid,baseRefName,state"])?).map_err(e)?;
+    if pr["state"] != "OPEN" {
+        return Err(format!("PR #{n} isn't open any more."));
+    }
+    // The author picks the base branch name too; it becomes a git argument.
+    let base = pr["baseRefName"].as_str().filter(|b| safe::branch_name(b)).ok_or(format!("PR #{n} goes into a branch git can't use safely."))?.to_string();
+    let root = PathBuf::from(&repo.root_path);
+    // GitHub keeps every PR's head at pull/N/head, forks included. `+` moves an old review branch
+    // to the newest head; it is never checked out (an open review of this PR was returned above).
+    let branch = format!("review/pr-{n}");
+    git::git(&root, &["fetch", "--quiet", "origin", &format!("+pull/{n}/head:refs/heads/{branch}")]).map_err(e)?;
+    let _ = git::git(&root, &["fetch", "--quiet", "origin", &base]);
+    let taken: Vec<String> = st.db().workspaces(true).map_err(e)?.into_iter().map(|w| w.name).collect();
+    let dir = st.home.join("workspaces").join(&repo.name);
+    let mut name = names::pick(&taken);
+    while taken.contains(&name) || dir.join(&name).exists() {
+        name = names::pick(&taken.iter().cloned().chain([name.clone()]).collect::<Vec<_>>());
+    }
+    let path = dir.join(&name);
+    std::fs::create_dir_all(&dir).map_err(e)?;
+    git::restore_worktree(&root, &path, &branch).map_err(e)?;
+    let head = git::git(&path, &["rev-parse", "HEAD"]).map_err(e)?;
+    let merge_base = git::merge_base(&path, &base).map_err(e)?;
+    let title = pr["title"].as_str().unwrap_or("").trim().to_string();
+    let ws = Workspace {
+        id: new_id(), repo_id: repo.id.clone(), name, branch, path: path.to_string_lossy().to_string(), target_branch: base.clone(),
+        state: "active".into(), pinned: false, unread: false, notes: String::new(), imported_from: None, created_at: store::now(),
+        title: title.clone(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
+        title_source: if title.is_empty() { String::new() } else { title::PR.to_string() }, review_pr: number as i64,
+    };
+    // No copied secrets (.env) and no setup script: this is someone else's code, only to be read.
+    ensure_local_excludes(&root, &[]);
+    st.db().insert_workspace(&ws).map_err(e)?;
+    let author = pr["author"]["login"].as_str().unwrap_or("ghost").to_string();
+    let info = json!({"number": number, "url": pr["url"], "title": title, "author": author, "base": base, "head_sha": head, "merge_base": merge_base});
+    st.db().set_setting(&review_key(&ws.id), &info.to_string()).map_err(e)?;
+    let prompt = review::agent_prompt(
+        &review::PrInfo { number, title: &title, author: &author, base: &base, body: pr["body"].as_str().unwrap_or(""), merge_base: &merge_base },
+        &repo.prefs.review_prompt,
+    );
+    Ok((ws, prompt, false))
+}
+
+/// Review someone else's PR: a read-only workspace on its head, and `agent` asked for findings in
+/// a read-only chat. Its findings land as draft comments in Changes when the turn ends.
+#[tauri::command]
+async fn start_review(app: AppHandle, st: State<'_, AppState>, repo_id: String, number: u64, agent: String) -> Res<Workspace> {
+    let (ws, prompt, existing) = blocking(app.clone(), move |st| prepare_review(st, &repo_id, number)).await?;
+    if existing {
+        return Ok(ws);
+    }
+    let s = Session {
+        id: new_id(), workspace_id: ws.id.clone(), agent: agent::get(&agent).id().into(),
+        agent_session_id: None, title: format!("Review of #{number}"), model: None, permission_mode: "plan".into(), effort: None,
+    };
+    st.db().insert_session(&s).map_err(e)?;
+    let _ = app.emit("workspaces-changed", json!({}));
+    send(app, st, s.id, prompt).await?;
+    Ok(ws)
+}
+
+/// How the drafts would be posted, before the user submits: how many go on lines, which ones
+/// only fit in the summary (their lines aren't in the PR's diff), and how many keep a suggestion.
+#[tauri::command]
+async fn review_plan(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let (ws, info) = review_info(st, &id)?;
+        let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+        let p = review::plan(&review_files(&repo, &info)?, &st.db().review_comments(&id).map_err(e)?);
+        Ok(json!({
+            "number": ws.review_pr, "url": info["url"], "title": info["title"], "author": info["author"], "head_sha": info["head_sha"],
+            "inline": p.inline.len(), "folded": p.folded,
+            "suggestions": p.inline.iter().filter(|i| review::has_suggestion(&i.body)).count(),
+        }))
+    })
+    .await
+}
+
+/// Post the drafts to GitHub as one review, then archive the review workspace. Only ever called
+/// from the Submit review button: nothing here runs on its own.
+#[tauri::command]
+async fn submit_review(app: AppHandle, id: String, verdict: String, body: String) -> Res<Value> {
+    let app2 = app.clone();
+    let out = blocking(app, move |st| {
+        let (ws, info) = review_info(st, &id)?;
+        let verdict = review::Verdict::parse(&verdict).ok_or("Pick Comment, Approve or Request changes.")?;
+        let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+        let comments = st.db().review_comments(&id).map_err(e)?;
+        let p = review::plan(&review_files(&repo, &info)?, &comments);
+        let folded: Vec<&store::ReviewComment> = comments.iter().filter(|c| p.folded.contains(&c.id)).collect();
+        let summary = review::summary(&body, &folded);
+        review::check(verdict, &summary, p.inline.len())?;
+        let host = repo.remote_url.as_deref().and_then(prpoll::enterprise_host);
+        let head = info["head_sha"].as_str().unwrap_or("");
+        let posted = review::post_review("gh", &repo.root_path, host.as_deref(), ws.review_pr as u64, &review::pending_payload(head, &p.inline), &review::submit_payload(verdict, &summary))?;
+        // On GitHub now: the drafts are done.
+        let ids: Vec<String> = comments.iter().map(|c| c.id.clone()).collect();
+        let _ = st.db().remove_review_comments(&id, &ids);
+        pr_poke(st, Some(&ws.repo_id), true);
+        let archived = archive_blocking(st, &id, false).is_ok();
+        Ok(json!({"url": posted["html_url"], "inline": p.inline.len(), "folded": p.folded.len(), "archived": archived}))
+    })
+    .await?;
+    let _ = app2.emit("workspaces-changed", json!({}));
+    Ok(out)
+}
+
+#[tauri::command]
+async fn update_review_comment(st: State<'_, AppState>, id: String, comment: String, text: String) -> Res<()> {
+    st.db().update_review_comment(&id, &comment, &text).map_err(e)
+}
+
 // ---------- the PR poller ----------
 
 /// One repo the poller asks GitHub about.
@@ -985,6 +1198,7 @@ struct PrTarget {
     dir: String,
     remote: Option<String>,
     /// Active workspace branches, plus the parents of stacked ones (even archived), de-duplicated.
+    /// Empty for a GitHub repo with no workspaces: it is still asked for review requests.
     branches: Vec<String>,
     /// Autopilot is on for one of its workspaces: poll fast, and keep polling while hidden.
     autopilot: bool,
@@ -1011,11 +1225,13 @@ fn pr_targets(st: &AppState, wss: &[Workspace]) -> Vec<PrTarget> {
         .into_iter()
         .filter_map(|r| {
             let mine: Vec<&Workspace> = wss.iter().filter(|w| w.repo_id == r.id).collect();
-            if mine.is_empty() {
+            // A repo with no workspaces is still asked whether someone wants your review, if it is on GitHub.
+            if mine.is_empty() && r.remote_url.as_deref().is_none_or(prpoll::clearly_not_github) {
                 return None;
             }
             let mut branches: Vec<String> = vec![];
-            for w in &mine {
+            // A review workspace's branch is local (review/pr-N): its PR comes from the review requests.
+            for w in mine.iter().filter(|w| w.review_pr == 0) {
                 if !branches.contains(&w.branch) { branches.push(w.branch.clone()); }
             }
             Some(PrTarget {
@@ -1026,15 +1242,31 @@ fn pr_targets(st: &AppState, wss: &[Workspace]) -> Vec<PrTarget> {
         .collect()
 }
 
-/// One gh call per repo (per 40 branches). Repos without a GitHub remote never spawn gh.
-fn poll_target(t: &PrTarget) -> Result<prpoll::Parsed, prpoll::Problem> {
+/// What one poll of a repo brought back.
+#[derive(Debug, PartialEq)]
+struct Polled {
+    prs: prpoll::Parsed,
+    /// None when the review request query failed but the branches answered: keep the last list.
+    requests: Option<review::Requests>,
+}
+
+/// One gh call per repo (per 40 branches), plus one for review requests. Repos without a GitHub
+/// remote never spawn gh. A failing branch query fails the poll before the second call is made.
+fn poll_target(t: &PrTarget) -> Result<Polled, prpoll::Problem> {
     let Some(remote) = t.remote.as_deref().filter(|r| !prpoll::clearly_not_github(r)) else {
         return Err(prpoll::Problem::NotGithub);
     };
     if !Path::new(&t.dir).is_dir() {
         return Err(prpoll::Problem::Other("The repo folder is missing".into()));
     }
-    prpoll::fetch_repo("gh", &t.dir, &t.branches, prpoll::enterprise_host(remote).as_deref())
+    let host = prpoll::enterprise_host(remote);
+    let prs = if t.branches.is_empty() { prpoll::Parsed::default() } else { prpoll::fetch_repo("gh", &t.dir, &t.branches, host.as_deref())? };
+    match review::fetch_requests("gh", &t.dir, host.as_deref()) {
+        Ok(r) => Ok(Polled { prs, requests: Some(r) }),
+        // Only review requests were asked for: their problem is the repo's problem (back-off and all).
+        Err(p) if t.branches.is_empty() => Err(p),
+        Err(_) => Ok(Polled { prs, requests: None }),
+    }
 }
 
 /// What the UI gets for one workspace: `pr` (object or null) once known, and a `problem` when
@@ -1112,7 +1344,7 @@ fn pr_poll_loop(app: AppHandle) {
         };
         let todo: Vec<&PrTarget> = targets.iter().filter(|t| due.contains(&t.repo_id)).collect();
         // Repos in parallel, so one slow repo doesn't hold up the others.
-        let results: Vec<(&PrTarget, Result<prpoll::Parsed, prpoll::Problem>)> = std::thread::scope(|s| {
+        let results: Vec<(&PrTarget, Result<Polled, prpoll::Problem>)> = std::thread::scope(|s| {
             let hs: Vec<_> = todo.iter().map(|t| s.spawn(move || (*t, poll_target(t)))).collect();
             hs.into_iter().filter_map(|h| h.join().ok()).collect()
         });
@@ -1122,7 +1354,12 @@ fn pr_poll_loop(app: AppHandle) {
             let done = std::time::Instant::now();
             for (t, res) in results {
                 match res {
-                    Ok(p) => {
+                    Ok(Polled { prs: mut p, requests }) => {
+                        if let Some(r) = requests {
+                            c.requests.insert(t.repo_id.clone(), r.prs);
+                            p.remaining = match (p.remaining, r.remaining) { (Some(a), Some(b)) => Some(a.min(b)), (a, b) => a.or(b) };
+                            p.reset_in = p.reset_in.or(r.reset_in);
+                        }
                         for b in &t.branches {
                             c.asked.insert((t.repo_id.clone(), b.clone()));
                         }
@@ -1140,6 +1377,7 @@ fn pr_poll_loop(app: AppHandle) {
         }
         if !todo.is_empty() {
             pr_emit_changes(&app, &st, &wss);
+            review_requests_emit(&app, &st);
         }
         // Autopilot reacts to what was just fetched.
         for w in wss.iter().filter(|w| w.state == "active" && polled.contains(&w.repo_id)) {
@@ -1328,6 +1566,7 @@ async fn stack_parent(app: AppHandle, id: String) -> Res<Value> {
 async fn restack_workspace(app: AppHandle, id: String) -> Res<Value> {
     blocking(app, move |st| {
         let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
         if ws.parent_id.is_empty() {
             return Err("This workspace isn't stacked on another one.".into());
         }
@@ -1825,6 +2064,8 @@ fn autopilot_key(id: &str) -> String {
 async fn set_autopilot(app: AppHandle, st: State<'_, AppState>, id: String, on: bool) -> Res<()> {
     let key = autopilot_key(&id);
     if on {
+        // Autopilot fixes CI and merges: nothing it may do on someone else's PR.
+        review::refuse_in_review(st.db().workspace(&id).map_err(e)?.review_pr)?;
         st.db().set_setting(&key, &json!({"tries": 0, "last": ""}).to_string()).map_err(e)?;
         // The poller looks right away (and every 20 s from now on) and runs autopilot after.
         pr_poke_workspace(&st, &id, true);
@@ -1916,6 +2157,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
 #[tauri::command]
 async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    review::refuse_in_review(ws.review_pr)?;
     mark_changed(&st, &ws.id);
     let dir = Path::new(&ws.path);
     let msg = if message.trim().is_empty() {
@@ -1937,6 +2179,8 @@ async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Re
 #[tauri::command]
 async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    // A review stays on the PR's own code: merging the base in would change what is reviewed.
+    review::refuse_in_review(ws.review_pr)?;
     mark_changed(&st, &ws.id);
     let dir = Path::new(&ws.path);
     git::merge_target(dir, &ws.target_branch).map(str::to_string).map_err(e)
@@ -1946,6 +2190,7 @@ async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
 #[tauri::command]
 async fn merge_pr(st: State<'_, AppState>, id: String, auto: Option<bool>) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    review::refuse_in_review(ws.review_pr)?;
     let method = st.db().repo(&ws.repo_id).map(|r| r.prefs.merge_method).unwrap_or_default();
     let flag = match method.as_str() { "merge" => "--merge", "rebase" => "--rebase", _ => "--squash" };
     if auto.unwrap_or(false) {
@@ -2020,6 +2265,7 @@ async fn send_to_workspace(app: AppHandle, st: State<'_, AppState>, id: String, 
 #[tauri::command]
 async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: String, draft: bool) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    review::refuse_in_review(ws.review_pr)?;
     git::git(Path::new(&ws.path), &["push", "-u", "origin", &ws.branch]).map_err(e)?;
     let mut args = vec!["pr", "create", "--head", &ws.branch, "--base", &ws.target_branch, "--title", &title, "--body", &body];
     if draft {
@@ -2096,6 +2342,7 @@ async fn sessions(st: State<'_, AppState>, workspace_id: String) -> Res<Vec<Sess
 async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: String) -> Res<Session> {
     let agent = agent::get(&agent).id();
     let pref = |k: &str| st.db().setting(&format!("{agent}_{k}")).ok().flatten().filter(|v| !v.is_empty());
+    let reviewing = st.db().workspace(&workspace_id).map(|w| w.review_pr > 0).unwrap_or(false);
     let s = Session {
         id: new_id(),
         workspace_id,
@@ -2103,7 +2350,8 @@ async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: Strin
         agent_session_id: None,
         title: "New chat".into(),
         model: pref("model"),
-        permission_mode: pref("mode").unwrap_or_else(|| "acceptEdits".into()),
+        // Chats in a review workspace only read (start_turn holds to that whatever is stored).
+        permission_mode: if reviewing { "plan".into() } else { pref("mode").unwrap_or_else(|| "acceptEdits".into()) },
         effort: pref("effort"),
     };
     st.db().insert_session(&s).map_err(e)?;
@@ -2112,6 +2360,12 @@ async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: Strin
 
 #[tauri::command]
 async fn update_session(st: State<'_, AppState>, id: String, title: String, model: Option<String>, permission_mode: String) -> Res<()> {
+    // One lock at a time: the database mutex isn't re-entrant.
+    let workspace_id = st.db().session(&id).map(|s| s.workspace_id).unwrap_or_default();
+    let reviewing = st.db().workspace(&workspace_id).map(|w| w.review_pr > 0).unwrap_or(false);
+    if reviewing && permission_mode != "plan" {
+        return Err("Chats in a review workspace only read: someone else's PR is never changed from here.".into());
+    }
     st.db().update_session_settings(&id, &title, model.as_deref().filter(|m| !m.is_empty()), &permission_mode).map_err(e)
 }
 
@@ -2593,6 +2847,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     };
 
     let fork = st.runs.lock().unwrap().forks.remove(&id);
+    // Every chat in a review workspace reads only, whatever mode it was started in.
+    let permission_mode = if ws.review_pr > 0 { "plan" } else { session.permission_mode.as_str() };
     // Checked on every turn, right before it starts, so a pull or the agent itself editing these
     // files can't slip new commands in after the user trusted the old ones.
     let harness = agent::get(&session.agent);
@@ -2616,7 +2872,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         prompt: &prompt,
         agent_session_id: session.agent_session_id.as_deref(),
         model: session.model.as_deref(),
-        permission_mode: &session.permission_mode,
+        permission_mode,
         cwd: Path::new(&ws.path),
         effort: session.effort.as_deref(),
         instructions: Some(prefs.general_prompt.trim()).filter(|p| !p.is_empty()),
@@ -2641,7 +2897,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         runs.running.insert(id.clone(), child.id());
         runs.parsers.insert(id.clone(), parser.clone());
     }
-    if harness.interactive(&session.permission_mode)
+    if harness.interactive(permission_mode)
         && let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
             if let Some(first) = harness.first_input(&prompt) {
@@ -2683,8 +2939,11 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     let workspace_id = ws.id.clone();
     let ws_dir = ws.path.clone();
     let pid = child.id();
+    let reviewing = ws.review_pr > 0;
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
+        // In a review workspace, what the agent wrote this turn: its findings become draft comments.
+        let mut said = String::new();
         let mut saw_done = false;
         let mut ok = true;
         let mut context_tokens: Option<u64> = None;
@@ -2783,6 +3042,11 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                     (Some("tool"), _) => { if matches!(needs.as_deref(), Some("plan") | Some("question")) { needs = None; } }
                     _ => {}
                 }
+                if reviewing && ev["kind"] == "text" && said.len() < 400_000
+                    && let Some(t) = ev["text"].as_str() {
+                        said.push_str(t);
+                        said.push('\n');
+                    }
                 let _ = st.db().append_event(&id, &ev);
                 emit_event(&app, &id, &ev);
             }
@@ -2816,6 +3080,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                 let names: Vec<&str> = hits.iter().map(|h| h.path.as_str()).collect();
                 guard_hit = Some(format!("Changed a protected file: {}", names.join(", ")));
             }
+        if reviewing && !said.is_empty() {
+            review_findings_in(&app, &st, &workspace_id, &said);
+        }
         let _ = st.db().set_unread(&workspace_id, true);
         mark_changed(&st, &workspace_id);
         let next = {
@@ -3076,6 +3343,7 @@ pub fn run() {
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
             remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
@@ -3101,7 +3369,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: wsd.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         // The main checkout protects infra; the workspace's copy (which an agent could edit)
         // tries to free everything and adds docs.
@@ -3128,7 +3396,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         let env = workspace_env(&repo, &ws);
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
@@ -3253,7 +3521,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         st.db().insert_repo(&repo).unwrap();
         st.db().insert_workspace(&ws).unwrap();
@@ -3291,7 +3559,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         std::fs::write(dir.path().join("CLAUDE.md"), "Use pnpm.").unwrap();
         assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_none(), "text only, nothing to trust");
@@ -3371,7 +3639,7 @@ mod tests {
         let ws = |id: &str, repo: &str, branch: &str, parent: &str| Workspace {
             id: id.into(), repo_id: repo.into(), name: id.into(), branch: branch.into(), path: dir.path().join("ws").join(id).to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(), title_source: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(), title_source: String::new(), review_pr: 0,
         };
         st.db().insert_repo(&repo("r1", Some("git@github.com:me/app.git"))).unwrap();
         st.db().insert_repo(&repo("r2", None)).unwrap();
@@ -3385,7 +3653,8 @@ mod tests {
         let wss = pr_workspaces(&st);
         assert!(wss.iter().any(|w| w.id == "parent"), "an archived parent of a stacked workspace still gets its PR");
         let targets = pr_targets(&st, &wss);
-        assert_eq!(targets.len(), 2, "a repo without workspaces is skipped");
+        assert_eq!(targets.len(), 3, "a GitHub repo without workspaces is still asked for review requests");
+        assert!(targets.iter().find(|t| t.repo_id == "idle").unwrap().branches.is_empty());
         let r1 = targets.iter().find(|t| t.repo_id == "r1").unwrap();
         assert_eq!(r1.branches, vec!["me/on-top".to_string(), "me/base".to_string()], "one entry per branch");
         assert!(r1.autopilot);
@@ -3404,5 +3673,51 @@ mod tests {
         let local = wss.iter().find(|w| w.id == "local").unwrap();
         st.prs.lock().unwrap().sched.record("r2", std::time::Instant::now(), false, Err(prpoll::Problem::NotGithub));
         assert_eq!(pr_view(&st.prs.lock().unwrap(), local), Some(json!({"workspace_id": "local", "problem": {"code": "not_github", "message": "This repo has no GitHub remote"}})));
+    }
+
+    #[test]
+    fn review_workspaces_are_read_only_and_keep_their_details() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = AppState {
+            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
+        };
+        let repo = Repo {
+            id: "r1".into(), name: "app".into(), root_path: dir.path().join("app").to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: Some("git@github.com:me/app.git".into()), setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        };
+        let ws = |id: &str, branch: &str, review_pr: i64| Workspace {
+            id: id.into(), repo_id: "r1".into(), name: id.into(), branch: branch.into(), path: dir.path().join(id).to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr,
+        };
+        st.db().insert_repo(&repo).unwrap();
+        let (mine, theirs) = (ws("mine", "me/task", 0), ws("theirs", "review/pr-7", 7));
+        st.db().insert_workspace(&mine).unwrap();
+        st.db().insert_workspace(&theirs).unwrap();
+        assert_eq!(st.db().workspace("theirs").unwrap().review_pr, 7, "stored and read back");
+
+        // Agent, terminal and scripts in a review workspace get the no-push git settings; others don't.
+        let has_block = |w: &Workspace| workspace_env(&repo, w).iter().any(|(k, v)| k == "GIT_CONFIG_KEY_0" && v.ends_with(".pushInsteadOf"));
+        assert!(has_block(&theirs));
+        assert!(!has_block(&mine));
+
+        // The poller doesn't look up the local review branch as a PR head.
+        let targets = pr_targets(&st, &pr_workspaces(&st));
+        assert_eq!(targets[0].branches, vec!["me/task".to_string()]);
+
+        // Details are needed to post; a normal workspace has none.
+        assert!(review_info(&st, "mine").unwrap_err().contains("isn't a review workspace"));
+        assert!(review_info(&st, "theirs").unwrap_err().contains("lost its details"));
+        st.db().set_setting(&review_key("theirs"), &json!({"number": 7, "head_sha": "abc", "merge_base": "def"}).to_string()).unwrap();
+        assert_eq!(review_info(&st, "theirs").unwrap().1["head_sha"], "abc");
+
+        // Drafts from findings can be edited before they are posted.
+        st.db().add_review_comments("theirs", &[store::ReviewComment { id: "f1".into(), file: "a.ts".into(), side: "new".into(), line: 3, end_line: 3, code: String::new(), text: "Off by one.".into() }]).unwrap();
+        st.db().update_review_comment("theirs", "f1", "  Off by one at the end.  ").unwrap();
+        assert_eq!(st.db().review_comments("theirs").unwrap()[0].text, "Off by one at the end.");
+        assert!(st.db().update_review_comment("theirs", "f1", " ").is_err());
+        assert!(st.db().update_review_comment("mine", "f1", "x").is_err(), "only in its own workspace");
     }
 }

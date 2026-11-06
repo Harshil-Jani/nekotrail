@@ -77,6 +77,8 @@ fn migrate(conn: &Connection) -> Result<()> {
     add("workspaces", "parent_id", "TEXT NOT NULL DEFAULT ''")?;
     // Where the title came from: auto (first prompt), pr, user; empty means no title (see title.rs).
     add("workspaces", "title_source", "TEXT NOT NULL DEFAULT ''")?;
+    // Review workspaces: the PR number being reviewed, 0 for every other workspace.
+    add("workspaces", "review_pr", "INTEGER NOT NULL DEFAULT 0")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);")?;
     add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
     add("sessions", "effort", "TEXT")?;
@@ -239,6 +241,10 @@ pub struct Workspace {
     /// Where `title` came from: "auto", "pr" or "user"; "" while there is no title.
     #[serde(default)]
     pub title_source: String,
+    /// Set on a review workspace: the number of the PR it reviews (someone else's). 0 for every other
+    /// workspace. A review workspace is read-only: nothing is pushed from it (see `review`).
+    #[serde(default)]
+    pub review_pr: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -318,9 +324,10 @@ fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
         section_id: r.get(15)?,
         parent_id: r.get(16)?,
         title_source: r.get(17)?,
+        review_pr: r.get(18)?,
     })
 }
-const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id, parent_id, title_source";
+const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id, parent_id, title_source, review_pr";
 
 fn session_from(r: &Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -440,8 +447,8 @@ impl Store {
 
     pub fn insert_workspace(&self, w: &Workspace) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)"),
-            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id, w.parent_id, w.title_source],
+            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)"),
+            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id, w.parent_id, w.title_source, w.review_pr],
         )?;
         Ok(())
     }
@@ -774,6 +781,14 @@ impl Store {
         Ok(())
     }
 
+    /// Change one draft comment's text (the user edits a finding before it is posted).
+    pub fn update_review_comment(&self, workspace_id: &str, id: &str, text: &str) -> Result<()> {
+        anyhow::ensure!(!text.trim().is_empty(), "a review comment needs some text");
+        let n = self.conn.execute("UPDATE review_comments SET text=?3 WHERE workspace_id=?1 AND id=?2", params![workspace_id, id, text.trim()])?;
+        anyhow::ensure!(n == 1, "that comment is gone");
+        Ok(())
+    }
+
     /// Remove these comments from one workspace (deleted, cleared as outdated, or sent).
     pub fn remove_review_comments(&self, workspace_id: &str, ids: &[String]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
@@ -894,7 +909,7 @@ mod tests {
             id: new_id(), repo_id: r.id.clone(), name: name.into(), branch: format!("me/{name}"), path: format!("/tmp/ws/{name}"),
             target_branch: target.into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: now(), title: String::new(), status: String::new(), pair_id: String::new(),
-            section_id: String::new(), parent_id: parent.into(), title_source: String::new(),
+            section_id: String::new(), parent_id: parent.into(), title_source: String::new(), review_pr: 0,
         };
         let parent = ws("mittens", "main", "");
         let child = ws("socks", "me/mittens", &parent.id);
@@ -930,7 +945,7 @@ mod tests {
             title: String::new(),
             status: String::new(),
             pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         s.insert_workspace(&w).unwrap();
         let sec = s.create_section("Today").unwrap();
@@ -995,7 +1010,7 @@ mod tests {
             id: new_id(), repo_id: r.id.clone(), name: name.into(), branch: format!("me/{name}"), path: format!("/tmp/ws/{name}"),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: now(), title: title.into(), status: String::new(), pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         s.insert_workspace(&w).unwrap();
         let sess = Session {

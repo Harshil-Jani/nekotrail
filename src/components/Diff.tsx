@@ -1,9 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ChevronDown, ExternalLink, MessageSquarePlus, Pencil, RefreshCw, Save, Search, Send, Undo2, X } from "lucide-react";
+import { ChevronDown, ExternalLink, Lock, MessageSquarePlus, Pencil, RefreshCw, Save, Search, Send, Undo2, X } from "lucide-react";
 import { Avatar } from "./Avatar";
-import { api, errText, type FileChange } from "../api";
+import { api, errText, type FileChange, type ReviewPlan, type ReviewVerdict } from "../api";
 import { keyHint, mod } from "../platform";
+import { hasSuggestion, planLine, submitBlocker, VERDICTS } from "../review";
 import { Mascot } from "./Mascot";
 import { ask } from "./Confirm";
 
@@ -97,8 +98,10 @@ const NONE: never[] = [];
 const COMMENT_ICON = <MessageSquarePlus size={13} />;
 
 /** The box for writing one review comment. Its draft lives here, so typing redraws only this box. */
-function ReviewEdit({ label, draft, onSave, onCancel }: {
+function ReviewEdit({ label, draft, onSave, onCancel, verb = "Add comment", heading }: {
   label: string;
+  verb?: string;
+  heading?: string;
   /** Kept outside, so the text survives when shift-click moves the box to a longer range. */
   draft: { current: string };
   onSave: (text: string) => void;
@@ -107,7 +110,7 @@ function ReviewEdit({ label, draft, onSave, onCancel }: {
   const [text, setText] = useState(draft.current);
   return (
     <div className="review-edit" data-review-edit>
-      <span className="review-where">Comment on {label}</span>
+      <span className="review-where">{heading ?? `Comment on ${label}`}</span>
       <textarea
         autoFocus
         value={text}
@@ -120,30 +123,49 @@ function ReviewEdit({ label, draft, onSave, onCancel }: {
         }}
       />
       <div className="row">
-        <span className="muted review-keys">{keyHint("⌘↵ to add, Esc to cancel")}</span>
+        <span className="muted review-keys">{keyHint(`⌘↵ to ${verb === "Add comment" ? "add" : "save"}, Esc to cancel`)}</span>
         <span className="spacer" />
         <button className="quiet" onClick={onCancel}>Cancel</button>
-        <button className="primary" onClick={() => onSave(text)} disabled={!text.trim()}>Add comment</button>
+        <button className="primary" onClick={() => onSave(text)} disabled={!text.trim()}>{verb}</button>
       </div>
     </div>
   );
 }
 
-/** Our draft comment, shown under the last line it covers. */
-function CommentCard({ c, onRemove }: { c: ReviewComment; onRemove: (id: string) => void }) {
+/** Our draft comment, shown under the last line it covers. Pencil edits it in place. */
+function CommentCard({ c, onRemove, onEdit, loose }: { c: ReviewComment; onRemove: (id: string) => void; onEdit: (id: string, text: string) => void; loose?: React.ReactNode }) {
+  const [editing, setEditing] = useState(false);
+  const draft = useRef(c.text);
+  if (editing) {
+    return (
+      <ReviewEdit
+        label={linesLabel(c)} heading={`Edit comment on ${linesLabel(c)}`} verb="Save" draft={draft}
+        onSave={(t) => { if (t.trim()) onEdit(c.id, t.trim()); setEditing(false); }}
+        onCancel={() => { draft.current = c.text; setEditing(false); }}
+      />
+    );
+  }
   return (
-    <div className="review-comment" data-comment={c.id}>
+    <div className={`review-comment${loose ? " loose" : ""}`} data-comment={c.id}>
       <div className="review-comment-body">
-        {c.end_line > c.line && <span className="review-where">On {linesLabel(c)}</span>}
+        {loose}
+        {!loose && (c.end_line > c.line || hasSuggestion(c.text)) && (
+          <span className="review-where">
+            {c.end_line > c.line ? `On ${linesLabel(c)}` : ""}
+            {hasSuggestion(c.text) && <span className="chip">Suggested change</span>}
+          </span>
+        )}
+        {loose && c.code && <pre className="review-quote">{c.code}</pre>}
         <span className="review-text">{c.text}</span>
       </div>
+      <button className="icon" aria-label="Edit comment" title="Edit comment" onClick={() => { draft.current = c.text; setEditing(true); }}><Pencil size={13} /></button>
       <button className="icon" aria-label="Delete comment" title="Delete comment" onClick={() => onRemove(c.id)}><X size={13} /></button>
     </div>
   );
 }
 
 /** What hangs under a diff line: GitHub comments, our drafts, and the comment box when open. */
-function Under({ gh, ours, box, draft, onSave, onCancel, onRemove }: {
+function Under({ gh, ours, box, draft, onSave, onCancel, onRemove, onEdit }: {
   gh: GhComment[];
   ours: ReviewComment[];
   box: string | null;
@@ -151,6 +173,7 @@ function Under({ gh, ours, box, draft, onSave, onCancel, onRemove }: {
   onSave: (text: string) => void;
   onCancel: () => void;
   onRemove: (id: string) => void;
+  onEdit: (id: string, text: string) => void;
 }) {
   return (
     <>
@@ -164,7 +187,7 @@ function Under({ gh, ours, box, draft, onSave, onCancel, onRemove }: {
           <button className="icon" aria-label="Open on GitHub" title="Open on GitHub" onClick={() => openUrl(c.url)}><ExternalLink size={13} /></button>
         </div>
       ))}
-      {ours.map((c) => <CommentCard key={c.id} c={c} onRemove={onRemove} />)}
+      {ours.map((c) => <CommentCard key={c.id} c={c} onRemove={onRemove} onEdit={onEdit} />)}
       {box !== null && <ReviewEdit label={box} draft={draft} onSave={onSave} onCancel={onCancel} />}
     </>
   );
@@ -181,6 +204,7 @@ type RowActions = {
   save: (text: string) => void;
   cancel: () => void;
   remove: (id: string) => void;
+  edit: (id: string, text: string) => void;
   draft: { current: string };
 };
 
@@ -211,7 +235,7 @@ const DiffRow = memo(function DiffRow({ l, i, here, ghHere, selected, box, act }
         </button>
         <code>{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}{l.text || " "}</code>
       </div>
-      <Under gh={ghHere} ours={here} box={box} draft={act.draft} onSave={act.save} onCancel={act.cancel} onRemove={act.remove} />
+      <Under gh={ghHere} ours={here} box={box} draft={act.draft} onSave={act.save} onCancel={act.cancel} onRemove={act.remove} onEdit={act.edit} />
     </div>
   );
 });
@@ -242,7 +266,7 @@ const SplitRow = memo(function SplitRow({ a, b, ia, ib, here, ghHere, selA, selB
   return (
     <div>
       <div className="split-row">{cell(a, ia, "old", selA)}{cell(b, ib, "new", selB)}</div>
-      <Under gh={ghHere} ours={here} box={box} draft={act.draft} onSave={act.save} onCancel={act.cancel} onRemove={act.remove} />
+      <Under gh={ghHere} ours={here} box={box} draft={act.draft} onSave={act.save} onCancel={act.cancel} onRemove={act.remove} onEdit={act.edit} />
     </div>
   );
 });
@@ -258,6 +282,7 @@ const DiffLines = memo(function DiffLines({
   split,
   onAdd,
   onRemove,
+  onEdit,
 }: {
   file: string;
   text: string;
@@ -266,6 +291,7 @@ const DiffLines = memo(function DiffLines({
   outdated: Set<string>;
   onAdd: (c: ReviewComment) => void;
   onRemove: (ids: string[]) => void;
+  onEdit: (id: string, text: string) => void;
   split: boolean;
 }) {
   const lines = useMemo(() => parseDiff(text), [text]);
@@ -274,8 +300,8 @@ const DiffLines = memo(function DiffLines({
   const [sel, setSel] = useState<Sel | null>(null);
   const [dragging, setDragging] = useState(false);
   const draft = useRef("");
-  const live = useRef({ sel, lines, file, dragging: false, onAdd, onRemove });
-  live.current = { ...live.current, sel, lines, file, onAdd, onRemove };
+  const live = useRef({ sel, lines, file, dragging: false, onAdd, onRemove, onEdit });
+  live.current = { ...live.current, sel, lines, file, onAdd, onRemove, onEdit };
   useEffect(() => { setSel(null); draft.current = ""; }, [file]);
   // New text for the same file (the agent's turn ended): keep the open box on the same code if it is still there.
   const prevLines = useRef(lines);
@@ -328,6 +354,7 @@ const DiffLines = memo(function DiffLines({
     },
     cancel: () => { setSel(null); draft.current = ""; },
     remove: (id) => live.current.onRemove([id]),
+    edit: (id, t) => live.current.onEdit(id, t),
     draft,
   }), []);
 
@@ -364,17 +391,16 @@ const DiffLines = memo(function DiffLines({
   const looseList = placed.loose.length > 0 && (
     <div className="review-loose">
       {placed.loose.map((c) => (
-        <div key={c.id} className="review-comment loose" data-comment={c.id}>
-          <div className="review-comment-body">
+        <CommentCard
+          key={c.id} c={c} onRemove={(id) => onRemove([id])} onEdit={onEdit}
+          loose={(
             <span className="review-where">
               {outdated.has(c.id) ? <span className="chip outdated">Outdated</span> : <span className="chip">Not in this view</span>}
               {c.end_line > c.line ? "Lines" : "Line"} {c.line}{c.end_line > c.line ? ` to ${c.end_line}` : ""}
+              {hasSuggestion(c.text) && <span className="chip">Suggested change</span>}
             </span>
-            {c.code && <pre className="review-quote">{c.code}</pre>}
-            <span className="review-text">{c.text}</span>
-          </div>
-          <button className="icon" aria-label="Delete comment" title="Delete comment" onClick={() => onRemove([c.id])}><X size={13} /></button>
-        </div>
+          )}
+        />
       ))}
     </div>
   );
@@ -526,6 +552,8 @@ export function Diff({
   refreshKey,
   onSendReview,
   focusFile,
+  reviewPr = 0,
+  onSubmitted,
 }: {
   workspaceId: string;
   refreshKey: number;
@@ -533,6 +561,10 @@ export function Diff({
   onSendReview: (text: string, send?: boolean) => void;
   /** Open this file in the editor (quick open, ⌘P). */
   focusFile?: { path: string; nonce: number };
+  /** A review workspace: the PR it reviews. Drafts go to GitHub with Submit review, not to the agent. */
+  reviewPr?: number;
+  /** The review went up to GitHub. */
+  onSubmitted?: (r: { url: string | null; inline: number; folded: number; archived: boolean }) => void;
 }) {
   const [files, setFiles] = useState<FileChange[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -578,8 +610,14 @@ export function Diff({
     setComments(before.filter((c) => !gone.has(c.id)));
     api.removeReviewComments(id, ids).catch((err) => { setComments(before); setNotice(`Couldn't remove the comment: ${errText(err)}`); });
   }, []);
+  const editComment = useCallback((cid: string, text: string) => {
+    const { workspaceId: id, comments: before } = latest.current;
+    setComments(before.map((c) => (c.id === cid ? { ...c, text } : c)));
+    api.updateReviewComment(id, cid, text).catch((err) => { setComments(before); setNotice(`Couldn't save the comment: ${errText(err)}`); });
+  }, []);
   const [reviewOpen, setReviewOpen] = useState(false);
-  useEffect(() => setReviewOpen(false), [workspaceId]);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  useEffect(() => { setReviewOpen(false); setSubmitOpen(false); }, [workspaceId]);
   const [jump, setJump] = useState<string | null>(null);
   // "Viewed" ticks reset when a file changes again (its +/- counts move).
   const vkey = `nekotrail.viewed.${workspaceId}`;
@@ -758,7 +796,7 @@ export function Diff({
           </label>
         )}
         {files.length === 0 && (
-          <p className="muted file-list-empty">{uncommitted ? "No uncommitted changes. Everything is committed." : "Nothing changed yet. Edits the agent makes show up here, compared with the target branch."}</p>
+          <p className="muted file-list-empty">{uncommitted ? "No uncommitted changes. Everything is committed." : reviewPr ? "This PR changes no files compared with its base branch." : "Nothing changed yet. Edits the agent makes show up here, compared with the target branch."}</p>
         )}
         {files.length > 0 && shown.length === 0 && (
           <p className="muted file-list-empty">No changed file matches "{query.trim()}".</p>
@@ -783,13 +821,24 @@ export function Diff({
           );
         })}
         <div className="review-bar">
-          {ghTop.length > 0 && (
+          {ghTop.length > 0 && !reviewPr && (
             <button onClick={() => onSendReview(githubPrompt(gh))}>
               <Send size={14} /> Send {ghTop.length} GitHub {ghTop.length === 1 ? "comment" : "comments"}
             </button>
           )}
+          {reviewPr > 0 && comments.length === 0 && (
+            <>
+              <p className="muted">The agent's findings land here as drafts for you to edit. Click a line number to add your own.</p>
+              <div className="review-ctl">
+                <span className="spacer" />
+                <button className="accent" onClick={() => setSubmitOpen(true)} title="Choose Comment, Approve or Request changes, and post to GitHub">
+                  <Send size={14} /> Submit review
+                </button>
+              </div>
+            </>
+          )}
           {comments.length === 0 ? (
-            <p className="muted">Click a line number to comment. Shift-click or drag for more lines. ↑/↓ moves between files.</p>
+            !reviewPr && <p className="muted">Click a line number to comment. Shift-click or drag for more lines. ↑/↓ moves between files.</p>
           ) : (
             <>
               {reviewOpen && (
@@ -818,7 +867,7 @@ export function Diff({
                     <button
                       className="quiet"
                       onClick={async () => {
-                        if (await ask({ title: `Delete all ${comments.length} comments?`, body: "Your review drafts for this workspace go away. Nothing is sent to the agent.", ok: "Delete comments", danger: true })) {
+                        if (await ask({ title: `Delete all ${comments.length} comments?`, body: reviewPr ? "Your review drafts for this PR go away. Nothing is posted to GitHub." : "Your review drafts for this workspace go away. Nothing is sent to the agent.", ok: "Delete comments", danger: true })) {
                           removeComments(comments.map((c) => c.id));
                           setReviewOpen(false);
                         }
@@ -831,7 +880,7 @@ export function Diff({
               )}
               {stale.length > 0 && !reviewOpen && (
                 <p className="review-stale">
-                  <span>{stale.length} {stale.length === 1 ? "comment is" : "comments are"} outdated. The agent changed those lines.</span>
+                  <span>{stale.length} {stale.length === 1 ? "comment is" : "comments are"} outdated. {reviewPr ? "Those lines changed." : "The agent changed those lines."}</span>
                   <button className="quiet" onClick={() => removeComments(stale.map((c) => c.id))}>Clear</button>
                 </p>
               )}
@@ -839,9 +888,15 @@ export function Diff({
                 <button className="review-toggle" aria-expanded={reviewOpen} onClick={() => setReviewOpen((o) => !o)} title="See your comments">
                   Review ({comments.length})<ChevronDown size={13} className={reviewOpen ? "flip" : ""} />
                 </button>
-                <button className="accent" onClick={sendReview} title="Send all comments to the agent in one message">
-                  <Send size={14} /> Send review
-                </button>
+                {reviewPr > 0 ? (
+                  <button className="accent" onClick={() => { setReviewOpen(false); setSubmitOpen(true); }} title="Choose Comment, Approve or Request changes, and post to GitHub">
+                    <Send size={14} /> Submit review
+                  </button>
+                ) : (
+                  <button className="accent" onClick={sendReview} title="Send all comments to the agent in one message">
+                    <Send size={14} /> Send review
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -858,7 +913,9 @@ export function Diff({
               <code>{open}</code>
               <span className="spacer" />
               <button className="quiet" onClick={toggleSplit} title="Switch diff layout">{split ? "Show unified" : "Show side by side"}</button>
-              <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit file</button>
+              {reviewPr > 0
+                ? <span className="chip read-only" title="This workspace reviews someone else's PR. Nothing is pushed from it."><Lock size={11} />Read only</span>
+                : <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit file</button>}
               <button
                 className="quiet"
                 onClick={() => discard(open)}
@@ -877,11 +934,88 @@ export function Diff({
               split={split}
               onAdd={addComment}
               onRemove={removeComments}
+              onEdit={editComment}
             />
           </>
         ) : (
           <div className="empty"><Mascot size={64} mood="sleep" /><h2>No file selected</h2><p>{keyHint("Pick a file from the list, or press ⌘P to open any file.")}</p></div>
         )}
+      </div>
+      {submitOpen && reviewPr > 0 && (
+        <SubmitReview
+          workspaceId={workspaceId}
+          count={comments.length}
+          onClose={() => setSubmitOpen(false)}
+          onDone={(r) => { setSubmitOpen(false); setComments([]); onSubmitted?.(r); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The sheet that posts a review to GitHub: the verdict, a summary, and where each draft goes. This
+ * button is the only way anything reaches the PR.
+ */
+function SubmitReview({ workspaceId, count, onClose, onDone }: {
+  workspaceId: string;
+  count: number;
+  onClose: () => void;
+  onDone: (r: { url: string | null; inline: number; folded: number; archived: boolean }) => void;
+}) {
+  const [plan, setPlan] = useState<ReviewPlan | null>(null);
+  const [verdict, setVerdict] = useState<ReviewVerdict>("comment");
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { api.reviewPlan(workspaceId).then(setPlan).catch((e) => setError(errText(e))); }, [workspaceId, count]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [busy, onClose]);
+  const blocker = plan ? submitBlocker(verdict, body, plan) : null;
+  const submit = async () => {
+    if (!plan || blocker || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await api.submitReview(workspaceId, verdict, body));
+    } catch (e) {
+      setError(errText(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div className="modal submit-review" role="dialog" aria-modal="true" aria-label="Submit review">
+        <h2>Submit review{plan ? ` on #${plan.number}` : ""}</h2>
+        {plan && <p className="muted">{plan.title}{plan.author ? ` by @${plan.author}` : ""}</p>}
+        <div className="seg verdicts" role="radiogroup" aria-label="Verdict">
+          {VERDICTS.map((v) => (
+            <button key={v.value} role="radio" aria-checked={verdict === v.value} className={verdict === v.value ? "on" : ""} title={v.hint} onClick={() => setVerdict(v.value)}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          autoFocus
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder={verdict === "approve" ? "Summary (optional)" : verdict === "request_changes" ? "What needs to change" : "Summary"}
+          aria-label="Review summary"
+          onKeyDown={(e) => { if (e.key === "Enter" && mod(e)) { e.preventDefault(); submit(); } }}
+        />
+        <p className="muted submit-plan">{plan ? planLine(plan) : error ? "" : "Checking which lines are in the PR..."}</p>
+        {error && <div className="banner error" role="alert">{error}</div>}
+        <div className="row">
+          <span className="muted">Posts to GitHub as you, then archives this workspace.</span>
+          <span className="spacer" />
+          <button className="quiet" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="accent" onClick={submit} disabled={!plan || !!blocker || busy} title={blocker ?? keyHint("Post this review to GitHub (⌘↵)")}>
+            {busy ? <span className="spinner" /> : <Send size={14} />}Submit review
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -70,6 +70,17 @@ const reviews: Record<string, any[]> = new URLSearchParams(location.search).has(
   { id: "c2", file: "internal/server/http.go", side: "new", line: 22, end_line: 22, code: "+\t\tIdleTimeout: 75 * time.Second,", text: "Read this from config instead, so ops can tune it per environment." },
   { id: "c3", file: "internal/server/http.go", side: "new", line: 24, end_line: 24, code: "+\t\tReadHeaderTimeout: 5 * time.Second,", text: "Is 5s enough for slow mobile clients?" },
 ] };
+// ?review: two PRs wait for your review, and Biscuit (w6) is a read-only review of #731 with the
+// agent's findings as drafts, one with a suggested change. ?ws=w6&tab=changes opens its drafts.
+const reviewing = new URLSearchParams(location.search).has("review");
+const reviewRequests = reviewing ? [
+  { repo_id: "r1", number: 731, url: "https://github.com", title: "Retry webhook deliveries with backoff", isDraft: false, headRefName: "sam/webhook-retries", headRefOid: "b7c1d2e", baseRefName: "main", isCrossRepository: false, additions: 84, deletions: 12, changedFiles: 4, updatedAt: "2026-11-06T09:00:00Z", author: { login: "octocat", avatarUrl: "" } },
+  { repo_id: "r2", number: 88, url: "https://github.com", title: "Annual plan toggle on the pricing page", isDraft: true, headRefName: "lee/annual", headRefOid: "9a8b7c6", baseRefName: "main", isCrossRepository: true, additions: 40, deletions: 3, changedFiles: 2, updatedAt: "2026-11-06T08:00:00Z", author: { login: "hubot", avatarUrl: "" } },
+] : [];
+if (reviewing) reviews.w6 = [
+  { id: "f1", file: "internal/server/http.go", side: "new", line: 22, end_line: 22, code: "", text: "75s only covers the ALB. The gRPC port sits behind an NLB with a 350s idle timeout, so it still drops connections.\n\n```suggestion\n\t\tIdleTimeout: cfg.IdleTimeout,\n```" },
+  { id: "f2", file: "internal/server/http.go", side: "new", line: 20, end_line: 21, code: "", text: "Link the AWS doc for the 60s default here, so the next person doesn't lower it." },
+];
 
 const repos = [
   { id: "r1", name: "pawprint-api", root_path: "/code/pawprint-api", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null,
@@ -78,7 +89,7 @@ const repos = [
 ];
 const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
-  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", title_source: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", parent_id: "", ...extra,
+  id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", title_source: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", parent_id: "", review_pr: 0, ...extra,
 });
 const planEvents = [
   { kind: "user", checkpoint: "c1", text: "Tickets should breach SLA after 4 business hours, not 4 hours. Plan it first." },
@@ -109,6 +120,7 @@ const workspaces = [
   ws("w4", "r2", "ziggy", "harshil/pricing-page", { title: "Pricing page with an annual toggle", title_source: "auto" }),
   ws("w5", "r2", "pip", "harshil/blog-rss"),
 ];
+if (new URLSearchParams(location.search).has("review")) workspaces.push(ws("w6", "r1", "biscuit", "review/pr-731", { title: "Retry webhook deliveries with backoff", title_source: "pr", review_pr: 731 }));
 // ?many adds 20 more workspaces (most titled, a few not yet) to judge the sidebar's density.
 if (new URLSearchParams(location.search).has("many")) {
   const tasks = ["Retry webhooks with backoff", "Move the SLA timer to the worker", "", "Dark mode for the ticket view", "Paginate /v1/tickets with cursors", "Fix flaky login test on CI", "", "Add audit log for admin actions", "Upgrade to Go 1.24", "CSV export for reports", "Stop double-sending reminder emails", "Rate limit password resets", "", "Search tickets by customer email", "Bump Next to 16 and fix the build", "Explain the billing retry logic", "Cache the pricing API for 5 minutes", "Add Sentry to the worker", "Translate onboarding into Hindi", "Remove the old v0 endpoints"];
@@ -248,7 +260,7 @@ mockIPC(
         return Object.fromEntries(["w1", "w2", "w3", "w4", "w5"].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
       }
       // Files per workspace add up to line_counts below. Dash (w3) and Pip (w5) have no changes yet.
-      case "changes": return args.id === "w1" ? [
+      case "changes": return args.id === "w1" || args.id === "w6" ? [
         { path: "internal/server/http.go", status: "M", additions: 3, deletions: 1 },
         { path: "internal/server/http_test.go", status: "A", additions: 35, deletions: 0 },
       ] : args.id === "w2" ? [
@@ -378,6 +390,11 @@ mockIPC(
       case "live_checkpoints": return args.checkpoints;
       case "checkpoint_preview": return { files: 2, commits: 1 };
       case "review_comments": return reviews[args.id] ?? [];
+      case "review_requests": return reviewRequests;
+      case "review_plan": return { number: 731, url: "https://github.com", title: "Retry webhook deliveries with backoff", author: "octocat", head_sha: "b7c1d2e", inline: (reviews[args.id] ?? []).length, folded: [], suggestions: 1 };
+      case "update_review_comment": reviews[args.id] = (reviews[args.id] ?? []).map((c) => (c.id === args.comment ? { ...c, text: args.text } : c)); return null;
+      // The preview never posts anything: it only says what would happen.
+      case "submit_review": { const n = (reviews[args.id] ?? []).length; reviews[args.id] = []; return { url: "https://github.com", inline: n, folded: 0, archived: true }; }
       case "add_review_comments": { const cur = reviews[args.id] ?? []; reviews[args.id] = [...cur, ...args.comments.filter((c: any) => !cur.some((x) => x.id === c.id))]; return null; }
       case "remove_review_comments": reviews[args.id] = (reviews[args.id] ?? []).filter((c) => !args.ids.includes(c.id)); return null;
       case "send": (window as any).__sent = [...((window as any).__sent ?? []), args.text]; return null;

@@ -8,7 +8,7 @@ const sky: Sky = {
 };
 const ws = (name: string, title = "", title_source: Workspace["title_source"] = title ? "auto" : ""): Workspace => ({
   id: "w", repo_id: "r", name, branch: "b", path: "/p", target_branch: "main", state: "active", pinned: false, unread: false,
-  notes: "", imported_from: null, created_at: "", title, title_source, status: "", pair_id: "", section_id: "", parent_id: "",
+  notes: "", imported_from: null, created_at: "", title, title_source, status: "", pair_id: "", section_id: "", parent_id: "", review_pr: 0,
 });
 
 describe("workspace names", () => {

@@ -306,7 +306,7 @@ mod tests {
             id: new_id(), repo_id: r.id.clone(), name: name.into(), branch: format!("me/{name}"), path: format!("/tmp/ws/{name}"),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: now(), title: String::new(), status: String::new(), pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         s.insert_workspace(&w).unwrap();
         let sess = Session {

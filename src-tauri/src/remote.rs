@@ -886,7 +886,7 @@ mod tests {
         let ws = |id: &str, unread: bool| Workspace {
             id: id.into(), repo_id: "r".into(), name: format!("ws-{id}"), branch: format!("me/ws-{id}"), path: format!("/x/w/{id}"),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
         let chat = |id: &str, ws: &str, agent: &str| Session {
             id: id.into(), workspace_id: ws.into(), agent: agent.into(), agent_session_id: None, title: "New chat".into(), model: None, permission_mode: "acceptEdits".into(), effort: None,

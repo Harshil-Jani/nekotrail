@@ -169,12 +169,12 @@ pub struct Parsed {
     pub reset_in: Option<Duration>,
 }
 
-fn reset_in(reset_at: &str, now: chrono::DateTime<chrono::Utc>) -> Option<Duration> {
+pub(crate) fn reset_in(reset_at: &str, now: chrono::DateTime<chrono::Utc>) -> Option<Duration> {
     let t = chrono::DateTime::parse_from_rfc3339(reset_at).ok()?;
     (t.with_timezone(&chrono::Utc) - now).to_std().ok()
 }
 
-fn rate_limited_text(s: &str) -> bool {
+pub(crate) fn rate_limited_text(s: &str) -> bool {
     let s = s.to_lowercase();
     s.contains("rate limit") || s.contains("rate_limited") || s.contains("abuse detection")
 }

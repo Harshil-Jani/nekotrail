@@ -3,13 +3,15 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search } from "lucide-react";
-import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type RemoteJob, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye } from "lucide-react";
+import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
+import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrBar } from "./components/PrBar";
+import { ReviewBar } from "./components/ReviewBar";
 import { useFit, overflows } from "./useFit";
 import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
@@ -337,6 +339,19 @@ export default function App() {
     window.addEventListener("focus", focus);
     return () => { un.then((f) => f()); document.removeEventListener("visibilitychange", vis); window.removeEventListener("focus", focus); };
   }, []);
+  // Open PRs waiting for your review, from the same poller (`review-requests` events).
+  const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
+  const [reviewBusy, setReviewBusy] = useState<string | null>(null);
+  useEffect(() => {
+    const un = listen<ReviewRequest[]>("review-requests", ({ payload }) => setReviewRequests(payload));
+    api.reviewRequests().then((l) => setReviewRequests(l ?? [])).catch(() => {});
+    // The agent's findings became draft comments: Changes reloads them, and you hear about it.
+    const unF = listen<{ workspace_id: string; count: number }>("review-findings", ({ payload }) => {
+      window.dispatchEvent(new CustomEvent("nekotrail-review", { detail: payload.workspace_id }));
+      if (payload.workspace_id === selectedRef.current) say(`${payload.count} ${payload.count === 1 ? "finding is" : "findings are"} in Changes as drafts. Edit them, then Submit review.`, false, { label: "Show", run: () => setTab("changes") });
+    });
+    return () => { un.then((f) => f()); unF.then((f) => f()); };
+  }, []);
   // A new workspace has no PR yet: ask for a look so its bar settles quickly.
   useEffect(() => { api.prRefresh().catch(() => {}); }, [workspaces.length]);
   // OPEN, DRAFT, MERGED or CLOSED per workspace, for the sidebar, the board and the radar.
@@ -649,6 +664,26 @@ export default function App() {
     setView("workspace");
   };
 
+  /** Review someone's PR: a read-only workspace on its head, and the agent asked for findings. */
+  const startReview = async (r: ReviewRequest, agent?: Agent) => {
+    const open = reviewWorkspaceFor(r, workspaces);
+    if (open) return select(open.id);
+    const key = `${r.repo_id}:${r.number}`;
+    if (reviewBusy) return;
+    setReviewBusy(key);
+    try {
+      const saved = (() => { try { return JSON.parse(localStorage.getItem("nekotrail.new") || "null"); } catch { return null; } })();
+      const w = await api.startReview(r.repo_id, r.number, agent ?? reviewAgent(saved));
+      await refresh();
+      select(w.id);
+      setTab("chat");
+    } catch (e) {
+      say(errText(e), true);
+    } finally {
+      setReviewBusy(null);
+    }
+  };
+
   const addRepo = async () => {
     const dir = await openDialog({ directory: true, title: "Choose a git repo" });
     if (typeof dir !== "string") return;
@@ -957,6 +992,15 @@ export default function App() {
       { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex, Gemini, OpenCode)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
+    for (const r of reviewRequests) {
+      const open = reviewWorkspaceFor(r, workspaces);
+      const rn = repos.find((x) => x.id === r.repo_id)?.name ?? "";
+      c.push({
+        id: `review-${r.repo_id}-${r.number}`, group: "Review requests", label: open ? `Open your review of #${r.number}: ${r.title}` : `Review #${r.number}: ${r.title}`,
+        hint: `@${r.author.login}${rn ? ` · ${rn}` : ""}`, keywords: `pr pull request review requested ${r.author.login} ${rn} ${r.headRefName}`,
+        icon: <Eye size={15} />, run: () => startReview(r),
+      });
+    }
     const active = workspaces.filter((w) => w.state === "active");
     for (const w of [...active].sort((a, b) => Number(b.unread) - Number(a.unread))) {
       const r = repos.find((x) => x.id === w.repo_id);
@@ -1076,6 +1120,9 @@ export default function App() {
         onBack={() => goHistory(-1)}
         onForward={() => goHistory(1)}
         onToggleSidebar={() => setSidebarHidden((h) => !h)}
+        reviewRequests={reviewRequests}
+        reviewBusy={reviewBusy}
+        onReview={startReview}
       />
       {sidebarHidden && (
         <button className="icon sidebar-toggle floating" onClick={() => setSidebarHidden(() => false)} title={keyHint("Show sidebar (⌘B)")} aria-label="Show sidebar">
@@ -1230,7 +1277,10 @@ export default function App() {
               </div>
             </header>
 
-            {ws.state === "active" && (
+            {ws.state === "active" && ws.review_pr > 0 && (
+              <ReviewBar ws={ws} request={reviewRequests.find((r) => r.repo_id === ws.repo_id && r.number === ws.review_pr)} refreshKey={wsRefreshKey} onChanges={() => setTab("changes")} />
+            )}
+            {ws.state === "active" && !ws.review_pr && (
               <PrBar
                 ws={ws}
                 repo={repo ?? undefined}
@@ -1273,7 +1323,18 @@ export default function App() {
                     <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
-                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile} onSendReview={(text, send) => { setTab("chat"); setInject({ text, nonce: Date.now(), send }); }} />}
+                    {tab === "changes" && (
+                      <Diff
+                        workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile}
+                        onSendReview={(text, send) => { setTab("chat"); setInject({ text, nonce: Date.now(), send }); }}
+                        reviewPr={ws.review_pr}
+                        onSubmitted={(r) => {
+                          refresh();
+                          const where = r.folded ? ` ${r.folded} went in the summary because their lines aren't in the PR's changes.` : "";
+                          say(`Review posted to GitHub.${where}${r.archived ? " The review workspace is archived." : " The workspace has changes, so it stays open."}`, false, r.url ? { label: "Open on GitHub", run: () => openUrl(r.url!).catch(() => {}) } : undefined);
+                        }}
+                      />
+                    )}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
                     <Suspense fallback={null}>
