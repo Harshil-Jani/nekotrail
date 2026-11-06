@@ -616,7 +616,15 @@ export default function App() {
   const paired = !!ws?.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1;
   const runLive = !!ws && livePtys.has(`${ws.id}:run`);
   const urlShown = !!ws && !!localUrls[ws.id] && runLive;
-  const [toolbarRef, fold] = useFit(3, (el) => overflows(el) || (el.querySelector<HTMLElement>(".ws-title")?.clientWidth ?? 999) < 120,
+  // Fold when the bar overflows, or when the title is cut short while it has less than 240px: the
+  // workspace's name matters more than button labels.
+  const titleCut = (el: HTMLElement) => {
+    const box = el.querySelector<HTMLElement>(".ws-title");
+    const text = el.querySelector<HTMLElement>(".ws-title-text");
+    const w = box?.clientWidth ?? 999;
+    return w < 120 || (w < 240 && !!text && overflows(text));
+  };
+  const [toolbarRef, fold] = useFit(3, (el) => overflows(el) || titleCut(el),
     [ws?.id, ws?.state, paired, runLive, urlShown, repo?.prefs?.actions?.length ?? 0, tab, openTargets.length]);
 
   useEffect(() => {
@@ -1200,7 +1208,7 @@ export default function App() {
                   />
                 ) : (
                   <h1 onDoubleClick={() => setEditingTitle(displayName(sky, ws))} title={`${ws.title_source === "auto" ? "Named after the first message. " : ws.title_source === "pr" ? "Named after the PR. " : ""}Double-click to rename.`}>
-                    {displayName(sky, ws)}
+                    <span className="ws-title-text">{displayName(sky, ws)}</span>
                     {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                   </h1>
                 )}

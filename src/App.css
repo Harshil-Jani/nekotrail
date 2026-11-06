@@ -191,6 +191,9 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .ws-header { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s3) 0 var(--s5); height: 52px; flex-shrink: 0; border-bottom: 0.5px solid var(--line-strong); }
 .ws-title { min-width: 0; }
 .ws-title h1 { margin: 0; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: var(--s2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The flex row can't ellipsize a bare text node, so the name sits in its own box that can. */
+.ws-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ws-title h1 svg { flex: none; }
 .ws-sub { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 640px; }
 .ws-actions { display: flex; align-items: center; gap: 6px; }
 .tabs { display: inline-flex; align-self: flex-start; gap: 2px; margin: var(--s2) var(--s5); padding: 2px; border-radius: var(--r-md); background: var(--hover); }
@@ -415,7 +418,8 @@ button.danger-fill:hover { background: #e3001a; }
   background: var(--accent); color: var(--accent-ink); padding: var(--s3) var(--s5); border-radius: var(--r);
   font-weight: 600; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22); max-width: 560px;
 }
-.toast.error { background: var(--bad); color: var(--accent-ink); }
+/* White on the light red (5.6:1), dark ink on the dark-mode red (6.6:1). */
+.toast.error { background: var(--bad); color: light-dark(#fff, var(--accent-ink)); }
 .discovery {
   position: fixed; bottom: var(--s6); right: var(--s6); z-index: 20; width: 360px;
   background: var(--surface); border: 0.5px solid var(--line-strong); border-radius: var(--radius); padding: var(--s4);
