@@ -7,7 +7,7 @@ const HINT: Record<(typeof COLUMNS)[number], string> = {
   backlog: "Ideas not started yet",
   in_progress: "An agent is on it",
   in_review: "PR open, waiting on review or CI",
-  done: "Merged or finished",
+  done: "Merged, closed or finished",
 };
 
 /**
@@ -90,7 +90,9 @@ export function Board({
                     </button>
                   );
                 })}
-                {cards.length === 0 && over === col && <div className="card-empty">Drop here</div>}
+                {cards.length === 0 && (over === col
+                  ? <div className="card-empty">Drop here</div>
+                  : col === "backlog" && <div className="card-empty">Drag a workspace here</div>)}
               </div>
             </section>
           );

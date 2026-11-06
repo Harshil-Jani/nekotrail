@@ -4,6 +4,7 @@ import { ExternalLink, MessageSquarePlus, Pencil, RefreshCw, Save, Send, X } fro
 import { Avatar } from "./Avatar";
 import { api, errText, type FileChange } from "../api";
 import { Mascot } from "./Mascot";
+import { ask } from "./Confirm";
 
 /** A review comment on one diff line. `line` is the new-file line, or the old one for deletions. */
 export type ReviewComment = { id: string; file: string; line: number; side: "old" | "new"; code: string; text: string };
@@ -230,7 +231,7 @@ function FileEditor({ workspaceId, path, onDone }: { workspaceId: string; path: 
         <code>{path}</code>{dirty && <span className="muted">· edited</span>}
         <span className="spacer" />
         <button onClick={save} disabled={!dirty} title="Save file (⌘S)"><Save size={14} />Save</button>
-        <button className="quiet" onClick={() => { if (!dirty || confirm("Discard unsaved edits to this file?")) onDone(); }}>Done</button>
+        <button className="quiet" onClick={async () => { if (!dirty || await ask({ title: "Discard your edits?", body: `Unsaved changes to ${path} are lost.`, ok: "Discard edits", danger: true })) onDone(); }}>Done</button>
       </div>
       {error && <div className="banner error">{error}</div>}
       {text === null && !error ? <div className="empty"><span className="spinner" /></div> : (

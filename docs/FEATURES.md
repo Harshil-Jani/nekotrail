@@ -24,7 +24,7 @@ This list was built from Conductor's public changelog (about 150 entries, July 2
 | Review comments | Comment on diff lines, send them to the agent as one message. |
 | @-mentions and attachments | Fuzzy file picker in the composer; pasted screenshots are saved in a git-ignored folder. |
 | Command palette and settings | ⌘K for everything, ⌘, for notifications, chime and editor. |
-| Keyboard | ⌘K, ⌘N, ⌘J, ⌘O, ⌘1-4, ⌘↵, ⌘,. |
+| Keyboard | ⌘K, ⌘N, ⌘1 / ⌘2 / ⌘3 tabs, ⌃1-9 workspaces, ⌘O, ⌘↵, ⌘,. |
 
 ## Next (ranked)
 

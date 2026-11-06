@@ -10,10 +10,11 @@ import { chime, getSettings, saveSettings, ting, type Settings as S } from "../s
 const SHORTCUTS: [string, string][] = [
   ["⌘K", "Jump anywhere, run any command"],
   ["⌘N / ⌘⇧N", "Create workspace / from a PR"],
-  ["⌘1 to ⌘9", "Go to a workspace in the sidebar"],
+  ["⌘1 / ⌘2 / ⌘3", "Show chat / changes / terminal"],
+  ["⌃1 to ⌃9", "Go to a workspace in the sidebar"],
   ["⌘⌥↑ / ⌘⌥↓", "Previous / next workspace"],
   ["⌘⌥L", "Go to next workspace with news"],
-  ["⌘L / ⌘⇧D / ⌘J", "Show chat / changes / terminal"],
+  ["⌘L / ⌘⇧D / ⌘J", "Also: type in chat / changes / toggle terminal"],
   ["⌘T", "Start a chat or open a terminal tab"],
   ["⌘F / ⌘G", "Search this chat / next match"],
   ["↵ or ⌘↵", "Send message (choose which above)"],
@@ -34,13 +35,21 @@ const SHORTCUTS: [string, string][] = [
   ["@ and /", "Mention a file, run a command"],
 ];
 
-/** ⌘, : a few preferences and the shortcut list. Changes save as you make them. */
+type Pane = "general" | "notifications" | "agents" | "shortcuts";
+const PANES: [Pane, string][] = [["general", "General"], ["notifications", "Notifications"], ["agents", "Agents"], ["shortcuts", "Shortcuts"]];
+
+/** ⌘, : preferences in four panes, like a Mac settings window. Changes save as you make them. */
 export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: () => void; home: string; update?: UpdatePhase | null; onCheckUpdates?: () => void }) {
+  // ?settings=agents opens a pane directly (the preview page uses it for screenshots).
+  const [pane, setPane] = useState<Pane>(() => {
+    const want = new URLSearchParams(location.search).get("settings");
+    return PANES.some(([id]) => id === want) ? (want as Pane) : "general";
+  });
   const [s, setS] = useState<S>(getSettings);
   const [backend, setBackend] = useState<AppSettings | null>(null);
   const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
   const [version, setVersion] = useState(pkg.version);
-  useEffect(() => { getVersion().then(setVersion).catch(() => {}); }, []);
+  useEffect(() => { getVersion().then((v) => v && setVersion(v)).catch(() => {}); }, []);
   useEffect(() => {
     api.appSettings().then(setBackend).catch(() => {});
     api.openInTargets().then(setTargets).catch(() => {});
@@ -63,13 +72,24 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal settings" role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
-        <h2>Settings</h2>
+        <div className="row settings-head">
+          <h2>Settings</h2>
+          <span className="spacer" />
+          <button className="icon" aria-label="Close settings" title="Close (Esc)" onClick={onClose}><X size={16} /></button>
+        </div>
+        <nav className="seg settings-panes" role="tablist" aria-label="Settings">
+          {PANES.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={pane === id} className={pane === id ? "on" : ""} onClick={() => setPane(id)}>{label}</button>
+          ))}
+        </nav>
 
+        <div className="settings-body" role="tabpanel" aria-label={PANES.find(([id]) => id === pane)?.[1]}>
+        {pane === "notifications" && <>
         <section>
           <h3>When an agent needs you</h3>
           <p className="muted setting-note">A plan to approve, a question, a sign-in, a usage limit or an error.</p>
           <label className="setting">
-            <span>Ting ting sound</span>
+            <span>Play a sound</span>
             <span className="row">
               <button className="icon" title="Play the sound" aria-label="Play the needs-you sound" onClick={() => ting()}><Volume2 size={16} /></button>
               <input type="checkbox" className="switch" checked={s.needsSound} onChange={(e) => { set("needsSound", e.target.checked); if (e.target.checked) ting(); }} />
@@ -96,14 +116,16 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
             </select>
           </label>
           <label className="setting">
-            <span>Chime sound</span>
+            <span>Play a sound</span>
             <span className="row">
               <button className="icon" title="Play the chime" aria-label="Play the chime" onClick={() => chime(true)}><Volume2 size={16} /></button>
               <input type="checkbox" className="switch" checked={s.sound} onChange={(e) => { set("sound", e.target.checked); if (e.target.checked) chime(true); }} />
             </span>
           </label>
         </section>
+        </>}
 
+        {pane === "general" && <>
         <section>
           <h3>Chat</h3>
           <label className="setting">
@@ -140,7 +162,9 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
             <code className="muted">{backend?.home ? `${backend.home}/workspaces` : home}</code>
           </div>
         </section>
+        </>}
 
+        {pane === "agents" && <>
         <section>
           <h3>New chats start with</h3>
           {(["claude", "codex"] as const).map((a) => (
@@ -187,7 +211,9 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
           ))}
           <button className="quiet add-env" onClick={() => set("snippets", [...s.snippets, { name: "", text: "" }])}><Plus size={14} />Add snippet</button>
         </section>
+        </>}
 
+        {pane === "shortcuts" && (
         <section>
           <h3>Keyboard</h3>
           <dl className="shortcuts">
@@ -196,6 +222,8 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
             ))}
           </dl>
         </section>
+        )}
+        </div>
 
         <div className="row end">
           <span className="muted version num">nekotrail v{version}</span>

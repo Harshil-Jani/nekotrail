@@ -25,6 +25,7 @@ import { Settings } from "./components/Settings";
 import { TrustSheet } from "./components/TrustSheet";
 import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
+import { ask, ConfirmHost } from "./components/Confirm";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { UserAttentionType } from "@tauri-apps/api/window";
 
@@ -46,7 +47,7 @@ async function notify(title: string, body: string) {
 import "./App.css";
 
 type Tab = "chat" | "changes" | "terminal" | "notes";
-const TAB_KEYS: Record<Tab, string> = { chat: "⌘L", changes: "⌘⇧D", terminal: "⌘J", notes: "" };
+const TAB_KEYS: Record<Tab, string> = { chat: "⌘1", changes: "⌘2", terminal: "⌘3", notes: "" };
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "changes", label: "Changes" },
@@ -136,7 +137,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || (e.key !== "j" && e.key !== "k")) return;
       if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable], .xterm")) return;
-      const rows = Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws"));
+      const rows = Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws:not(.smart)"));
       if (!rows.length) return;
       e.preventDefault();
       const i = rows.findIndex((r) => r.classList.contains("selected"));
@@ -535,6 +536,12 @@ export default function App() {
     if (pr) parts.push(pr === "OPEN" ? "PR open" : pr === "DRAFT" ? "draft PR" : pr === "MERGED" ? "PR merged" : "PR closed");
     if (parts.length) setAway({ id: w.id, text: parts.join(" · ") });
   };
+  // Workspaces you opened, most recent first, for the palette's Recent group. Kept between launches.
+  const recentIds = (): string[] => { try { return JSON.parse(localStorage.getItem("nekotrail.recent") || "[]"); } catch { return []; } };
+  useEffect(() => {
+    if (!selected) return;
+    localStorage.setItem("nekotrail.recent", JSON.stringify([selected, ...recentIds().filter((x) => x !== selected)].slice(0, 20)));
+  }, [selected]);
   const select = (id: string) => {
     const w = workspaces.find((x) => x.id === id);
     if (w?.unread && w.id !== selected) summarize(w); else setAway(null);
@@ -615,17 +622,27 @@ export default function App() {
     } catch (e) {
       if (errText(e) !== "DIRTY") return say(errText(e), true);
       if (opts?.auto) return say(`${name}'s PR merged, but it has uncommitted changes, so it stays open. Commit or discard them, then archive it.`);
-      if (!confirm(`${name} has uncommitted changes. Archive anyway? The branch ${target.branch} is kept, but uncommitted work in the folder is lost.`)) return;
+      const go = await ask({
+        title: `Archive ${name} with uncommitted changes?`,
+        body: `The branch ${target.branch} is kept, but uncommitted work in its folder is lost.`,
+        ok: "Archive anyway",
+        danger: true,
+      });
+      if (!go) return;
       try {
         await api.archiveWorkspace(target.id, true);
       } catch (e2) {
         return say(errText(e2), true);
       }
     }
+    // Open the next row in the sidebar (or the one above), not the empty welcome.
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".sidebar .ws:not(.smart)[data-id]")).map((r) => r.dataset.id!);
+    const at = rows.indexOf(target.id);
+    const next = at >= 0 ? (rows[at + 1] ?? rows[at - 1] ?? null) : null;
     setLeaving(target.id);
     await new Promise((r) => setTimeout(r, 320));
     setLeaving(null);
-    if (selected === target.id) setSelected(null);
+    if (selectedRef.current === target.id) setSelected(next);
     await refresh();
     say(`Archived ${name}. Branch ${target.branch} is kept.`, false, {
       label: "Undo",
@@ -713,12 +730,28 @@ export default function App() {
   const commands = (): Command[] => {
     const c: Command[] = [];
     const nameOf = (w: Workspace) => displayName(sky, w);
+    // Recent: the last places you went, unread first. Only shown before you type, so it never duplicates results.
+    const others = workspaces.filter((w) => w.state === "active" && w.id !== ws?.id);
+    const order = recentIds();
+    const rank = (id: string) => (order.indexOf(id) + 1) || 99;
+    const recent = others
+      .filter((w) => w.unread || order.includes(w.id))
+      .sort((a, b) => Number(b.unread) - Number(a.unread) || rank(a.id) - rank(b.id))
+      .slice(0, 5);
+    for (const w of recent) {
+      const r = repos.find((x) => x.id === w.repo_id);
+      c.push({
+        id: `recent-${w.id}`, group: "Recent", label: nameOf(w), emptyOnly: true,
+        hint: `${r?.name ?? ""}${w.unread ? " · new" : runningWs.has(w.id) ? " · working" : ""}`,
+        icon: runningWs.has(w.id) ? <span className="spinner" /> : w.unread ? <span className="unread" /> : <Sparkles size={15} />, run: () => select(w.id),
+      });
+    }
     if (ws && ws.state === "active") {
       const here = nameOf(ws);
       c.push(
-        { id: "tab-chat", group: here, label: "Show chat", hint: "⌘L", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
-        { id: "tab-changes", group: here, label: "Show changes", hint: "⌘⇧D", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
-        { id: "tab-term", group: here, label: "Show terminal", hint: "⌘J", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "tab-chat", group: here, label: "Show chat", hint: "⌘1", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
+        { id: "tab-changes", group: here, label: "Show changes", hint: "⌘2", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
+        { id: "tab-term", group: here, label: "Show terminal", hint: "⌘3", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
         { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: runScript },
@@ -753,7 +786,7 @@ export default function App() {
       { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
       { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
       { id: "board", group: "Go", label: "Open board", hint: "⌘⇧K", keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
-      { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: async () => { const n = prompt("Section name"); if (n?.trim()) { await api.createSection(n); refresh(); } } },
+      { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
       { id: "settings", group: "App", label: "Open settings", hint: "⌘,", keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
@@ -766,12 +799,19 @@ export default function App() {
     return c;
   };
 
-  // Conductor's shortcuts, so muscle memory carries over:
-  // ⌘K palette, ⌘N / ⌘⇧N new (from PR), ⌘1-9 workspaces, ⌘⌥↑/↓ previous/next, ⌘⌥L next with news,
-  // ⌘J terminal, ⌘⇧D changes, ⌘L chat, ⌘B sidebar, ⌘O open in, ⌘P files, ⌘R run, ⌘⇧A archive, ⌘, settings.
+  // Shortcuts: ⌘1 / ⌘2 / ⌘3 show chat, changes, terminal (like Finder's view modes); ⌃1 to ⌃9 open
+  // the sidebar's workspaces. Conductor's other keys still work, so muscle memory carries over: ⌘K palette,
+  // ⌘N / ⌘⇧N new (from PR), ⌘⌥↑/↓ previous/next, ⌘⌥L next with news, ⌘J terminal, ⌘⇧D changes,
+  // ⌘L chat, ⌘B sidebar, ⌘O open in, ⌘P files, ⌘R run, ⌘⇧A archive, ⌘, settings.
   useEffect(() => {
-    const sidebarRows = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws"));
+    const sidebarRows = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".sidebar .ws:not(.smart)"));
     const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        if ((e.target as HTMLElement).closest?.(".xterm")) return; // the shell owns ⌃ keys in the terminal
+        e.preventDefault();
+        sidebarRows()[Number(e.key) - 1]?.click();
+        return;
+      }
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
       const go = (fn: () => void) => { e.preventDefault(); fn(); };
@@ -788,9 +828,9 @@ export default function App() {
         const i = rows.findIndex((r) => r.classList.contains("selected"));
         rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]?.click();
       });
-      if (/^[1-9]$/.test(e.key) && !e.altKey && !e.shiftKey) return go(() => sidebarRows()[Number(e.key) - 1]?.click());
       if (e.altKey && e.code === "KeyA") return go(addRepo);
       if (!ws) return;
+      if (/^[1-3]$/.test(e.key) && !e.altKey && !e.shiftKey && ws.state === "active") return go(() => setTab((["chat", "changes", "terminal"] as const)[Number(e.key) - 1]));
       if (k === "j" && !e.shiftKey) return go(() => setTab((t) => (t === "terminal" ? "chat" : "terminal")));
       if (k === "d" && e.shiftKey) return go(() => setTab("changes"));
       if (k === "l" && !e.shiftKey && !e.altKey) return go(() => { setTab("chat"); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()); });
@@ -903,13 +943,7 @@ export default function App() {
                     {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                   </h1>
                 )}
-                <div className="ws-sub">
-                  {repo?.name}
-                  {ws.title && star ? ` · ${star.name}` : ""}
-                  {star ? ` · ${starLine(star)}` : ws.imported_from ? " · imported from Conductor" : ""}
-                  {ws.status ? <span className={`sub-status st-${ws.status}`}> · {STATUS_LABEL[ws.status as Exclude<WsStatus, "">]}</span> : null}
-                  {costs[ws.id] ? <span className="num" title="Agent spend in this workspace"> · ${costs[ws.id].toFixed(2)}</span> : null}
-                </div>
+                <div className="ws-sub">{repo?.name} · {ws.branch} → {ws.target_branch}</div>
               </div>
               <span className="spacer" />
               {ws.state === "active" && (
@@ -953,7 +987,7 @@ export default function App() {
                       </span>
                     )}
                     <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value).catch((er) => say(errText(er), true))}>
-                      <option value="">Open in…</option>
+                      <option value="">Open in</option>
                       {openTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                     <span className="git-menu">
@@ -988,7 +1022,7 @@ export default function App() {
                 name={displayName(sky, ws)}
                 refreshKey={wsRefreshKey}
                 overlapKey={refreshKey}
-                onArchive={(auto) => archive({ auto })}
+                onArchive={(auto, id) => archive({ auto, id })}
                 onSay={say}
                 autopilot={autopilot[ws.id]}
                 nameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; }}
@@ -1059,6 +1093,7 @@ export default function App() {
         />
       )}
       {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)} />}
+      <ConfirmHost />
       {updater.open && updater.phase && (
         <UpdateSheet
           phase={updater.phase}

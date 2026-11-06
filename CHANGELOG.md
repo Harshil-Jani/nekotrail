@@ -11,6 +11,18 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Check for updates any time from ⌘K or Settings, next to the version.
 - If you're on 0.10.1 or earlier, install this release by hand once from the release page. After that, updates come to you.
 
+**Design ship-gate fixes**
+- A merged workspace no longer archives itself the moment you open it. With "Archive when the PR merges" on, it archives only after you watched the PR merge, and only once you move on. Archiving opens the next workspace in the sidebar instead of the welcome page.
+- New shortcuts: ⌘1, ⌘2 and ⌘3 show Chat, Changes and Terminal. Workspaces in the sidebar moved to ⌃1 to ⌃9. ⌘L, ⌘⇧D and ⌘J still work.
+- ⌘K opens on Recent: your five last workspaces, unread first.
+- The sidebar list is one Tab stop: arrow keys move, Left and Right fold a group, Return opens. A workspace under Needs you no longer shows as selected twice.
+- The PR bar stays on one line in small windows, Create PR waits until there is a change, and the todo list folds while a plan or a tool call waits for your OK.
+- Settings has four panes (General, Notifications, Agents, Shortcuts) and a Close button.
+- Destructive actions ask in a proper sheet instead of a browser dialog; adding a section uses the inline field.
+- Welcome puts setup first while something is missing and has one main button. The Conductor import card can be dismissed.
+- Compare agents, the board and Changes fit 1100 px windows; a closed PR counts as Done on the board.
+- Higher contrast for diff line numbers, +/- counts, shortcut hints, the merge button, warnings and orange labels (all 4.5:1 or more). The terminal background matches its frame. "New" on a model lasts 30 days.
+
 ## 0.10.1 (2026-11-06)
 
 - Fixes the 0.10.0 build: "Copy branch name" and "Copy PR link" were missing from the ⋯ menu, which also broke the type check.

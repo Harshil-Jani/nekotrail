@@ -79,7 +79,7 @@ Status: ✅ done · 🟡 partial · ⬜ not yet. Rounds are worked top to bottom
 
 | Status | Feature | Notes |
 |---|---|---|
-| ✅ | Conductor's shortcuts, so muscle memory carries over | ⌘J terminal, ⌘⇧D diff, ⌘L chat, ⌘1-9 workspaces, ⌘⌥↑/↓, ⌘⌥L, ⌘B sidebar, ⌘⇧A, ⌘⇧⌫, ⌘⌥A |
+| ✅ | Conductor's shortcuts, so muscle memory carries over | ⌘J terminal, ⌘⇧D diff, ⌘L chat, ⌘⌥↑/↓, ⌘⌥L, ⌘B sidebar, ⌘⇧A, ⌘⇧⌫, ⌘⌥A |
 | ✅ | Sidebar sections like Conductor: Pinned, your own sections (drag in, Move to section, rename, delete), right-click menu | |
 | ✅ | Board (Kanban): Backlog, In progress, In review, Done; drag to set status (⌘⇧K) | |
 | ✅ | Group sidebar by status | PR states fetched with one `gh` call per repo |
