@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WsStatus } from "./api";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type WsStatus } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -23,6 +23,7 @@ import { Board } from "./components/Board";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { Settings } from "./components/Settings";
+import { TrustSheet } from "./components/TrustSheet";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { UserAttentionType } from "@tauri-apps/api/window";
 
@@ -96,6 +97,7 @@ export default function App() {
   const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [trustAsk, setTrustAsk] = useState<{ repo: string; trust: ScriptTrust; answer: (run: boolean) => void } | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
@@ -192,8 +194,24 @@ export default function App() {
     window.addEventListener("nekotrail-terminal", show);
     return () => window.removeEventListener("nekotrail-terminal", show);
   }, []);
-  const startPty = async (id: string, cwd: string, cmd: string, tabName: string) => {
-    await api.ptyRun(id, cwd, cmd);
+  /** A repo's own nekotrail.json commands run only after you approve exactly those commands. */
+  const trusted = async (w: Workspace, s: WorkspaceScripts, kind: "setup" | "run") => {
+    const trust = s.trust;
+    if (!trust?.[kind]) return true;
+    const repo = repos.find((r) => r.id === w.repo_id)?.name ?? "this repo";
+    const run = await new Promise<boolean>((answer) => setTrustAsk({ repo, trust, answer }));
+    setTrustAsk(null);
+    if (!run) return false;
+    try {
+      await api.trustScripts(w.id, trust.fingerprint);
+      return true;
+    } catch (e) {
+      say(errText(e), true);
+      return false;
+    }
+  };
+  const startPty = async (id: string, script: "setup" | "run", tabName: string) => {
+    await api.ptyRun(id, script);
     setLivePtys((s) => new Set(s).add(id));
     setTermFocus({ tab: tabName, nonce: Date.now() });
   };
@@ -553,11 +571,13 @@ export default function App() {
       }
       if (made.length > 1) say("Claude and Codex are both on it, each in its own workspace. Press Compare when they finish.");
       const scripts = await api.workspaceScripts(w.id);
+      const setup = !!scripts.setup && await trusted(w, scripts, "setup");
+      if (scripts.setup && !setup) say("Setup skipped. Run it later from the Terminal tab.");
       await Promise.all(made.map(async (mw, i) => {
-        if (scripts.setup) {
+        if (setup) {
           // Setup (installs, .env) first, so the agent's first test run has what it needs.
           const done = waitForExit(`${mw.id}:setup`);
-          await startPty(`${mw.id}:setup`, mw.path, scripts.setup, "setup");
+          await startPty(`${mw.id}:setup`, "setup", "setup");
           if (sessions[i]) {
             if (i === 0) { setTab("chat"); if (made.length === 1) say("Setup is running in the Terminal tab. The agent starts as soon as it finishes."); }
             await done;
@@ -608,14 +628,16 @@ export default function App() {
     }
     const s = await api.workspaceScripts(ws.id);
     if (!s.run) return setSettingsFor(ws.repo_id);
+    if (!await trusted(ws, s, "run")) return;
     setTab("terminal");
-    await startPty(id, ws.path, s.run, "run");
+    await startPty(id, "run", "run");
   };
   const rerunSetup = async () => {
     if (!ws) return;
     const s = await api.workspaceScripts(ws.id);
     if (!s.setup) return setSettingsFor(ws.repo_id);
-    await startPty(`${ws.id}:setup`, ws.path, s.setup, "setup");
+    if (!await trusted(ws, s, "setup")) return;
+    await startPty(`${ws.id}:setup`, "setup", "setup");
   };
   const openLocal = () => {
     if (!ws) return;
@@ -1003,6 +1025,7 @@ export default function App() {
       {newFor && repos.length > 0 && (
         <NewWorkspace repos={repos} initialRepo={newFor} initialSource={newSource} onCreate={newWorkspace} onClose={() => { setNewFor(null); setNewSource("task"); }} />
       )}
+      {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} onAnswer={trustAsk.answer} />}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
       {quickOpen && (

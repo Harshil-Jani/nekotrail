@@ -143,7 +143,7 @@ mockIPC(
         { workspace_id: "w3", total_kb: 120_000, cleanable_kb: 0, dirs: [] },
       ];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
-      case "workspace_scripts": return { setup: null, run: "make dev", archive: null };
+      case "workspace_scripts": return { setup: null, run: "make dev", archive: null, trust: location.search.includes("trust") ? { fingerprint: "f", setup: "go mod download && ./scripts/bootstrap.sh", run: "make dev", archive: null } : null };
       default: return null;
     }
   },

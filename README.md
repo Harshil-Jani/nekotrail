@@ -139,7 +139,9 @@ The shortcuts match Conductor's, so muscle memory carries over. The full list is
 { "scripts": { "setup": "bun install", "run": "bun dev", "archive": "docker compose down" } }
 ```
 
-Committed values win over the ones saved in the app.
+Committed values win over the ones saved in the app. Because anyone who can push to the repo or open a PR
+can change this file, nekotrail shows you its commands and runs them only after you approve them. It asks
+again whenever they change. An archive command you never approved is skipped.
 
 ## Develop
 

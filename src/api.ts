@@ -96,6 +96,9 @@ export type ChatEvent =
 
 export type FileChange = { path: string; status: string; additions: number; deletions: number };
 export type Scripts = { setup: string | null; run: string | null; archive: string | null };
+/** Commands from the repo's own nekotrail.json that the user has not approved yet. */
+export type ScriptTrust = Scripts & { fingerprint: string };
+export type WorkspaceScripts = Scripts & { trust?: ScriptTrust | null };
 
 export type Pr = {
   number: number;
@@ -153,7 +156,8 @@ export const api = {
   addRepo: (path: string) => invoke<Repo>("add_repo", { path }),
   saveRepoScripts: (id: string, s: Scripts) => invoke<void>("save_repo_scripts", { id, ...s }),
   repoBranches: (id: string) => invoke<string[]>("repo_branches", { id }),
-  workspaceScripts: (id: string) => invoke<Scripts>("workspace_scripts", { id }),
+  workspaceScripts: (id: string) => invoke<WorkspaceScripts>("workspace_scripts", { id }),
+  trustScripts: (id: string, fingerprint: string) => invoke<void>("trust_scripts", { id, fingerprint }),
   createWorkspace: (repoId: string, base?: string, name?: string, from?: string) =>
     invoke<Workspace>("create_workspace", { repoId, base, name, from }),
   repoPrs: (id: string) =>
@@ -231,7 +235,8 @@ export const api = {
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
   /** Start a shell, or reattach to a running one; returns what it printed so far. */
   ptyOpen: (id: string, cwd: string, cols: number, rows: number) => invoke<string>("pty_open", { id, cwd, cols, rows }),
-  ptyRun: (id: string, cwd: string, cmd: string, cols = 120, rows = 30) => invoke<void>("pty_run", { id, cwd, cmd, cols, rows }),
+  /** Run the workspace's setup or run script; `id` is `<workspace id>:<script>`. The backend looks the command up. */
+  ptyRun: (id: string, script: "setup" | "run", cols = 120, rows = 30) => invoke<void>("pty_run", { id, script, cols, rows }),
   ptyAttach: (id: string) => invoke<string | null>("pty_attach", { id }),
   ptyWrite: (id: string, data: string) => invoke<void>("pty_write", { id, data }),
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),

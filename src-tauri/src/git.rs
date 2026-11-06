@@ -346,7 +346,7 @@ pub fn cleanable(ws: &Path) -> Vec<(String, u64)> {
 }
 
 pub fn is_ignored(ws: &Path, rel: &str) -> bool {
-    Command::new("git").arg("-C").arg(ws).args(["check-ignore", "-q", rel]).status().map(|s| s.success()).unwrap_or(false)
+    Command::new("git").arg("-C").arg(ws).args(["check-ignore", "-q", "--", rel]).status().map(|s| s.success()).unwrap_or(false)
 }
 
 /// Size of a folder in KB (`du -sk`), 0 if it can't be read.
@@ -356,11 +356,13 @@ pub fn dir_kb(p: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// Delete the cleanable folders, re-checking each is still git-ignored right before removing it.
+/// Delete the cleanable folders, re-checking each right before removing it: still git-ignored, and
+/// still a real folder inside the workspace with no symlink on the way (so a link swapped in since
+/// the scan can never point the delete somewhere else).
 pub fn clean(ws: &Path) -> u64 {
     let mut freed = 0;
     for (rel, kb) in cleanable(ws) {
-        if is_ignored(ws, &rel) && std::fs::remove_dir_all(ws.join(&rel)).is_ok() {
+        if is_ignored(ws, &rel) && crate::safe::is_real_dir_inside(ws, Path::new(&rel)) && std::fs::remove_dir_all(ws.join(&rel)).is_ok() {
             freed += kb;
         }
     }
