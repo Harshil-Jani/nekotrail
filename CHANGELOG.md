@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.11.0 (2026-11-06)
 
 **OpenCode, and any ACP agent**
 - OpenCode joins Claude, Codex and Gemini. Pick it for a workspace or chat; it uses your own OpenCode setup, and setup shows its install command if it's missing.
