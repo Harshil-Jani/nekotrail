@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod agent;
 pub mod agentcfg;
 pub mod config;
@@ -40,6 +41,33 @@ struct Runs {
     approvals: HashMap<String, (String, Value, Value)>,
     /// Chats whose next turn should fork the agent's conversation instead of continuing it.
     forks: std::collections::HashSet<String>,
+    /// The parser of each running turn, shared with Stop and approvals: ACP agents are stopped
+    /// and answered through their protocol, not with a signal and Claude's control messages.
+    parsers: HashMap<String, SharedParser>,
+}
+
+type SharedParser = Arc<Mutex<Box<dyn agent::Parser>>>;
+
+/// Write lines to a running turn's stdin. False when it is gone (the turn ended or stdin closed).
+fn write_stdin(runs: &Arc<Mutex<Runs>>, id: &str, lines: &[String]) -> bool {
+    use std::io::Write;
+    if lines.is_empty() {
+        return true;
+    }
+    let mut runs = runs.lock().unwrap();
+    let Some(stdin) = runs.stdins.get_mut(id) else { return false };
+    lines.iter().all(|l| stdin.write_all(l.as_bytes()).is_ok()) && stdin.flush().is_ok()
+}
+
+/// Send `signal` to the turn's process after `secs`, if that same process is still running.
+/// For agents that were asked to stop or to exit and might not.
+fn signal_later(runs: Arc<Mutex<Runs>>, id: String, pid: u32, secs: u64, signal: &'static str) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(secs));
+        if runs.lock().unwrap().running.get(&id) == Some(&pid) {
+            let _ = Command::new("kill").args([signal, &pid.to_string()]).status();
+        }
+    });
 }
 
 /// (per workspace: when counted, lines added and removed, changed file paths; workspaces to recount).
@@ -1262,8 +1290,14 @@ fn model_catalog() -> Value {
 #[tauri::command]
 async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
-    let bin = agent::get(&agent).bin();
-    let out = Command::new(bin).args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Couldn't run {bin}: {err}. Check that it's installed."))?;
+    let harness = agent::get(&agent);
+    let bin = harness.bin();
+    let mut cmd = Command::new(bin);
+    // Listing can start the repo's own servers, so untrusted repo config stays off here too.
+    if untrusted_agent_config(&st, &ws, harness).is_some() {
+        cmd.envs(harness.config_off_env().iter().copied());
+    }
+    let out = cmd.args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Couldn't run {bin}: {err}. Check that it's installed."))?;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     Ok(text.trim().to_string())
 }
@@ -1725,17 +1759,25 @@ async fn clear_queue(app: AppHandle, st: State<'_, AppState>, id: String) -> Res
 /// Answer a permission request from an "ask before changes" turn.
 #[tauri::command]
 async fn answer_approval(app: AppHandle, st: State<'_, AppState>, request_id: String, allow: bool, always: bool) -> Res<()> {
-    let (sid, line) = {
+    let (sid, input, suggestions, parser) = {
         let mut runs = st.runs.lock().unwrap();
         let (sid, input, suggestions) = runs.approvals.remove(&request_id).ok_or("This request was already answered, or the turn ended.")?;
-        (sid, agent::approval_response(&request_id, allow, &input, &suggestions, always))
+        let parser = runs.parsers.get(&sid).cloned();
+        (sid, input, suggestions, parser)
     };
-    {
-        use std::io::Write;
-        let mut runs = st.runs.lock().unwrap();
-        let stdin = runs.stdins.get_mut(&sid).ok_or("The agent isn't waiting any more.")?;
-        stdin.write_all(line.as_bytes()).map_err(e)?;
-        stdin.flush().map_err(e)?;
+    // ACP agents get their protocol's reply; Claude gets its control response.
+    let line = match parser.and_then(|p| p.lock().unwrap().answer(&request_id, allow, always)) {
+        Some(Ok(line)) => line,
+        Some(Err(why)) => {
+            // Maybe still open ("Allow" when the agent only offers "for this chat"): keep it
+            // answerable. A stale entry only gives the same error again and goes with the turn.
+            st.runs.lock().unwrap().approvals.insert(request_id.clone(), (sid.clone(), input, suggestions));
+            return Err(why);
+        }
+        None => agent::approval_response(&request_id, allow, &input, &suggestions, always),
+    };
+    if !write_stdin(&st.runs, &sid, &[line]) {
+        return Err("The agent isn't waiting any more.".into());
     }
     let ev = json!({"kind": "approval_answer", "request_id": request_id, "allow": allow, "always": always});
     st.db().append_event(&sid, &ev).map_err(e)?;
@@ -1804,9 +1846,17 @@ async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String)
 
 #[tauri::command]
 async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
-    let runs = st.runs.lock().unwrap();
-    if let Some(pid) = runs.running.get(&id) {
-        let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
+    let (pid, parser) = {
+        let runs = st.runs.lock().unwrap();
+        (runs.running.get(&id).copied(), runs.parsers.get(&id).cloned())
+    };
+    let Some(pid) = pid else { return Ok(()) };
+    // ACP agents are asked to cancel (and given a moment); everything else gets SIGINT.
+    match parser.and_then(|p| p.lock().unwrap().cancel()) {
+        Some(lines) if write_stdin(&st.runs, &id, &lines) => signal_later(st.runs.clone(), id, pid, 10, "-TERM"),
+        _ => {
+            let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
+        }
     }
     Ok(())
 }
@@ -2042,7 +2092,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         st.db().append_event(&id, &note).map_err(e)?;
         emit_event(&app, &id, &note);
     }
-    let mut cmd = agent::command(&agent::TurnSpec {
+    let spec = agent::TurnSpec {
         project_config,
         fork,
         agent: &session.agent,
@@ -2055,7 +2105,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         instructions: Some(prefs.general_prompt.trim()).filter(|p| !p.is_empty()),
         env: &env,
         dirs: &dirs,
-    });
+    };
+    let mut cmd = agent::command(&spec);
+    let parser: SharedParser = Arc::new(Mutex::new(agent::parser(&spec)));
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -2066,13 +2118,22 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             return Ok(());
         }
     };
-    st.runs.lock().unwrap().running.insert(id.clone(), child.id());
+    {
+        let mut runs = st.runs.lock().unwrap();
+        runs.running.insert(id.clone(), child.id());
+        runs.parsers.insert(id.clone(), parser.clone());
+    }
     if harness.interactive(&session.permission_mode)
         && let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
-            let _ = stdin.write_all(agent::user_message(&prompt).as_bytes());
-            let _ = stdin.flush();
+            if let Some(first) = harness.first_input(&prompt) {
+                let _ = stdin.write_all(first.as_bytes());
+                let _ = stdin.flush();
+            }
             st.runs.lock().unwrap().stdins.insert(id.clone(), stdin);
+            // ACP: `initialize` goes first.
+            let first = parser.lock().unwrap().outgoing();
+            write_stdin(&st.runs, &id, &first);
         }
     // Keep the Mac awake while the agent works (ends by itself when the agent exits).
     if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
@@ -2096,7 +2157,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
 
     let agent_name = session.agent.clone();
     let workspace_id = ws.id.clone();
-    let mut parser = harness.parser();
+    let pid = child.id();
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
         let mut saw_done = false;
@@ -2133,8 +2194,27 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                         st.runs.lock().unwrap().stdins.remove(&id);
                     }
             }
-            let events = if end { parser.finish() } else { parser.line(&line) };
+            let (events, reply, answered) = {
+                let mut p = parser.lock().unwrap();
+                let events = if end { p.finish() } else { p.line(&line) };
+                (events, p.outgoing(), p.finished())
+            };
+            write_stdin(&st.runs, &id, &reply);
+            // An ACP turn has its answer: close stdin so the agent exits, and make sure it does.
+            if answered && st.runs.lock().unwrap().stdins.remove(&id).is_some() {
+                signal_later(st.runs.clone(), id.clone(), pid, 5, "-TERM");
+            }
             for mut ev in events {
+                if ev["kind"] == "approval" {
+                    // Raised by the parser (ACP): answered through it, see `answer_approval`.
+                    if let Some(rid) = ev["request_id"].as_str() {
+                        st.runs.lock().unwrap().approvals.insert(rid.to_string(), (id.clone(), Value::Null, Value::Null));
+                    }
+                    let _ = st.db().append_event(&id, &ev);
+                    emit_event(&app, &id, &ev);
+                    let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{}: {}", ev["tool"].as_str().unwrap_or("tool"), ev["input"].as_str().unwrap_or(""))}));
+                    continue;
+                }
                 if ev["kind"] == "usage" {
                     context_tokens = ev["context_tokens"].as_u64();
                     let _ = app.emit("usage", json!({"session_id": id, "context_tokens": context_tokens}));
@@ -2206,6 +2286,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let mut runs = st.runs.lock().unwrap();
             runs.running.remove(&id);
             runs.stdins.remove(&id);
+            runs.parsers.remove(&id);
             runs.approvals.retain(|_, (sid, _, _)| sid != &id);
             let next = runs.queued.get_mut(&id).and_then(|q| q.pop_front());
             let rest: Vec<String> = runs.queued.get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default();
@@ -2632,6 +2713,16 @@ mod tests {
         st.db().set_setting(&config::trust_key("r", &g), "now").unwrap();
         assert!(untrusted_agent_config(&st, &ws, agent::get("gemini")).is_none());
         assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_some(), "trusting Gemini's files trusts nothing else");
+
+        // OpenCode the same way: its own files, its own fingerprint, and it runs with them off.
+        assert!(untrusted_agent_config(&st, &ws, agent::get("opencode")).is_none());
+        std::fs::write(dir.path().join("opencode.json"), r#"{"mcp":{"evil":{"type":"local","command":["sh","-c","touch /tmp/o"]}}}"#).unwrap();
+        let (items, o) = untrusted_agent_config(&st, &ws, agent::get("opencode")).unwrap();
+        assert_eq!((items.len(), items[0].agent, items[0].command.as_str()), (1, "opencode", "sh -c touch /tmp/o"));
+        assert!(agent::get("opencode").needs_trusted_config().is_none());
+        assert!(untrusted_agent_config(&st, &ws, agent::get("gemini")).is_none(), "OpenCode's files are not Gemini's");
+        st.db().set_setting(&config::trust_key("r", &o), "now").unwrap();
+        assert!(untrusted_agent_config(&st, &ws, agent::get("opencode")).is_none());
     }
 
     #[test]

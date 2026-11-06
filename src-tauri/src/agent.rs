@@ -1,7 +1,9 @@
-//! Runs one agent turn (Claude Code, Codex or Gemini CLI) and turns its JSON stream into
-//! a small, agent-neutral event list the UI can render. Each CLI is an `Agent` (see `ALL`).
+//! Runs one agent turn (Claude Code, Codex, Gemini CLI, or an ACP agent such as OpenCode) and
+//! turns its JSON stream into a small, agent-neutral event list the UI can render. Each CLI is an
+//! `Agent` (see `ALL`); agents that speak the Agent Client Protocol share one client in `acp.rs`.
 //!
-//! Event kinds: `user`, `text`, `thinking`, `tool`, `tool_result`, `session`, `done`, `error`.
+//! Event kinds: `user`, `text`, `thinking`, `tool`, `tool_result`, `approval`, `note`, `usage`,
+//! `session`, `done`, `error`.
 
 use serde_json::{json, Value};
 use std::path::Path;
@@ -9,7 +11,7 @@ use std::process::{Command, ExitStatus};
 
 const MAX_OUTPUT: usize = 4000;
 
-fn clip(s: &str) -> String {
+pub(crate) fn clip(s: &str) -> String {
     if s.len() <= MAX_OUTPUT {
         return s.to_string();
     }
@@ -290,12 +292,30 @@ pub struct Checked<'a> {
     pub session: Option<&'a str>,
 }
 
-/// Reads one turn's stdout, line by line, into chat events.
+/// Reads one turn's stdout, line by line, into chat events. Parsers that talk back to the agent
+/// (ACP) also hand over what to write to its stdin, and answer approvals and Stop themselves.
 pub trait Parser: Send {
     fn line(&mut self, line: &str) -> Vec<Value>;
     /// Called once when stdout closes, for anything still held back.
     fn finish(&mut self) -> Vec<Value> {
         vec![]
+    }
+    /// Lines for the agent's stdin: read once when the turn starts and after every `line`.
+    fn outgoing(&mut self) -> Vec<String> {
+        vec![]
+    }
+    /// The reply to an `approval` event this parser raised. None: not this parser's to answer
+    /// (Claude's `can_use_tool` requests go through `approval_response`).
+    fn answer(&mut self, _request_id: &str, _allow: bool, _always: bool) -> Option<Result<String, String>> {
+        None
+    }
+    /// Lines that ask the agent to stop this turn. None: stop it with SIGINT instead.
+    fn cancel(&mut self) -> Option<Vec<String>> {
+        None
+    }
+    /// The turn has its answer: close stdin so the agent exits.
+    fn finished(&self) -> bool {
+        false
     }
 }
 
@@ -325,10 +345,15 @@ pub trait Agent: Sync {
     /// The CLI and its arguments for one turn. `command` adds env, cwd and stdin.
     fn build(&self, spec: &TurnSpec, ok: &Checked) -> Command;
     /// A fresh reader for one turn's stdout.
-    fn parser(&self) -> Box<dyn Parser>;
-    /// The prompt goes in on stdin and risky tools wait for the user (Claude's "ask" mode).
+    fn parser(&self, spec: &TurnSpec, ok: &Checked) -> Box<dyn Parser>;
+    /// Stdin stays open for the whole turn: the prompt and the answers to permission requests go
+    /// in there (Claude's "ask" mode, every ACP turn).
     fn interactive(&self, _permission_mode: &str) -> bool {
         false
+    }
+    /// What an interactive turn writes first. None: the parser says what to write (`outgoing`).
+    fn first_input(&self, prompt: &str) -> Option<String> {
+        Some(user_message(prompt))
     }
     /// Can continue a chat as a new branch (`fork_session`) without changing the original.
     fn forks(&self) -> bool {
@@ -340,8 +365,13 @@ pub trait Agent: Sync {
     }
     /// What to tell the user when the repo's config is untrusted and this agent has no way to run
     /// with it switched off. None: it runs with the config off (`TurnSpec::project_config`).
-    fn needs_trusted_config(&self) -> Option<&'static str> {
+    fn needs_trusted_config(&self) -> Option<String> {
         None
+    }
+    /// Environment that keeps the repo's own config for this agent switched off, for anything
+    /// else nekotrail runs with this CLI in the workspace (`mcp list`). Empty: nothing to add.
+    fn config_off_env(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
     }
     /// The process ended without finishing its turn: was that the user pressing Stop (SIGINT)?
     /// Claude and Codex exit quietly when interrupted, so a failure with nothing on stderr is a stop.
@@ -354,8 +384,8 @@ pub struct Claude;
 pub struct Codex;
 pub struct Gemini;
 
-/// Every agent, in the order the UI lists them.
-pub static ALL: [&dyn Agent; 3] = [&Claude, &Codex, &Gemini];
+/// Every agent, in the order the UI lists them. ACP agents are `acp::AcpAgent` entries.
+pub static ALL: [&dyn Agent; 4] = [&Claude, &Codex, &Gemini, &crate::acp::OPENCODE];
 
 /// The agent for a stored id. Anything unknown is Claude, as it always was.
 pub fn get(id: &str) -> &'static dyn Agent {
@@ -366,7 +396,7 @@ impl Agent for Claude {
     fn id(&self) -> &'static str {
         "claude"
     }
-    fn parser(&self) -> Box<dyn Parser> {
+    fn parser(&self, _: &TurnSpec, _: &Checked) -> Box<dyn Parser> {
         Box::new(Lines(parse_claude))
     }
     fn interactive(&self, permission_mode: &str) -> bool {
@@ -417,7 +447,7 @@ impl Agent for Codex {
     fn id(&self) -> &'static str {
         "codex"
     }
-    fn parser(&self) -> Box<dyn Parser> {
+    fn parser(&self, _: &TurnSpec, _: &Checked) -> Box<dyn Parser> {
         Box::new(Lines(parse_codex))
     }
     fn build(&self, spec: &TurnSpec, ok: &Checked) -> Command {
@@ -459,7 +489,7 @@ impl Agent for Gemini {
     fn id(&self) -> &'static str {
         "gemini"
     }
-    fn parser(&self) -> Box<dyn Parser> {
+    fn parser(&self, _: &TurnSpec, _: &Checked) -> Box<dyn Parser> {
         Box::new(GeminiParser::default())
     }
     fn build(&self, spec: &TurnSpec, ok: &Checked) -> Command {
@@ -501,23 +531,40 @@ impl Agent for Gemini {
     fn repo_config(&self, dir: &Path) -> Option<(Vec<crate::agentcfg::Item>, String)> {
         crate::agentcfg::check_gemini(dir)
     }
-    fn needs_trusted_config(&self) -> Option<&'static str> {
-        Some("This repo's Gemini settings run commands (hooks, MCP servers or env), and Gemini can't run with them switched off. Send again and choose Trust, or use Claude or Codex for this task.")
+    fn needs_trusted_config(&self) -> Option<String> {
+        Some("This repo's Gemini settings run commands (hooks, MCP servers or env), and Gemini can't run with them switched off. Send again and choose Trust, or use Claude or Codex for this task.".into())
+    }
+}
+
+fn checked<'a>(spec: &TurnSpec<'a>) -> Checked<'a> {
+    Checked {
+        model: spec.model.filter(|m| crate::safe::model_id(m)),
+        effort: spec.effort.filter(|e| crate::safe::model_id(e)),
+        session: spec.agent_session_id.filter(|id| crate::safe::not_a_flag(id)),
     }
 }
 
 /// Build the CLI command for one turn.
 pub fn command(spec: &TurnSpec) -> Command {
-    let ok = Checked {
-        model: spec.model.filter(|m| crate::safe::model_id(m)),
-        effort: spec.effort.filter(|e| crate::safe::model_id(e)),
-        session: spec.agent_session_id.filter(|id| crate::safe::not_a_flag(id)),
-    };
+    let ok = checked(spec);
     let mut c = get(spec.agent).build(spec, &ok);
-    c.envs(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    // What the agent sets itself (an ACP agent's "repo config off" switch) beats the repo's env.
+    let own: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_os_string()).collect();
+    c.envs(spec.env.iter().filter(|(k, _)| !own.iter().any(|o| o == k.as_str())).map(|(k, v)| (k.as_str(), v.as_str())));
     c.current_dir(spec.cwd);
     c.stdin(if interactive(spec) { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     c
+}
+
+/// The reader for one turn's stdout, with the same checked values the command got.
+pub fn parser(spec: &TurnSpec) -> Box<dyn Parser> {
+    get(spec.agent).parser(spec, &checked(spec))
+}
+
+/// A reader for a stream recorded elsewhere (Conductor's chat history), outside any turn.
+pub fn replay_parser(agent: &str) -> Box<dyn Parser> {
+    let spec = TurnSpec { fork: false, agent, prompt: "", agent_session_id: None, model: None, permission_mode: "default", cwd: Path::new("."), effort: None, instructions: None, env: &[], dirs: &[], project_config: false };
+    parser(&spec)
 }
 
 /// `projects={"<cwd>"={trust_level="untrusted"}}`: Codex then skips the folder's `.codex/` layer
@@ -685,16 +732,18 @@ mod tests {
     #[test]
     fn registry() {
         let ids: Vec<_> = ALL.iter().map(|a| a.id()).collect();
-        assert_eq!(ids, ["claude", "codex", "gemini"]);
+        assert_eq!(ids, ["claude", "codex", "gemini", "opencode"]);
         for a in ALL {
             assert_eq!(get(a.id()).id(), a.id());
         }
         // Old or unknown values keep meaning Claude, as before.
         assert_eq!(get("").id(), "claude");
         assert_eq!(get("amp").id(), "claude");
-        // Only Claude asks mid-turn and forks.
+        // Claude asks mid-turn in "ask" mode; ACP agents keep stdin open for every turn.
         let ask: Vec<_> = ALL.iter().filter(|a| a.interactive("ask")).map(|a| a.id()).collect();
-        assert_eq!(ask, ["claude"]);
+        assert_eq!(ask, ["claude", "opencode"]);
+        assert_eq!(ALL.iter().filter(|a| a.interactive("acceptEdits")).map(|a| a.id()).collect::<Vec<_>>(), ["opencode"]);
+        // Only Claude forks.
         assert!(!get("claude").interactive("acceptEdits"));
         let forks: Vec<_> = ALL.iter().filter(|a| a.forks()).map(|a| a.id()).collect();
         assert_eq!(forks, ["claude"]);

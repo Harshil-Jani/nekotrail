@@ -47,7 +47,7 @@ pub fn history_events(src: &Connection, conductor_session: &str, agent: &str) ->
     )?;
     let rows = st.query_map([conductor_session], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
     let mut out = Vec::new();
-    let mut parser = crate::agent::get(agent).parser();
+    let mut parser = crate::agent::replay_parser(agent);
     let keep = |e: &serde_json::Value| e["kind"] != "session" && e["kind"] != "usage";
     for row in rows {
         let (role, content) = row?;

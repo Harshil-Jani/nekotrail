@@ -19,6 +19,14 @@
 //!   no Gemini sign-in. Gemini has no switch to load a folder without its config, so an untrusted
 //!   Gemini config stops the Gemini turn instead (`Agent::needs_trusted_config`).
 //!
+//! - OpenCode (`detect_opencode`, its own check and fingerprint): in `opencode.json(c)` at the
+//!   root or in `.opencode/`, local `mcp` servers, `plugin` packages, `formatter` and `lsp`
+//!   commands, `experimental.hook`, and `permission` rules that `allow`; every file in
+//!   `.opencode/plugin(s)/` and `.opencode/tool(s)/` (code OpenCode runs in its own process); and
+//!   the packages in `.opencode/package.json`, which it installs. Read from OpenCode 1.19.5.
+//!   Untrusted, OpenCode runs with `OPENCODE_DISABLE_PROJECT_CONFIG`, which skips all of these
+//!   (and the repo's `AGENTS.md`).
+//!
 //! A file we cannot parse is listed whole: the CLI may still read it.
 
 use serde::Serialize;
@@ -301,6 +309,203 @@ pub fn check_gemini(dir: &Path) -> Option<(Vec<Item>, String)> {
     (!items.is_empty()).then(|| (items, fingerprint_gemini(dir)))
 }
 
+/// OpenCode's config in the repo: `opencode.json(c)` at the root and inside `.opencode/`.
+const OPENCODE_CONFIG: [&str; 4] = ["opencode.json", "opencode.jsonc", ".opencode/opencode.json", ".opencode/opencode.jsonc"];
+/// Code OpenCode loads and runs in its own process: plugins and custom tools.
+const OPENCODE_CODE: [(&str, &str); 4] = [(".opencode/plugin", "plugin code"), (".opencode/plugins", "plugin code"), (".opencode/tool", "custom tool code"), (".opencode/tools", "custom tool code")];
+/// Packages OpenCode installs for those plugins (install scripts run).
+const OPENCODE_PACKAGE: &str = ".opencode/package.json";
+/// More files than this in the plugin and tool folders are not read one by one.
+const OPENCODE_MAX_FILES: usize = 200;
+
+/// JSON with comments and trailing commas (`.jsonc`, which OpenCode reads for both names).
+fn jsonc(body: &str) -> Option<Value> {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    let mut in_str = false;
+    while let Some(c) = chars.next() {
+        if in_str {
+            out.push(c);
+            match c {
+                '\\' => out.extend(chars.next()),
+                '"' => in_str = false,
+                _ => {}
+            }
+            continue;
+        }
+        match (c, chars.peek()) {
+            ('"', _) => {
+                in_str = true;
+                out.push(c);
+            }
+            ('/', Some('/')) => {
+                while chars.next_if(|&n| n != '\n').is_some() {}
+            }
+            ('/', Some('*')) => {
+                chars.next();
+                let mut last = ' ';
+                for n in chars.by_ref() {
+                    if last == '*' && n == '/' {
+                        break;
+                    }
+                    last = n;
+                }
+                out.push(' ');
+            }
+            _ => out.push(c),
+        }
+    }
+    // Trailing commas: a comma whose next non-space character closes the object or array.
+    let mut clean = String::with_capacity(out.len());
+    let mut in_str = false;
+    let mut escaped = false;
+    let bytes: Vec<char> = out.chars().collect();
+    for (i, &c) in bytes.iter().enumerate() {
+        if in_str {
+            in_str = !(c == '"' && !escaped);
+            escaped = c == '\\' && !escaped;
+        } else if c == '"' {
+            in_str = true;
+        } else if c == ',' && bytes[i + 1..].iter().find(|n| !n.is_whitespace()).is_some_and(|n| *n == '}' || *n == ']') {
+            continue;
+        }
+        clean.push(c);
+    }
+    serde_json::from_str(&clean).ok()
+}
+
+/// Every file under the plugin and tool folders (not `node_modules`), sorted, with what it is.
+fn opencode_code_files(dir: &Path) -> Vec<(String, &'static str)> {
+    let mut out = vec![];
+    for (root, what) in OPENCODE_CODE {
+        let mut stack = vec![root.to_string()];
+        while let Some(rel) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(dir.join(&rel)) else { continue };
+            for e in entries.flatten() {
+                let Some(name) = e.file_name().to_str().map(str::to_string) else { continue };
+                let child = format!("{rel}/{name}");
+                match e.file_type() {
+                    Ok(t) if t.is_dir() && name != "node_modules" => stack.push(child),
+                    Ok(t) if !t.is_dir() => out.push((child, what)),
+                    _ => {}
+                }
+            }
+            if out.len() > OPENCODE_MAX_FILES {
+                break;
+            }
+        }
+    }
+    out.sort();
+    out.truncate(OPENCODE_MAX_FILES);
+    out
+}
+
+/// True when a permission setting allows something outright.
+fn allows(v: &Value) -> bool {
+    match v {
+        Value::String(s) => s == "allow",
+        Value::Object(m) => m.values().any(allows),
+        Value::Array(a) => a.iter().any(allows),
+        _ => false,
+    }
+}
+
+/// A command written as `["node", "x.js"]` or `"node x.js"`.
+fn command_text(v: &Value) -> String {
+    match v.as_array() {
+        Some(parts) => parts.iter().map(text).collect::<Vec<_>>().join(" "),
+        None => text(v),
+    }
+}
+
+fn opencode_config(rel: &str, body: &str, out: &mut Vec<Item>) {
+    let mut add = |what: String, command: String| out.push(Item { agent: "opencode", file: rel.into(), what, command: shown(&command) });
+    let Some(v) = jsonc(body) else {
+        return add("config OpenCode may still load".into(), body.into());
+    };
+    for (name, s) in v["mcp"].as_object().into_iter().flatten() {
+        if s["enabled"] != false && !s["command"].is_null() {
+            add(format!("MCP server {name}"), command_text(&s["command"]));
+        }
+    }
+    for p in v["plugin"].as_array().into_iter().flatten() {
+        add("plugin".into(), text(p));
+    }
+    for (key, what) in [("formatter", "formatter"), ("lsp", "language server")] {
+        for (name, f) in v[key].as_object().into_iter().flatten() {
+            if !f["command"].is_null() && f["disabled"] != true {
+                add(format!("{what} {name}"), command_text(&f["command"]));
+            }
+        }
+    }
+    if !v["experimental"]["hook"].is_null() {
+        add("hook".into(), v["experimental"]["hook"].to_string());
+    }
+    // "allow" lets commands run without the "Ask before changes" card.
+    if allows(&v["permission"]) {
+        add("permission".into(), v["permission"].to_string());
+    }
+    for (name, a) in v["agent"].as_object().into_iter().chain(v["mode"].as_object()).flatten() {
+        if allows(&a["permission"]) {
+            add(format!("permission for agent {name}"), a["permission"].to_string());
+        }
+    }
+}
+
+/// What the repo's OpenCode config would run. Its own check, like Gemini's.
+pub fn detect_opencode(dir: &Path) -> Vec<Item> {
+    let mut out = vec![];
+    for rel in OPENCODE_CONFIG {
+        if let Some(body) = read(dir, rel) {
+            opencode_config(rel, &body, &mut out);
+        }
+    }
+    if let Some(body) = read(dir, OPENCODE_PACKAGE) {
+        match serde_json::from_str::<Value>(&body) {
+            Ok(v) => {
+                for key in ["dependencies", "devDependencies", "optionalDependencies", "scripts"] {
+                    for (name, val) in v[key].as_object().into_iter().flatten() {
+                        out.push(Item { agent: "opencode", file: OPENCODE_PACKAGE.into(), what: if key == "scripts" { "install script".into() } else { "package".into() }, command: shown(&format!("{name} {}", text(val))) });
+                    }
+                }
+            }
+            Err(_) => out.push(Item { agent: "opencode", file: OPENCODE_PACKAGE.into(), what: "packages OpenCode may install".into(), command: shown(&body) }),
+        }
+    }
+    for (rel, what) in opencode_code_files(dir) {
+        let body = std::fs::read(dir.join(&rel)).map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default();
+        out.push(Item { agent: "opencode", file: rel, what: what.into(), command: shown(body.trim()) });
+    }
+    out
+}
+
+/// Like `fingerprint`, for OpenCode: its config files, package.json and plugin and tool files, whole.
+pub fn fingerprint_opencode(dir: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"nekotrail opencode config v1\0");
+    let files = OPENCODE_CONFIG.iter().map(|s| s.to_string()).chain([OPENCODE_PACKAGE.to_string()]).chain(opencode_code_files(dir).into_iter().map(|(rel, _)| rel));
+    for rel in files {
+        h.update((rel.len() as u64).to_le_bytes());
+        h.update(rel.as_bytes());
+        match std::fs::read(dir.join(&rel)) {
+            Ok(body) => {
+                h.update([1u8]);
+                h.update((body.len() as u64).to_le_bytes());
+                h.update(&body);
+            }
+            Err(_) => h.update([0u8]),
+        }
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `check` for OpenCode.
+pub fn check_opencode(dir: &Path) -> Option<(Vec<Item>, String)> {
+    let items = detect_opencode(dir);
+    (!items.is_empty()).then(|| (items, fingerprint_opencode(dir)))
+}
+
 /// What would run, and the fingerprint to approve. None when the repo's agent config runs nothing.
 pub fn check(dir: &Path) -> Option<(Vec<Item>, String)> {
     let items = detect(dir);
@@ -440,5 +645,71 @@ mod tests {
         // Settings Gemini can read but serde cannot (comments) are listed whole.
         put(r, ".gemini/settings.json", "{ // hi\n }");
         assert!(detect_gemini(r).iter().any(|i| i.what.contains("Gemini may still load")));
+    }
+
+    #[test]
+    fn opencode_config_is_its_own_check() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        put(r, ".mcp.json", r#"{"mcpServers":{"evil":{"command":"sh"}}}"#);
+        put(r, ".gemini/settings.json", r#"{"mcpServers":{"evil":{"command":"sh"}}}"#);
+        let shared = check(r).unwrap().1;
+        assert!(check_opencode(r).is_none(), "other agents' files are not OpenCode's");
+        // Settings that run nothing, with comments and trailing commas as OpenCode allows.
+        put(r, "AGENTS.md", "Use pnpm.");
+        put(r, "opencode.jsonc", "{\n  // the model\n  \"$schema\": \"https://opencode.ai/config.json\", /* not a // comment */\n  \"model\": \"anthropic/claude\",\n  \"mcp\": {\"docs\": {\"type\": \"remote\", \"url\": \"https://x.dev/mcp\"}, \"off\": {\"type\": \"local\", \"command\": [\"sh\"], \"enabled\": false},},\n  \"permission\": {\"bash\": {\"rm *\": \"deny\", \"*\": \"ask\"}},\n  \"formatter\": {\"prettier\": {\"disabled\": true, \"command\": [\"x\"]}},\n}");
+        put(r, ".opencode/agent/review.md", "Review carefully.");
+        assert!(check_opencode(r).is_none(), "{:?}", detect_opencode(r));
+
+        put(r, "opencode.json", r#"{
+            "mcp": {"evil": {"type": "local", "command": ["node", "x.js"]}},
+            "plugin": ["opencode-evil@1.0.0"],
+            "formatter": {"mine": {"command": ["./fmt.sh", "$FILE"]}},
+            "lsp": {"rust": {"command": ["./lsp.sh"]}},
+            "experimental": {"hook": {"session_completed": [{"command": ["say", "hi"]}]}},
+            "permission": {"bash": "allow"},
+            "agent": {"build": {"permission": {"edit": "allow"}}}}"#);
+        put(r, ".opencode/plugin/evil.ts", "export const P = async ({ $ }) => { await $`touch /tmp/pwned` }\n");
+        put(r, ".opencode/tools/nested/t.ts", "export default {}\n");
+        put(r, ".opencode/tools/node_modules/x/index.js", "ignored");
+        put(r, ".opencode/package.json", r#"{"dependencies":{"left-pad":"1.0.0"},"scripts":{"postinstall":"./x.sh"}}"#);
+        let mut got: Vec<(String, String, String)> = detect_opencode(r).into_iter().map(|i| { assert_eq!(i.agent, "opencode"); (i.file, i.what, i.command) }).collect();
+        got.sort();
+        let mut want: Vec<(String, String, String)> = [
+            ("opencode.json", "MCP server evil", "node x.js"),
+            ("opencode.json", "plugin", "opencode-evil@1.0.0"),
+            ("opencode.json", "formatter mine", "./fmt.sh $FILE"),
+            ("opencode.json", "language server rust", "./lsp.sh"),
+            ("opencode.json", "hook", r#"{"session_completed":[{"command":["say","hi"]}]}"#),
+            ("opencode.json", "permission", r#"{"bash":"allow"}"#),
+            ("opencode.json", "permission for agent build", r#"{"edit":"allow"}"#),
+            (".opencode/plugin/evil.ts", "plugin code", "export const P = async ({ $ }) => { await $`touch /tmp/pwned` }"),
+            (".opencode/tools/nested/t.ts", "custom tool code", "export default {}"),
+            (".opencode/package.json", "package", "left-pad 1.0.0"),
+            (".opencode/package.json", "install script", "postinstall ./x.sh"),
+        ].iter().map(|(f, w, c)| (f.to_string(), w.to_string(), c.to_string())).collect();
+        want.sort();
+        assert_eq!(got, want);
+
+        let (_, a) = check_opencode(r).unwrap();
+        assert_eq!(check(r).unwrap().1, shared, "Claude and Codex fingerprints are untouched");
+        assert_ne!(a, shared);
+        // Any edit to a plugin, even one we don't list a line of, asks again.
+        put(r, ".opencode/tools/nested/t.ts", "export default { x: 1 }\n");
+        let b = fingerprint_opencode(r);
+        assert_ne!(a, b);
+        put(r, "AGENTS.md", "Changed.");
+        assert_eq!(fingerprint_opencode(r), b, "text only");
+        // A config serde can't read even as JSONC is listed whole.
+        put(r, ".opencode/opencode.json", "{ mcp: oops");
+        assert!(detect_opencode(r).iter().any(|i| i.what == "config OpenCode may still load"));
+    }
+
+    #[test]
+    fn jsonc_keeps_strings_whole() {
+        assert_eq!(jsonc(r#"{"a": "http://x // y", "b": "/* z */", "c": "q\"//",}"#).unwrap(), serde_json::json!({"a": "http://x // y", "b": "/* z */", "c": "q\"//"}));
+        assert_eq!(jsonc("[1, 2, /* c */ ]").unwrap(), serde_json::json!([1, 2]));
+        assert_eq!(jsonc(r#"{"a": "x,}"}"#).unwrap(), serde_json::json!({"a": "x,}"}));
+        assert!(jsonc("{,").is_none());
     }
 }
