@@ -802,7 +802,7 @@ export default function App() {
       { id: "new-stack", group: "Create", label: "Create workspace stacked on another", keywords: "new stacked pr branch depends", icon: <SquareStack size={15} />, run: () => openNew("stack", ws?.id) },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
       { id: "update", group: "App", label: "Check for updates", keywords: "upgrade new version release download", icon: <Download size={15} />, run: () => updater.checkNow(true) },
-      { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex, Gemini)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
+      { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex, Gemini, OpenCode)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
     const active = workspaces.filter((w) => w.state === "active");

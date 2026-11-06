@@ -72,7 +72,7 @@ export type StackParent = {
 
 export type Section = { id: string; name: string; sort: number };
 
-export type Agent = "claude" | "codex" | "gemini";
+export type Agent = "claude" | "codex" | "gemini" | "opencode";
 export type PermissionMode = "plan" | "default" | "ask" | "acceptEdits" | "bypassPermissions";
 
 export type Session = {
@@ -155,7 +155,7 @@ export const starFor = (sky: Sky, name: string) => {
 };
 export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find((c) => c.slug === star.constellation)!;
 
-/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/; .gemini/ and .env for Gemini) would run, not trusted yet. */
+/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/; .gemini/ and .env for Gemini; opencode.json and .opencode/ for OpenCode) would run, not trusted yet. */
 export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
 export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
 

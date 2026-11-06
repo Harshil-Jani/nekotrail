@@ -21,7 +21,7 @@ nekotrail runs many coding agents in parallel on your own Mac. Every task gets i
 ## Positioning
 
 - **Open source and local-first.** MIT licensed. Runs on your machine; code and chats stay there. It cannot be shut down or acquired away.
-- **Bring any agent.** Drives the official `claude`, `codex` and `gemini` CLIs with the user's own subscriptions and settings. More agent CLIs can be added.
+- **Bring any agent.** Drives the official `claude`, `codex`, `gemini` and `opencode` CLIs with the user's own subscriptions and settings. OpenCode speaks the Agent Client Protocol (ACP), so more ACP agents (Cursor and others) are one registry entry each.
 - **One-click move from Conductor.** Imports your repos, active workspaces and chats from a local Conductor install, read-only, without moving files. Imported chats continue the same agent session.
 
 ## Operating Context

@@ -353,5 +353,20 @@
     "new": false
    }
   ]
+ },
+ "opencode": {
+  "label": "OpenCode",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "default",
+  "models": [
+   {
+    "id": "default",
+    "label": "Default",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
  }
 }
