@@ -4,6 +4,7 @@ pub mod agentcfg;
 pub mod checks;
 pub mod cli;
 pub mod mcpshare;
+pub mod multirepo;
 pub mod config;
 pub mod git;
 pub mod guard;
@@ -360,16 +361,36 @@ fn workspace_or_chat(st: &AppState, id: &str) -> Res<(Workspace, &'static dyn ag
 #[tauri::command]
 async fn agent_config_trust(st: State<'_, AppState>, id: String) -> Res<Value> {
     let (ws, harness) = workspace_or_chat(&st, &id)?;
-    let Some((items, print)) = untrusted_agent_config(&st, &ws, harness) else { return Ok(Value::Null) };
-    let repo = st.db().repo(&ws.repo_id).map(|r| r.name).unwrap_or_default();
-    Ok(json!({"repo": repo, "fingerprint": print, "items": items}))
+    // A multi-repo task asks per repo: the first untrusted one, with the others that need asking
+    // in `rest` (so "Not now" on one still asks about the next).
+    let linked = linked_workspaces(&st, &ws);
+    let mut all: Vec<Value> = vec![];
+    for w in std::iter::once(&ws).chain(&linked) {
+        if let Some((items, print)) = untrusted_agent_config(&st, w, harness) {
+            let repo = st.db().repo(&w.repo_id).map(|r| r.name).unwrap_or_default();
+            all.push(json!({"repo": repo, "fingerprint": print, "items": items, "workspace_id": w.id}));
+        }
+    }
+    if all.is_empty() {
+        return Ok(Value::Null);
+    }
+    let mut first = all.remove(0);
+    if !all.is_empty() {
+        first["rest"] = json!(all);
+    }
+    Ok(first)
 }
 
 /// The user trusted the agent config they were shown. Same store as the scripts: per repo and
-/// fingerprint, so any edit to those files asks again.
+/// fingerprint, so any edit to those files asks again. `workspace` names another repo of the
+/// chat's multi-repo task; it must be one.
 #[tauri::command]
-async fn trust_agent_config(st: State<'_, AppState>, id: String, fingerprint: String) -> Res<()> {
-    let (ws, harness) = workspace_or_chat(&st, &id)?;
+async fn trust_agent_config(st: State<'_, AppState>, id: String, fingerprint: String, workspace: Option<String>) -> Res<()> {
+    let (main, harness) = workspace_or_chat(&st, &id)?;
+    let ws = match workspace.filter(|w| *w != main.id) {
+        None => main,
+        Some(w) => linked_workspaces(&st, &main).into_iter().find(|x| x.id == w).ok_or("That repo isn't part of this task.")?,
+    };
     match harness.repo_config(Path::new(&ws.path)) {
         Some((_, print)) if print == fingerprint => st.db().set_setting(&config::trust_key(&ws.repo_id, &print), &store::now()).map_err(e),
         _ => Err("The repo's agent config changed since you looked at it. Check it again.".into()),
@@ -518,6 +539,98 @@ fn branch_slug(text: &str) -> String {
 
 #[tauri::command]
 async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>) -> Res<Workspace> {
+    make_workspace(&st, repo_id, base, name, from, false)
+}
+
+/// A multi-repo task: one workspace per repo, all on the same branch name, linked by the first
+/// one's id (the main workspace, where the chat runs; see `multirepo`). If any repo fails, the
+/// workspaces already made are removed again, branches included, so nothing is left half made.
+#[tauri::command]
+async fn create_multi_task(app: AppHandle, repo_ids: Vec<String>) -> Res<Vec<Workspace>> {
+    blocking(app, move |st| create_multi_blocking(st, &repo_ids)).await
+}
+
+fn create_multi_blocking(st: &AppState, repo_ids: &[String]) -> Res<Vec<Workspace>> {
+    multirepo::check_repos(repo_ids)?;
+    let repos: Vec<Repo> = repo_ids
+        .iter()
+        .map(|id| st.db().repo(id).map_err(|_| "One of those repos is gone. Pick the repos again.".to_string()))
+        .collect::<Res<_>>()?;
+    // One star name that is free in every repo: as a folder and as a branch.
+    let mut taken: Vec<String> = st.db().workspaces(true).map_err(e)?.into_iter().map(|w| w.name).collect();
+    let prefix = st.branch_prefix().to_string();
+    let free = |name: &str| {
+        repos.iter().all(|r| {
+            !st.home.join("workspaces").join(&r.name).join(name).exists()
+                && !git::branch_exists(Path::new(&r.root_path), &format!("{prefix}/{name}"))
+        })
+    };
+    let mut name = names::pick(&taken);
+    for _ in 0..500 {
+        if !taken.contains(&name) && free(&name) {
+            break;
+        }
+        taken.push(name.clone());
+        name = names::pick(&taken);
+    }
+    if !free(&name) {
+        return Err("Couldn't find a branch name that is free in every one of these repos.".into());
+    }
+    let mut made: Vec<Workspace> = vec![];
+    for r in &repos {
+        match make_workspace(st, r.id.clone(), None, Some(name.clone()), None, true) {
+            Ok(w) if w.name == name => made.push(w),
+            Ok(w) => {
+                made.push(w);
+                undo_made(st, &made);
+                return Err(format!("Couldn't use the same branch name in {}. Try again.", r.name));
+            }
+            Err(err) => {
+                undo_made(st, &made);
+                return Err(format!("Couldn't make the workspace in {}: {err}", r.name));
+            }
+        }
+    }
+    let group = made[0].id.clone();
+    let ids: Vec<String> = made.iter().map(|w| w.id.clone()).collect();
+    st.db().set_group(&ids, &group).map_err(e)?;
+    Ok(made.into_iter().map(|w| Workspace { group_id: group.clone(), ..w }).collect())
+}
+
+/// Take back workspaces made a moment ago for a task that couldn't be made in every repo.
+fn undo_made(st: &AppState, made: &[Workspace]) {
+    for w in made {
+        if let Ok(r) = st.db().repo(&w.repo_id) {
+            let root = Path::new(&r.root_path);
+            let _ = git::remove_worktree(root, Path::new(&w.path));
+            let _ = git::git(root, &["branch", "-D", &w.branch]);
+        }
+        let _ = st.db().delete_unused_workspace(&w.id);
+    }
+}
+
+/// The other workspaces of `ws`'s multi-repo task, archived ones too (empty for any other workspace).
+fn group_others(st: &AppState, ws: &Workspace) -> Vec<Workspace> {
+    st.db().group_members(&ws.group_id).unwrap_or_default().into_iter().filter(|w| w.id != ws.id).collect()
+}
+
+/// The folders a turn in `ws` also works in: the task's other active workspaces, when `ws` is
+/// the main one.
+fn linked_workspaces(st: &AppState, ws: &Workspace) -> Vec<Workspace> {
+    if ws.group_id.is_empty() {
+        return vec![];
+    }
+    let others = group_others(st, ws);
+    let rows: Vec<(String, String, bool)> = std::iter::once((ws.id.clone(), ws.path.clone(), true))
+        .chain(others.iter().map(|w| (w.id.clone(), w.path.clone(), w.state == "active" && Path::new(&w.path).is_dir())))
+        .collect();
+    let dirs = multirepo::linked_dirs(&ws.id, &ws.group_id, &rows);
+    others.into_iter().filter(|w| dirs.contains(&w.path)).collect()
+}
+
+/// `shared_name`: the name is already taken by the other workspaces of the same multi-repo task,
+/// which is fine (it only has to be free in this repo).
+fn make_workspace(st: &AppState, repo_id: String, base: Option<String>, name: Option<String>, from: Option<String>, shared_name: bool) -> Res<Workspace> {
     let (repo, taken) = {
         let db = st.db();
         let repo = db.repo(&repo_id).map_err(e)?;
@@ -535,7 +648,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         return Err(format!("\"{base}\" isn't a valid branch name."));
     }
     let dir = st.home.join("workspaces").join(&repo.name);
-    while taken.contains(&name) || dir.join(&name).exists() || git::branch_exists(&root, &format!("{}/{name}", st.branch_prefix())) {
+    while (!shared_name && taken.contains(&name)) || dir.join(&name).exists() || git::branch_exists(&root, &format!("{}/{name}", st.branch_prefix())) {
         name = names::pick(&taken.iter().cloned().chain([name.clone()]).collect::<Vec<_>>());
     }
     let path = dir.join(&name);
@@ -607,14 +720,14 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         title: String::new(),
         status: String::new(),
         pair_id: String::new(),
-        section_id: String::new(), parent_id, title_source: String::new(), review_pr: 0,
+        section_id: String::new(), parent_id, title_source: String::new(), review_pr: 0, group_id: String::new(),
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
     ensure_local_excludes(&root, &prefs.copy_files);
     copy_into_workspace(&root, &path, &prefs.copy_files);
     st.db().insert_workspace(&ws).map_err(e)?;
     // Its ports, now, so they are the same from the first setup script on.
-    let _ = port_block(&st, &ws);
+    let _ = port_block(st, &ws);
     Ok(ws)
 }
 
@@ -625,7 +738,24 @@ async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> 
     archive_blocking(&st, &id, force)
 }
 
+/// A workspace of a multi-repo task takes the whole task with it: every repo is checked for
+/// uncommitted work first, so the task is never left half archived by a "DIRTY".
 fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
+    let ws = st.db().workspace(id).map_err(e)?;
+    let members: Vec<Workspace> = st.db().group_members(&ws.group_id).map_err(e)?.into_iter().filter(|w| w.state == "active").collect();
+    if members.is_empty() {
+        return archive_one(st, id, force);
+    }
+    if !force && members.iter().any(|w| Path::new(&w.path).exists() && git::is_dirty(Path::new(&w.path)).unwrap_or(false)) {
+        return Err("DIRTY".into());
+    }
+    for w in &members {
+        archive_one(st, &w.id, force)?;
+    }
+    Ok(())
+}
+
+fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
     let id = id.to_string();
     let ws = st.db().workspace(&id).map_err(e)?;
     let path = Path::new(&ws.path);
@@ -668,9 +798,26 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
     Ok(())
 }
 
+/// Restores the workspace, and every other workspace of its multi-repo task.
 #[tauri::command]
 async fn restore_workspace(st: State<'_, AppState>, id: String) -> Res<()> {
-    let ws = st.db().workspace(&id).map_err(e)?;
+    restore_blocking(&st, &id)
+}
+
+fn restore_blocking(st: &AppState, id: &str) -> Res<()> {
+    let ws = st.db().workspace(id).map_err(e)?;
+    let members = st.db().group_members(&ws.group_id).map_err(e)?;
+    if members.is_empty() {
+        return restore_one(st, ws);
+    }
+    for w in members.into_iter().filter(|w| w.state == "archived") {
+        restore_one(st, w)?;
+    }
+    Ok(())
+}
+
+fn restore_one(st: &AppState, ws: Workspace) -> Res<()> {
+    let id = ws.id.clone();
     let repo = st.db().repo(&ws.repo_id).map_err(e)?;
     if ws.imported_from.as_deref() == Some(terminal::FROM_HISTORY) {
         if !Path::new(&ws.path).exists() {
@@ -908,11 +1055,12 @@ async fn repo_guard(st: State<'_, AppState>, id: String) -> Res<Value> {
 }
 
 /// "Put it back": restore the protected files a turn changed, from that turn's checkpoint (and its
-/// saved ignored files), and nothing else. The agent's copies go to the Trash first.
+/// saved ignored files), and nothing else. The agent's copies go to the Trash first. `workspace`
+/// is set when the files are in another repo of the chat's multi-repo task.
 #[tauri::command]
-async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, ignored: Option<String>, paths: Vec<String>) -> Res<Vec<String>> {
+async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, ignored: Option<String>, paths: Vec<String>, workspace: Option<String>) -> Res<Vec<String>> {
     blocking(app.clone(), move |st| {
-        let ws = idle_workspace(st, &id, &checkpoint, true)?;
+        let ws = idle_workspace_in(st, &id, &checkpoint, true, workspace.as_deref())?;
         let release = || { st.runs.lock().unwrap().rewinding.remove(&ws.id); };
         let root = Path::new(&ws.path);
         if let Some(i) = ignored.as_deref().filter(|i| !i.is_empty())
@@ -1165,7 +1313,7 @@ fn prepare_review(st: &AppState, repo_id: &str, number: u64) -> Res<(Workspace, 
         id: new_id(), repo_id: repo.id.clone(), name, branch, path: path.to_string_lossy().to_string(), target_branch: base.clone(),
         state: "active".into(), pinned: false, unread: false, notes: String::new(), imported_from: None, created_at: store::now(),
         title: title.clone(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
-        title_source: if title.is_empty() { String::new() } else { title::PR.to_string() }, review_pr: number as i64,
+        title_source: if title.is_empty() { String::new() } else { title::PR.to_string() }, review_pr: number as i64, group_id: String::new(),
     };
     // No copied secrets (.env) and no setup script: this is someone else's code, only to be read.
     ensure_local_excludes(&root, &[]);
@@ -2419,6 +2567,7 @@ fn side_turn(st: &AppState, ws: &Workspace, prompt: &str, secs: u64) -> Res<Stri
         dirs: &[],
         project_config,
         guard: None,
+        dir_guards: &[],
     };
     let mut cmd = agent::command(&spec);
     let mut parser = agent::parser(&spec);
@@ -2815,6 +2964,81 @@ async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: Str
     Ok(url)
 }
 
+// ---------- multi-repo tasks (see multirepo.rs) ----------
+
+fn merge_order_key(group: &str) -> String {
+    format!("merge_order:{group}")
+}
+
+/// The active workspaces of `id`'s multi-repo task as `gh` needs them, in merge order: `order`
+/// when given, else the order saved last time, then any others.
+fn task_members(st: &AppState, id: &str, order: Option<&[String]>) -> Res<Vec<multirepo::Member>> {
+    let ws = st.db().workspace(id).map_err(e)?;
+    if ws.group_id.is_empty() {
+        return Err("This workspace isn't part of a multi-repo task.".into());
+    }
+    let members: Vec<Workspace> = st.db().group_members(&ws.group_id).map_err(e)?.into_iter().filter(|w| w.state == "active").collect();
+    let ids: Vec<String> = members.iter().map(|w| w.id.clone()).collect();
+    let saved: Vec<String> = match order {
+        Some(o) => o.to_vec(),
+        None => st.db().setting(&merge_order_key(&ws.group_id)).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+    };
+    let mut out = vec![];
+    for wid in multirepo::merge_order(&ids, &saved) {
+        let Some(w) = members.iter().find(|w| w.id == wid) else { continue };
+        let repo = st.db().repo(&w.repo_id).map_err(e)?;
+        out.push(multirepo::Member {
+            workspace_id: w.id.clone(),
+            name: repo.name,
+            dir: w.path.clone(),
+            branch: w.branch.clone(),
+            base: w.target_branch.clone(),
+            merge_flag: match repo.prefs.merge_method.as_str() { "merge" => "--merge", "rebase" => "--rebase", _ => "--squash" },
+        });
+    }
+    Ok(out)
+}
+
+/// Create PRs for a multi-repo task: push every branch, open one PR per repo (an open one is
+/// reused), then end each body with the line that links them all.
+#[tauri::command]
+async fn group_prs(app: AppHandle, id: String, title: String, body: String, draft: bool) -> Res<Vec<multirepo::PrRef>> {
+    blocking(app, move |st| {
+        let members = task_members(st, &id, None)?;
+        for m in &members {
+            git::git(Path::new(&m.dir), &["push", "-u", "origin", &m.branch]).map_err(|err| format!("Couldn't push {} in {}: {err}", m.branch, m.name))?;
+        }
+        let bodies = vec![body.clone(); members.len()];
+        let made = multirepo::create_all(&multirepo::GhCli("gh"), &members, title.trim(), &bodies, draft);
+        for m in &members {
+            pr_poke_workspace(st, &m.workspace_id, true);
+        }
+        made
+    })
+    .await
+}
+
+/// Merge every PR of a multi-repo task in `order` (workspace ids), only when all are green, and
+/// stop at the first failure. The order is remembered for next time.
+#[tauri::command]
+async fn merge_all(app: AppHandle, id: String, order: Vec<String>) -> Res<Vec<multirepo::Step>> {
+    blocking(app, move |st| {
+        let members = task_members(st, &id, Some(&order))?;
+        let group = st.db().workspace(&id).map_err(e)?.group_id;
+        let ids: Vec<String> = members.iter().map(|m| m.workspace_id.clone()).collect();
+        st.db().set_setting(&merge_order_key(&group), &json!(ids).to_string()).map_err(e)?;
+        let steps = multirepo::merge_all(&multirepo::GhCli("gh"), &members)?;
+        for s in steps.iter().filter(|s| s.outcome == "merged" || s.outcome == "already") {
+            let _ = st.db().set_merged(&s.workspace_id);
+        }
+        for m in &members {
+            pr_poke_workspace(st, &m.workspace_id, true);
+        }
+        Ok(steps)
+    })
+    .await
+}
+
 // ---------- github ----------
 
 /// The signed-in GitHub user (`gh auth`), or null when gh is not logged in.
@@ -3093,13 +3317,24 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
 /// The workspace a chat belongs to, refusing while any agent in it is working: a rewind under a
 /// running agent would mix its next edits with the restored files.
 fn idle_workspace(st: &AppState, session_id: &str, checkpoint: &str, claim: bool) -> Res<Workspace> {
+    idle_workspace_in(st, session_id, checkpoint, claim, None)
+}
+
+/// `idle_workspace`, or with `target` another repo's workspace of the chat's multi-repo task
+/// (its checkpoints, its files), still refusing while the chat's agent works.
+fn idle_workspace_in(st: &AppState, session_id: &str, checkpoint: &str, claim: bool, target: Option<&str>) -> Res<Workspace> {
     if !safe::object_id(checkpoint) {
         return Err("That checkpoint isn't valid.".into());
     }
-    let ws = {
+    let chat_ws = {
         let db = st.db();
         let s = db.session(session_id).map_err(e)?;
         db.workspace(&s.workspace_id).map_err(e)?
+    };
+    let sessions = st.db().sessions(&chat_ws.id).map_err(e)?;
+    let ws = match target.filter(|t| *t != chat_ws.id) {
+        None => chat_ws,
+        Some(t) => linked_workspaces(st, &chat_ws).into_iter().find(|w| w.id == t).ok_or("That repo isn't part of this task any more.")?,
     };
     terminal::refuse_in_history(&ws)?;
     if !Path::new(&ws.path).exists() {
@@ -3108,7 +3343,6 @@ fn idle_workspace(st: &AppState, session_id: &str, checkpoint: &str, claim: bool
     if !git::is_checkpoint(Path::new(&ws.path), checkpoint) {
         return Err("This checkpoint is gone. Workspaces keep their last 50.".into());
     }
-    let sessions = st.db().sessions(&ws.id).map_err(e)?;
     let mut runs = st.runs.lock().unwrap();
     if sessions.iter().any(|s| runs.running.contains_key(&s.id)) {
         return Err("An agent is still working in this workspace. Stop it first.".into());
@@ -3316,18 +3550,34 @@ fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) 
     if slug.len() < 3 {
         return ws;
     }
-    let dir = Path::new(&ws.path);
+    // A multi-repo task keeps one branch name in every repo: all of them are renamed, or none.
+    let all: Vec<Workspace> = std::iter::once(ws.clone()).chain(linked_workspaces(st, &ws)).collect();
+    if all.iter().any(|w| w.branch != ws.branch) {
+        return ws;
+    }
     let mut name = format!("{}/{slug}", st.branch_prefix());
     let mut n = 2;
-    while git::branch_exists(dir, &name) {
+    while all.iter().any(|w| git::branch_exists(Path::new(&w.path), &name)) {
         name = format!("{}/{slug}-{n}", st.branch_prefix());
         n += 1;
     }
-    let pushed = git::git(dir, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", ws.branch)]).is_ok();
-    if pushed || git::git(dir, &["branch", "-m", &ws.branch, &name]).is_err() {
+    let pushed = |w: &Workspace| git::git(Path::new(&w.path), &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", w.branch)]).is_ok();
+    if all.iter().any(pushed) {
         return ws;
     }
-    let _ = st.db().set_branch(&ws.id, &name);
+    let mut renamed: Vec<&Workspace> = vec![];
+    for w in &all {
+        if git::git(Path::new(&w.path), &["branch", "-m", &w.branch, &name]).is_err() {
+            for r in renamed {
+                let _ = git::git(Path::new(&r.path), &["branch", "-m", &name, &r.branch]);
+            }
+            return ws;
+        }
+        renamed.push(w);
+    }
+    for w in &all {
+        let _ = st.db().set_branch(&w.id, &name);
+    }
     let _ = app.emit("workspaces-changed", json!({}));
     Workspace { branch: name, ..ws }
 }
@@ -3389,6 +3639,31 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
             None
         },
     };
+    // A multi-repo task: the agent also works in the task's other workspaces. Each repo keeps its
+    // own protected paths, saved now and checked after the turn like this one's.
+    let linked = linked_workspaces(st, &ws);
+    let mut dirs = dirs;
+    let mut linked_guards: Vec<(Workspace, String, guard::Rules, guard::Base)> = vec![];
+    for w in &linked {
+        if !dirs.contains(&w.path) {
+            dirs.push(w.path.clone());
+        }
+        let Ok(r) = st.db().repo(&w.repo_id) else { continue };
+        let rules = guard_rules(&r, w);
+        if rules.is_empty() {
+            continue;
+        }
+        let p = Path::new(&w.path);
+        let (cp, gp) = (git::checkpoint_prefix(&w.id), guard::prefix(&w.id));
+        let base = guard::Base { checkpoint: git::checkpoint(p, &cp).ok(), ignored: guard::snapshot_ignored(p, &gp, &rules).ok() };
+        let wp = w.path.clone();
+        std::thread::spawn(move || {
+            let _ = git::prune_checkpoints(Path::new(&wp), &cp, git::CHECKPOINT_KEEP);
+            let _ = git::prune_checkpoints(Path::new(&wp), &gp, git::CHECKPOINT_KEEP);
+        });
+        linked_guards.push((w.clone(), r.name, rules, base));
+    }
+    let dir_guards: Vec<(String, guard::Rules)> = linked_guards.iter().map(|(w, _, r, _)| (w.path.clone(), r.clone())).collect();
     // "Rules for this task" go in front of the first message of every chat in this workspace,
     // whichever agent it is. Read before the message is saved, so "first" means first.
     let task_rules = if st.db().has_user_message(&id).unwrap_or(true) {
@@ -3416,6 +3691,26 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
     // Checked on every turn, right before it starts, so a pull or the agent itself editing these
     // files can't slip new commands in after the user trusted the old ones.
     let harness = agent::get(&session.agent);
+    // A multi-repo task needs an agent that can open the other repos' folders (see `multirepo`).
+    if !linked.is_empty() && !harness.extra_dirs() {
+        let ev = json!({"kind": "error", "text": format!(
+            "This agent can only work in one folder, and this task spans {} repos. Start a new chat with Claude, Codex, Gemini or Copilot.",
+            linked.len() + 1
+        )});
+        st.db().append_event(&id, &ev).map_err(e)?;
+        emit_event(&app, &id, &ev);
+        return Ok(());
+    }
+    // Repo trust holds per repo. An agent that can't switch an untrusted repo's settings off
+    // doesn't run until each repo it works in is trusted.
+    if harness.needs_trusted_config().is_some()
+        && let Some(w) = linked.iter().find(|w| untrusted_agent_config(st, w, harness).is_some()) {
+            let name = st.db().repo(&w.repo_id).map(|r| r.name).unwrap_or_default();
+            let ev = json!({"kind": "error", "text": format!("{name} has agent settings that run commands, and this agent can't run with them switched off. Send again and choose Trust for {name}, or use Claude or Codex for this task.")});
+            st.db().append_event(&id, &ev).map_err(e)?;
+            emit_event(&app, &id, &ev);
+            return Ok(());
+        }
     let project_config = untrusted_agent_config(st, &ws, harness).is_none();
     if !project_config
         && let Some(why) = harness.needs_trusted_config() {
@@ -3443,6 +3738,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         env: &env,
         dirs: &dirs,
         guard: Some(&rules),
+        dir_guards: &dir_guards,
     };
     let mut cmd = agent::command(&spec);
     let parser: SharedParser = Arc::new(Mutex::new(agent::parser(&spec)));
@@ -3504,6 +3800,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
     let ws_dir = ws.path.clone();
     let pid = child.id();
     let reviewing = ws.review_pr > 0;
+    let linked_ids: Vec<String> = linked.iter().map(|w| w.id.clone()).collect();
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
         // In a review workspace, what the agent wrote this turn: its findings become draft comments.
@@ -3655,6 +3952,24 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
                 let names: Vec<&str> = hits.iter().map(|h| h.path.as_str()).collect();
                 guard_hit = Some(format!("Changed a protected file: {}", names.join(", ")));
             }
+        // The task's other repos, each against its own rules. "Put it back" acts on that workspace.
+        for (w, repo_name, rules, base) in &linked_guards {
+            if let Ok(hits) = guard::check(Path::new(&w.path), rules, base)
+                && !hits.is_empty() {
+                    let ev = json!({"kind": "guard", "files": hits, "checkpoint": base.checkpoint, "ignored": base.ignored, "level": harness.guard_level(), "workspace_id": w.id, "repo": repo_name});
+                    let _ = st.db().append_event(&id, &ev);
+                    emit_event(&app, &id, &ev);
+                    let names: Vec<String> = hits.iter().map(|h| format!("{repo_name}/{}", h.path)).collect();
+                    let line = names.join(", ");
+                    guard_hit = Some(match guard_hit.take() {
+                        Some(t) => format!("{t}, {line}"),
+                        None => format!("Changed a protected file: {line}"),
+                    });
+                }
+        }
+        for w in &linked_ids {
+            mark_changed(&st, w);
+        }
         if reviewing && !said.is_empty() {
             review_findings_in(&app, &st, &workspace_id, &said);
         }
@@ -4231,7 +4546,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts, trust_scripts, agent_config_trust, trust_agent_config,
-            create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
+            create_workspace, create_multi_task, group_prs, merge_all, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_cache, pr_refresh, pr_visible, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
             restore_checkpoint, checkpoint_preview, live_checkpoints, repo_guard, put_back_protected, workspace_files, save_attachment, preview_probe, preview_snapshot, workspace_ports, ports_status, free_port,
@@ -4269,7 +4584,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: wsd.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         // The main checkout protects infra; the workspace's copy (which an agent could edit)
         // tries to free everything and adds docs.
@@ -4296,7 +4611,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         let env = workspace_env(&repo, &ws, Some(4120));
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
@@ -4427,7 +4742,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         st.db().insert_repo(&repo).unwrap();
         st.db().insert_workspace(&ws).unwrap();
@@ -4465,7 +4780,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         std::fs::write(dir.path().join("CLAUDE.md"), "Use pnpm.").unwrap();
         assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_none(), "text only, nothing to trust");
@@ -4545,7 +4860,7 @@ mod tests {
         let ws = |id: &str, repo: &str, branch: &str, parent: &str| Workspace {
             id: id.into(), repo_id: repo.into(), name: id.into(), branch: branch.into(), path: dir.path().join("ws").join(id).to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(), title_source: String::new(), review_pr: 0,
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         st.db().insert_repo(&repo("r1", Some("git@github.com:me/app.git"))).unwrap();
         st.db().insert_repo(&repo("r2", None)).unwrap();
@@ -4601,7 +4916,7 @@ mod tests {
         let hist = Workspace {
             id: "h".into(), repo_id: "r1".into(), name: "history".into(), branch: "main".into(), path: root.to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: Some(terminal::FROM_HISTORY.into()), created_at: String::new(), title: "History".into(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: "user".into(), review_pr: 0,
+            imported_from: Some(terminal::FROM_HISTORY.into()), created_at: String::new(), title: "History".into(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: "user".into(), review_pr: 0, group_id: String::new(),
         };
         st.db().insert_workspace(&hist).unwrap();
         // Its branch is not polled as a PR head.
@@ -4628,7 +4943,7 @@ mod tests {
         let ws = |id: &str, branch: &str, review_pr: i64| Workspace {
             id: id.into(), repo_id: "r1".into(), name: id.into(), branch: branch.into(), path: dir.path().join(id).to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr,
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr, group_id: String::new(),
         };
         st.db().insert_repo(&repo).unwrap();
         let (mine, theirs) = (ws("mine", "me/task", 0), ws("theirs", "review/pr-7", 7));
@@ -4657,5 +4972,89 @@ mod tests {
         assert_eq!(st.db().review_comments("theirs").unwrap()[0].text, "Off by one at the end.");
         assert!(st.db().update_review_comment("theirs", "f1", " ").is_err());
         assert!(st.db().update_review_comment("mine", "f1", "x").is_err(), "only in its own workspace");
+    }
+
+    fn test_state(dir: &Path) -> AppState {
+        AppState {
+            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            home: dir.to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.join("checks")),
+        }
+    }
+
+    /// A repo with one commit on main, added to nekotrail.
+    fn git_repo(st: &AppState, dir: &Path, name: &str) -> Repo {
+        let root = dir.join("src").join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        git::git(&root, &["init", "-q", "-b", "main"]).unwrap();
+        git::git(&root, &["config", "user.email", "t@example.com"]).unwrap();
+        git::git(&root, &["config", "user.name", "T"]).unwrap();
+        std::fs::write(root.join("README.md"), format!("{name}\n")).unwrap();
+        git::git(&root, &["add", "-A"]).unwrap();
+        git::git(&root, &["commit", "-q", "-m", "first"]).unwrap();
+        let repo = Repo {
+            id: format!("r-{name}"), name: name.into(), root_path: root.to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: None, setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        };
+        st.db().insert_repo(&repo).unwrap();
+        repo
+    }
+
+    #[test]
+    fn multi_repo_task_is_made_linked_and_archived_as_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state(dir.path());
+        let ids: Vec<String> = ["api", "web", "types"].iter().map(|n| git_repo(&st, dir.path(), n).id).collect();
+        assert!(create_multi_blocking(&st, &ids[..1]).unwrap_err().contains("at least two"));
+
+        let made = create_multi_blocking(&st, &ids).unwrap();
+        assert_eq!(made.len(), 3);
+        let main = &made[0];
+        assert_eq!(main.repo_id, "r-api", "the first repo picked holds the chat");
+        for w in &made {
+            assert_eq!(w.group_id, main.id);
+            assert_eq!(w.branch, main.branch, "one branch name in every repo");
+            assert_eq!(w.name, main.name);
+            assert!(Path::new(&w.path).is_dir());
+            assert_eq!(st.db().workspace(&w.id).unwrap().group_id, main.id);
+        }
+        // Only the main workspace's turns get the other folders.
+        let linked: Vec<String> = linked_workspaces(&st, main).into_iter().map(|w| w.repo_id).collect();
+        assert_eq!(linked, ["r-web", "r-types"]);
+        assert!(linked_workspaces(&st, &made[1]).is_empty());
+        let members: Vec<String> = task_members(&st, &made[2].id, None).unwrap().into_iter().map(|m| m.name).collect();
+        assert_eq!(members, ["api", "web", "types"]);
+
+        // Uncommitted work in one repo stops the whole task from archiving, not just that repo.
+        std::fs::write(Path::new(&made[2].path).join("wip.txt"), "x").unwrap();
+        assert_eq!(archive_blocking(&st, &made[1].id, false).unwrap_err(), "DIRTY");
+        assert!(made.iter().all(|w| st.db().workspace(&w.id).unwrap().state == "active"));
+        // Archiving any one of them archives all three and keeps every branch.
+        archive_blocking(&st, &made[1].id, true).unwrap();
+        for w in &made {
+            assert_eq!(st.db().workspace(&w.id).unwrap().state, "archived");
+            assert!(!Path::new(&w.path).exists());
+            let root = st.db().repo(&w.repo_id).unwrap().root_path;
+            assert!(git::branch_exists(Path::new(&root), &w.branch));
+        }
+        // And restoring one brings the task back.
+        restore_blocking(&st, &made[2].id).unwrap();
+        assert!(made.iter().all(|w| st.db().workspace(&w.id).unwrap().state == "active" && Path::new(&w.path).is_dir()));
+    }
+
+    #[test]
+    fn multi_repo_task_that_fails_in_one_repo_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state(dir.path());
+        let api = git_repo(&st, dir.path(), "api");
+        // Added once, then its folder stopped being a git repo.
+        let broken = git_repo(&st, dir.path(), "broken");
+        std::fs::remove_dir_all(Path::new(&broken.root_path).join(".git")).unwrap();
+        let err = create_multi_blocking(&st, &[api.id.clone(), broken.id.clone()]).unwrap_err();
+        assert!(err.starts_with("Couldn't make the workspace in broken"), "{err}");
+        assert!(st.db().workspaces(true).unwrap().is_empty(), "the api workspace is taken back");
+        let out = git::git(Path::new(&api.root_path), &["branch", "--list", "me/*"]).unwrap();
+        assert!(out.trim().is_empty(), "and its branch: {out}");
+        assert!(std::fs::read_dir(dir.path().join("workspaces").join("api")).map(|mut d| d.next().is_none()).unwrap_or(true));
     }
 }

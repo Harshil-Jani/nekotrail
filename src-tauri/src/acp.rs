@@ -77,6 +77,10 @@ pub struct AcpAgent {
     pub probe: &'static [&'static str],
     /// What the repo's config for this agent would run, and its fingerprint (see `agentcfg`).
     pub repo_config: RepoConfig,
+    /// The flag that lets the ACP server work in another folder too, once per folder (Copilot's
+    /// `--add-dir`). None: only ACP's own `additionalDirectories` is sent, and only when the agent
+    /// advertises it, so a multi-repo task doesn't offer this agent (see `multirepo`).
+    pub add_dir_flag: Option<&'static str>,
 }
 
 /// What a repo's config for an agent would run, and its fingerprint (`agentcfg::check_*`).
@@ -108,6 +112,7 @@ impl AcpAgent {
         auth_method: None,
         probe: &[],
         repo_config: RepoConfig::None,
+        add_dir_flag: None,
     };
 
     /// Can "Ask before changes" be promised for this agent?
@@ -153,12 +158,14 @@ pub static CURSOR: AcpAgent = AcpAgent {
 /// GitHub Copilot CLI (`copilot --acp`). Offers `allow_all` (off: it asks before writes and
 /// commands), plan mode as `...session-modes#plan`, and its models over ACP. It also keeps its
 /// own folder trust: in a folder it hasn't trusted, `copilot mcp list` skipped the repo's
-/// `.mcp.json` and `.github/mcp.json`.
+/// `.mcp.json` and `.github/mcp.json`. `--add-dir` ("Allow file access to a directory",
+/// repeatable) is a top-level option, and 1.0.103 starts its ACP server with it.
 pub static COPILOT: AcpAgent = AcpAgent {
     id: "copilot",
     name: "Copilot",
     bin: "copilot",
     args: &["--acp"],
+    add_dir_flag: Some("--add-dir"),
     login: "copilot login",
     ask_option: Some(("allow_all", "off")),
     repo_config: RepoConfig::Files(&[
@@ -309,6 +316,11 @@ impl Agent for AcpAgent {
     fn build(&self, spec: &TurnSpec, _ok: &Checked) -> Command {
         let mut c = Command::new(self.bin);
         c.args(self.args);
+        if let Some(flag) = self.add_dir_flag {
+            for d in spec.dirs {
+                c.args([flag, d]);
+            }
+        }
         if !spec.project_config {
             c.envs(self.config_off_env.iter().copied());
         }
@@ -357,6 +369,9 @@ impl Agent for AcpAgent {
         // Stop goes through `session/cancel` and the client reports it itself (`Client::finish`),
         // so a process that ends without an answer crashed.
         false
+    }
+    fn extra_dirs(&self) -> bool {
+        self.add_dir_flag.is_some()
     }
 }
 
@@ -426,6 +441,8 @@ pub struct Client {
     cwd: String,
     /// The same folder with symlinks resolved (/var is /private/var), to shorten paths either way.
     cwd_real: String,
+    /// Other folders this chat works in (a multi-repo task's other repos), absolute.
+    dirs: Vec<String>,
     resume: Option<String>,
     model: Option<String>,
     plan: bool,
@@ -486,6 +503,7 @@ impl Client {
             prompt,
             cwd,
             cwd_real,
+            dirs: spec.dirs.to_vec(),
             resume: ok.session.map(str::to_string),
             // "default" in the picker means: whatever the agent is set to.
             model: ok.model.filter(|m| *m != "default").map(str::to_string),
@@ -586,7 +604,7 @@ impl Client {
 
     fn open(&mut self, ev: &mut Vec<Value>) {
         if let Some(id) = self.resume.clone() {
-            let params = json!({"sessionId": id, "cwd": self.cwd, "mcpServers": []});
+            let params = self.with_dirs(json!({"sessionId": id, "cwd": self.cwd, "mcpServers": []}));
             if !self.caps["sessionCapabilities"]["resume"].is_null() {
                 return self.request("session/resume", params, Step::Continue);
             }
@@ -611,9 +629,19 @@ impl Client {
         true
     }
 
+    /// ACP's own way to open more folders: `additionalDirectories` on `session/new`, `load` and
+    /// `resume` (the full list every time), sent only to an agent that advertises
+    /// `sessionCapabilities.additionalDirectories`, as the spec requires.
+    fn with_dirs(&self, mut params: Value) -> Value {
+        if !self.dirs.is_empty() && !self.caps["sessionCapabilities"]["additionalDirectories"].is_null() {
+            params["additionalDirectories"] = json!(self.dirs);
+        }
+        params
+    }
+
     fn new_session(&mut self) {
         self.resume = None;
-        let params = json!({"cwd": self.cwd, "mcpServers": []});
+        let params = self.with_dirs(json!({"cwd": self.cwd, "mcpServers": []}));
         self.request("session/new", params, Step::New);
     }
 
@@ -902,7 +930,7 @@ impl Client {
             && locs.iter().all(|l| {
                 let p = l["path"].as_str().unwrap_or("");
                 // A relative path, or one with `..` in it, could point anywhere.
-                !p.split('/').any(|c| c == "..") && [&self.cwd_real, &self.cwd].iter().any(|root| p.strip_prefix(root.as_str()).is_some_and(|r| r.starts_with('/')))
+                !p.split('/').any(|c| c == "..") && [&self.cwd_real, &self.cwd].into_iter().chain(&self.dirs).any(|root| p.strip_prefix(root.as_str()).is_some_and(|r| r.starts_with('/')))
             })
     }
 
@@ -1193,7 +1221,7 @@ mod tests {
     static FAKE: AcpAgent = AcpAgent { id: "fake", name: "Fake", bin: "fake-acp", login: "fake login", ask_env: &[("FAKE_ASK", "1")], ..AcpAgent::BASE };
 
     fn spec<'a>(cwd: &'a Path, mode: &'a str, session: Option<&'a str>, model: Option<&'a str>) -> TurnSpec<'a> {
-        TurnSpec { fork: false, agent: "fake", prompt: "hi", agent_session_id: session, model, permission_mode: mode, cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true, guard: None }
+        TurnSpec { fork: false, agent: "fake", prompt: "hi", agent_session_id: session, model, permission_mode: mode, cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true, guard: None, dir_guards: &[] }
     }
 
     fn client(cwd: &Path, mode: &str, session: Option<&str>, model: Option<&str>) -> Client {
@@ -1218,6 +1246,58 @@ mod tests {
     }
 
     const INIT: &str = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"sessionCapabilities":{"resume":{}}}}}"#;
+
+    /// A multi-repo task's other folders go out as ACP `additionalDirectories` only to an agent
+    /// that advertises them, on `session/new` and again on `session/resume`.
+    #[test]
+    fn additional_directories_only_when_advertised() {
+        let dirs = ["/w/web".to_string(), "/w/types".to_string()];
+        let open = |init: &str, session: Option<&str>| {
+            let s = TurnSpec { dirs: &dirs, ..spec(Path::new("/w/api"), "acceptEdits", session, None) };
+            let mut c = Client::new(&FAKE, &s, &Checked { model: None, effort: None, session });
+            sent(&mut c);
+            c.line(init);
+            sent(&mut c).pop().unwrap()
+        };
+        let plain = open(INIT, None);
+        assert_eq!(plain["method"], "session/new");
+        assert!(plain["params"].get("additionalDirectories").is_none(), "the spec forbids it without the capability");
+        let with = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"sessionCapabilities":{"resume":{},"additionalDirectories":{}}}}}"#;
+        let new = open(with, None);
+        assert_eq!(new["params"]["additionalDirectories"], json!(["/w/web", "/w/types"]));
+        assert_eq!(new["params"]["cwd"], "/w/api");
+        let resumed = open(with, Some("s1"));
+        assert_eq!(resumed["method"], "session/resume");
+        assert_eq!(resumed["params"]["additionalDirectories"], json!(["/w/web", "/w/types"]));
+    }
+
+    /// Copilot gets the folders as `--add-dir` flags; an ACP agent with no such flag gets none,
+    /// and isn't offered for a multi-repo task.
+    #[test]
+    fn extra_folders_on_the_command_line() {
+        let dirs = ["/w/web".to_string(), "/w/types".to_string()];
+        let args = |agent: &'static str| {
+            let s = TurnSpec { agent, dirs: &dirs, ..spec(Path::new("/w/api"), "acceptEdits", None, None) };
+            crate::agent::command(&s).get_args().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(args("copilot"), ["--acp", "--add-dir", "/w/web", "--add-dir", "/w/types"]);
+        assert!(COPILOT.extra_dirs());
+        assert_eq!(args("opencode"), ["acp"]);
+        assert!(!OPENCODE.extra_dirs() && !GROK.extra_dirs());
+    }
+
+    /// "Auto-accept edits" lets edits in the task's other repos through like edits in its own.
+    #[test]
+    fn auto_accept_covers_the_other_repos_of_the_task() {
+        let dirs = ["/w/web".to_string()];
+        let s = TurnSpec { dirs: &dirs, ..spec(Path::new("/w/api"), "acceptEdits", None, None) };
+        let c = Client::new(&FAKE, &s, &Checked { model: None, effort: None, session: None });
+        let edit = |path: &str| Tool { kind: "edit".into(), locations: json!([{"path": path}]), ..Default::default() };
+        assert!(c.in_worktree_edit(&edit("/w/api/src/a.ts")));
+        assert!(c.in_worktree_edit(&edit("/w/web/src/b.ts")));
+        assert!(!c.in_worktree_edit(&edit("/w/other/c.ts")));
+        assert!(!c.in_worktree_edit(&edit("/w/web/../other/c.ts")));
+    }
 
     /// Up to the prompt: initialize, session/new with OpenCode's real config options.
     fn started(cwd: &Path, mode: &str, model: Option<&str>) -> (Client, Vec<Value>) {
@@ -1465,7 +1545,7 @@ mod tests {
         assert!(!a.stopped_by_user(None, ""), "Stop is reported by the client, so this is a crash");
         let cwd = Path::new("/tmp");
         let env = [("OPENCODE_DISABLE_PROJECT_CONFIG".to_string(), "0".to_string()), ("FOO".to_string(), "1".to_string())];
-        let mk = |mode, project_config| TurnSpec { fork: false, agent: "opencode", prompt: "-rf", agent_session_id: Some("--yolo"), model: Some("a/b"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config, guard: None };
+        let mk = |mode, project_config| TurnSpec { fork: false, agent: "opencode", prompt: "-rf", agent_session_id: Some("--yolo"), model: Some("a/b"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config, guard: None, dir_guards: &[] };
         let c = crate::agent::command(&mk("ask", false));
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(args, ["acp"], "the prompt, model and session go over the protocol, never argv");
@@ -1685,7 +1765,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join(".env"), "TOKEN=old\n").unwrap();
         let g = crate::guard::Rules::new(&[".env*".into()], &[]);
-        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "acceptEdits", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: Some(&g) };
+        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "acceptEdits", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: Some(&g), dir_guards: &[] };
         let built = crate::agent::command(&spec);
         let mut cmd = Command::new(&bin);
         cmd.args(built.get_args());
@@ -1738,7 +1818,7 @@ mod tests {
             assert!(matches!(entry.repo_config, RepoConfig::Files(f) if !f.is_empty()), "{id} reads repo config conservatively");
             for mode in ["plan", "ask", "acceptEdits", "bypassPermissions"] {
                 let env = [("FOO".to_string(), "1".to_string())];
-                let s = TurnSpec { fork: false, agent: id, prompt: "--yolo", agent_session_id: Some("--resume"), model: Some("x/y"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config: false, guard: None };
+                let s = TurnSpec { fork: false, agent: id, prompt: "--yolo", agent_session_id: Some("--resume"), model: Some("x/y"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config: false, guard: None, dir_guards: &[] };
                 let c = crate::agent::command(&s);
                 assert_eq!(c.get_program(), bin);
                 let got: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
@@ -1879,7 +1959,7 @@ mod tests {
     }
 
     fn drive_command(mut cmd: Command, agent: &AcpAgent, cwd: &Path, mode: &str, prompt: &str, guard: Option<&crate::guard::Rules>, mut react: impl FnMut(&Value, &mut dyn Parser) -> Vec<String>) -> Run {
-        let s = TurnSpec { fork: false, agent: agent.id, prompt, agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard };
+        let s = TurnSpec { fork: false, agent: agent.id, prompt, agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard, dir_guards: &[] };
         let mut parser = agent.parser(&s, &Checked { model: None, effort: None, session: None });
         let mut child = cmd
             .current_dir(cwd)
@@ -1993,7 +2073,7 @@ mod tests {
         std::fs::write(d.path().join("a.txt"), "hi\n").unwrap();
         // Untrusted repo config must stay off: this server would print a marker if it started.
         std::fs::write(d.path().join("opencode.json"), r#"{"mcp":{"evil":{"type":"local","command":["sh","-c","touch pwned"]}}}"#).unwrap();
-        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "ask", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: None };
+        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "ask", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: None, dir_guards: &[] };
         let built = crate::agent::command(&spec);
         let mut cmd = Command::new(&bin);
         cmd.args(built.get_args());
@@ -2034,7 +2114,7 @@ mod tests {
         let agent = MORE.iter().find(|a| a.id == id).expect("an ACP agent id");
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("a.txt"), "hi\n").unwrap();
-        let spec = TurnSpec { fork: false, agent: agent.id, prompt: "", agent_session_id: None, model: None, permission_mode: &mode, cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard: None };
+        let spec = TurnSpec { fork: false, agent: agent.id, prompt: "", agent_session_id: None, model: None, permission_mode: &mode, cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard: None, dir_guards: &[] };
         let built = crate::agent::command(&spec);
         let mut cmd = Command::new(built.get_program());
         cmd.args(built.get_args());

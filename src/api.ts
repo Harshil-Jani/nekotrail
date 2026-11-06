@@ -98,7 +98,14 @@ export type Workspace = {
   parent_id: string;
   /** A review workspace: the number of someone else's PR it reviews, read-only. 0 for every other workspace. */
   review_pr: number;
+  /** A multi-repo task: the id of its main workspace (its own id on the main one), or "" (see multiRepo.ts). */
+  group_id: string;
 };
+
+/** One PR of a multi-repo task, after Create PRs. */
+export type GroupPr = { workspace_id: string; repo: string; number: number; url: string };
+/** What Merge all did with one repo's PR. */
+export type MergeStep = { workspace_id: string; name: string; outcome: "merged" | "already" | "failed" | "skipped"; detail: string };
 
 /** An open PR waiting for your review, from the PR poller (one extra query per repo). */
 export type ReviewRequest = {
@@ -167,7 +174,7 @@ export type ChatEvent =
   /** The agent tried to edit a protected file and nekotrail refused (OpenCode and other ACP agents). */
   | { kind: "blocked"; text: string; files: string[] }
   /** After a turn: protected files it changed. `checkpoint` and `ignored` are what Put it back restores from. */
-  | { kind: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel }
+  | { kind: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; workspace_id?: string; repo?: string }
   /** Put it back ran: these files are as they were before the turn. */
   | { kind: "guard_restored"; files: string[]; checkpoint: string }
   /** Checks that ran after the turn ("Run checks after every agent turn"). */
@@ -308,7 +315,11 @@ export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find
 
 /** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/; .gemini/ and .env for Gemini; opencode.json and .opencode/ for OpenCode; each other ACP agent's own files) would run, not trusted yet. */
 export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
-export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
+/**
+ * `workspace_id`: the workspace (repo) this config belongs to. In a multi-repo task the main repo
+ * comes first and `rest` holds the other repos that need asking too.
+ */
+export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[]; workspace_id?: string; rest?: AgentConfigTrust[] };
 
 /** MCP servers and skills across Claude, Codex, Gemini and OpenCode (src-tauri/src/mcpshare.rs). */
 export type McpHas = { agent: McpAgent; scope: "user" | "local" | "project"; file: string };
@@ -370,9 +381,15 @@ export const api = {
   trustScripts: (id: string, fingerprint: string) => invoke<void>("trust_scripts", { id, fingerprint }),
   /** `id` is a workspace or a chat. Null when there is nothing to trust. */
   agentConfigTrust: (id: string) => invoke<AgentConfigTrust | null>("agent_config_trust", { id }),
-  trustAgentConfig: (id: string, fingerprint: string) => invoke<void>("trust_agent_config", { id, fingerprint }),
+  trustAgentConfig: (id: string, fingerprint: string, workspace?: string) => invoke<void>("trust_agent_config", { id, fingerprint, workspace: workspace ?? null }),
   createWorkspace: (repoId: string, base?: string, name?: string, from?: string) =>
     invoke<Workspace>("create_workspace", { repoId, base, name, from }),
+  /** One workspace per repo on one branch name; the first repo's holds the chat. */
+  createMultiTask: (repoIds: string[]) => invoke<Workspace[]>("create_multi_task", { repoIds }),
+  /** Push every branch of the task, open one PR per repo and cross-link their bodies. */
+  groupPrs: (id: string, title: string, body: string, draft: boolean) => invoke<GroupPr[]>("group_prs", { id, title, body, draft }),
+  /** Merge every PR of the task in `order` (workspace ids), only when all are green; stops at the first failure. */
+  mergeAll: (id: string, order: string[]) => invoke<MergeStep[]>("merge_all", { id, order }),
   repoPrs: (id: string) =>
     invoke<{ number: number; title: string; headRefName: string; author: { login: string }; isDraft: boolean; updatedAt: string }[]>("repo_prs", { id }),
   setWorkspaceTitle: (id: string, title: string) => invoke<void>("set_workspace_title", { id, title }),
@@ -528,8 +545,8 @@ export const api = {
   checksStatuses: () => invoke<Record<string, CheckDot>>("checks_statuses"),
   checksOutput: (id: string, name: string) => invoke<string>("checks_output", { id, name }),
   /** Put back the protected files a turn changed (`id` is the chat). Returns the paths put back. */
-  putBackProtected: (id: string, checkpoint: string, ignored: string | null, paths: string[]) =>
-    invoke<string[]>("put_back_protected", { id, checkpoint, ignored, paths }),
+  putBackProtected: (id: string, checkpoint: string, ignored: string | null, paths: string[], workspace?: string) =>
+    invoke<string[]>("put_back_protected", { id, checkpoint, ignored, paths, workspace: workspace ?? null }),
   workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),
   saveAttachment: async (id: string, file: File) =>
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
