@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { CircleAlert, CircleCheck, Plug, RotateCw, SquareTerminal, X } from "lucide-react";
 import { api, errText, type Agent } from "../api";
+import { AGENT_INFO, agentName } from "../agents";
 
 type Server = { name: string; target: string; ok: boolean; status: string };
 
-/** `claude mcp list` prints "name: target - ✔ Connected"; Codex prints a table. Parse what we can, show the rest raw. */
+/** `claude mcp list` prints "name: target - ✔ Connected"; Codex and Gemini print their own formats. Parse what we can, show the rest raw. */
 export function parseMcp(text: string): Server[] {
   const out: Server[] = [];
   for (const l of text.split("\n")) {
@@ -26,14 +27,15 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   const servers = text ? parseMcp(text) : [];
-  const bin = agent === "codex" ? "codex" : "claude";
+  // Every agent id is also its CLI name.
+  const bin: Agent = AGENT_INFO[agent] ? agent : "claude";
   const term = (cmd: string) => { window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: cmd })); onClose(); };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal mcp" role="dialog" aria-modal="true" aria-label="MCP servers" onClick={(e) => e.stopPropagation()}>
         <div className="row">
           <Plug size={16} />
-          <h2>MCP servers for {agent === "codex" ? "Codex" : "Claude"}</h2>
+          <h2>MCP servers for {agentName(agent)}</h2>
           <span className="spacer" />
           <button className="icon" onClick={load} aria-label="Check again" title="Check again"><RotateCw size={14} /></button>
           <button className="icon" onClick={onClose} aria-label="Close"><X size={15} /></button>

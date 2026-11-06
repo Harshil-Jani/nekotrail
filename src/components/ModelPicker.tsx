@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Brain, Check, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { api, type Agent, type ModelCatalog } from "../api";
+import { AGENT_INFO } from "../agents";
 
 let cached: Promise<ModelCatalog> | null = null;
 /** The model catalog, fetched once per launch. */
@@ -110,7 +111,7 @@ export function ModelPicker({
       </button>
       {open && a && (
         <span className="menu picker-menu" role="menu">
-          <div className="menu-label">{agent === "codex" ? "Codex model" : "Claude model"}</div>
+          <div className="menu-label">{AGENT_INFO[agent]?.name ?? "Claude"} model</div>
           <button role="menuitemradio" aria-checked={!model} onClick={() => pick(null)}>
             {!model ? <Check size={14} /> : <span className="check-space" />}<span className="pm-label">Default</span><span className="muted">{defaultModel?.label}</span>
           </button>

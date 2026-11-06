@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Crown, X } from "lucide-react";
 import { api, type Workspace } from "../api";
+import { agentName } from "../agents";
 import { ask } from "./Confirm";
 
 type Stats = Awaited<ReturnType<typeof api.workspaceStats>>;
@@ -63,7 +64,7 @@ export function Compare({
             const l = lines[w.id];
             return (
               <section key={w.id} className="compare-col">
-                <span className="agent-tag">{s?.agent === "codex" ? "Codex" : s?.agent === "claude" ? "Claude" : "Agent"}</span>
+                <span className="agent-tag">{s?.agent ? agentName(s.agent) : "Agent"}</span>
                 <h3>{names(w)}</h3>
                 <code className="muted">{w.branch}</code>
                 <dl>

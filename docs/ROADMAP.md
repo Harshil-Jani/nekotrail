@@ -42,6 +42,8 @@ Demo: paste a plan, fan it into four workspaces across Claude and Codex, autopil
 Demo: one task to Claude, Codex and Gemini; click through the running app inside nekotrail, circle a bug, send it.
 
 1. **Agent harness and ACP** (L). Turn `agent.rs` branches into an `Agent` trait, then add ACP agents (Gemini CLI, OpenCode, Cursor), found by `doctor`. Conductor lists all three.
+   - Done: the `Agent` trait (`agent::ALL`, `src/agents.ts` on the UI side), and Gemini CLI as the third agent through its headless `--output-format stream-json` mode. Each turn is still one process, so queueing, Stop and resume work the same for all three.
+   - Next: ACP (`gemini --acp`; `--experimental-acp` is deprecated). It is a long-lived JSON-RPC session (`initialize`, `session/new` or `session/load`, `session/prompt`, `session/update` notifications, `session/request_permission`), so it fits as an `Agent` whose `Parser` also writes replies to stdin, the way Claude's ask mode answers `can_use_tool`. That would give Gemini "Ask before changes" too. OpenCode (`opencode acp`) and Cursor then become one struct each.
 2. **In-app preview with annotate** (M). Web view tab for detected `localUrls`; Annotate saves a screenshot via `save_attachment` into the composer.
 3. **Repo actions and prompt snippets** (M). Named commands (test, lint) in `RepoSettings.tsx` and `nekotrail.json`, in the palette, optionally after setup; snippets from `/`.
 4. **Share MCP and skills across agents** (S). `McpSheet.tsx` copies between `~/.claude` and `~/.codex/config.toml`.

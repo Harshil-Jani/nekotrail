@@ -250,21 +250,30 @@ async fn trust_scripts(st: State<'_, AppState>, id: String, fingerprint: String)
     }
 }
 
-/// What this workspace's own agent config (`.claude/settings.json`, `.mcp.json`, `.codex/`) would
-/// run, and its fingerprint, when the user has not trusted those exact files for this repo. Until
-/// they do, agents run with that config switched off.
-fn untrusted_agent_config(st: &AppState, ws: &Workspace) -> Option<(Vec<agentcfg::Item>, String)> {
-    let (items, print) = agentcfg::check(Path::new(&ws.path))?;
+/// What this workspace's own config for `harness` (`.claude/settings.json`, `.mcp.json`,
+/// `.codex/`; `.gemini/` and `.env` for Gemini) would run, and its fingerprint, when the user has
+/// not trusted those exact files for this repo. Until they do, Claude and Codex run with that
+/// config switched off, and Gemini does not run.
+fn untrusted_agent_config(st: &AppState, ws: &Workspace, harness: &dyn agent::Agent) -> Option<(Vec<agentcfg::Item>, String)> {
+    let (items, print) = harness.repo_config(Path::new(&ws.path))?;
     let approved = st.db().setting(&config::trust_key(&ws.repo_id, &print)).ok().flatten().is_some();
     (!approved).then_some((items, print))
 }
 
-/// A workspace by its id or by the id of one of its chats.
-fn workspace_or_chat(st: &AppState, id: &str) -> Res<Workspace> {
+/// A workspace by its id or by the id of one of its chats, and the agent a message sent there
+/// goes to: the chat's own, or for a workspace the chat `send_to_workspace` picks (its last one,
+/// or a new Claude chat).
+fn workspace_or_chat(st: &AppState, id: &str) -> Res<(Workspace, &'static dyn agent::Agent)> {
     let db = st.db();
     match db.workspace(id) {
-        Ok(ws) => Ok(ws),
-        Err(_) => db.workspace(&db.session(id).map_err(e)?.workspace_id).map_err(e),
+        Ok(ws) => {
+            let last = db.sessions(&ws.id).map_err(e)?.pop().map(|s| s.agent).unwrap_or_default();
+            Ok((ws, agent::get(&last)))
+        }
+        Err(_) => {
+            let s = db.session(id).map_err(e)?;
+            Ok((db.workspace(&s.workspace_id).map_err(e)?, agent::get(&s.agent)))
+        }
     }
 }
 
@@ -272,8 +281,8 @@ fn workspace_or_chat(st: &AppState, id: &str) -> Res<Workspace> {
 /// `id` is a workspace or a chat.
 #[tauri::command]
 async fn agent_config_trust(st: State<'_, AppState>, id: String) -> Res<Value> {
-    let ws = workspace_or_chat(&st, &id)?;
-    let Some((items, print)) = untrusted_agent_config(&st, &ws) else { return Ok(Value::Null) };
+    let (ws, harness) = workspace_or_chat(&st, &id)?;
+    let Some((items, print)) = untrusted_agent_config(&st, &ws, harness) else { return Ok(Value::Null) };
     let repo = st.db().repo(&ws.repo_id).map(|r| r.name).unwrap_or_default();
     Ok(json!({"repo": repo, "fingerprint": print, "items": items}))
 }
@@ -282,8 +291,8 @@ async fn agent_config_trust(st: State<'_, AppState>, id: String) -> Res<Value> {
 /// fingerprint, so any edit to those files asks again.
 #[tauri::command]
 async fn trust_agent_config(st: State<'_, AppState>, id: String, fingerprint: String) -> Res<()> {
-    let ws = workspace_or_chat(&st, &id)?;
-    match agentcfg::check(Path::new(&ws.path)) {
+    let (ws, harness) = workspace_or_chat(&st, &id)?;
+    match harness.repo_config(Path::new(&ws.path)) {
         Some((_, print)) if print == fingerprint => st.db().set_setting(&config::trust_key(&ws.repo_id, &print), &store::now()).map_err(e),
         _ => Err("The repo's agent config changed since you looked at it. Check it again.".into()),
     }
@@ -623,17 +632,22 @@ async fn app_settings(st: State<'_, AppState>) -> Res<Value> {
     let db = st.db();
     let get = |k: &str| db.setting(k).ok().flatten().unwrap_or_else(|| "on".into());
     let raw = |k: &str| db.setting(k).ok().flatten().unwrap_or_default();
-    Ok(json!({
-        "caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "home": st.home.to_string_lossy(),
-        "claude_model": raw("claude_model"), "claude_effort": raw("claude_effort"), "claude_mode": raw("claude_mode"),
-        "codex_model": raw("codex_model"), "codex_effort": raw("codex_effort"), "codex_mode": raw("codex_mode"),
-    }))
+    let mut out = json!({"caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "home": st.home.to_string_lossy()});
+    // New-chat defaults per agent: claude_model, codex_effort, gemini_mode, ...
+    for k in agent_setting_keys() {
+        out[&k] = json!(raw(&k));
+    }
+    Ok(out)
+}
+
+/// `<agent>_model`, `<agent>_effort` and `<agent>_mode` for every agent.
+fn agent_setting_keys() -> Vec<String> {
+    agent::ALL.iter().flat_map(|a| ["model", "effort", "mode"].map(|k| format!("{}_{k}", a.id()))).collect()
 }
 
 #[tauri::command]
 async fn set_app_setting(st: State<'_, AppState>, key: String, value: String) -> Res<()> {
-    const KEYS: &[&str] = &["caffeinate", "auto_branch", "claude_model", "claude_effort", "claude_mode", "codex_model", "codex_effort", "codex_mode"];
-    if !KEYS.contains(&key.as_str()) {
+    if !["caffeinate", "auto_branch"].contains(&key.as_str()) && !agent_setting_keys().contains(&key) {
         return Err(format!("Unknown setting: {key}."));
     }
     st.db().set_setting(&key, &value).map_err(e)
@@ -1010,7 +1024,7 @@ async fn repo_issues(st: State<'_, AppState>, id: String) -> Res<Value> {
 #[tauri::command]
 async fn start_chat(app: AppHandle, st: State<'_, AppState>, id: String, agent: String, mode: String, title: String, text: String) -> Res<String> {
     let s = Session {
-        id: new_id(), workspace_id: id.clone(), agent: if agent == "codex" { "codex".into() } else { "claude".into() },
+        id: new_id(), workspace_id: id.clone(), agent: agent::get(&agent).id().into(),
         agent_session_id: None, title, model: None, permission_mode: mode, effort: None,
     };
     st.db().insert_session(&s).map_err(e)?;
@@ -1248,7 +1262,7 @@ fn model_catalog() -> Value {
 #[tauri::command]
 async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
-    let bin = if agent == "codex" { "codex" } else { "claude" };
+    let bin = agent::get(&agent).bin();
     let out = Command::new(bin).args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Couldn't run {bin}: {err}. Check that it's installed."))?;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     Ok(text.trim().to_string())
@@ -1663,7 +1677,7 @@ async fn sessions(st: State<'_, AppState>, workspace_id: String) -> Res<Vec<Sess
 
 #[tauri::command]
 async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: String) -> Res<Session> {
-    let agent = if agent == "codex" { "codex" } else { "claude" };
+    let agent = agent::get(&agent).id();
     let pref = |k: &str| st.db().setting(&format!("{agent}_{k}")).ok().flatten().filter(|v| !v.is_empty());
     let s = Session {
         id: new_id(),
@@ -1754,7 +1768,7 @@ async fn fork_session(st: State<'_, AppState>, id: String) -> Res<Session> {
         id: new_id(),
         workspace_id: src.workspace_id.clone(),
         agent: src.agent.clone(),
-        agent_session_id: if src.agent == "claude" { src.agent_session_id.clone() } else { None },
+        agent_session_id: if agent::get(&src.agent).forks() { src.agent_session_id.clone() } else { None },
         title: format!("{} (fork)", src.title),
         model: src.model.clone(),
         permission_mode: src.permission_mode.clone(),
@@ -1877,9 +1891,13 @@ fn classify_error(text: &str) -> Option<&'static str> {
     let t = text.to_lowercase();
     if t.contains("no such file or directory") || t.contains("command not found") || t.contains("not found in path") {
         Some("install")
-    } else if t.contains("/login") || t.contains("not logged in") || t.contains("invalid api key") || t.contains("authentication") || t.contains("unauthorized") || t.contains("401") {
+    } else if t.contains("/login") || t.contains("not logged in") || t.contains("invalid api key") || t.contains("authentication") || t.contains("unauthorized") || t.contains("401")
+        // Gemini CLI with no sign-in: "Please set an Auth method in your ~/.gemini/settings.json ..."
+        || t.contains("set an auth method") {
         Some("login")
-    } else if t.contains("usage limit") || t.contains("rate limit") || t.contains("limit reached") || t.contains("quota") {
+    } else if t.contains("usage limit") || t.contains("rate limit") || t.contains("limit reached") || t.contains("quota")
+        // Gemini's server: "You have exhausted your capacity on this model." / RESOURCE_EXHAUSTED.
+        || t.contains("exhausted your capacity") || t.contains("resource_exhausted") {
         Some("limit")
     } else {
         None
@@ -1936,14 +1954,16 @@ fn doctor_blocking() -> Value {
     let (gh_installed, _) = probe("gh", &["--version"]);
     let (gh_ok, _) = probe("gh", &["auth", "status"]);
     let login = if gh_ok { github_login() } else { None };
-    let (claude_ok, claude_v) = probe("claude", &["--version"]);
-    let (codex_ok, codex_v) = probe("codex", &["--version"]);
-    json!({
+    let mut out = json!({
         "git": {"ok": git_ok, "version": git_v},
         "gh": {"installed": gh_installed, "ok": gh_ok, "login": login},
-        "claude": {"ok": claude_ok, "version": claude_v},
-        "codex": {"ok": codex_ok, "version": codex_v},
-    })
+    });
+    // One entry per agent CLI, keyed by its id. A missing one is ok: false with no version.
+    for a in agent::ALL {
+        let (ok, version) = probe(a.bin(), &["--version"]);
+        out[a.id()] = json!({"ok": ok, "version": version});
+    }
+    out
 }
 
 fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) -> Workspace {
@@ -2008,7 +2028,15 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     let fork = st.runs.lock().unwrap().forks.remove(&id);
     // Checked on every turn, right before it starts, so a pull or the agent itself editing these
     // files can't slip new commands in after the user trusted the old ones.
-    let project_config = untrusted_agent_config(st, &ws).is_none();
+    let harness = agent::get(&session.agent);
+    let project_config = untrusted_agent_config(st, &ws, harness).is_none();
+    if !project_config
+        && let Some(why) = harness.needs_trusted_config() {
+            let ev = json!({"kind": "error", "text": why});
+            st.db().append_event(&id, &ev).map_err(e)?;
+            emit_event(&app, &id, &ev);
+            return Ok(());
+        }
     if !project_config && session.agent_session_id.is_none() {
         let note = json!({"kind": "note", "text": "This repo's own agent settings (hooks, MCP servers, env) are off for this chat until you trust them."});
         st.db().append_event(&id, &note).map_err(e)?;
@@ -2039,7 +2067,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }
     };
     st.runs.lock().unwrap().running.insert(id.clone(), child.id());
-    if session.agent == "claude" && session.permission_mode == "ask"
+    if harness.interactive(&session.permission_mode)
         && let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
             let _ = stdin.write_all(agent::user_message(&prompt).as_bytes());
@@ -2068,6 +2096,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
 
     let agent_name = session.agent.clone();
     let workspace_id = ws.id.clone();
+    let mut parser = harness.parser();
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
         let mut saw_done = false;
@@ -2076,7 +2105,11 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         // Why the user is needed when this turn ends, if they are: plan, question, login, limit, install, error.
         let mut needs: Option<String> = None;
         let mut user_stopped = false;
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        // The `None` after the last line lets the parser hand over anything it still holds.
+        let lines = BufReader::new(stdout).lines().map_while(Result::ok).map(Some).chain(std::iter::once(None));
+        for line in lines {
+            let end = line.is_none();
+            let line = line.unwrap_or_default();
             // Interactive turns: permission requests and the end of the turn arrive here first.
             if (line.contains("\"control_request\"") || line.contains("\"type\":\"result\""))
                 && let Ok(j) = serde_json::from_str::<Value>(&line) {
@@ -2100,7 +2133,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                         st.runs.lock().unwrap().stdins.remove(&id);
                     }
             }
-            for mut ev in agent::parse(&agent_name, &line) {
+            let events = if end { parser.finish() } else { parser.line(&line) };
+            for mut ev in events {
                 if ev["kind"] == "usage" {
                     context_tokens = ev["context_tokens"].as_u64();
                     let _ = app.emit("usage", json!({"session_id": id, "context_tokens": context_tokens}));
@@ -2121,6 +2155,10 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                         let _ = st.db().record_cost(&id, c);
                     }
                     ok = !ev["is_error"].as_bool().unwrap_or(false);
+                    // Agents that report the interrupt themselves (Gemini) mark it, so it reads as a stop.
+                    if ev["stopped"] == true {
+                        user_stopped = true;
+                    }
                 }
                 // Login and usage-limit problems arrive as ordinary text; tag them so the UI offers the fix.
                 let fix = match ev["kind"].as_str() {
@@ -2147,7 +2185,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let status = child.wait();
         if !saw_done {
             let stderr = err_buf.lock().unwrap().trim().to_string();
-            let stopped = status.as_ref().map(|s| !s.success()).unwrap_or(true) && stderr.is_empty();
+            let stopped = harness.stopped_by_user(status.as_ref().ok(), &stderr);
             let ev = if stopped {
                 json!({"kind": "done", "is_error": true, "stopped": true})
             } else {
@@ -2421,6 +2459,11 @@ mod tests {
         assert_eq!(classify_error("Invalid API key · Please run /login"), Some("login"));
         assert_eq!(classify_error("Claude AI usage limit reached|1762400000"), Some("limit"));
         assert_eq!(classify_error("tests failed"), None);
+        // Gemini CLI, as it prints them (0.65.0).
+        assert_eq!(classify_error("Please set an Auth method in your /Users/me/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY"), Some("login"));
+        assert_eq!(classify_error("You have exhausted your daily quota on this model."), Some("limit"));
+        assert_eq!(classify_error("Usage limit reached for gemini-2.5-pro."), Some("limit"));
+        assert_eq!(classify_error("You have exhausted your capacity on this model."), Some("limit"));
         assert_eq!(classify_cli_notice("The endpoint returns 401 when the token expires, so I added a refresh."), None);
         assert_eq!(classify_cli_notice("Invalid API key · Please run /login"), Some("login"));
     }
@@ -2546,27 +2589,49 @@ mod tests {
             imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
         };
         std::fs::write(dir.path().join("CLAUDE.md"), "Use pnpm.").unwrap();
-        assert!(untrusted_agent_config(&st, &ws).is_none(), "text only, nothing to trust");
+        assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_none(), "text only, nothing to trust");
 
         std::fs::write(dir.path().join(".mcp.json"), r#"{"mcpServers":{"evil":{"command":"sh","args":["-c","touch /tmp/pwned"]}}}"#).unwrap();
-        let (items, print) = untrusted_agent_config(&st, &ws).unwrap();
+        let (items, print) = untrusted_agent_config(&st, &ws, agent::get("claude")).unwrap();
         assert_eq!(items[0].command, "sh -c touch /tmp/pwned");
         st.db().set_setting(&config::trust_key("r", &print), "now").unwrap();
-        assert!(untrusted_agent_config(&st, &ws).is_none());
+        assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_none());
         // Trusted for this repo only.
-        assert!(untrusted_agent_config(&st, &Workspace { repo_id: "r2".into(), ..ws.clone() }).is_some());
+        assert!(untrusted_agent_config(&st, &Workspace { repo_id: "r2".into(), ..ws.clone() }, agent::get("claude")).is_some());
 
         // Any edit to any agent config file asks again, and trusting it is a new fingerprint.
         std::fs::create_dir_all(dir.path().join(".codex")).unwrap();
         std::fs::write(dir.path().join(".codex/config.toml"), "[mcp_servers.more]\ncommand = \"node\"\n").unwrap();
-        let (items, again) = untrusted_agent_config(&st, &ws).unwrap();
+        let (items, again) = untrusted_agent_config(&st, &ws, agent::get("claude")).unwrap();
         assert_ne!(again, print);
         assert_eq!(items.len(), 2);
         // The nekotrail.json approval store is shared, but one never stands in for the other.
         std::fs::write(dir.path().join("nekotrail.json"), r#"{"scripts":{"setup":"x"}}"#).unwrap();
         let (_, scripts) = untrusted_commands(&st, &ws).unwrap();
         st.db().set_setting(&config::trust_key("r", &scripts), "now").unwrap();
-        assert!(untrusted_agent_config(&st, &ws).is_some());
+        assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_some());
+
+        // Gemini is asked about its own files only, and they never change what Claude is asked.
+        assert!(untrusted_agent_config(&st, &ws, agent::get("gemini")).is_none(), "Claude and Codex files are not Gemini's");
+        std::fs::create_dir_all(dir.path().join(".gemini")).unwrap();
+        std::fs::write(dir.path().join(".gemini/settings.json"), r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch /tmp/g"}]}]}}"#).unwrap();
+        assert_eq!(untrusted_agent_config(&st, &ws, agent::get("claude")).unwrap().1, again);
+        let (items, g) = untrusted_agent_config(&st, &ws, agent::get("gemini")).unwrap();
+        assert_eq!((items.len(), items[0].agent, items[0].command.as_str()), (1, "gemini", "touch /tmp/g"));
+        // The trust sheet and Trust button find the agent from a chat id, or a workspace's last chat.
+        st.db().insert_repo(&Repo {
+            id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: None, setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        }).unwrap();
+        st.db().insert_workspace(&ws).unwrap();
+        assert_eq!(workspace_or_chat(&st, "w").unwrap().1.id(), "claude", "no chats yet: a new Claude chat");
+        let chat = Session { id: "c".into(), workspace_id: "w".into(), agent: "gemini".into(), agent_session_id: None, title: "t".into(), model: None, permission_mode: "plan".into(), effort: None };
+        st.db().insert_session(&chat).unwrap();
+        assert_eq!(workspace_or_chat(&st, "c").unwrap().1.id(), "gemini");
+        assert_eq!(workspace_or_chat(&st, "w").unwrap().1.id(), "gemini");
+        st.db().set_setting(&config::trust_key("r", &g), "now").unwrap();
+        assert!(untrusted_agent_config(&st, &ws, agent::get("gemini")).is_none());
+        assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_some(), "trusting Gemini's files trusts nothing else");
     }
 
     #[test]

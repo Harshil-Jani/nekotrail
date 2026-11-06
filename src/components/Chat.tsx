@@ -7,6 +7,7 @@ import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
 import { McpSheet } from "./McpSheet";
 import { getSettings } from "../settings";
+import { AGENTS, AGENT_INFO, agentName, otherAgent } from "../agents";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
 export function matchFiles(files: string[], q: string, max = 8): string[] {
@@ -153,13 +154,13 @@ function FindingsButton({ text }: { text: string }) {
   );
 }
 
-const INSTALL: Record<Agent, string> = { claude: "npm install -g @anthropic-ai/claude-code", codex: "npm install -g @openai/codex" };
 
 /** An agent problem with the way out: install it, sign in, or switch agents. */
 function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; agent: Agent; text: string }) {
   const { switchAgent } = useContext(RewindCtx);
-  const name = agent === "codex" ? "Codex" : "Claude Code";
-  const other: Agent = agent === "codex" ? "claude" : "codex";
+  const name = AGENT_INFO[agent]?.full ?? "Claude Code";
+  const other = otherAgent(agent);
+  const install = AGENT_INFO[agent]?.install ?? AGENT_INFO.claude.install;
   const [copied, setCopied] = useState(false);
   const runInTerminal = (cmd: string) => window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: cmd }));
   return (
@@ -171,15 +172,15 @@ function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; age
       <div className="row">
         {fix === "install" && (
           <>
-            <code className="cmd-inline">{INSTALL[agent]}</code>
-            <button onClick={() => { navigator.clipboard.writeText(INSTALL[agent]); setCopied(true); }}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : "Copy"}</button>
-            <button onClick={() => runInTerminal(INSTALL[agent])}><SquareTerminal size={13} />Run in terminal</button>
+            <code className="cmd-inline">{install}</code>
+            <button onClick={() => { navigator.clipboard.writeText(install); setCopied(true); }}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : "Copy"}</button>
+            <button onClick={() => runInTerminal(install)}><SquareTerminal size={13} />Run in terminal</button>
           </>
         )}
-        {fix === "login" && <button className="accent" onClick={() => runInTerminal(agent === "codex" ? "codex login" : "claude /login")}><SquareTerminal size={13} />Sign in from terminal</button>}
+        {fix === "login" && <button className="accent" onClick={() => runInTerminal((AGENT_INFO[agent] ?? AGENT_INFO.claude).login)}><SquareTerminal size={13} />Sign in from terminal</button>}
         {fix === "limit" && <span className="muted">The limit resets on its own. Your chat is kept.</span>}
         <span className="spacer" />
-        <button className={fix === "limit" ? "accent" : "quiet"} onClick={() => switchAgent(other)}>Continue in {other === "codex" ? "Codex" : "Claude"}</button>
+        <button className={fix === "limit" ? "accent" : "quiet"} onClick={() => switchAgent(other)}>Continue in {agentName(other)}</button>
       </div>
     </div>
   );
@@ -473,7 +474,7 @@ export function Chat({
     // Hand the task to the other agent with the conversation so far, ready to send.
     switchAgent: async (to: Agent) => {
       const { session, events, newChat } = live.current;
-      const from = session?.agent === "codex" ? "Codex" : "Claude";
+      const from = agentName(session?.agent);
       const lines: string[] = [];
       for (const ev of events) {
         if (ev.kind === "user") lines.push(`User: ${ev.text}`);
@@ -492,7 +493,7 @@ export function Chat({
       const { session, workspaceId } = live.current;
       const key = `nekotrail.review.${workspaceId}`;
       const cur = JSON.parse(localStorage.getItem(key) || "[]");
-      const by = session?.agent === "codex" ? "Codex" : "Claude";
+      const by = agentName(session?.agent);
       const add = f.map((x) => ({ id: crypto.randomUUID(), file: x.file, line: x.line, side: "new", code: "", text: `${by}: ${x.text}` }));
       localStorage.setItem(key, JSON.stringify([...cur, ...add]));
       window.dispatchEvent(new Event("nekotrail-review"));
@@ -797,7 +798,7 @@ export function Chat({
           <span key={s.id} className={`chat-tab ${s.id === active ? "active" : ""}`}>
             <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} title={s.title}>
               {running.has(s.id) && <span className="spinner" />}
-              {s.agent === "codex" ? "Codex · " : ""}{s.title}
+              {s.agent !== "claude" ? `${agentName(s.agent)} · ` : ""}{s.title}
             </button>
             {sessions.length > 1 && !running.has(s.id) && (
               <button className="tab-close" aria-label={`Close ${s.title}`} title="Close chat. Its history is kept." onClick={() => closeChat(s.id)}><X size={12} /></button>
@@ -808,8 +809,9 @@ export function Chat({
           <button className="icon" title="Start a chat (⌘T)" aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
-              <button role="menuitem" onClick={() => { setMenu(false); newChat("claude"); }}>Start a Claude chat</button>
-              <button role="menuitem" onClick={() => { setMenu(false); newChat("codex"); }}>Start a Codex chat</button>
+              {AGENTS.map((a) => (
+                <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}>Start a {AGENT_INFO[a].name} chat</button>
+              ))}
               <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
             </span>
@@ -856,7 +858,7 @@ export function Chat({
             <p>
               {session?.agent_session_id
                 ? "This chat came over from Conductor. New messages continue the same agent session."
-                : `Describe a change, a bug or a plan. ${session?.agent === "codex" ? "Codex" : "Claude"} works in this workspace's own branch, so nothing touches your main checkout.`}
+                : `Describe a change, a bug or a plan. ${agentName(session?.agent)} works in this workspace's own branch, so nothing touches your main checkout.`}
             </p>
           </div>
         )}
@@ -1010,7 +1012,7 @@ export function Chat({
           <div className="composer-bar">
             {session && (
               <>
-                <span className="agent-badge">{session.agent === "codex" ? "Codex" : "Claude"}</span>
+                <span className="agent-badge">{agentName(session.agent)}</span>
                 <ModelPicker
                   agent={session.agent}
                   model={session.model}
@@ -1023,7 +1025,7 @@ export function Chat({
                   aria-label="Permissions"
                   title="What the agent may do without asking"
                 >
-                  {MODES.filter((m) => m.value !== "ask" || session.agent === "claude").map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  {MODES.filter((m) => m.value !== "ask" || AGENT_INFO[session.agent]?.ask).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
                 {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>

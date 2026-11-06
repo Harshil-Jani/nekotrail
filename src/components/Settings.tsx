@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Volume2, X } from "lucide-react";
 import { api, type AppSettings } from "../api";
+import { AGENTS, AGENT_INFO } from "../agents";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
@@ -167,9 +168,9 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
         {pane === "agents" && <>
         <section>
           <h3>New chats start with</h3>
-          {(["claude", "codex"] as const).map((a) => (
+          {AGENTS.map((a) => (
             <div className="setting" key={a}>
-              <span>{a === "claude" ? "Claude" : "Codex"}</span>
+              <span>{AGENT_INFO[a].name}</span>
               <span className="row">
                 <input
                   className="setting-model"
@@ -179,14 +180,14 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
                   onBlur={(e) => setRaw(`${a}_model`, e.target.value.trim())}
                   aria-label={`${a} default model`}
                 />
-                <select value={backend?.[`${a}_effort`] ?? ""} onChange={(e) => setRaw(`${a}_effort`, e.target.value)} aria-label={`${a} default effort`}>
+                {AGENT_INFO[a].effort && <select value={backend?.[`${a}_effort`] ?? ""} onChange={(e) => setRaw(`${a}_effort`, e.target.value)} aria-label={`${a} default effort`}>
                   <option value="">Default effort</option>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                   <option value="xhigh">Extra high</option>
                   {a === "claude" && <option value="max">Max</option>}
-                </select>
+                </select>}
                 <select value={backend?.[`${a}_mode`] || "acceptEdits"} onChange={(e) => setRaw(`${a}_mode`, e.target.value)} aria-label={`${a} default permissions`}>
                   <option value="plan">Plan</option>
                   <option value="acceptEdits">Auto-accept edits</option>

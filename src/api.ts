@@ -25,9 +25,7 @@ export type RepoPrefs = {
 export type Doctor = {
   git: { ok: boolean; version: string };
   gh: { installed: boolean; ok: boolean; login: string | null };
-  claude: { ok: boolean; version: string };
-  codex: { ok: boolean; version: string };
-};
+} & Record<Agent, { ok: boolean; version: string }>;
 export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number };
 
 export type CatalogModel = { id: string; label: string; efforts: string[]; default_effort?: string | null; new?: boolean; released?: string };
@@ -36,9 +34,7 @@ export type ModelCatalog = Record<Agent, AgentCatalog>;
 
 export type AppSettings = {
   caffeinate: "on" | "off"; auto_branch: "on" | "off"; home: string;
-  claude_model: string; claude_effort: string; claude_mode: string;
-  codex_model: string; codex_effort: string; codex_mode: string;
-};
+} & Record<`${Agent}_${"model" | "effort" | "mode"}`, string>;
 
 export type WsStatus = "" | "backlog" | "in_progress" | "in_review" | "done";
 export type Effort = string;
@@ -76,7 +72,7 @@ export type StackParent = {
 
 export type Section = { id: string; name: string; sort: number };
 
-export type Agent = "claude" | "codex";
+export type Agent = "claude" | "codex" | "gemini";
 export type PermissionMode = "plan" | "default" | "ask" | "acceptEdits" | "bypassPermissions";
 
 export type Session = {
@@ -157,7 +153,7 @@ export const starFor = (sky: Sky, name: string) => {
 };
 export const constellationOf = (sky: Sky, star: Star) => sky.constellations.find((c) => c.slug === star.constellation)!;
 
-/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/) would run, not trusted yet. */
+/** Things a repo's own agent config (.claude/settings.json, .mcp.json, .codex/; .gemini/ and .env for Gemini) would run, not trusted yet. */
 export type AgentConfigItem = { agent: Agent; file: string; what: string; command: string };
 export type AgentConfigTrust = { repo: string; fingerprint: string; items: AgentConfigItem[] };
 
