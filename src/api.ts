@@ -178,6 +178,19 @@ export type GuardHit = { path: string; change: "added" | "changed" | "deleted" }
 export type GuardLevel = "blocked" | "asks" | "after";
 
 export type FileChange = { path: string; status: string; additions: number; deletions: number };
+/** A file in the commit composer's staged or unstaged list. Status "?" is untracked, "U" a conflict. */
+export type StageFile = FileChange & { old_path: string | null; binary: boolean; protected: boolean };
+export type StageStatus = { staged: StageFile[]; unstaged: StageFile[] };
+/** One file's staged or unstaged diff; `sig` goes back with a line selection so a stale view is refused. */
+export type StageDiff = { text: string; sig: string; binary: boolean };
+/** The last commit. `block` says why Amend and Undo are off (pushed, a merge, the first commit). */
+export type HeadInfo = { sha: string; short: string; subject: string; message: string; pushed: boolean; block: string | null };
+/** A drafted commit message: from the agent, or from the file list when the agent is busy or failed. */
+export type DraftMessage = { message: string; source: "agent" | "local"; note: string | null };
+export type SplitHunk = { path: string; key: string; header: string; preview: string; additions: number; deletions: number; whole: boolean; protected: boolean };
+/** A proposed commit: its message and its hunks, as indexes into `hunks`. */
+export type SplitGroup = { message: string; hunks: number[] };
+export type SplitPlan = { hunks: SplitHunk[]; groups: SplitGroup[]; source: "agent" | "local"; note: string | null };
 /** Workspaces in one repo changing the same files; `order` is the suggested merge order. */
 export type Collision = { repo_id: string; order: string[]; pairs: { a: string; b: string; files: string[] }[] };
 export type Scripts = { setup: string | null; run: string | null; archive: string | null };
@@ -408,6 +421,18 @@ export const api = {
   setTargetBranch: (id: string, branch: string) => invoke<void>("set_target_branch", { id, branch }),
   changes: (id: string, uncommitted = false) => invoke<FileChange[]>("changes", { id, uncommitted }),
   fileDiff: (id: string, file: string, uncommitted = false) => invoke<string>("file_diff", { id, file, uncommitted }),
+  stageStatus: (id: string) => invoke<StageStatus>("stage_status", { id }),
+  stageDiff: (id: string, path: string, staged: boolean, oldPath: string | null) => invoke<StageDiff>("stage_diff", { id, path, staged, oldPath }),
+  /** Stage (from unstaged) or unstage (from staged) a whole file, or only the change lines in `lines`. */
+  stageApply: (id: string, path: string, staged: boolean, oldPath: string | null, sel?: { sig: string; lines: number[] }) =>
+    invoke<void>("stage_apply", { id, path, staged, oldPath, sig: sel?.sig ?? null, lines: sel?.lines ?? null }),
+  stageEverything: (id: string, stage: boolean) => invoke<void>("stage_everything", { id, stage }),
+  headCommit: (id: string) => invoke<HeadInfo | null>("head_commit", { id }),
+  commitStaged: (id: string, message: string, amend: boolean) => invoke<string>("commit_staged", { id, message, amend }),
+  undoCommit: (id: string) => invoke<string>("undo_commit", { id }),
+  draftCommitMessage: (id: string) => invoke<DraftMessage>("draft_commit_message", { id }),
+  splitPlan: (id: string) => invoke<SplitPlan>("split_plan", { id }),
+  splitCommit: (id: string, message: string, hunks: { path: string; key: string }[]) => invoke<string>("split_commit", { id, message, hunks }),
   readFile: (id: string, path: string) => invoke<string>("read_file", { id, path }),
   writeFile: (id: string, path: string, content: string) => invoke<void>("write_file", { id, path, content }),
   /** Discard one file's uncommitted changes; its current copy goes to the Trash. */

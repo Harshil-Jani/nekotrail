@@ -8,6 +8,7 @@ import { hasSuggestion, planLine, submitBlocker, suggestionParts, VERDICTS } fro
 import { Mascot } from "./Mascot";
 import { ask } from "./Confirm";
 import { setChangesSelection } from "../prompts";
+import { CommitView } from "./Commit";
 
 /**
  * A draft review comment on lines `line` to `end_line` of one file. `side` is "old" only when every
@@ -574,6 +575,11 @@ export function Diff({
   const [diff, setDiff] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [uncommitted, setUncommitted] = useState(false);
+  // The commit composer: staged and unstaged files, line staging and the message box.
+  const [composing, setComposing] = useState(false);
+  useEffect(() => { if (reviewPr) setComposing(false); }, [reviewPr, workspaceId]);
+  const composingRef = useRef(composing);
+  composingRef.current = composing;
   const [split, setSplit] = useState(() => localStorage.getItem("nekotrail.split") === "1");
   const toggleSplit = () => setSplit((v) => { localStorage.setItem("nekotrail.split", v ? "0" : "1"); return !v; });
   const [editing, setEditing] = useState<string | null>(null);
@@ -749,7 +755,8 @@ export function Diff({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (root.current?.closest(".pane")?.hasAttribute("hidden")) return;
-      if (mod(e) && e.altKey && e.code === "KeyU") { e.preventDefault(); setUncommitted((u) => !u); return; }
+      if (mod(e) && e.altKey && e.code === "KeyU") { e.preventDefault(); setComposing(false); setUncommitted((u) => !u); return; }
+      if (composingRef.current) return;
       const t = e.target as HTMLElement;
       if (t.closest("textarea, input, select") || mod(e) || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
       const { files: fs, open: cur } = nav.current;
@@ -774,6 +781,15 @@ export function Diff({
     return m;
   }, [comments]);
 
+  const scope = (
+    <span className="seg scope" role="tablist" aria-label="Which changes">
+      <button role="tab" aria-selected={!uncommitted && !composing} className={!uncommitted && !composing ? "on" : ""} onClick={() => { setComposing(false); setUncommitted(false); }}>All</button>
+      <button role="tab" aria-selected={uncommitted && !composing} className={uncommitted && !composing ? "on" : ""} onClick={() => { setComposing(false); setUncommitted(true); }} title={keyHint("Show uncommitted changes only (⌘⌥U)")}>Uncommitted</button>
+      {!reviewPr && <button role="tab" aria-selected={composing} className={composing ? "on" : ""} onClick={() => setComposing(true)} title="Stage files, hunks or lines and commit them">Commit</button>}
+    </span>
+  );
+  if (composing && !reviewPr) return <CommitView workspaceId={workspaceId} refreshKey={refreshKey} scope={scope} />;
+
   if (error) return <div className="banner error">{error}</div>;
   if (!files) return <div className="empty"><span className="spinner" /></div>;
 
@@ -781,12 +797,6 @@ export function Diff({
   const del = files.reduce((n, f) => n + f.deletions, 0);
   const ghTop = gh.filter((c) => !c.reply_to);
   const seen = files.filter((f) => viewed[f.path] === sig(f)).length;
-  const scope = (
-    <span className="seg scope" role="tablist" aria-label="Which changes">
-      <button role="tab" aria-selected={!uncommitted} className={!uncommitted ? "on" : ""} onClick={() => setUncommitted(false)}>All</button>
-      <button role="tab" aria-selected={uncommitted} className={uncommitted ? "on" : ""} onClick={() => setUncommitted(true)} title={keyHint("Show uncommitted changes only (⌘⌥U)")}>Uncommitted</button>
-    </span>
-  );
 
   return (
     <div className="diff-view" ref={root}>

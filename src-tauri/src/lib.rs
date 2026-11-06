@@ -21,6 +21,7 @@ pub mod remote;
 pub mod review;
 pub mod safe;
 pub mod search;
+pub mod stage;
 pub mod store;
 pub mod testparse;
 pub mod title;
@@ -2275,6 +2276,335 @@ async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Re
     Ok(msg)
 }
 
+// ---------- the commit composer (Changes, Commit) ----------
+
+/// Is any chat in this workspace running a turn right now?
+fn agent_busy(st: &AppState, workspace_id: &str) -> bool {
+    let ids: Vec<String> = st.db().sessions(workspace_id).unwrap_or_default().into_iter().map(|s| s.id).collect();
+    let runs = st.runs.lock().unwrap();
+    ids.iter().any(|i| runs.running.contains_key(i))
+}
+
+/// Ask the workspace's agent one question in a throwaway turn: a fresh conversation (never the
+/// chat's own session, so nothing lands in the chat or its context), read-only, no repo prompt,
+/// stopped after `secs`. Uses the newest chat's agent, model and effort; Claude if there is none.
+/// Returns everything the agent wrote.
+fn side_turn(st: &AppState, ws: &Workspace, prompt: &str, secs: u64) -> Res<String> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+    let last = st.db().sessions(&ws.id).unwrap_or_default().pop();
+    let agent_id = last.as_ref().map(|s| s.agent.clone()).unwrap_or_else(|| "claude".into());
+    let harness = agent::get(&agent_id);
+    let project_config = untrusted_agent_config(st, ws, harness).is_none();
+    if !project_config && let Some(why) = harness.needs_trusted_config() {
+        return Err(why);
+    }
+    let env = env_for(st, &repo, ws);
+    let spec = agent::TurnSpec {
+        fork: false,
+        agent: &agent_id,
+        prompt,
+        agent_session_id: None,
+        model: last.as_ref().and_then(|s| s.model.as_deref()),
+        permission_mode: "plan",
+        cwd: Path::new(&ws.path),
+        effort: last.as_ref().and_then(|s| s.effort.as_deref()),
+        instructions: None,
+        env: &env,
+        dirs: &[],
+        project_config,
+        guard: None,
+    };
+    let mut cmd = agent::command(&spec);
+    let mut parser = agent::parser(&spec);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|err| format!("Couldn't start {agent_id}: {err}"))?;
+    let pid = child.id();
+    let done = Arc::new(AtomicBool::new(false));
+    let timed_out = Arc::new(AtomicBool::new(false));
+    {
+        let (done, timed_out) = (done.clone(), timed_out.clone());
+        std::thread::spawn(move || {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+            while std::time::Instant::now() < until {
+                if done.load(Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            if !done.load(Ordering::Relaxed) {
+                timed_out.store(true, Ordering::Relaxed);
+                let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+            }
+        });
+    }
+    let mut stdin = if harness.interactive("plan") { child.stdin.take() } else { None };
+    let send = |stdin: &mut Option<std::process::ChildStdin>, lines: &[String]| {
+        if let Some(s) = stdin.as_mut() {
+            for l in lines {
+                let _ = s.write_all(l.as_bytes());
+            }
+            let _ = s.flush();
+        }
+    };
+    if let Some(first) = harness.first_input(prompt).filter(|_| stdin.is_some()) {
+        send(&mut stdin, &[first]);
+    }
+    let first = parser.outgoing();
+    send(&mut stdin, &first);
+    let stderr = child.stderr.take();
+    let err_buf = Arc::new(Mutex::new(String::new()));
+    {
+        let err_buf = err_buf.clone();
+        std::thread::spawn(move || {
+            if let Some(s) = stderr {
+                for line in BufReader::new(s).lines().map_while(Result::ok) {
+                    let mut b = err_buf.lock().unwrap();
+                    if b.len() < 4000 {
+                        b.push_str(&line);
+                        b.push('\n');
+                    }
+                }
+            }
+        });
+    }
+    let mut said = String::new();
+    let mut failed: Option<String> = None;
+    let stdout = child.stdout.take().ok_or("The agent has no output.")?;
+    let lines = BufReader::new(stdout).lines().map_while(Result::ok).map(Some).chain(std::iter::once(None));
+    for line in lines {
+        let events = match &line {
+            Some(l) => parser.line(l),
+            None => parser.finish(),
+        };
+        let out = parser.outgoing();
+        send(&mut stdin, &out);
+        for ev in events {
+            match ev["kind"].as_str() {
+                Some("text") => {
+                    if let Some(t) = ev["text"].as_str() {
+                        said.push_str(t);
+                        said.push('\n');
+                    }
+                }
+                // A side question never edits or runs anything: every request is refused.
+                Some("approval") => {
+                    if let Some(Ok(reply)) = ev["request_id"].as_str().and_then(|rid| parser.answer(rid, false, false)) {
+                        send(&mut stdin, &[reply]);
+                    }
+                }
+                Some("error") => failed = ev["text"].as_str().map(str::to_string),
+                _ => {}
+            }
+        }
+        if parser.finished() || line.as_deref().is_some_and(|l| l.contains("\"type\":\"result\"")) {
+            stdin = None;
+        }
+    }
+    drop(stdin);
+    let _ = child.wait();
+    done.store(true, Ordering::Relaxed);
+    if timed_out.load(Ordering::Relaxed) {
+        return Err(format!("{} took longer than {secs} seconds", agent::get(&agent_id).id()));
+    }
+    let said = said.trim().to_string();
+    if said.is_empty() {
+        let why = failed.unwrap_or_else(|| err_buf.lock().unwrap().trim().lines().last().unwrap_or("").to_string());
+        return Err(if why.is_empty() { "the agent gave no answer".into() } else { why });
+    }
+    Ok(said)
+}
+
+/// Staged and unstaged files, each marked when the repo protects it.
+#[tauri::command]
+async fn stage_status(app: AppHandle, id: String) -> Res<stage::StageStatus> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let rules = st.db().repo(&ws.repo_id).map(|r| guard_rules(&r, &ws)).unwrap_or_default();
+        let mut s = stage::status(Path::new(&ws.path)).map_err(e)?;
+        for f in s.staged.iter_mut().chain(s.unstaged.iter_mut()) {
+            f.protected = rules.protects(&f.path);
+        }
+        Ok(s)
+    })
+    .await
+}
+
+/// One file's staged or unstaged diff, with the fingerprint a line selection must send back.
+#[tauri::command]
+async fn stage_diff(app: AppHandle, id: String, path: String, staged: bool, old_path: Option<String>) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let d = stage::diff(Path::new(&ws.path), &path, staged, old_path.as_deref()).map_err(e)?;
+        let fd = stage::parse(&d);
+        Ok(json!({"text": String::from_utf8_lossy(&d), "sig": stage::sig(&d), "binary": fd.binary}))
+    })
+    .await
+}
+
+/// Stage (from the unstaged list) or unstage (from the staged list) one file whole, or only the
+/// change lines numbered in `lines`. Only the index changes; the files on disk never do.
+#[tauri::command]
+async fn stage_apply(app: AppHandle, id: String, path: String, staged: bool, old_path: Option<String>, sig: Option<String>, lines: Option<Vec<usize>>) -> Res<()> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let dir = Path::new(&ws.path);
+        let r = match (lines, staged) {
+            (None, false) => stage::stage_file(dir, &path),
+            (None, true) => stage::unstage_file(dir, &path, old_path.as_deref()),
+            (Some(l), _) => stage::apply_lines(dir, &path, staged, old_path.as_deref(), sig.as_deref().unwrap_or(""), &l),
+        };
+        mark_changed(st, &ws.id);
+        r.map_err(e)
+    })
+    .await
+}
+
+/// Stage everything, or unstage everything. Files on disk stay as they are.
+#[tauri::command]
+async fn stage_everything(app: AppHandle, id: String, stage: bool) -> Res<()> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let dir = Path::new(&ws.path);
+        mark_changed(st, &ws.id);
+        if stage {
+            git::git(dir, &["add", "-A"]).map(|_| ()).map_err(e)
+        } else if git::git(dir, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok() {
+            git::git(dir, &["reset", "-q"]).map(|_| ()).map_err(e)
+        } else {
+            git::git(dir, &["rm", "--cached", "-r", "-q", "--ignore-unmatch", "."]).map(|_| ()).map_err(e)
+        }
+    })
+    .await
+}
+
+/// The last commit, and why Amend and Undo are off when they are.
+#[tauri::command]
+async fn head_commit(app: AppHandle, id: String) -> Res<Option<stage::HeadInfo>> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        stage::head_info(Path::new(&ws.path), &ws.target_branch).map_err(e)
+    })
+    .await
+}
+
+/// Commit what is staged, or amend the last commit with it (refused once that commit is pushed).
+#[tauri::command]
+async fn commit_staged(app: AppHandle, id: String, message: String, amend: bool) -> Res<String> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let r = stage::commit(Path::new(&ws.path), &message, amend, &ws.target_branch);
+        mark_changed(st, &ws.id);
+        r.map_err(e)
+    })
+    .await
+}
+
+/// Undo the last commit with a soft reset. Its changes come back staged.
+#[tauri::command]
+async fn undo_commit(app: AppHandle, id: String) -> Res<String> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let r = stage::undo(Path::new(&ws.path), &ws.target_branch);
+        mark_changed(st, &ws.id);
+        r.map_err(e)
+    })
+    .await
+}
+
+/// How long a side question may take before nekotrail gives up on it.
+const SIDE_TURN_SECS: u64 = 120;
+
+/// "Draft message": the workspace's agent writes a commit message for the staged diff in a side
+/// turn. When the agent is busy or can't answer, the message comes from the file list instead,
+/// and `note` says so. Returns {message, source: "agent" | "local", note}.
+#[tauri::command]
+async fn draft_commit_message(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let dir = Path::new(&ws.path);
+        let staged = stage::status(dir).map_err(e)?.staged;
+        if staged.is_empty() {
+            return Err("Nothing is staged yet. Stage the changes this commit is for, then draft its message.".into());
+        }
+        let local = |note: String| json!({"message": stage::local_message(&staged), "source": "local", "note": note});
+        if agent_busy(st, &ws.id) {
+            return Ok(local("The agent is busy, so this draft comes from the file list.".into()));
+        }
+        let stat = git::git(dir, &["diff", "--cached", "-M", "--stat=200"]).unwrap_or_default();
+        let diff = git::git(dir, &["diff", "--cached", "-M", "--no-color", "--no-ext-diff"]).unwrap_or_default();
+        match side_turn(st, &ws, &stage::draft_prompt(&stat, &diff), SIDE_TURN_SECS) {
+            Ok(reply) => {
+                let message = stage::clean_reply(&reply);
+                if message.is_empty() { Ok(local("The agent's answer was empty, so this draft comes from the file list.".into())) } else { Ok(json!({"message": message, "source": "agent", "note": null})) }
+            }
+            Err(why) => Ok(local(format!("The agent couldn't answer ({}), so this draft comes from the file list.", why.lines().next().unwrap_or("").trim_end_matches('.')))),
+        }
+    })
+    .await
+}
+
+/// "Split into commits": every uncommitted hunk, and the agent's proposal for which commit each
+/// goes in. A busy agent or an unreadable answer falls back to one commit per top folder.
+/// Returns {hunks, groups, source, note}.
+#[tauri::command]
+async fn split_plan(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let rules = st.db().repo(&ws.repo_id).map(|r| guard_rules(&r, &ws)).unwrap_or_default();
+        let mut hunks = stage::split_hunks(Path::new(&ws.path)).map_err(e)?;
+        if hunks.is_empty() {
+            return Err("There are no uncommitted changes to split.".into());
+        }
+        for h in hunks.iter_mut() {
+            h.protected = rules.protects(&h.path);
+        }
+        let local = |note: &str| json!({"hunks": hunks, "groups": stage::local_plan(&hunks), "source": "local", "note": note});
+        if hunks.len() == 1 {
+            return Ok(local("There's only one change, so there is nothing to split."));
+        }
+        if agent_busy(st, &ws.id) {
+            return Ok(local("The agent is busy, so these commits are grouped by folder."));
+        }
+        match side_turn(st, &ws, &stage::split_prompt(&hunks), SIDE_TURN_SECS) {
+            Ok(reply) => match stage::parse_plan(&reply, hunks.len()) {
+                Some(groups) => Ok(json!({"hunks": hunks, "groups": groups, "source": "agent", "note": null})),
+                None => Ok(local("The agent's answer wasn't a plan nekotrail could read, so these commits are grouped by folder.")),
+            },
+            Err(why) => Ok(local(&format!("The agent couldn't answer ({}), so these commits are grouped by folder.", why.lines().next().unwrap_or("").trim_end_matches('.')))),
+        }
+    })
+    .await
+}
+
+#[derive(serde::Deserialize)]
+struct HunkRef {
+    path: String,
+    key: String,
+}
+
+/// Commit one group of a split: the index goes back to HEAD, the group's hunks are staged and
+/// committed. Files on disk never change. Returns the new commit's short hash.
+#[tauri::command]
+async fn split_commit(app: AppHandle, id: String, message: String, hunks: Vec<HunkRef>) -> Res<String> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        let refs: Vec<(String, String)> = hunks.into_iter().map(|h| (h.path, h.key)).collect();
+        let r = stage::split_commit(Path::new(&ws.path), &message, &refs);
+        mark_changed(st, &ws.id);
+        r.map_err(e)
+    })
+    .await
+}
+
 /// Merge the target branch from origin into the workspace. Returns "up-to-date", "merged" or
 /// "conflicts" (left in place, for the agent or the user to resolve).
 #[tauri::command]
@@ -3731,7 +4061,8 @@ pub fn run() {
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
             remote_take, link_confirm, cli_install, cli_status,
-            checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output
+            checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output,
+            stage_status, stage_diff, stage_apply, stage_everything, head_commit, commit_staged, undo_commit, draft_commit_message, split_plan, split_commit
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");
