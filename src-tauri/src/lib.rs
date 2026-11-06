@@ -18,6 +18,7 @@ pub mod prpoll;
 pub mod pty;
 pub mod radar;
 pub mod remote;
+pub mod rules;
 pub mod review;
 pub mod safe;
 pub mod search;
@@ -1957,6 +1958,70 @@ async fn mcp_share_apply(st: State<'_, AppState>, id: String, name: String, targ
     mcpshare::apply(&mcpshare::Homes::from_env()?, Some(Path::new(&ws.path)), &name, target, &choices, &token, &backup_stamp())
 }
 
+/// Where the Rules view puts the files it replaces: outside the repo, so a backup never shows up
+/// in Changes. One folder per write, named after the workspace and the time.
+fn rules_backup_dir(ws: &Workspace) -> Res<PathBuf> {
+    let data = remote::data_dir().ok_or("Can't find your Application Support folder.")?;
+    let name: String = ws.name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' }).collect();
+    Ok(data.join("rules-backups").join(format!("{name}-{}", backup_stamp())))
+}
+
+/// The rules files in a workspace, who reads which, and how each differs from `source`.
+#[tauri::command]
+async fn rules_overview(st: State<'_, AppState>, id: String, source: Option<String>) -> Res<rules::Overview> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    Ok(rules::overview(Path::new(&ws.path), source.as_deref()))
+}
+
+/// What "Use one file" would write, file by file, with the diff for each.
+#[tauri::command]
+async fn rules_plan(st: State<'_, AppState>, id: String, req: rules::Request) -> Res<rules::Plan> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    rules::plan(Path::new(&ws.path), &req)
+}
+
+/// Writes what the plan with `token` showed, after a backup. Nothing is committed.
+#[tauri::command]
+async fn rules_apply(st: State<'_, AppState>, id: String, req: rules::Request, token: String, confirmed: Vec<String>) -> Res<rules::Applied> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    if ws.review_pr > 0 || ws.state != "active" {
+        return Err("This workspace is read-only.".into());
+    }
+    rules::apply(Path::new(&ws.path), &req, &token, &confirmed, &rules_backup_dir(&ws)?)
+}
+
+#[tauri::command]
+async fn rules_open(st: State<'_, AppState>, id: String, path: String) -> Res<rules::Opened> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    rules::open(Path::new(&ws.path), &path)
+}
+
+/// Saves one rules file from the editor, if nobody changed it since it was opened.
+#[tauri::command]
+async fn rules_save(st: State<'_, AppState>, id: String, path: String, text: String, hash: String) -> Res<rules::Applied> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    if ws.review_pr > 0 || ws.state != "active" {
+        return Err("This workspace is read-only.".into());
+    }
+    rules::save(Path::new(&ws.path), &path, &text, &hash, &rules_backup_dir(&ws)?)
+}
+
+/// The workspace's "Rules for this task": put in front of the first message of each chat.
+#[tauri::command]
+async fn task_rules(st: State<'_, AppState>, id: String) -> Res<String> {
+    Ok(st.db().setting(&rules::task_key(&id)).map_err(e)?.unwrap_or_default())
+}
+
+#[tauri::command]
+async fn set_task_rules(st: State<'_, AppState>, id: String, text: String) -> Res<()> {
+    st.db().workspace(&id).map_err(e)?;
+    if text.trim().is_empty() {
+        st.db().delete_setting(&rules::task_key(&id)).map_err(e)
+    } else {
+        st.db().set_setting(&rules::task_key(&id), &text).map_err(e)
+    }
+}
+
 /// Links a skill folder for the other agents ("agents": Codex, Gemini and OpenCode, "claude": Claude).
 #[tauri::command]
 async fn skill_share(name: String, target: String) -> Res<String> {
@@ -2939,12 +3004,25 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             None
         },
     };
+    // "Rules for this task" go in front of the first message of every chat in this workspace,
+    // whichever agent it is. Read before the message is saved, so "first" means first.
+    let task_rules = if st.db().has_user_message(&id).unwrap_or(true) {
+        String::new()
+    } else {
+        st.db().setting(&rules::task_key(&ws.id)).ok().flatten().unwrap_or_default()
+    };
     let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
     st.db().append_event(&id, &user).map_err(e)?;
     emit_event(&app, &id, &user);
+    if !task_rules.trim().is_empty() {
+        let ev = json!({"kind": "note", "text": "Rules for this task went in front of this message."});
+        st.db().append_event(&id, &ev).map_err(e)?;
+        emit_event(&app, &id, &ev);
+    }
+    let text_with_rules = rules::with_task_rules(&task_rules, &text);
     let prompt = match st.runs.lock().unwrap().notes.remove(&id) {
-        Some(note) => format!("{note}\n\n{text}"),
-        None => text.clone(),
+        Some(note) => format!("{note}\n\n{text_with_rules}"),
+        None => text_with_rules,
     };
 
     let fork = st.runs.lock().unwrap().forks.remove(&id);
@@ -3725,7 +3803,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,

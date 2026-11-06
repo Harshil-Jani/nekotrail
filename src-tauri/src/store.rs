@@ -865,6 +865,16 @@ impl Store {
         crate::search::place(&self.conn, message_id)
     }
 
+    /// Whether the user has sent anything in this chat yet.
+    pub fn has_user_message(&self, session_id: &str) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE session_id=?1 AND json_extract(event, '$.kind')='user'",
+            [session_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
     pub fn events(&self, session_id: &str) -> Result<Vec<serde_json::Value>> {
         let mut st = self.conn.prepare("SELECT event FROM messages WHERE session_id=?1 ORDER BY id")?;
         let rows = st
@@ -1045,6 +1055,10 @@ mod tests {
         assert_eq!((card[0].0.as_str(), card[0].1, card[0].2, card[0].3), ("claude", 1, 1, 1000));
         let (tail, total) = s.events_tail(&sess.id, 1).unwrap();
         assert_eq!((tail.len(), tail[0]["is_error"].as_bool(), total), (1, Some(true), 3));
+        // "Rules for this task" go with the first user message only.
+        assert!(!s.has_user_message(&sess.id).unwrap());
+        s.append_event(&sess.id, &serde_json::json!({"kind": "user", "text": "go"})).unwrap();
+        assert!(s.has_user_message(&sess.id).unwrap());
     }
 
     /// A workspace with one chat whose user prompts are `prompts`.
