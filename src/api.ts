@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { PersonalPrompt, PromptEntry, PromptScope } from "./prompts";
+import type { NewQueueTask, QueueSummary, QueueTask, QueueView } from "./queue";
 
 export type Repo = {
   id: string;
@@ -418,6 +419,19 @@ export const api = {
   rulesSave: (id: string, path: string, text: string, hash: string) => invoke<RulesApplied>("rules_save", { id, path, text, hash }),
   taskRules: (id: string) => invoke<string>("task_rules", { id }),
   setTaskRules: (id: string, text: string) => invoke<void>("set_task_rules", { id, text }),
+  // The task queue (src-tauri/src/queue.rs). Changes arrive as a "task-queue" event.
+  queueView: () => invoke<QueueView>("queue_view"),
+  queueAdd: (task: NewQueueTask) => invoke<QueueTask>("queue_add", { task }),
+  queueRemove: (id: string) => invoke<void>("queue_remove", { id }),
+  /** Put `id` right before `before` (last when null). */
+  queueMove: (id: string, before: string | null) => invoke<void>("queue_move", { id, before }),
+  queueRetry: (id: string) => invoke<void>("queue_retry", { id }),
+  queueStartNow: (id: string) => invoke<void>("queue_start_now", { id }),
+  queueSetPaused: (paused: boolean) => invoke<void>("queue_set_paused", { paused }),
+  queueSetLimits: (maxTotal: number, maxPerRepo: number) => invoke<void>("queue_set_limits", { maxTotal, maxPerRepo }),
+  queueClearFinished: () => invoke<number>("queue_clear_finished"),
+  queueSummary: () => invoke<QueueSummary>("queue_summary"),
+  queueSummarySeen: () => invoke<void>("queue_summary_seen"),
   skillShare: (name: string, target: "agents" | "claude") => invoke<string>("skill_share", { name, target }),
   promptsList: (id?: string, repo?: string) => invoke<{ entries: PromptEntry[]; saved: boolean }>("prompts_list", { id: id ?? null, repo: repo ?? null }),
   promptsSave: (list: PersonalPrompt[]) => invoke<void>("prompts_save", { list }),

@@ -2,6 +2,7 @@
  * Sample data for rendering the real UI in a plain browser (no Tauri backend).
  * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
  * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
+ * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queueAdd (the Add form open), ?summary (the morning summary).
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -402,9 +403,66 @@ const rulesPlan = (req: any) => {
   };
 };
 
+// The task queue: Claude ran out of usage at night, so its tasks wait until 2 h 40 min from now.
+const queueMode = new URLSearchParams(location.search).get("queue");
+const qNow = Math.floor(Date.now() / 1000);
+const qTask = (id: string, prompt: string, extra: Record<string, unknown>) => ({
+  id, prompt, repo_id: "r1", base: null, agent: "claude", model: null, effort: null, mode: "acceptEdits", fallback: null,
+  then: { checks: false, draft_pr: false, autopilot: false }, state: "queued", note: "", step: "", workspace_id: null, session_id: null,
+  ran_with: null, resume: false, attempts: 0, added_at: qNow - 9 * 3600, started_at: null, ended_at: null, ...extra,
+});
+let queueTasks: any[] = queueMode === "empty" ? [] : [
+  qTask("q1", "Fix the flaky login test on CI. It times out about one run in five.", { state: "running", ran_with: "claude", started_at: qNow - 14 * 60, workspace_id: "w1", session_id: "s1", then: { checks: true, draft_pr: true, autopilot: false } }),
+  qTask("q2", "Add rate limiting to the tickets API, 100 requests a minute per token", { state: "running", ran_with: "claude", mode: "ask", started_at: qNow - 41 * 60, workspace_id: "w2", session_id: "s2" }),
+  qTask("q3", "Bump Go to 1.25 and fix the deprecation warnings", { state: "then", step: "autopilot", agent: "codex", ran_with: "codex", started_at: qNow - 2 * 3600, workspace_id: "w3", note: "Autopilot is getting the PR green.", then: { checks: false, draft_pr: true, autopilot: true } }),
+  qTask("q4", "Move the settings page to the new form components", { repo_id: "r2", resume: true, workspace_id: "w4", note: "Claude ran out of usage. It continues when the limit resets.", then: { checks: true, draft_pr: true, autopilot: false } }),
+  qTask("q5", "Write tests for the webhook retry backoff", { agent: "codex", fallback: "claude", base: "release/2.4" }),
+  qTask("q6", "Rotate the staging database password and update the runbook", { mode: "ask", state: "waiting" }),
+  qTask("q7", "Remove the old v1 export endpoint and its docs", { fallback: "codex", mode: "bypassPermissions" }),
+  qTask("q8", "Add a dark mode toggle to the settings page", { repo_id: "r2", state: "done", ran_with: "claude", workspace_id: "w5", ended_at: qNow - 3 * 3600, note: "Finished. Opened a draft PR.", then: { checks: false, draft_pr: true, autopilot: false } }),
+  qTask("q9", "Plan the move from REST to tRPC for the dashboard", { repo_id: "r2", mode: "plan", state: "needs_you", ran_with: "claude", workspace_id: "w4", ended_at: qNow - 4 * 3600, note: "The plan waits for your OK." }),
+  qTask("q10", "Upgrade React Native to 0.79", { repo_id: "r2", agent: "gemini", state: "failed", ran_with: "gemini", ended_at: qNow - 5 * 3600, note: "Gemini isn't installed." }),
+  qTask("q11", "Fix the 502s after deploy", { state: "done", ran_with: "claude", workspace_id: "w1", ended_at: qNow - 6 * 3600, note: "Autopilot got the PR green. It's ready for you to merge.", then: { checks: true, draft_pr: true, autopilot: true } }),
+];
+let queuePaused = queueMode === "paused";
+let queueMax = [3, 3];
+const claudeBack = qNow + 2 * 3600 + 40 * 60;
+const queueView = () => {
+  const waits: Record<string, any> = {};
+  for (const t of queueTasks.filter((x) => x.state === "queued")) {
+    waits[t.id] = queuePaused ? { kind: "paused" }
+      : t.agent === "claude" && t.fallback !== "codex" ? { kind: "limit", agent: "claude", until: claudeBack, reported: true }
+      : { kind: "slots" };
+  }
+  return {
+    tasks: queueTasks, paused: queuePaused, max_total: queueMax[0], max_per_repo: queueMax[1], now: Math.floor(Date.now() / 1000),
+    limits: queueMode === "empty" ? {} : { claude: { until: claudeBack, reported: true, text: "Claude AI usage limit reached" } }, waits, asking: ["q2"],
+  };
+};
+const queueChanged = () => setTimeout(() => emit("task-queue", {}), 0);
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
+      case "queue_view": return queueView();
+      case "queue_add": {
+        const t = qTask(`q${Date.now()}`, args.task.prompt, { ...args.task, state: args.task.mode === "ask" ? "waiting" : "queued", added_at: Math.floor(Date.now() / 1000) });
+        queueTasks = [...queueTasks, t]; queueChanged(); return t;
+      }
+      case "queue_remove": queueTasks = queueTasks.filter((t) => t.id !== args.id); queueChanged(); return null;
+      case "queue_move": {
+        const t = queueTasks.find((x) => x.id === args.id);
+        const rest = queueTasks.filter((x) => x.id !== args.id);
+        const at = args.before ? rest.findIndex((x) => x.id === args.before) : rest.length;
+        queueTasks = [...rest.slice(0, at), t, ...rest.slice(at)]; queueChanged(); return null;
+      }
+      case "queue_retry": queueTasks = queueTasks.map((t) => (t.id === args.id ? { ...t, state: "queued", note: "", ended_at: null, attempts: t.attempts + 1 } : t)); queueChanged(); return null;
+      case "queue_start_now": queueTasks = queueTasks.map((t) => (t.id === args.id ? { ...t, state: "starting", ran_with: t.agent, started_at: Math.floor(Date.now() / 1000) } : t)); queueChanged(); return null;
+      case "queue_set_paused": queuePaused = args.paused; queueChanged(); return null;
+      case "queue_set_limits": queueMax = [args.maxTotal, args.maxPerRepo]; queueChanged(); return null;
+      case "queue_clear_finished": { const n = queueTasks.length; queueTasks = queueTasks.filter((t) => !["done", "needs_you", "failed"].includes(t.state)); queueChanged(); return n - queueTasks.length; }
+      case "queue_summary": return location.search.includes("summary") ? { done: 8, needs_you: 2, failed: 1, running: 1, queued: 3, text: "8 done, 2 need you, 1 failed" } : { done: 0, needs_you: 0, failed: 0, running: 0, queued: 0, text: "" };
+      case "queue_summary_seen": return null;
       case "checks_list": return checksFor(args.id);
       case "checks_statuses": return { w1: "failed", w2: "running", w3: "passed" };
       case "checks_output": return args.name === "test" ? checkOutput : "";

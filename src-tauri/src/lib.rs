@@ -16,6 +16,8 @@ pub mod preview;
 pub mod prompts;
 pub mod prpoll;
 pub mod pty;
+pub mod queue;
+pub mod queuerun;
 pub mod radar;
 pub mod remote;
 pub mod rules;
@@ -115,6 +117,8 @@ pub struct AppState {
     port_failures: Mutex<HashMap<String, Option<u16>>>,
     /// Each workspace's test, lint and typecheck results, and the run going now.
     checks: checks::Checks,
+    /// The task queue (`queue.rs`), saved in the settings table on every change.
+    queue: Mutex<queue::Queue>,
 }
 
 /// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
@@ -658,7 +662,10 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
     st.ptys.close(&format!("{id}:term"));
     st.checks.stop(&id);
     st.checks.forget(&id);
-    st.db().set_workspace_state(&id, "archived").map_err(e)
+    st.db().set_workspace_state(&id, "archived").map_err(e)?;
+    // A queued task that ran here starts fresh if you retry it.
+    queuerun::update_in(st, |q| q.forget_workspace(&id));
+    Ok(())
 }
 
 #[tauri::command]
@@ -2251,17 +2258,24 @@ fn autopilot_key(id: &str) -> String {
 async fn set_autopilot(app: AppHandle, st: State<'_, AppState>, id: String, on: bool) -> Res<()> {
     let key = autopilot_key(&id);
     if on {
-        // Autopilot fixes CI and merges: nothing it may do on someone else's PR.
-        let ws = st.db().workspace(&id).map_err(e)?;
-        review::refuse_in_review(ws.review_pr)?;
-        terminal::refuse_in_history(&ws)?;
-        st.db().set_setting(&key, &json!({"tries": 0, "last": ""}).to_string()).map_err(e)?;
-        // The poller looks right away (and every 20 s from now on) and runs autopilot after.
-        pr_poke_workspace(&st, &id, true);
+        autopilot_on(&st, &id)?;
     } else {
         st.db().delete_setting(&key).map_err(e)?;
+        queuerun::autopilot_ended(&app, &id, "stopped");
     }
     let _ = app.emit("autopilot", json!({"workspace_id": key.trim_start_matches("autopilot:"), "state": if on { "on" } else { "off" }}));
+    Ok(())
+}
+
+/// Turn autopilot on (the PR menu, or a queued task's last step).
+fn autopilot_on(st: &AppState, id: &str) -> Res<()> {
+    // Autopilot fixes CI and merges: nothing it may do on someone else's PR.
+    let ws = st.db().workspace(id).map_err(e)?;
+    review::refuse_in_review(ws.review_pr)?;
+    terminal::refuse_in_history(&ws)?;
+    st.db().set_setting(&autopilot_key(id), &json!({"tries": 0, "last": ""}).to_string()).map_err(e)?;
+    // The poller looks right away (and every 20 s from now on) and runs autopilot after.
+    pr_poke_workspace(st, id, true);
     Ok(())
 }
 
@@ -2299,6 +2313,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
             } else {
                 say("off", "The PR is closed or merged.");
             }
+            queuerun::autopilot_ended(app, id, if kind == "ready" { "ready" } else { "off" });
             return;
         }
         _ => {}
@@ -2310,6 +2325,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     if tries >= AUTOPILOT_TRIES {
         let _ = st.db().delete_setting(&key);
         say("gave_up", &format!("Still not green after {AUTOPILOT_TRIES} tries. Take a look."));
+        queuerun::autopilot_ended(app, id, "gave_up");
         return;
     }
     let Ok(ws) = st.db().workspace(id) else { return };
@@ -3317,6 +3333,12 @@ fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) 
 }
 
 fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()> {
+    start_turn_spawned(app, st, id, text).map(|_| ())
+}
+
+/// `start_turn`, saying whether the agent started. False: it couldn't (not installed, or the
+/// repo's agent settings wait for your OK), and the chat says why.
+fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -> Res<bool> {
     let (session, ws, repo) = {
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
@@ -3400,7 +3422,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let ev = json!({"kind": "error", "text": why});
             st.db().append_event(&id, &ev).map_err(e)?;
             emit_event(&app, &id, &ev);
-            return Ok(());
+            return Ok(false);
         }
     if !project_config && session.agent_session_id.is_none() {
         let note = json!({"kind": "note", "text": "This repo's own agent settings (hooks, MCP servers, env) are off for this chat until you trust them."});
@@ -3431,7 +3453,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let ev = json!({"kind": "error", "text": format!("Couldn't start {}: {err}", session.agent), "fix": "install", "agent": session.agent});
             st.db().append_event(&id, &ev).map_err(e)?;
             emit_event(&app, &id, &ev);
-            return Ok(());
+            return Ok(false);
         }
     };
     {
@@ -3491,6 +3513,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let mut context_tokens: Option<u64> = None;
         // Why the user is needed when this turn ends, if they are: plan, question, login, limit, install, error.
         let mut needs: Option<String> = None;
+        // What the agent said when it hit its usage limit, for the reset time in it (the queue).
+        let mut limit_text: Option<String> = None;
         let mut user_stopped = false;
         // The `None` after the last line lets the parser hand over anything it still holds.
         let lines = BufReader::new(stdout).lines().map_while(Result::ok).map(Some).chain(std::iter::once(None));
@@ -3513,6 +3537,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                         let _ = st.db().append_event(&id, &ev);
                         emit_event(&app, &id, &ev);
                         let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{tool}: {}", ev["input"].as_str().unwrap_or(""))}));
+                        // A queued task waiting for your OK frees its slot for the next one.
+                        queuerun::poke(&app);
                         continue;
                     }
                     if j["type"] == "result" {
@@ -3539,6 +3565,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                     let _ = st.db().append_event(&id, &ev);
                     emit_event(&app, &id, &ev);
                     let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{}: {}", ev["tool"].as_str().unwrap_or("tool"), ev["input"].as_str().unwrap_or(""))}));
+                    queuerun::poke(&app);
                     continue;
                 }
                 if ev["kind"] == "usage" {
@@ -3576,6 +3603,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
                     ev["fix"] = json!(fix);
                     ev["agent"] = json!(agent_name);
                     needs = Some(fix.to_string());
+                    if fix == "limit" {
+                        limit_text = ev["text"].as_str().map(String::from);
+                    }
                 }
                 match (ev["kind"].as_str(), ev["name"].as_str()) {
                     (Some("tool"), Some("ExitPlanMode")) => needs = Some("plan".into()),
@@ -3607,6 +3637,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             user_stopped = stopped;
             if !stopped && needs.is_none() {
                 needs = Some(classify_error(ev["text"].as_str().unwrap_or("")).unwrap_or("error").to_string());
+                if needs.as_deref() == Some("limit") {
+                    limit_text = ev["text"].as_str().map(String::from);
+                }
             }
             let _ = st.db().append_event(&id, &ev);
             emit_event(&app, &id, &ev);
@@ -3642,18 +3675,24 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         // A turn that ended well, with nothing queued and nothing to ask: run the checks if the repo wants that.
         let run_checks = ok && !user_stopped && guard_hit.is_none() && needs.is_none() && next.is_none()
             && st.db().workspace(&workspace_id).and_then(|w| st.db().repo(&w.repo_id)).is_ok_and(|r| r.prefs.checks_after_turn);
+        let needs = if guard_hit.is_some() { Some("protected".to_string()) } else if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs };
         let _ = app.emit("running", json!({
             "session_id": id, "running": false, "workspace_id": workspace_id,
-            "ok": ok, "title": title, "more_queued": next.is_some(),
-            "needs": if guard_hit.is_some() { Some("protected".to_string()) } else if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs },
+            "ok": ok, "title": title, "more_queued": next.is_some(), "needs": needs,
         }));
+        let more = next.is_some();
         if let Some(text) = next {
-            let _ = start_turn(app.clone(), &st, id, text);
+            let _ = start_turn(app.clone(), &st, id.clone(), text);
         } else if run_checks {
-            let _ = start_checks(&app, &st, &workspace_id, None, Some(id));
+            let _ = start_checks(&app, &st, &workspace_id, None, Some(id.clone()));
+        }
+        // The task queue: limits, the task's next step, the next task. After the checks started,
+        // so its own checks step waits for that run instead of starting another.
+        if !more {
+            queuerun::turn_ended(&app, &st, &id, &agent_name, ok, user_stopped, needs.as_deref(), limit_text.as_deref());
         }
     });
-    Ok(())
+    Ok(true)
 }
 
 // ---------- checks ----------
@@ -4142,6 +4181,10 @@ pub fn run() {
         }
     // Workspaces whose history just arrived get named after their first prompt.
     let _ = store.backfill_titles();
+    // The task queue as it was. Turns that ran when nekotrail closed go back in line.
+    let mut task_queue = queue::Queue::from_json(store.setting(queue::SETTING).ok().flatten().as_deref());
+    task_queue.after_restart();
+    let _ = store.set_setting(queue::SETTING, &task_queue.to_json());
 
     // Network and repo calls run beside the window instead of before it (`gh api user` alone is ~0.5s, more offline).
     let branch_prefix: Arc<OnceLock<String>> = Default::default();
@@ -4164,10 +4207,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")) })
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Mutex::new(task_queue) })
         .setup(move |app| {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
+            queuerun::start_loop(app.handle().clone());
             remote::serve(app.handle().clone(), data);
             cli::refresh_script();
             use tauri_plugin_deep_link::DeepLinkExt;
@@ -4201,7 +4245,9 @@ pub fn run() {
             github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
             remote_take, link_confirm, cli_install, cli_status,
             checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output,
-            stage_status, stage_diff, stage_apply, stage_everything, head_commit, commit_staged, undo_commit, draft_commit_message, split_plan, split_commit
+            stage_status, stage_diff, stage_apply, stage_everything, head_commit, commit_staged, undo_commit, draft_commit_message, split_plan, split_commit,
+            queuerun::queue_view, queuerun::queue_add, queuerun::queue_remove, queuerun::queue_move, queuerun::queue_retry, queuerun::queue_start_now,
+            queuerun::queue_set_paused, queuerun::queue_set_limits, queuerun::queue_clear_finished, queuerun::queue_summary, queuerun::queue_summary_seen
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");
@@ -4372,7 +4418,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
@@ -4414,7 +4460,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
@@ -4490,7 +4536,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
         let repo = |id: &str, remote: Option<&str>| Repo {
             id: id.into(), name: id.into(), root_path: dir.path().join(id).to_string_lossy().into(), default_branch: "main".into(),
@@ -4541,7 +4587,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
         let root = dir.path().join("app");
         std::fs::create_dir_all(&root).unwrap();
@@ -4573,7 +4619,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
         let repo = Repo {
             id: "r1".into(), name: "app".into(), root_path: dir.path().join("app").to_string_lossy().into(), default_branch: "main".into(),

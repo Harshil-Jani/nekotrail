@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
 import { api, displayName, isHistory, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
@@ -45,6 +45,10 @@ type Props = {
   onRename: (id: string) => void;
   onArchive: (id: string) => void;
   onBoard: () => void;
+  /** The task queue at a glance, for its row. */
+  queue: { running: number; next: number; needs: number; paused: boolean };
+  queueOpen: boolean;
+  onQueue: () => void;
   ram: { total_mb: number; top: { name: string; mb: number }[] } | null;
   canBack: boolean;
   canForward: boolean;
@@ -62,6 +66,13 @@ type Props = {
 };
 
 const DRAG = "application/x-nekotrail-workspace";
+
+/** The Queue row's second line: "2 running, 5 up next", "Paused", or what to do with it. */
+function queueLine(q: { running: number; next: number; paused: boolean }) {
+  const parts = [q.running && `${q.running} running`, q.next && `${q.next} up next`].filter(Boolean).join(", ");
+  if (q.paused) return parts ? `Paused · ${parts}` : "Paused";
+  return parts || "Line up tasks for later";
+}
 
 /** The workspace's PR at a glance: branch only, draft, open, merged or closed. */
 function PrIcon({ state }: { state?: string }) {
@@ -378,6 +389,19 @@ export function Sidebar(p: Props) {
           requests={p.reviewRequests.filter((r) => !filter.length || filter.includes(r.repo_id))}
           workspaces={p.workspaces} repos={p.repos} busy={p.reviewBusy} onReview={p.onReview} onOpen={p.onSelect}
         />
+        {p.repos.length > 0 && (
+          <section className="repo queue-entry" aria-label="Queue">
+            <button role="option" aria-selected={p.queueOpen} tabIndex={-1} className={`ws two smart${p.queueOpen ? " selected" : ""}`} onClick={p.onQueue}
+              title="Tasks lined up to run while you're away">
+              <span className="ws-mark">{p.queue.running > 0 ? <span className="spinner" aria-label="Running" /> : <ListOrdered size={15} className="muted" />}</span>
+              <span className="ws-text">
+                <span className="ws-name">Queue</span>
+                <span className="ws-sub-line"><span className="ws-star">{queueLine(p.queue)}</span></span>
+              </span>
+              {p.queue.needs > 0 && <span className="queue-badge num" aria-label={`${p.queue.needs} need you`}>{p.queue.needs}</span>}
+            </button>
+          </section>
+        )}
         {p.groupBy === "repo" && p.repos.length > 0 && (() => {
           const live = p.workspaces.filter((w) => w.state === "active" && inFilter(w) && match(w));
           const pinned = live.filter((w) => w.pinned);
