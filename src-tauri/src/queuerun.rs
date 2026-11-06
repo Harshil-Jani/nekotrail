@@ -3,12 +3,15 @@
 //! autopilot), and starts the next task. A tick every 15 seconds starts whatever the rules allow,
 //! so a limit's reset time is noticed without anything else happening.
 
-use crate::queue::{self, After, NewTask, Queue, State, TurnEnd};
+use crate::budget::{self, Budgets, Scope, Spent, Stop, Today};
+use crate::queue::{self, After, Halt, NewTask, Queue, State, TurnEnd};
+use crate::runaway::{self, Snap};
 use crate::store::{new_id, Session, Workspace};
 use crate::{e, AppState, Res};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -46,11 +49,86 @@ fn asking(st: &AppState) -> HashSet<String> {
         .collect()
 }
 
+// ---------- spend caps ----------
+
+/// The caps and what was spent, read from the store once per look.
+pub struct Caps {
+    pub budgets: Budgets,
+    pub today: Today,
+    /// Workspace id -> what its agents spent there (the per-task caps).
+    tasks: HashMap<String, Spent>,
+    names: HashMap<String, String>,
+}
+
+impl Caps {
+    /// `workspaces`: the ones whose spend the per-task caps need.
+    pub fn load(st: &AppState, workspaces: &[String]) -> Caps {
+        let db = st.db();
+        let budgets = Budgets::from_json(db.setting(budget::SETTING).ok().flatten().as_deref());
+        let on = budgets.any();
+        let today = if on { db.spend_since(&crate::usage::local_midnight(chrono::Local::now().fixed_offset())).unwrap_or_default() } else { Today::default() };
+        let tasks = if on { workspaces.iter().filter_map(|w| db.workspace_spend(w).ok().map(|s| (w.clone(), s))).collect() } else { HashMap::new() };
+        let names = db.repos().map(|rs| rs.into_iter().map(|r| (r.id, r.name)).collect()).unwrap_or_default();
+        Caps { budgets, today, tasks, names }
+    }
+
+    /// The cap that holds a queued task back. Only a task that continues in its workspace has
+    /// spent anything there.
+    pub fn stop(&self, t: &queue::Task) -> Option<Stop> {
+        let task = t.workspace_id.as_ref().filter(|_| t.resume).map(|w| self.tasks.get(w).cloned().unwrap_or_default());
+        self.budgets.check(&self.today, &t.repo_id, task.as_ref())
+    }
+
+    /// The cap that stops another unattended turn in this workspace (autopilot).
+    pub fn stop_workspace(&self, ws: &Workspace) -> Option<Stop> {
+        let task = self.tasks.get(&ws.id).cloned().unwrap_or_default();
+        self.budgets.check(&self.today, &ws.repo_id, Some(&task))
+    }
+
+    pub fn text(&self, s: &Stop) -> String {
+        s.text(s.repo_id.as_ref().and_then(|r| self.names.get(r)).map(String::as_str))
+    }
+}
+
+/// Queued tasks that would continue in their workspace (their spend counts toward a task cap).
+fn resuming(st: &AppState) -> Vec<String> {
+    st.queue.lock().unwrap().tasks.iter()
+        .filter(|t| t.state == State::Queued && t.resume)
+        .filter_map(|t| t.workspace_id.clone())
+        .collect()
+}
+
+/// Caps already announced, so each one is said once (per day for daily caps).
+static SAID: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Say a cap once, when it first holds something back: a toast and a notification.
+fn announce(app: &AppHandle, key: String, text: &str) {
+    if SAID.lock().unwrap().insert(key) {
+        let _ = app.emit("budget", json!({"text": text}));
+    }
+}
+
+fn day_key(s: &Stop) -> String {
+    format!("{}|{}", chrono::Local::now().format("%Y-%m-%d"), s.repo_id.as_deref().unwrap_or("*"))
+}
+
 /// Start what the rules allow now.
 pub fn tick(app: &AppHandle) {
     let st = app.state::<AppState>();
     let asking = asking(&st);
-    let starts = update_in(&st, |q| q.claim(&asking, now()));
+    let caps = Caps::load(&st, &resuming(&st));
+    let gate = |t: &queue::Task| caps.stop(t).map(|s| caps.text(&s));
+    let starts = update_in(&st, |q| q.claim_with(&asking, now(), &gate));
+    if caps.budgets.any() {
+        let held: Vec<(String, Stop)> = st.queue.lock().unwrap().tasks.iter()
+            .filter(|t| t.state == State::Queued)
+            .filter_map(|t| caps.stop(t).map(|s| (t.id.clone(), s)))
+            .collect();
+        for (id, s) in held {
+            let key = if s.scope == Scope::Day { day_key(&s) } else { format!("task|{id}") };
+            announce(app, key, &caps.text(&s));
+        }
+    }
     if starts.is_empty() {
         return;
     }
@@ -177,7 +255,7 @@ fn run_setup(app: &AppHandle, st: &AppState, id: &str, ws: &Workspace, session_i
 /// A turn of any chat ended (called from `start_turn`). Usage limits count from every chat, so
 /// the queue never starts a task on an agent that just said it is out.
 #[allow(clippy::too_many_arguments)]
-pub fn turn_ended(app: &AppHandle, st: &AppState, session_id: &str, agent: &str, ok: bool, stopped: bool, needs: Option<&str>, limit_text: Option<&str>) {
+pub fn turn_ended(app: &AppHandle, st: &AppState, session_id: &str, agent: &str, ok: bool, stopped: bool, needs: Option<&str>, limit_text: Option<&str>, halt: Option<Halt>) {
     let mine = {
         let q = st.queue.lock().unwrap();
         needs == Some("limit") || q.limits.contains_key(agent) || q.tasks.iter().any(|t| t.session_id.as_deref() == Some(session_id))
@@ -186,7 +264,7 @@ pub fn turn_ended(app: &AppHandle, st: &AppState, session_id: &str, agent: &str,
         return;
     }
     let reset = limit_text.and_then(|t| queue::parse_reset(t, chrono::Local::now().fixed_offset()));
-    let end = TurnEnd { session_id, agent, ok, stopped, needs, limit_text, reset };
+    let end = TurnEnd { session_id, agent, ok, stopped, needs, limit_text, reset, halt };
     if let After::Steps(id) = update(app, |q| q.turn_ended(&end, now())) {
         let app = app.clone();
         std::thread::spawn(move || run_steps(&app, &id));
@@ -194,13 +272,79 @@ pub fn turn_ended(app: &AppHandle, st: &AppState, session_id: &str, agent: &str,
     poke(app);
 }
 
-/// Autopilot stopped following a workspace's PR: "ready", "gave_up", "off" or "stopped".
-pub fn autopilot_ended(app: &AppHandle, workspace_id: &str, how: &str) {
+/// Autopilot stopped following a workspace's PR: "ready", "gave_up", "off" or "stopped"; or
+/// nekotrail stopped it ("budget", "loop") with a halt that says why.
+pub fn autopilot_ended(app: &AppHandle, workspace_id: &str, how: &str, halt: Option<Halt>) {
     let st = app.state::<AppState>();
     let ours = st.queue.lock().unwrap().tasks.iter().any(|t| t.workspace_id.as_deref() == Some(workspace_id) && t.state == State::Then);
     if ours {
-        update(app, |q| q.autopilot_ended(workspace_id, how, now()));
+        update(app, |q| q.autopilot_ended_with(workspace_id, how, halt, now()));
     }
+}
+
+/// Autopilot is about to start a turn in `ws`: the cap that stops it, if one is reached, said
+/// in plain words.
+pub fn autopilot_cap(st: &AppState, ws: &Workspace) -> Option<String> {
+    let caps = Caps::load(st, std::slice::from_ref(&ws.id));
+    caps.stop_workspace(ws).map(|s| caps.text(&s))
+}
+
+// ---------- runaway agents ----------
+
+/// Is anyone there for this turn? Not when it is a queue task's turn or autopilot's.
+fn unattended(st: &AppState, session_id: &str, workspace_id: &str) -> bool {
+    let task = st.queue.lock().unwrap().tasks.iter().any(|t| t.session_id.as_deref() == Some(session_id) && t.state == State::Running);
+    task || st.db().setting(&crate::autopilot_key(workspace_id)).ok().flatten().is_some()
+}
+
+/// The files a turn changed: its start checkpoint against the worktree now.
+fn turn_snap(dir: &Path, checkpoint: &str, ok: bool) -> Option<Snap> {
+    let start = format!("{checkpoint}^{{tree}}");
+    let end = crate::git::worktree_tree(dir).ok()?;
+    let (files, capped) = crate::git::changed_blobs(dir, &start, &end, runaway::SNAP_FILES).ok()?;
+    let files = files.into_iter().map(|(path, before, after)| runaway::FileChange { path, before, after }).collect();
+    Some(Snap { ok, files, capped, label: String::new() })
+}
+
+/// "Turn ending 3:10 AM", how the evidence names a turn.
+fn turn_label(at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(at)
+        .map(|t| format!("Turn ending {}", t.with_timezone(&chrono::Local).format("%-I:%M %p")))
+        .unwrap_or_else(|_| "A turn".into())
+}
+
+/// After a turn nobody was there for: keep what files it changed, and look for an agent going in
+/// circles. Found: the chat says what was seen, autopilot stops, and the returned halt makes a
+/// queue task need you. Never stops a turn; this runs after it ended.
+#[allow(clippy::too_many_arguments)]
+pub fn watch_turn(app: &AppHandle, st: &AppState, session_id: &str, workspace_id: &str, dir: &str, checkpoint: Option<&str>, turn_id: Option<i64>, ok: bool) -> Option<Halt> {
+    if !unattended(st, session_id, workspace_id) {
+        return None;
+    }
+    if let (Some(cp), Some(id)) = (checkpoint, turn_id)
+        && let Some(snap) = turn_snap(Path::new(dir), cp, ok) {
+            let _ = st.db().set_turn_snap(id, &snap);
+        }
+    let cfg = Budgets::from_json(st.db().setting(budget::SETTING).ok().flatten().as_deref()).runaway;
+    if !cfg.on {
+        return None;
+    }
+    let (events, _) = st.db().events_tail(session_id, 4000).unwrap_or_default();
+    let snaps: Vec<Snap> = st.db().turn_snaps(workspace_id, runaway::SNAP_TURNS as i64).unwrap_or_default()
+        .into_iter().map(|(mut s, at)| { s.label = turn_label(&at); s }).collect();
+    let found = runaway::check(&events, &snaps, &cfg)?;
+    let note = runaway::note(&found);
+    let ev = json!({"kind": "stop", "reason": "loop", "text": note, "evidence": found.evidence});
+    let _ = st.db().append_event(session_id, &ev);
+    crate::emit_event(app, session_id, &ev);
+    let halt = Halt { note, evidence: found.evidence };
+    let key = crate::autopilot_key(workspace_id);
+    if st.db().setting(&key).ok().flatten().is_some() {
+        let _ = st.db().delete_setting(&key);
+        let _ = app.emit("autopilot", json!({"workspace_id": workspace_id, "state": "loop", "detail": halt.note}));
+        autopilot_ended(app, workspace_id, "loop", Some(halt.clone()));
+    }
+    Some(halt)
 }
 
 /// After a good turn: the checks, a draft PR, autopilot, in that order. The first that needs
@@ -296,12 +440,16 @@ pub fn add(app: &AppHandle, task: NewTask) -> Res<queue::Task> {
 /// Everything the Queue view shows.
 pub fn view(st: &AppState) -> Value {
     let asking = asking(st);
+    let caps = Caps::load(st, &resuming(st));
+    let gate = |t: &queue::Task| caps.stop(t).map(|s| caps.text(&s));
+    // The cap on every repo, for the banner. Repo and task caps show on their tasks.
+    let cap = caps.budgets.day_stop(&caps.today, "").map(|s| caps.text(&s));
     let q = st.queue.lock().unwrap();
     let now = now();
     json!({
         "tasks": q.tasks, "paused": q.paused, "max_total": q.max_total, "max_per_repo": q.max_per_repo,
         "limits": q.limits.iter().filter(|(_, l)| l.until > now).map(|(a, l)| (a.clone(), json!({"until": l.until, "reported": l.reported, "text": l.text}))).collect::<serde_json::Map<String, Value>>(),
-        "waits": q.waits(&asking, now), "asking": asking, "now": now,
+        "waits": q.waits_with(&asking, now, &gate), "asking": asking, "now": now, "cap": cap,
     })
 }
 
@@ -381,4 +529,33 @@ pub async fn queue_summary(app: AppHandle) -> Res<Value> {
 pub async fn queue_summary_seen(app: AppHandle) -> Res<()> {
     update_in(&app.state::<AppState>(), |q| q.summary_seen = now());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Three turns on a real worktree: change a file, put it back, change it again. The snapshots
+    /// nekotrail keeps after each turn are what the back-and-forth sign reads.
+    #[test]
+    fn snapshots_of_real_turns_catch_a_file_going_back_and_forth() {
+        let repo = crate::git::tests::init_repo();
+        let r = repo.path();
+        let prefix = crate::git::checkpoint_prefix("ws-loop");
+        let mut snaps = vec![];
+        for (i, text) in ["two\n", "one\n", "two\n"].iter().enumerate() {
+            let cp = crate::git::checkpoint(r, &prefix).unwrap();
+            std::fs::write(r.join("a.txt"), text).unwrap();
+            let mut s = turn_snap(r, &cp, true).unwrap();
+            s.label = format!("Turn {}", i + 1);
+            snaps.push(s);
+        }
+        let f = runaway::back_and_forth(&snaps, 2).unwrap();
+        assert_eq!(f.text, "a.txt went back to an earlier version 2 times");
+        assert_eq!(f.evidence[1], "Turn 2: put it back to an earlier version");
+        // A turn that changed nothing has an empty snapshot.
+        let cp = crate::git::checkpoint(r, &prefix).unwrap();
+        assert!(turn_snap(r, &cp, true).unwrap().files.is_empty());
+        crate::git::prune_checkpoints(r, &prefix, 0).unwrap();
+    }
 }

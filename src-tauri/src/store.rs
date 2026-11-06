@@ -126,6 +126,22 @@ fn migrate(conn: &Connection) -> Result<()> {
              INSERT INTO settings (key, value) VALUES ('migrated_turn_costs', '1');",
         )?;
     }
+    // Every finished turn, not just the ones with a cost: tokens, model, time and repo, for the
+    // Usage view and spend caps. `priced` is 0 for agents that report no cost (their `cost` is 0
+    // and never counts as a price). `snap` holds the files a watched turn changed (runaway.rs).
+    add("turn_costs", "repo_id", "TEXT NOT NULL DEFAULT ''")?;
+    add("turn_costs", "model", "TEXT NOT NULL DEFAULT ''")?;
+    add("turn_costs", "priced", "INTEGER NOT NULL DEFAULT 1")?;
+    add("turn_costs", "input_tokens", "INTEGER")?;
+    add("turn_costs", "cached_tokens", "INTEGER")?;
+    add("turn_costs", "output_tokens", "INTEGER")?;
+    add("turn_costs", "duration_ms", "INTEGER NOT NULL DEFAULT 0")?;
+    add("turn_costs", "snap", "TEXT")?;
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS turn_costs_by_ws ON turn_costs(workspace_id, id);")?;
+    let done: i64 = conn.query_row("SELECT COUNT(*) FROM settings WHERE key='migrated_turns_v2'", [], |r| r.get(0))?;
+    if done == 0 {
+        rebuild_turns(conn)?;
+    }
     let done: i64 = conn.query_row("SELECT COUNT(*) FROM settings WHERE key='migrated_title_source'", [], |r| r.get(0))?;
     if done == 0 {
         migrate_title_source(conn)?;
@@ -143,6 +159,58 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Global search: new messages are indexed as they arrive, older ones in the background.
     crate::search::ensure(conn)?;
     Ok(())
+}
+
+/// Once, when turns gain tokens, model and time: write the table again from the chats' own
+/// end-of-turn events, the same source the first fill and every live turn used, so the old rows
+/// gain what their events already said. Turns from imported history are left out, as before.
+/// One transaction: if anything fails, the old rows stay.
+/// A finished turn in chat history: session, workspace, repo, agent, chat model, event, time.
+type DoneRow = (String, String, String, String, Option<String>, String, String);
+
+fn rebuild_turns(conn: &Connection) -> Result<()> {
+    let rows: Vec<DoneRow> = {
+        let mut st = conn.prepare(
+            "SELECT m.session_id, s.workspace_id, COALESCE(w.repo_id, ''), s.agent, s.model, m.event, m.created_at
+             FROM messages m JOIN sessions s ON s.id = m.session_id LEFT JOIN workspaces w ON w.id = s.workspace_id
+             WHERE json_extract(m.event, '$.kind') = 'done' AND json_extract(m.event, '$.imported') IS NULL
+               AND (json_extract(m.event, '$.stopped') IS NULL OR json_extract(m.event, '$.cost_usd') IS NOT NULL)
+             ORDER BY m.id",
+        )?;
+        st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?.collect::<rusqlite::Result<_>>()?
+    };
+    conn.execute_batch("BEGIN;")?;
+    let go = || -> Result<()> {
+        // A turn you stopped counts only when it reported a cost (see `record_turn`).
+        conn.execute("DELETE FROM turn_costs", [])?;
+        for (sid, ws, repo, agent, model, event, at) in rows {
+            let Ok(ev) = serde_json::from_str::<serde_json::Value>(&event) else { continue };
+            let f = crate::usage::facts(&agent, &ev, model.as_deref(), 0);
+            insert_turn(conn, &sid, &ws, &repo, &agent, &f, &at)?;
+        }
+        conn.execute("INSERT INTO settings (key, value) VALUES ('migrated_turns_v2', '1')", [])?;
+        Ok(())
+    };
+    match go() {
+        Ok(()) => conn.execute_batch("COMMIT;")?,
+        Err(err) => {
+            conn.execute_batch("ROLLBACK;")?;
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+fn insert_turn(conn: &Connection, session_id: &str, ws: &str, repo: &str, agent: &str, f: &crate::usage::TurnFacts, at: &str) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO turn_costs (session_id, workspace_id, repo_id, agent, model, cost, priced, input_tokens, cached_tokens, output_tokens, duration_ms, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            session_id, ws, repo, agent, f.model, f.cost.unwrap_or(0.0), f.cost.is_some(),
+            f.input.map(|v| v as i64), f.cached.map(|v| v as i64), f.output.map(|v| v as i64), f.duration_ms as i64, at
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 /// Once, when `title_source` arrives. Titles already there stay as they are: one that matches what
@@ -744,14 +812,95 @@ impl Store {
         Ok(())
     }
 
-    /// Record what a finished turn cost (from the CLI's own report).
-    pub fn record_cost(&self, session_id: &str, cost: f64) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO turn_costs (session_id, workspace_id, agent, cost, created_at)
-             SELECT id, workspace_id, agent, ?2, ?3 FROM sessions WHERE id=?1",
-            params![session_id, cost, now()],
-        )?;
+    /// Record a finished turn from the CLI's own report. A turn you stopped is recorded only when
+    /// it reported a cost. Returns the turn's row id (for its file snapshot), None when skipped.
+    pub fn record_turn(&self, session_id: &str, done: &serde_json::Value, measured_ms: u64) -> Result<Option<i64>> {
+        if done["stopped"] == true && done["cost_usd"].as_f64().is_none() {
+            return Ok(None);
+        }
+        let s = self.session(session_id)?;
+        let repo = self.workspace(&s.workspace_id).map(|w| w.repo_id).unwrap_or_default();
+        let f = crate::usage::facts(&s.agent, done, s.model.as_deref(), measured_ms);
+        Ok(Some(insert_turn(&self.conn, session_id, &s.workspace_id, &repo, &s.agent, &f, &now())?))
+    }
+
+    /// The files a watched turn changed (runaway.rs).
+    pub fn set_turn_snap(&self, turn_id: i64, snap: &crate::runaway::Snap) -> Result<()> {
+        self.conn.execute("UPDATE turn_costs SET snap=?2 WHERE id=?1", params![turn_id, serde_json::to_string(snap)?])?;
         Ok(())
+    }
+
+    /// The last `limit` turns of a workspace that have a file snapshot, oldest first, each with
+    /// when it ended.
+    pub fn turn_snaps(&self, workspace_id: &str, limit: i64) -> Result<Vec<(crate::runaway::Snap, String)>> {
+        let mut st = self.conn.prepare(
+            "SELECT snap, created_at FROM (SELECT id, snap, created_at FROM turn_costs WHERE workspace_id=?1 AND snap IS NOT NULL ORDER BY id DESC LIMIT ?2) ORDER BY id",
+        )?;
+        let rows = st
+            .query_map(params![workspace_id, limit], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .filter_map(|r| r.ok())
+            .filter_map(|(s, at)| serde_json::from_str(&s).ok().map(|s| (s, at)))
+            .collect();
+        Ok(rows)
+    }
+
+    /// Every turn since `since` (RFC 3339 UTC), for the Usage view.
+    pub fn usage_rows(&self, since: &str) -> Result<Vec<crate::usage::Row>> {
+        let mut st = self.conn.prepare(
+            "SELECT created_at, repo_id, agent, model, CASE WHEN priced = 1 THEN cost END, input_tokens, cached_tokens, output_tokens, duration_ms
+             FROM turn_costs WHERE created_at >= ?1 ORDER BY id",
+        )?;
+        let rows = st.query_map([since], |r| {
+            let n = |i: usize| r.get::<_, Option<i64>>(i).map(|v| v.map(|x| x.max(0) as u64));
+            Ok(crate::usage::Row {
+                at: r.get(0)?,
+                repo_id: r.get(1)?,
+                agent: r.get(2)?,
+                facts: crate::usage::TurnFacts {
+                    model: r.get(3)?,
+                    cost: r.get(4)?,
+                    input: n(5)?,
+                    cached: n(6)?,
+                    output: n(7)?,
+                    duration_ms: n(8)?.unwrap_or(0),
+                },
+            })
+        })?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    /// What was spent since `since` (RFC 3339 UTC), overall and per repo, for the daily caps.
+    pub fn spend_since(&self, since: &str) -> Result<crate::budget::Today> {
+        let mut st = self.conn.prepare(
+            "SELECT repo_id, SUM(CASE WHEN priced = 1 THEN cost ELSE 0 END), COUNT(*), SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))
+             FROM turn_costs WHERE created_at >= ?1 GROUP BY repo_id",
+        )?;
+        let mut today = crate::budget::Today::default();
+        let rows = st.query_map([since], |r| {
+            Ok((r.get::<_, String>(0)?, crate::budget::Spent {
+                usd: r.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                turns: r.get::<_, i64>(2)?.max(0) as u64,
+                tokens: r.get::<_, Option<i64>>(3)?.unwrap_or(0).max(0) as u64,
+            }))
+        })?;
+        for row in rows {
+            let (repo, s) = row?;
+            today.all.usd += s.usd;
+            today.all.turns += s.turns;
+            today.all.tokens += s.tokens;
+            today.repos.insert(repo, s);
+        }
+        Ok(today)
+    }
+
+    /// Everything a workspace's agents spent there (a task, for the per-task caps).
+    pub fn workspace_spend(&self, workspace_id: &str) -> Result<crate::budget::Spent> {
+        Ok(self.conn.query_row(
+            "SELECT COALESCE(SUM(CASE WHEN priced = 1 THEN cost ELSE 0 END), 0), COUNT(*), COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0)
+             FROM turn_costs WHERE workspace_id=?1",
+            [workspace_id],
+            |r| Ok(crate::budget::Spent { usd: r.get(0)?, turns: r.get::<_, i64>(1)?.max(0) as u64, tokens: r.get::<_, i64>(2)?.max(0) as u64 }),
+        )?)
     }
 
     /// Total agent cost (USD) per workspace.
@@ -1119,8 +1268,8 @@ mod tests {
             effort: Some("high".into()),
         };
         s.insert_session(&sess).unwrap();
-        s.record_cost(&sess.id, 0.5).unwrap();
-        s.record_cost(&sess.id, 0.25).unwrap();
+        s.record_turn(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.5}), 0).unwrap();
+        s.record_turn(&sess.id, &serde_json::json!({"kind": "done", "cost_usd": 0.25}), 0).unwrap();
         // Imported history is never recorded as spend.
         s.append_events(&sess.id, &[serde_json::json!({"kind": "done", "cost_usd": 99.0, "imported": true})], &now()).unwrap();
         assert_eq!(s.workspace_costs().unwrap(), vec![(w.id.clone(), 0.75)]);
@@ -1220,5 +1369,82 @@ mod tests {
         assert_eq!(get(&untitled).0, "Add rate limiting");
         assert_eq!(get(&typed).0, "Gateway work");
         assert_eq!(s.prompt_title(&empty).unwrap(), "");
+    }
+
+    fn turn_setup(s: &Store, agent: &str, model: Option<&str>) -> (Repo, Workspace, Session) {
+        let mut r = sample_repo();
+        r.root_path = format!("/tmp/{}", new_id());
+        s.insert_repo(&r).unwrap();
+        let w = Workspace {
+            id: new_id(), repo_id: r.id.clone(), name: format!("w-{}", new_id()), branch: "b".into(), path: format!("/tmp/{}", new_id()),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(), imported_from: None,
+            created_at: now(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
+            parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
+        };
+        s.insert_workspace(&w).unwrap();
+        let sess = Session {
+            id: new_id(), workspace_id: w.id.clone(), agent: agent.into(), agent_session_id: None, title: "t".into(),
+            model: model.map(String::from), permission_mode: "acceptEdits".into(), effort: None,
+        };
+        s.insert_session(&sess).unwrap();
+        (r, w, sess)
+    }
+
+    #[test]
+    fn every_turn_is_recorded_with_tokens_model_and_spend() {
+        let s = Store::in_memory().unwrap();
+        let (r1, w1, c) = turn_setup(&s, "claude", None);
+        let (r2, w2, x) = turn_setup(&s, "codex", Some("gpt-5-codex"));
+        let id = s.record_turn(&c.id, &serde_json::json!({"kind": "done", "cost_usd": 1.5, "duration_ms": 4000, "model": "claude-opus-4-5",
+            "usage": {"input_tokens": 10, "cache_creation_input_tokens": 90, "cache_read_input_tokens": 5000, "output_tokens": 50}}), 0).unwrap().unwrap();
+        s.record_turn(&x.id, &serde_json::json!({"kind": "done", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 20}}), 7000).unwrap();
+        // A turn you stopped with no cost isn't a finished turn.
+        assert_eq!(s.record_turn(&x.id, &serde_json::json!({"kind": "done", "stopped": true, "is_error": true}), 10).unwrap(), None);
+
+        let today = s.spend_since("2000-01-01T00:00:00+00:00").unwrap();
+        assert_eq!(today.all, crate::budget::Spent { usd: 1.5, turns: 2, tokens: 100 + 50 + 600 + 20 });
+        assert_eq!(today.repos[&r2.id], crate::budget::Spent { usd: 0.0, turns: 1, tokens: 620 });
+        assert_eq!(s.workspace_spend(&w1.id).unwrap(), crate::budget::Spent { usd: 1.5, turns: 1, tokens: 150 });
+        assert_eq!(s.workspace_spend("nothing").unwrap(), crate::budget::Spent::default());
+        assert_eq!(s.spend_since("2999-01-01T00:00:00+00:00").unwrap().all.turns, 0);
+
+        let rows = s.usage_rows("2000-01-01T00:00:00+00:00").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!((rows[0].repo_id.as_str(), rows[0].facts.model.as_str(), rows[0].facts.cost, rows[0].facts.cached), (r1.id.as_str(), "claude-opus-4-5", Some(1.5), Some(5000)));
+        // Codex reports no cost: unknown, not $0. Its model comes from the chat; its time from nekotrail's clock.
+        assert_eq!((rows[1].facts.cost, rows[1].facts.input, rows[1].facts.model.as_str(), rows[1].facts.duration_ms), (None, Some(600), "gpt-5-codex", 7000));
+        // The Board's totals still read the same table.
+        assert!(s.workspace_costs().unwrap().contains(&(w2.id.clone(), 0.0)));
+
+        let snap = crate::runaway::Snap { ok: true, files: vec![crate::runaway::FileChange { path: "a.rs".into(), before: "1".into(), after: "2".into() }], capped: false, label: String::new() };
+        s.set_turn_snap(id, &snap).unwrap();
+        let snaps = s.turn_snaps(&w1.id, 8).unwrap();
+        assert_eq!(snaps.len(), 1);
+        assert_eq!(snaps[0].0.files, snap.files);
+        assert!(s.turn_snaps(&w2.id, 8).unwrap().is_empty(), "turns nobody watched have no snapshot");
+    }
+
+    #[test]
+    fn turns_are_rebuilt_once_from_chat_history() {
+        let s = Store::in_memory().unwrap();
+        let (r, w, c) = turn_setup(&s, "claude", Some("sonnet"));
+        let ev = |v: serde_json::Value| s.append_event(&c.id, &v).unwrap();
+        ev(serde_json::json!({"kind": "done", "cost_usd": 0.25, "duration_ms": 100}));
+        ev(serde_json::json!({"kind": "done", "is_error": false, "duration_ms": 50}));
+        ev(serde_json::json!({"kind": "done", "stopped": true, "is_error": true}));
+        ev(serde_json::json!({"kind": "done", "cost_usd": 9.0, "imported": true}));
+        // As an older version left it: only the priced turn, with no repo, tokens or time.
+        s.conn.execute_batch("DELETE FROM turn_costs; DELETE FROM settings WHERE key='migrated_turns_v2';").unwrap();
+        s.conn.execute("INSERT INTO turn_costs (session_id, workspace_id, agent, cost, created_at) VALUES (?1, ?2, 'claude', 0.25, ?3)", params![c.id, w.id, now()]).unwrap();
+        migrate(&s.conn).unwrap();
+        let rows = s.usage_rows("2000-01-01T00:00:00+00:00").unwrap();
+        assert_eq!(rows.len(), 2, "the priced turn and the unpriced one; not the stopped or imported ones");
+        assert!(rows.iter().all(|x| x.repo_id == r.id && x.facts.model == "sonnet"));
+        assert_eq!((rows[0].facts.cost, rows[0].facts.duration_ms, rows[1].facts.cost), (Some(0.25), 100, None));
+        assert_eq!(s.workspace_costs().unwrap(), vec![(w.id.clone(), 0.25)]);
+        // Once: a second run leaves the table as it is.
+        s.conn.execute("DELETE FROM turn_costs WHERE priced = 0", []).unwrap();
+        migrate(&s.conn).unwrap();
+        assert_eq!(s.usage_rows("2000-01-01T00:00:00+00:00").unwrap().len(), 1);
     }
 }

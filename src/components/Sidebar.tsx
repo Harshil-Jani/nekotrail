@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, FolderOpen, GitFork, Kanban, Layers, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, Gauge, FolderInput, FolderOpen, GitFork, Kanban, Layers, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
 import { api, displayName, isHistory, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
@@ -56,6 +56,8 @@ type Props = {
   queue: { running: number; next: number; needs: number; paused: boolean };
   queueOpen: boolean;
   onQueue: () => void;
+  usageOpen: boolean;
+  onUsage: () => void;
   ram: { total_mb: number; top: { name: string; mb: number }[] } | null;
   canBack: boolean;
   canForward: boolean;
@@ -416,6 +418,14 @@ export function Sidebar(p: Props) {
               </span>
               {p.queue.needs > 0 && <span className="queue-badge num" aria-label={`${p.queue.needs} need you`}>{p.queue.needs}</span>}
             </button>
+            <button role="option" aria-selected={p.usageOpen} tabIndex={-1} className={`ws two smart${p.usageOpen ? " selected" : ""}`} onClick={p.onUsage}
+              title="Spend, caps and usage limits">
+              <span className="ws-mark"><Gauge size={15} className="muted" /></span>
+              <span className="ws-text">
+                <span className="ws-name">Usage</span>
+                <span className="ws-sub-line"><span className="ws-star num">{p.usage && p.usage.week > 0 ? `$${p.usage.today.toFixed(2)} today, API-equivalent` : "Spend, caps and limits"}</span></span>
+              </span>
+            </button>
           </section>
         )}
         {p.groupBy === "repo" && p.repos.length > 0 && (() => {
@@ -500,7 +510,7 @@ export function Sidebar(p: Props) {
           {p.me ? <Avatar src={p.me.avatar_url} size={28} label={p.me.login} /> : <Mascot size={28} />}
           <span className="me-text">
             <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to GitHub"}</span>
-            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars{p.usage && p.usage.week > 0 ? ` · $${p.usage.today.toFixed(2)} today` : ""}</span>
+            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
           </span>
         </button>
 

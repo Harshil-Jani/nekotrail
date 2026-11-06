@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, CheckCircle2, Clock, GripVertical, Hand, ListOrdered, Pause, Play, Plus, RotateCw, Trash2, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Gauge, GripVertical, Hand, ListOrdered, Pause, Play, Plus, RotateCw, Trash2, XCircle } from "lucide-react";
 import { api, errText, type Agent, type PermissionMode, type Repo } from "../api";
 import { AGENT_INFO, AGENTS, agentName } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
@@ -18,7 +18,7 @@ const LIMITS = [1, 2, 3, 4, 5, 6, 8];
  * The task queue: line up tasks and nekotrail runs a few at a time while you're away, each in its
  * own new workspace. Running tasks on top, then the line (drag to reorder), then what finished.
  */
-export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
+export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: {
   repos: Repo[];
   /** The repo the Add form starts on: the one you were looking at. */
   initialRepo?: string;
@@ -26,6 +26,8 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
   addNonce: number;
   onOpen: (workspaceId: string) => void;
   onSay: (text: string, bad?: boolean) => void;
+  /** Open the Usage view, where the spend caps are. */
+  onUsage: () => void;
 }) {
   const [view, setView] = useState<QueueView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +88,8 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
       : kind === "next"
         ? t.state === "waiting" ? stateText(t, false) : `${waitText(view.waits[t.id], view)}${t.resume ? " · continues in its workspace" : ""}`
         : t.note || stateText(t, false);
-    const tone = t.state === "failed" ? "bad" : t.state === "needs_you" || asking || t.state === "waiting" ? "wait" : t.state === "done" ? "good" : "";
+    const capped = kind === "next" && view.waits[t.id]?.kind === "budget";
+    const tone = t.state === "failed" ? "bad" : t.state === "needs_you" || asking || t.state === "waiting" || capped ? "wait" : t.state === "done" ? "good" : "";
     const dropping = drag && drag.over === t.id && drag.id !== t.id;
     return (
       <div
@@ -133,6 +136,11 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
           <span className="tq-title">{taskTitle(t.prompt)}</span>
           <span className="tq-meta">{meta}</span>
           <span className={`tq-status ${tone}`}>{status}</span>
+          {kind === "finished" && t.evidence && t.evidence.length > 0 && (
+            <ul className="tq-evidence" aria-label="What nekotrail saw">
+              {t.evidence.map((line, i) => <li key={i}>{line}</li>)}
+            </ul>
+          )}
         </span>
         <span className="tq-actions">
           {kind === "next" && t.state === "waiting" && <button onClick={() => act(api.queueStartNow(t.id))} title="Start it now. It needs you there to answer it."><Hand size={13} className="wait" />Start</button>}
@@ -155,6 +163,12 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay }: {
           <div className="tq-banner">
             <Pause size={14} aria-hidden /><span>The queue is paused. Running tasks finish; nothing new starts.</span>
             <span className="spacer" /><button onClick={() => act(api.queueSetPaused(false))}><Play size={13} />Resume</button>
+          </div>
+        )}
+        {view.cap && (
+          <div className="tq-banner cap-hit" role="status">
+            <Gauge size={14} aria-hidden /><span>{view.cap} Running turns finish.</span>
+            <span className="spacer" /><button onClick={onUsage}>Change caps</button>
           </div>
         )}
         {limited.map(([agent, l]) => (

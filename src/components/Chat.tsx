@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -83,7 +83,8 @@ type Row =
   | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" }
   | { type: "blocked"; text: string; files: string[] }
   | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[]; workspace_id?: string; repo?: string }
-  | { type: "checks"; results: Extract<ChatEvent, { kind: "checks" }>["results"] };
+  | { type: "checks"; results: Extract<ChatEvent, { kind: "checks" }>["results"] }
+  | { type: "stop"; reason: "budget" | "loop"; text: string; evidence: string[] };
 
 /**
  * Pair each tool call with its result so one row shows both. With `rowOf`, also note for each event
@@ -137,6 +138,9 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
         break;
       case "checks":
         rows.push({ type: "checks", results: ev.results });
+        break;
+      case "stop":
+        rows.push({ type: "stop", reason: ev.reason, text: ev.text, evidence: ev.evidence ?? [] });
         break;
       case "guard_restored": {
         const i = guardIdx.get(ev.checkpoint);
@@ -443,6 +447,22 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       );
     case "guard":
       return <GuardCard r={r} />;
+    case "stop":
+      // nekotrail stopped giving this chat unattended turns: a spend cap, or an agent going in circles.
+      return (
+        <div className={`msg stop-card ${r.reason}`} role="note">
+          <div className="stop-head">
+            {r.reason === "loop" ? <Repeat size={14} aria-hidden /> : <Gauge size={14} aria-hidden />}
+            <span>{r.text}</span>
+          </div>
+          {r.evidence.length > 0 && (
+            <ul className="stop-evidence" aria-label="What nekotrail saw">{r.evidence.map((line, i) => <li key={i}>{line}</li>)}</ul>
+          )}
+          <span className="muted stop-foot">{r.reason === "loop"
+            ? "The queue and autopilot give it no more turns. Look at what it did, then send a message to carry on yourself."
+            : "Raise the cap in Usage to let it carry on, or send a message yourself."}</span>
+        </div>
+      );
     case "checks": {
       // The turn summary for "Run checks after every agent turn".
       const bad = r.results.some((x) => x.status !== "passed");

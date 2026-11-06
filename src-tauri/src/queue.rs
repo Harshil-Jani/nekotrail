@@ -159,6 +159,9 @@ pub struct Task {
     /// What happened, in plain words: why it needs you, why it failed, what it did.
     #[serde(default)]
     pub note: String,
+    /// What was seen when nekotrail stopped it (a runaway agent): one line each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
     /// The part running now: "setup", "checks", "pr" or "autopilot". Empty otherwise.
     #[serde(default)]
     pub step: String,
@@ -249,6 +252,24 @@ pub enum Wait {
     Slots,
     /// `max_per_repo` tasks are running in its repo.
     RepoSlots,
+    /// A spend cap is reached (see `budget.rs`): what it says.
+    Budget { text: String },
+}
+
+/// Can this task start (or continue) on its own now? Some(why) when a spend cap says no. The
+/// runner builds it from the store; tests pass their own.
+pub type Gate<'a> = &'a dyn Fn(&Task) -> Option<String>;
+
+/// No caps.
+pub fn open(_: &Task) -> Option<String> {
+    None
+}
+
+/// nekotrail stopped a task on purpose (a runaway agent, a cap): what to tell you.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Halt {
+    pub note: String,
+    pub evidence: Vec<String>,
 }
 
 /// How a turn of any chat ended, for limits and the queue.
@@ -264,6 +285,8 @@ pub struct TurnEnd<'a> {
     pub limit_text: Option<&'a str>,
     /// The reset time in those words, if any (see `parse_reset`).
     pub reset: Option<i64>,
+    /// nekotrail saw the agent going in circles: the task needs you, whatever the turn said.
+    pub halt: Option<Halt>,
 }
 
 /// What the runner does after `turn_ended`.
@@ -426,6 +449,7 @@ impl Queue {
         t.attempts += 1;
         t.resume = t.workspace_id.is_some();
         t.note.clear();
+        t.evidence.clear();
         t.step.clear();
         t.ended_at = None;
         Ok(())
@@ -448,6 +472,7 @@ impl Queue {
         t.started_at = Some(now);
         t.ended_at = None;
         t.step.clear();
+        t.evidence.clear();
         if agent != t.agent {
             t.note = format!("{} is out of usage, so {} runs it.", agent_name(&t.agent), agent_name(agent));
         } else {
@@ -497,6 +522,11 @@ impl Queue {
     /// The tasks to start now and the agent for each, in queue order, within the limits. Pure:
     /// `claim` marks them as starting.
     pub fn plan(&self, asking: &HashSet<String>, now: i64) -> Vec<(String, String)> {
+        self.plan_with(asking, now, &open)
+    }
+
+    /// `plan`, skipping tasks the spend caps hold back.
+    pub fn plan_with(&self, asking: &HashSet<String>, now: i64, gate: Gate) -> Vec<(String, String)> {
         if self.paused {
             return vec![];
         }
@@ -516,6 +546,9 @@ impl Queue {
             if per_repo.get(&t.repo_id).copied().unwrap_or(0) >= max_repo {
                 continue;
             }
+            if gate(t).is_some() {
+                continue;
+            }
             let Some(agent) = self.pick_agent(t, &in_flight, now) else { continue };
             total += 1;
             *per_repo.entry(t.repo_id.clone()).or_insert(0) += 1;
@@ -527,7 +560,12 @@ impl Queue {
 
     /// Plan and mark what starts, in one step (so two ticks at once can't start a task twice).
     pub fn claim(&mut self, asking: &HashSet<String>, now: i64) -> Vec<(String, String)> {
-        let starts = self.plan(asking, now);
+        self.claim_with(asking, now, &open)
+    }
+
+    /// `claim`, within the spend caps.
+    pub fn claim_with(&mut self, asking: &HashSet<String>, now: i64, gate: Gate) -> Vec<(String, String)> {
+        let starts = self.plan_with(asking, now, gate);
         for (id, agent) in &starts {
             if let Ok(t) = self.get_mut(id) {
                 Self::mark_starting(t, agent, now);
@@ -538,13 +576,20 @@ impl Queue {
 
     /// Why each queued task hasn't started, for the Queue view.
     pub fn waits(&self, asking: &HashSet<String>, now: i64) -> HashMap<String, Wait> {
-        let starting: HashSet<String> = self.plan(asking, now).into_iter().map(|(id, _)| id).collect();
+        self.waits_with(asking, now, &open)
+    }
+
+    /// `waits`, saying when a spend cap holds a task back.
+    pub fn waits_with(&self, asking: &HashSet<String>, now: i64, gate: Gate) -> HashMap<String, Wait> {
+        let starting: HashSet<String> = self.plan_with(asking, now, gate).into_iter().map(|(id, _)| id).collect();
         let in_flight = self.in_flight();
         let total = self.busy(asking).count() as u32;
         let mut out = HashMap::new();
         for t in self.tasks.iter().filter(|t| t.state == State::Queued && !starting.contains(&t.id)) {
             let wait = if self.paused {
                 Wait::Paused
+            } else if let Some(text) = gate(t) {
+                Wait::Budget { text }
             } else if self.pick_agent(t, &in_flight, now).is_none() {
                 match self.limited(&t.agent, now) {
                     Some(l) => Wait::Limit { agent: t.agent.clone(), until: l.until, reported: l.reported },
@@ -578,9 +623,15 @@ impl Queue {
 
     /// End a task: Done, NeedsYou or Failed, with what to tell you.
     pub fn finish(&mut self, id: &str, state: State, note: &str, now: i64) {
+        self.finish_with(id, state, note, vec![], now);
+    }
+
+    /// `finish`, with what was seen (a runaway agent).
+    pub fn finish_with(&mut self, id: &str, state: State, note: &str, evidence: Vec<String>, now: i64) {
         if let Ok(t) = self.get_mut(id) {
             t.state = state;
             t.note = note.to_string();
+            t.evidence = evidence;
             t.step.clear();
             t.ended_at = Some(now);
         }
@@ -611,6 +662,15 @@ impl Queue {
         };
         let name = agent_name(e.agent);
         let error = || "The agent stopped with an error. Its chat says why.".to_string();
+        // Going in circles: no more turns for it, and you see why. Your own stop still reads as yours.
+        if let Some(h) = e.halt.as_ref().filter(|_| !e.stopped) {
+            t.state = State::NeedsYou;
+            t.note = h.note.clone();
+            t.evidence = h.evidence.clone();
+            t.step.clear();
+            t.ended_at = Some(now);
+            return After::Nothing;
+        }
         let (state, note) = match e.needs {
             // Back in line in the same workspace: it continues when the limit resets, or on the fallback.
             Some("limit") => {
@@ -645,10 +705,20 @@ impl Queue {
     /// Autopilot stopped following a task's PR: "ready", "gave_up", "off" (closed or merged) or
     /// "stopped" (you turned it off).
     pub fn autopilot_ended(&mut self, workspace_id: &str, how: &str, now: i64) -> bool {
+        self.autopilot_ended_with(workspace_id, how, None, now)
+    }
+
+    /// `autopilot_ended`; with a halt, nekotrail stopped autopilot itself (a cap, a runaway
+    /// agent) and the task needs you, saying why.
+    pub fn autopilot_ended_with(&mut self, workspace_id: &str, how: &str, halt: Option<Halt>, now: i64) -> bool {
         let Some(t) = self.tasks.iter().find(|t| t.workspace_id.as_deref() == Some(workspace_id) && t.state == State::Then && t.step == "autopilot") else {
             return false;
         };
         let id = t.id.clone();
+        if let Some(h) = halt {
+            self.finish_with(&id, State::NeedsYou, &h.note, h.evidence, now);
+            return true;
+        }
         let (state, note) = match how {
             "ready" => (State::Done, "Autopilot got the PR green. It's ready for you to merge."),
             "gave_up" => (State::NeedsYou, "Autopilot tried 3 times and the PR still isn't green."),
@@ -808,7 +878,7 @@ mod tests {
     fn end_turn(q: &mut Queue, id: &str, agent: &str, ok: bool, needs: Option<&str>, text: Option<&str>, reset: Option<i64>, now: i64) -> After {
         let sid = format!("s-{id}");
         q.started(id, &format!("w-{id}"), &sid).unwrap();
-        q.turn_ended(&TurnEnd { session_id: &sid, agent, ok, stopped: false, needs, limit_text: text, reset }, now)
+        q.turn_ended(&TurnEnd { session_id: &sid, agent, ok, stopped: false, needs, limit_text: text, reset, halt: None }, now)
     }
 
     #[test]
@@ -1005,6 +1075,84 @@ mod tests {
         assert!(q.autopilot_ended("w-a", "gave_up", NOW + 5));
         assert_eq!(q.get("a").unwrap().state, State::NeedsYou);
         assert_eq!(q.get("a").unwrap().ended_at, Some(NOW + 5));
+    }
+
+    #[test]
+    fn a_spend_cap_holds_tasks_back_and_says_why() {
+        let mut q = queue(&[("a", "r1", "claude"), ("b", "r2", "claude"), ("c", "r1", "codex")]);
+        // r1's daily cap is reached: its tasks wait, r2 goes on.
+        let gate = |t: &Task| (t.repo_id == "r1").then(|| "Today's cap for api is reached: $10.00 of $10.00 (API-equivalent). Nothing new starts there until midnight.".to_string());
+        assert_eq!(ids(&q.plan_with(&none(), NOW, &gate)), ["b"]);
+        let waits = q.waits_with(&none(), NOW, &gate);
+        assert!(matches!(&waits["a"], Wait::Budget { text } if text.starts_with("Today's cap for api")));
+        assert!(!waits.contains_key("b"), "b starts");
+        assert_eq!(ids(&q.claim_with(&none(), NOW, &gate)), ["b"]);
+        assert_eq!(q.get("a").unwrap().state, State::Queued, "held back, not failed: it starts once the cap allows");
+        // The cap lifts (midnight, or you raised it): they start in order.
+        assert_eq!(ids(&q.claim_with(&none(), NOW, &open)), ["a", "c"]);
+        // Pause still says Paused first.
+        let mut p = queue(&[("x", "r1", "claude")]);
+        p.paused = true;
+        assert_eq!(p.waits_with(&none(), NOW, &gate)["x"], Wait::Paused);
+        // Start now is you, there: it isn't held back.
+        let mut s = queue(&[("y", "r1", "claude")]);
+        assert_eq!(s.start_now("y", NOW).unwrap(), "claude");
+    }
+
+    #[test]
+    fn a_task_at_its_cap_does_not_continue_after_a_limit() {
+        // The task hit Claude's usage limit and waits to continue in its workspace. By then its
+        // workspace spent its cap: it stays in line, with the cap as the reason.
+        let mut q = queue(&[("a", "r", "claude")]);
+        q.claim(&none(), NOW);
+        end_turn(&mut q, "a", "claude", false, Some("limit"), Some("limit reached"), Some(NOW + 60), NOW);
+        let later = NOW + 3600;
+        let gate = |t: &Task| t.workspace_id.as_deref().filter(|_| t.resume).map(|_| "This task reached its cap: $5.10 of $5.00 (API-equivalent).".to_string());
+        assert!(q.plan_with(&none(), later, &gate).is_empty());
+        assert!(matches!(&q.waits_with(&none(), later, &gate)["a"], Wait::Budget { .. }));
+        assert_eq!(ids(&q.plan_with(&none(), later, &open)), ["a"]);
+    }
+
+    #[test]
+    fn a_runaway_agent_needs_you_with_the_evidence() {
+        let mut q = Queue::default();
+        let mut t = new("x", "r", "claude");
+        t.then = Then { checks: true, draft_pr: true, autopilot: true };
+        q.add(t, "a".into(), NOW);
+        q.claim(&none(), NOW);
+        q.started("a", "w-a", "s-a").unwrap();
+        let halt = Halt { note: "Stopped: the same command failed 4 times in a row: make test".into(), evidence: vec!["Run 1: error".into(), "Run 2: error".into()] };
+        let after = q.turn_ended(&TurnEnd { session_id: "s-a", agent: "claude", ok: true, halt: Some(halt.clone()), ..Default::default() }, NOW + 9);
+        assert_eq!(after, After::Nothing, "no checks, PR or autopilot after a runaway turn");
+        let t = q.get("a").unwrap();
+        assert_eq!((t.state, t.note.as_str(), t.evidence.len(), t.ended_at), (State::NeedsYou, halt.note.as_str(), 2, Some(NOW + 9)));
+        // Retry clears it.
+        q.retry("a").unwrap();
+        assert!(q.get("a").unwrap().evidence.is_empty());
+        // It survives a restart.
+        q.finish_with("a", State::NeedsYou, "n", vec!["e".into()], NOW);
+        assert_eq!(Queue::from_json(Some(&q.to_json())).get("a").unwrap().evidence, ["e"]);
+        // Your own stop is still yours.
+        let mut q2 = queue(&[("b", "r", "claude")]);
+        q2.claim(&none(), NOW);
+        q2.started("b", "w-b", "s-b").unwrap();
+        q2.turn_ended(&TurnEnd { session_id: "s-b", agent: "claude", ok: false, stopped: true, halt: Some(halt), ..Default::default() }, NOW);
+        assert_eq!(q2.get("b").unwrap().note, "You stopped it.");
+    }
+
+    #[test]
+    fn autopilot_stopped_by_a_cap_or_a_loop_needs_you() {
+        let mut q = Queue::default();
+        let mut t = new("x", "r", "claude");
+        t.then = Then { checks: false, draft_pr: true, autopilot: true };
+        q.add(t, "a".into(), NOW);
+        q.claim(&none(), NOW);
+        end_turn(&mut q, "a", "claude", true, None, None, None, NOW);
+        q.set_step("a", "autopilot");
+        let halt = Halt { note: "Autopilot stopped: this task reached its cap: 40 of 40 turns.".into(), evidence: vec![] };
+        assert!(q.autopilot_ended_with("w-a", "budget", Some(halt.clone()), NOW + 1));
+        let t = q.get("a").unwrap();
+        assert_eq!((t.state, t.note.as_str()), (State::NeedsYou, halt.note.as_str()));
     }
 
     #[test]

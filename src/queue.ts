@@ -23,6 +23,8 @@ export type QueueTask = {
   state: QueueState;
   /** What happened, in plain words. */
   note: string;
+  /** What nekotrail saw when it stopped a runaway agent, one line each. */
+  evidence?: string[];
   /** "setup", "checks", "pr" or "autopilot" while that part runs. */
   step: string;
   workspace_id: string | null;
@@ -42,7 +44,9 @@ export type QueueWait =
   | { kind: "limit"; agent: Agent; until: number; reported: boolean }
   | { kind: "probe"; agent: Agent }
   | { kind: "slots" }
-  | { kind: "repo_slots" };
+  | { kind: "repo_slots" }
+  /** A spend cap holds it back; `text` says which and by how much. */
+  | { kind: "budget"; text: string };
 
 export type QueueLimit = { until: number; reported: boolean; text: string };
 
@@ -58,6 +62,8 @@ export type QueueView = {
   /** Tasks whose agent waits for your OK on a command. */
   asking: string[];
   now: number;
+  /** The daily cap on every repo, when it is reached: why nothing new starts. */
+  cap?: string | null;
 };
 
 export type QueueSummary = { done: number; needs_you: number; failed: number; running: number; queued: number; text: string };
@@ -97,7 +103,7 @@ export function elapsed(from: number, to: number): string {
 }
 
 /** Why a queued task hasn't started, as one short line. */
-export function waitText(w: QueueWait | undefined, view: Pick<QueueView, "max_total" | "max_per_repo" | "now">, locale?: string): string {
+export function waitText(w: QueueWait | undefined, view: Pick<QueueView, "max_total" | "max_per_repo" | "now"> & { cap?: string | null }, locale?: string): string {
   if (!w) return "Starting";
   switch (w.kind) {
     case "paused": return "Paused";
@@ -107,6 +113,8 @@ export function waitText(w: QueueWait | undefined, view: Pick<QueueView, "max_to
     case "probe": return `One task checks that ${agentName(w.agent)} has usage again first`;
     case "slots": return `Waits for a free slot. ${view.max_total} run at once`;
     case "repo_slots": return `Waits for a slot in this repo. ${view.max_per_repo} run at once per repo`;
+    // The banner already says the cap on every repo; the row only says it waits for it.
+    case "budget": return view.cap && w.text === view.cap ? "Waits for today's cap to reset at midnight" : w.text.replace(/\.$/, "");
   }
 }
 
