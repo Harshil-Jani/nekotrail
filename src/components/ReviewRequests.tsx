@@ -3,7 +3,6 @@ import { ChevronDown, ChevronRight, Eye, GitPullRequest, GitPullRequestDraft } f
 import type { Agent, Repo, ReviewRequest, Workspace } from "../api";
 import { AGENT_INFO, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
-import { AgentMenuItems } from "./AgentMenuItems";
 import { requestMeta, reviewWorkspaceFor } from "../review";
 
 /**
@@ -31,7 +30,11 @@ export function ReviewRequests({ requests, workspaces, repos, busy, onReview, on
   }, [menu]);
   if (!requests.length) return null;
   const toggle = () => setFolded((f) => { localStorage.setItem("nekotrail.reviewsFolded", f ? "0" : "1"); return !f; });
-  const split = splitAgents(installed);
+  // Installed agents first, then the rest under "Not installed", so the list answers "which can I use?".
+  const all = splitAgents(installed);
+  const every = [...all.shown, ...all.installed, ...all.missing];
+  const has = new Set(installed ?? []);
+  const split = { installed: every.filter((a) => has.has(a)), missing: every.filter((a) => !has.has(a)) };
   const repoName = (id: string) => repos.find((r) => r.id === id)?.name;
   return (
     <section className="repo review-requests" aria-label="Review requests">
@@ -47,6 +50,9 @@ export function ReviewRequests({ requests, workspaces, repos, busy, onReview, on
         const key = `${r.repo_id}:${r.number}`;
         const open = reviewWorkspaceFor(r, workspaces);
         const meta = requestMeta(r, repos.length > 1 ? repoName(r.repo_id) : undefined);
+        const item = (a: Agent) => (
+          <button key={a} role="menuitem" onClick={() => { setMenu(null); onReview(r, a); }}><span className="menu-icon-space" aria-hidden />{AGENT_INFO[a].name}</button>
+        );
         return (
           <div key={key} className="review-req">
             <button
@@ -77,10 +83,9 @@ export function ReviewRequests({ requests, workspaces, repos, busy, onReview, on
             {menu === key && (
               <span className="menu review-with-menu" role="menu">
                 <div className="menu-label">Review with</div>
-                {split.shown.map((a) => (
-                  <button key={a} role="menuitem" onClick={() => { setMenu(null); onReview(r, a); }}><span className="menu-icon-space" aria-hidden />{AGENT_INFO[a].name}</button>
-                ))}
-                <AgentMenuItems split={split} known={installed !== null} pick={(a) => { setMenu(null); onReview(r, a); }} label={(a) => AGENT_INFO[a].name} />
+                {[...split.installed, ...(installed === null ? split.missing : [])].map(item)}
+                {installed !== null && split.missing.length > 0 && <div className="menu-label">Not installed</div>}
+                {installed !== null && split.missing.map(item)}
               </span>
             )}
           </div>
