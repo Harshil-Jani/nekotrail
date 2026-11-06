@@ -64,7 +64,15 @@ export type Workspace = {
   pair_id: string;
   /** Sidebar section, or "" for none. */
   section_id: string;
+  /** Stacked PRs: the workspace whose branch this one started from and targets, or "". */
+  parent_id: string;
 };
+
+/** The workspace a stacked one sits on, and that workspace's PR (null before it has one). */
+export type StackParent = {
+  id: string; branch: string; target: string; state: "active" | "archived";
+  pr: { number: number; url: string; state: "OPEN" | "MERGED" | "CLOSED"; title: string; isDraft: boolean; baseRefName: string } | null;
+} | null;
 
 export type Section = { id: string; name: string; sort: number };
 
@@ -95,6 +103,8 @@ export type ChatEvent =
   | { kind: "error"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent };
 
 export type FileChange = { path: string; status: string; additions: number; deletions: number };
+/** Workspaces in one repo changing the same files; `order` is the suggested merge order. */
+export type Collision = { repo_id: string; order: string[]; pairs: { a: string; b: string; files: string[] }[] };
 export type Scripts = { setup: string | null; run: string | null; archive: string | null };
 /** Commands from the repo's own nekotrail.json that the user has not approved yet. */
 export type ScriptTrust = Scripts & { fingerprint: string };
@@ -190,7 +200,12 @@ export const api = {
   agentScorecard: () => invoke<{ agent: string; turns: number; errors: number; duration_ms: number; merged: number; cost_usd: number }[]>("agent_scorecard"),
   setAutopilot: (id: string, on: boolean) => invoke<void>("set_autopilot", { id, on }),
   autopilotStatus: () => invoke<Record<string, number>>("autopilot_status"),
-  overlaps: (id: string) => invoke<{ workspace_id: string; files: string[] }[]>("overlaps", { id }),
+  stackParent: (id: string) => invoke<StackParent>("stack_parent", { id }),
+  /** The parent PR merged: rebase onto where it merged, push with lease, `gh pr edit --base`. */
+  restackWorkspace: (id: string) =>
+    invoke<{ result: "rebased" | "up-to-date" | "conflicts"; base: string; fork?: string; pushed?: boolean; pr?: number | null }>("restack_workspace", { id }),
+  /** From the file lists line counts already gathered: no git of its own. */
+  collisions: (prs: Record<string, string>) => invoke<Collision[]>("collisions", { prs }),
   importedOutside: () => invoke<string[]>("imported_outside"),
   relocateImported: () => invoke<[number, string[]]>("relocate_imported"),
   sections: () => invoke<Section[]>("sections"),
@@ -222,6 +237,8 @@ export const api = {
   fileDiff: (id: string, file: string, uncommitted = false) => invoke<string>("file_diff", { id, file, uncommitted }),
   readFile: (id: string, path: string) => invoke<string>("read_file", { id, path }),
   writeFile: (id: string, path: string, content: string) => invoke<void>("write_file", { id, path, content }),
+  /** Discard one file's uncommitted changes; its current copy goes to the Trash. */
+  discardFile: (id: string, path: string) => invoke<"trashed" | "restored">("discard_file", { id, path }),
   prReviewComments: (id: string) => invoke<import("./components/Diff").GhComment[]>("pr_review_comments", { id }),
   openIn: (id: string, app: string) => invoke<void>("open_in", { id, app }),
   openInTargets: () => invoke<{ id: string; name: string }[]>("open_in_targets"),

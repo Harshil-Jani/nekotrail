@@ -4,8 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow } from "lucide-react";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -13,7 +13,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrBar } from "./components/PrBar";
 import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
-import { NewWorkspace, type NewWorkspaceRequest } from "./components/NewWorkspace";
+import { NewWorkspace, type NewWorkspaceRequest, type Source as NewSource } from "./components/NewWorkspace";
 import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
 import { CloneSheet, Welcome } from "./components/Welcome";
@@ -261,8 +261,9 @@ export default function App() {
   const [leaving, setLeaving] = useState<string | null>(null);
   const [sidebarW, setSidebarW] = useState(() => Math.max(244, Number(localStorage.getItem("nekotrail.sidebar")) || 264));
   const [resizing, setResizing] = useState(false);
-  const [newFor, setNewFor] = useState<string | null>(params.get("new"));
-  const [newSource, setNewSource] = useState<"task" | "pr" | "branch" | "issue">((params.get("from") as "pr") || "task"); // repo id the new-workspace panel opens on
+  const [newFor, setNewFor] = useState<string | null>(params.get("new")); // repo id the new-workspace panel opens on
+  const [newSource, setNewSource] = useState<NewSource>((params.get("from") as NewSource) || "task");
+  const [newStack, setNewStack] = useState<string | undefined>(params.get("stack") ?? undefined); // workspace to stack the new one on
   const shiningLoaded = useRef(false);
   const [purring, setPurring] = useState(false);
   // A ref, not state: every keypress counts as activity, and a re-render per key would redraw the whole app.
@@ -315,6 +316,9 @@ export default function App() {
     const t = setInterval(load, 5 * 60_000);
     return () => clearInterval(t);
   }, [workspaces.length]);
+  // Collision radar: reads the file lists the line counts just cached, so it adds no git work.
+  const [collisions, setCollisions] = useState<Collision[]>([]);
+  useEffect(() => { api.collisions(prStates).then(setCollisions).catch(() => {}); }, [lines, prStates]);
   const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
   const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -368,7 +372,7 @@ export default function App() {
   useEffect(() => {
     const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
       refresh();
-      setRefreshKey((k) => k + 1); // a turn ended: reload line counts and file overlaps
+      setRefreshKey((k) => k + 1); // a turn ended: reload line counts and the collision radar
       // Changes and PR state only move for the workspace whose agent ran.
       if (!payload.workspace_id || payload.workspace_id === selectedRef.current) setWsRefreshKey((k) => k + 1);
       lastActive.current = Date.now();
@@ -723,7 +727,8 @@ export default function App() {
   };
 
   // ⌘N: the current workspace's repo, else the filtered project, else the first repo.
-  const openNew = (source: "task" | "pr" | "branch" | "issue" = "task") => {
+  const openNew = (source: NewSource = "task", stackOn?: string) => {
+    setNewStack(stackOn);
     const f = getSettings().repoFilter;
     const repoId = ws?.repo_id ?? (f.length === 1 ? f[0] : repos[0]?.id);
     if (!repoId) return addRepo();
@@ -802,6 +807,7 @@ export default function App() {
       { id: "new", group: "Create", label: "Create workspace", hint: "⌘N", keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
       { id: "new-pr", group: "Create", label: "Create workspace from a PR", hint: "⌘⇧N", keywords: "new pull request", icon: <GitPullRequest size={15} />, run: () => openNew("pr") },
       { id: "new-issue", group: "Create", label: "Create workspace from a GitHub issue", keywords: "new", icon: <GitPullRequest size={15} />, run: () => openNew("issue") },
+      { id: "new-stack", group: "Create", label: "Create workspace stacked on another", keywords: "new stacked pr branch depends", icon: <SquareStack size={15} />, run: () => openNew("stack", ws?.id) },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
       { id: "update", group: "App", label: "Check for updates", keywords: "upgrade new version release download", icon: <Download size={15} />, run: () => updater.checkNow(true) },
       { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
@@ -909,6 +915,7 @@ export default function App() {
         onGroupBy={(g) => { setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); }}
         prStates={prStates}
         lines={lines}
+        collisions={collisions}
         usage={usage}
         sections={sections}
         onChanged={refresh}
@@ -1036,6 +1043,7 @@ export default function App() {
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
                           <button role="menuitem" onClick={async () => { setMoreOpen(false); const pr = await api.prStatus(ws.id).catch(() => null); if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); openNew("stack", ws.id); }}><SquareStack size={15} /><span>Stack a new workspace on this one</span></button>
                           <div className="menu-label">Status</div>
                           {([["", "Automatic (from the PR)"], ...Object.entries(STATUS_LABEL)] as [WsStatus, string][]).map(([k, v]) => (
                             <button key={k || "auto"} role="menuitemradio" aria-checked={ws.status === k} onClick={() => { setMoreOpen(false); api.setWorkspaceStatus(ws.id, k).then(refresh); }}>
@@ -1058,7 +1066,12 @@ export default function App() {
                 repo={repo ?? undefined}
                 name={displayName(sky, ws)}
                 refreshKey={wsRefreshKey}
-                overlapKey={refreshKey}
+                collision={collisions.find((c) => c.order.includes(ws.id))}
+                prStates={prStates}
+                lines={lines}
+                onOpenWorkspace={select}
+                stackedOnThis={workspaces.filter((w) => w.state === "active" && w.parent_id === ws.id).map((w) => w.id)}
+                onRestacked={refresh}
                 onArchive={(auto, id) => archive({ auto, id })}
                 onSay={say}
                 autopilot={autopilot[ws.id]}
@@ -1130,7 +1143,12 @@ export default function App() {
       </main>
 
       {newFor && repos.length > 0 && (
-        <NewWorkspace repos={repos} initialRepo={newFor} initialSource={newSource} onCreate={newWorkspace} onClose={() => { setNewFor(null); setNewSource("task"); }} />
+        <NewWorkspace
+          repos={repos} initialRepo={newFor} initialSource={newSource} onCreate={newWorkspace}
+          stackTargets={workspaces.filter((w) => w.state === "active").map((w) => ({ id: w.id, repo_id: w.repo_id, name: displayName(sky, w), branch: w.branch }))}
+          initialStack={newStack}
+          onClose={() => { setNewFor(null); setNewSource("task"); setNewStack(undefined); }}
+        />
       )}
       {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} agent={trustAsk.agent} onAnswer={trustAsk.answer} />}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}

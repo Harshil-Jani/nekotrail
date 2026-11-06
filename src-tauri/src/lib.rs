@@ -6,6 +6,7 @@ pub mod importer;
 pub mod names;
 pub mod preview;
 pub mod pty;
+pub mod radar;
 pub mod safe;
 pub mod store;
 
@@ -41,8 +42,9 @@ struct Runs {
     forks: std::collections::HashSet<String>,
 }
 
-/// (counts with when they were taken, workspaces to recount)
-type LineCache = (HashMap<String, (std::time::Instant, (u32, u32))>, std::collections::HashSet<String>);
+/// (per workspace: when counted, lines added and removed, changed file paths; workspaces to recount).
+/// The file paths feed the collision radar, so it never runs git of its own.
+type LineCache = (HashMap<String, (std::time::Instant, (u32, u32), Vec<String>)>, std::collections::HashSet<String>);
 
 pub struct AppState {
     store: Mutex<Store>,
@@ -424,8 +426,24 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         name = names::pick(&taken.iter().cloned().chain([name.clone()]).collect::<Vec<_>>());
     }
     let path = dir.join(&name);
-    // Start from an existing PR or branch ("pr:123" / "branch:feature-x"), or a fresh branch.
+    // Start from an existing PR or branch ("pr:123" / "branch:feature-x"), another workspace's
+    // branch to stack a PR on it ("workspace:<id>"), or a fresh branch.
+    let mut parent_id = String::new();
     let (branch, base) = match from.as_deref().and_then(|f| f.split_once(':')) {
+        Some(("workspace", pid)) => {
+            let parent = st.db().workspace(pid).map_err(|_| "That workspace is gone. Pick another one.".to_string())?;
+            if parent.repo_id != repo.id || parent.state != "active" {
+                return Err("You can only stack on an active workspace in the same repo.".into());
+            }
+            if !safe::branch_name(&parent.branch) {
+                return Err(format!("\"{}\" isn't a valid branch name.", parent.branch));
+            }
+            let branch = format!("{}/{name}", st.branch_prefix());
+            // From the parent's local branch, so its newest commits come along even if unpushed.
+            git::add_worktree_at(&root, &path, &branch, &parent.branch).map_err(e)?;
+            parent_id = parent.id;
+            (branch, parent.branch)
+        }
         Some(("pr", n)) => {
             if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
                 return Err(format!("\"{n}\" isn't a PR number."));
@@ -476,7 +494,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         title: String::new(),
         status: String::new(),
         pair_id: String::new(),
-        section_id: String::new(),
+        section_id: String::new(), parent_id,
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
     ensure_local_excludes(&root, &prefs.copy_files);
@@ -677,6 +695,34 @@ async fn write_file(st: State<'_, AppState>, id: String, path: String, content: 
     std::fs::write(inside(&ws, &path)?, content).map_err(e)
 }
 
+/// Discard the uncommitted changes to one file. The current copy goes to the macOS Trash first,
+/// so nothing is ever deleted outright. Returns "trashed" (a new file) or "restored".
+#[tauri::command]
+async fn discard_file(app: AppHandle, id: String, path: String) -> Res<String> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let root = Path::new(&ws.path);
+        // A file that still exists must resolve inside the workspace (no symlink out of it). A
+        // deleted one only needs a plain relative path: git itself refuses paths through links.
+        if root.join(&path).symlink_metadata().is_ok() {
+            inside(&ws, &path)?;
+        } else if path.is_empty() || Path::new(&path).components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+            return Err("That file is outside the workspace.".into());
+        }
+        let r = git::discard_file(root, &path, |p| {
+            use trash::macos::{DeleteMethod, TrashContextExtMacos};
+            let mut t = trash::TrashContext::default();
+            // The system call, not Finder: no Automation prompt and no sound.
+            t.set_delete_method(DeleteMethod::NsFileManager);
+            t.delete(p).map_err(|err| anyhow::anyhow!("{err}"))
+        })
+        .map_err(e)?;
+        mark_changed(st, &id);
+        Ok(if r == git::Discarded::Trashed { "trashed" } else { "restored" }.to_string())
+    })
+    .await
+}
+
 /// Review comments left on the workspace's PR on GitHub (line comments, not general ones).
 #[tauri::command]
 async fn pr_review_comments(st: State<'_, AppState>, id: String) -> Res<Value> {
@@ -786,7 +832,7 @@ async fn line_counts(app: AppHandle) -> Res<HashMap<String, (u32, u32)>> {
             let mut todo = vec![];
             for w in wss {
                 match cache.0.get(&w.id) {
-                    Some((at, v)) if !cache.1.contains(&w.id) && at.elapsed() < FRESH => { out.insert(w.id.clone(), *v); }
+                    Some((at, v, _)) if !cache.1.contains(&w.id) && at.elapsed() < FRESH => { out.insert(w.id.clone(), *v); }
                     _ => todo.push(w),
                 }
             }
@@ -796,14 +842,15 @@ async fn line_counts(app: AppHandle) -> Res<HashMap<String, (u32, u32)>> {
             .into_iter()
             .map(|w| std::thread::spawn(move || {
                 let c = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
-                Some((w.id, (c.iter().map(|f| f.additions).sum::<u32>(), c.iter().map(|f| f.deletions).sum::<u32>())))
+                let counts = (c.iter().map(|f| f.additions).sum::<u32>(), c.iter().map(|f| f.deletions).sum::<u32>());
+                Some((w.id, counts, c.into_iter().map(|f| f.path).collect::<Vec<_>>()))
             }))
             .collect();
-        let fresh: Vec<(String, (u32, u32))> = handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect();
+        let fresh: Vec<(String, (u32, u32), Vec<String>)> = handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect();
         let mut cache = st.lines.lock().unwrap();
-        for (id, v) in fresh {
+        for (id, v, files) in fresh {
             cache.1.remove(&id);
-            cache.0.insert(id.clone(), (std::time::Instant::now(), v));
+            cache.0.insert(id.clone(), (std::time::Instant::now(), v, files));
             out.insert(id, v);
         }
         Ok(out)
@@ -850,6 +897,94 @@ fn pr_status_blocking(st: &AppState, id: &str) -> Res<Value> {
         st.db().set_title(&id, t).map_err(e)?;
     }
     Ok(pr)
+}
+
+// ---------- stacked PRs ----------
+
+/// The PR for `branch`, looked up from `dir`. A merged parent is often archived (its folder is
+/// gone), so lookups for a parent run from the child's folder.
+fn pr_for_branch(dir: &str, branch: &str) -> Res<Value> {
+    let out = gh(dir, &["pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "number,url,state,title,isDraft,baseRefName,headRefOid"])?;
+    Ok(serde_json::from_str::<Value>(&out).map_err(e)?.get(0).cloned().unwrap_or(Value::Null))
+}
+
+/// The workspace this one is stacked on, with its PR, or null when it isn't stacked.
+#[tauri::command]
+async fn stack_parent(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        if ws.parent_id.is_empty() {
+            return Ok(Value::Null);
+        }
+        let parent = st.db().workspace(&ws.parent_id).map_err(e)?;
+        let pr = pr_for_branch(&ws.path, &parent.branch).unwrap_or(Value::Null);
+        if pr["state"] == "MERGED" {
+            let _ = st.db().set_merged(&parent.id);
+        }
+        Ok(json!({"id": parent.id, "branch": parent.branch, "target": parent.target_branch, "state": parent.state, "pr": pr}))
+    })
+    .await
+}
+
+/// The parent's PR merged: move this workspace onto the branch it merged into. Rebases only this
+/// branch's own commits there, pushes with a lease (never over someone else's push), points the
+/// PR at the new base with `gh pr edit --base`, and takes the workspace off the stack.
+/// Conflicts abort the rebase and change nothing; the UI then hands the job to the agent.
+#[tauri::command]
+async fn restack_workspace(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        if ws.parent_id.is_empty() {
+            return Err("This workspace isn't stacked on another one.".into());
+        }
+        let parent = st.db().workspace(&ws.parent_id).map_err(e)?;
+        let parent_pr = pr_for_branch(&ws.path, &parent.branch)?;
+        if parent_pr["state"] != "MERGED" {
+            return Err("The parent PR hasn't merged yet. Try again once it has.".into());
+        }
+        // Where the parent merged, as GitHub says; else where it was meant to go.
+        let new_base = parent_pr["baseRefName"].as_str().filter(|b| safe::branch_name(b)).unwrap_or(&parent.target_branch).to_string();
+        if !safe::branch_name(&new_base) || !safe::branch_name(&parent.branch) {
+            return Err(format!("\"{new_base}\" isn't a valid branch name."));
+        }
+        let dir = Path::new(&ws.path);
+        // The parent's branch as git knows it here: the local one (archiving keeps it), else
+        // origin's copy, else the PR's last head commit (its branch was deleted everywhere).
+        let remote_parent = format!("origin/{}", parent.branch);
+        let head_oid = parent_pr["headRefOid"].as_str().filter(|s| safe::object_id(s)).map(String::from);
+        let parent_ref = if git::branch_exists(dir, &parent.branch) {
+            parent.branch.clone()
+        } else if git::git(dir, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/{remote_parent}")]).is_ok() {
+            remote_parent
+        } else {
+            head_oid.ok_or("Can't find the parent's branch any more, so this needs a manual rebase.")?
+        };
+        let result = git::restack(dir, &new_base, &parent_ref).map_err(e)?;
+        if result == "conflicts" {
+            let fork = git::restack_fork(dir, &parent_ref).unwrap_or_default();
+            return Ok(json!({"result": "conflicts", "base": new_base, "fork": fork}));
+        }
+        mark_changed(st, &id);
+        // Update the branch on GitHub only if it is there already and differs. The lease is the
+        // last fetched origin copy, so a push someone else made since is refused, not overwritten.
+        let remote = format!("refs/remotes/origin/{}", ws.branch);
+        let pushed = match git::git(dir, &["rev-parse", "--verify", "--quiet", &remote]) {
+            Ok(theirs) if theirs != git::git(dir, &["rev-parse", "HEAD"]).map_err(e)? => {
+                git::git(dir, &["push", "--quiet", "--force-with-lease", "origin", &ws.branch]).map_err(e)?;
+                true
+            }
+            _ => false,
+        };
+        let pr = pr_for_branch(&ws.path, &ws.branch).unwrap_or(Value::Null);
+        let mut retargeted = Value::Null;
+        if pr["state"] == "OPEN" && pr["baseRefName"] != new_base.as_str() && let Some(n) = pr["number"].as_u64() {
+            gh(&ws.path, &["pr", "edit", &n.to_string(), "--base", &new_base])?;
+            retargeted = json!(n);
+        }
+        st.db().unstack(&id, &new_base).map_err(e)?;
+        Ok(json!({"result": result, "base": new_base, "pushed": pushed, "pr": retargeted}))
+    })
+    .await
 }
 
 /// Open PRs in a repo, for "new workspace from a PR".
@@ -1144,37 +1279,22 @@ async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String,
     Ok(out)
 }
 
-/// Other workspaces in the same repo that changed some of the same files as this one, so you hear
-/// about the merge conflict before it happens. Runs git in parallel, off the async workers.
+/// Collision radar: active workspaces in one repo changing the same files, grouped, each group in
+/// a suggested merge order. Reads only the file lists `line_counts` cached, so it runs no git at
+/// all; a workspace not counted yet is simply left out until it is. `prs` is the PR state per
+/// workspace the UI already has from `pr_states`.
 #[tauri::command]
-async fn overlaps(app: AppHandle, id: String) -> Res<Vec<Value>> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let st = app.state::<AppState>();
-        let (me, others) = {
-            let db = st.db();
-            let me = db.workspace(&id).map_err(e)?;
-            let others: Vec<Workspace> = db.workspaces(false).map_err(e)?.into_iter().filter(|w| w.repo_id == me.repo_id && w.id != me.id).collect();
-            (me, others)
-        };
-        let mine: std::collections::HashSet<String> = git::changes(Path::new(&me.path), &me.target_branch).map_err(e)?.into_iter().map(|f| f.path).collect();
-        if mine.is_empty() {
-            return Ok(vec![]);
-        }
-        let handles: Vec<_> = others.into_iter().map(|w| std::thread::spawn(move || {
-            let theirs = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
-            Some((w, theirs.into_iter().map(|f| f.path).collect::<Vec<_>>()))
-        })).collect();
-        let mut out = vec![];
-        for (w, files) in handles.into_iter().filter_map(|h| h.join().ok().flatten()) {
-            let shared: Vec<&String> = files.iter().filter(|f| mine.contains(*f)).collect();
-            if !shared.is_empty() {
-                out.push(json!({"workspace_id": w.id, "files": shared}));
-            }
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(e)?
+async fn collisions(st: State<'_, AppState>, prs: HashMap<String, String>) -> Res<Vec<radar::Group>> {
+    let wss = st.db().workspaces(false).map_err(e)?;
+    let cache = st.lines.lock().unwrap();
+    let entries: Vec<radar::Entry> = wss
+        .iter()
+        .filter_map(|w| {
+            let c = cache.0.get(&w.id)?;
+            Some(radar::Entry { id: &w.id, repo: &w.repo_id, created: &w.created_at, lines: c.1.0 + c.1.1, files: &c.2, pr: prs.get(&w.id).map(String::as_str) })
+        })
+        .collect();
+    Ok(radar::collisions(&entries))
 }
 
 /// Disk used by each workspace folder, and how much of it is build output that can be cleaned.
@@ -2257,7 +2377,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work
@@ -2280,7 +2400,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
         };
         let env = workspace_env(&repo, &ws);
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
@@ -2386,7 +2506,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
         };
         st.db().insert_repo(&repo).unwrap();
         st.db().insert_workspace(&ws).unwrap();
@@ -2423,7 +2543,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
         };
         std::fs::write(dir.path().join("CLAUDE.md"), "Use pnpm.").unwrap();
         assert!(untrusted_agent_config(&st, &ws).is_none(), "text only, nothing to trust");

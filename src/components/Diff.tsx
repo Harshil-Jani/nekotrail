@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink, MessageSquarePlus, Pencil, RefreshCw, Save, Send, X } from "lucide-react";
+import { ExternalLink, MessageSquarePlus, Pencil, RefreshCw, Save, Search, Send, Undo2, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { api, errText, type FileChange } from "../api";
 import { Mascot } from "./Mascot";
@@ -277,6 +277,12 @@ export function Diff({
   const toggleSplit = () => setSplit((v) => { localStorage.setItem("nekotrail.split", v ? "0" : "1"); return !v; });
   const [editing, setEditing] = useState<string | null>(null);
   const [gh, setGh] = useState<GhComment[]>([]);
+  // Files with uncommitted edits: only these can be discarded (committed work never is).
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [discarding, setDiscarding] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => setNotice(null), [workspaceId]);
   // Draft comments survive tab switches and restarts until they are sent.
   const key = `nekotrail.review.${workspaceId}`;
   const [comments, setComments] = useState<ReviewComment[]>(() => JSON.parse(localStorage.getItem(key) || "[]"));
@@ -309,7 +315,36 @@ export function Diff({
       setFiles(f);
       setError(null);
       setOpen((cur) => (cur && f.some((x) => x.path === cur) ? cur : f[0]?.path ?? null));
+      if (uncommitted) setDirty(new Set(f.map((x) => x.path)));
     }).catch((e) => setError(errText(e)));
+    if (!uncommitted) api.changes(workspaceId, true).then((f) => setDirty(new Set(f.map((x) => x.path)))).catch(() => setDirty(new Set()));
+  };
+  useEffect(() => setQuery(""), [workspaceId]);
+
+  /** Discard one file's uncommitted changes, after asking. Its current copy goes to the Trash. */
+  const discard = async (path: string) => {
+    const f = files?.find((x) => x.path === path);
+    const isNew = f?.status === "A" || f?.status === "?";
+    const ok = await ask({
+      title: `Discard changes to ${path.split("/").pop()}?`,
+      body: isNew
+        ? `${path} is a new file. It moves to the Trash, so you can still get it back from there. No other file is touched.`
+        : `${path} goes back to its last commit. The edited copy moves to the Trash, so you can still get it back from there. Committed changes and other files stay as they are.`,
+      ok: "Discard changes",
+      danger: true,
+    });
+    if (!ok) return;
+    setNotice(null);
+    setDiscarding(path);
+    try {
+      await api.discardFile(workspaceId, path);
+      setEditing((cur) => (cur === path ? null : cur));
+    } catch (err) {
+      setNotice(`Couldn't discard ${path}: ${errText(err)}`);
+    } finally {
+      setDiscarding(null);
+      load();
+    }
   };
 
   useEffect(load, [workspaceId, refreshKey, uncommitted]);
@@ -322,9 +357,13 @@ export function Diff({
   }, [open, workspaceId, refreshKey, uncommitted]);
   useEffect(() => { if (focusFile) setEditing(focusFile.path); }, [focusFile?.nonce]);
 
+  // The list as filtered by the box above it; ↑/↓ move through what you can see.
+  const q = query.trim().toLowerCase();
+  const shown = useMemo(() => (files && q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files ?? []), [files, q]);
+
   // ↑/↓ move between files, ⌘⌥U switches all changes / uncommitted.
-  const nav = useRef({ files, open });
-  nav.current = { files, open };
+  const nav = useRef({ files: shown, open });
+  nav.current = { files: shown, open };
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -374,10 +413,26 @@ export function Diff({
           {files.length} {files.length === 1 ? "file" : "files"} <span className="add">+{add}</span> <span className="del">-{del}</span>
           {files.length > 0 && <span className="muted"> · {seen} viewed</span>}
         </div>
+        {notice && <div className="banner error file-notice" role="alert">{notice}</div>}
+        {(files.length > 7 || query) && (
+          <label className="search file-filter">
+            <Search size={14} />
+            <input
+              placeholder="Filter files"
+              value={query}
+              aria-label="Filter changed files"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape" && query) { e.stopPropagation(); setQuery(""); } }}
+            />
+          </label>
+        )}
         {files.length === 0 && (
           <p className="muted file-list-empty">{uncommitted ? "No uncommitted changes. Everything is committed." : "Nothing changed yet. Edits the agent makes show up here, compared with the target branch."}</p>
         )}
-        {files.map((f) => {
+        {files.length > 0 && shown.length === 0 && (
+          <p className="muted file-list-empty">No changed file matches "{query.trim()}".</p>
+        )}
+        {shown.map((f) => {
           const n = comments.filter((c) => c.file === f.path).length + gh.filter((c) => c.path === f.path && !c.reply_to).length;
           const isViewed = viewed[f.path] === sig(f);
           return (
@@ -421,6 +476,14 @@ export function Diff({
               <span className="spacer" />
               <button className="quiet" onClick={toggleSplit} title="Switch diff layout">{split ? "Show unified" : "Show side by side"}</button>
               <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit file</button>
+              <button
+                className="quiet"
+                onClick={() => discard(open)}
+                disabled={!dirty.has(open) || discarding !== null}
+                title={dirty.has(open) ? "Discard the uncommitted changes to this file" : "Only uncommitted changes can be discarded. This file's changes are committed."}
+              >
+                {discarding === open ? <span className="spinner" /> : <Undo2 size={13} />}Discard
+              </button>
             </div>
             <DiffLines
               file={open}

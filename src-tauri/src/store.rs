@@ -73,6 +73,8 @@ fn migrate(conn: &Connection) -> Result<()> {
     add("workspaces", "pair_id", "TEXT NOT NULL DEFAULT ''")?;
     // Sidebar sections the user makes ("Today", "Waiting on review"...); empty means none.
     add("workspaces", "section_id", "TEXT NOT NULL DEFAULT ''")?;
+    // Stacked PRs: the workspace whose branch this one was started from; empty means none.
+    add("workspaces", "parent_id", "TEXT NOT NULL DEFAULT ''")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);")?;
     add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
     add("sessions", "effort", "TEXT")?;
@@ -175,6 +177,9 @@ pub struct Workspace {
     pub pair_id: String,
     #[serde(default)]
     pub section_id: String,
+    /// Stacked PRs: the workspace whose branch this one started from (and targets), or "".
+    #[serde(default)]
+    pub parent_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -238,9 +243,10 @@ fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
         status: r.get(13)?,
         pair_id: r.get(14)?,
         section_id: r.get(15)?,
+        parent_id: r.get(16)?,
     })
 }
-const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id";
+const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id, parent_id";
 
 fn session_from(r: &Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -360,8 +366,8 @@ impl Store {
 
     pub fn insert_workspace(&self, w: &Workspace) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)"),
-            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id],
+            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)"),
+            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id, w.parent_id],
         )?;
         Ok(())
     }
@@ -558,6 +564,12 @@ impl Store {
         Ok(())
     }
 
+    /// Off the stack: the parent merged and this workspace now targets `branch` directly.
+    pub fn unstack(&self, id: &str, branch: &str) -> Result<()> {
+        self.conn.execute("UPDATE workspaces SET target_branch=?2, parent_id='' WHERE id=?1", params![id, branch])?;
+        Ok(())
+    }
+
     // ---- sessions ----
 
     pub fn insert_session(&self, s: &Session) -> Result<()> {
@@ -671,6 +683,28 @@ mod tests {
     }
 
     #[test]
+    fn stacked_workspaces_remember_their_parent_until_unstacked() {
+        let s = Store::in_memory().unwrap();
+        let r = sample_repo();
+        s.insert_repo(&r).unwrap();
+        let ws = |name: &str, target: &str, parent: &str| Workspace {
+            id: new_id(), repo_id: r.id.clone(), name: name.into(), branch: format!("me/{name}"), path: format!("/tmp/ws/{name}"),
+            target_branch: target.into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: now(), title: String::new(), status: String::new(), pair_id: String::new(),
+            section_id: String::new(), parent_id: parent.into(),
+        };
+        let parent = ws("mittens", "main", "");
+        let child = ws("socks", "me/mittens", &parent.id);
+        s.insert_workspace(&parent).unwrap();
+        s.insert_workspace(&child).unwrap();
+        assert_eq!(s.workspace(&child.id).unwrap().parent_id, parent.id);
+        s.unstack(&child.id, "main").unwrap();
+        let off = s.workspace(&child.id).unwrap();
+        assert_eq!((off.parent_id.as_str(), off.target_branch.as_str()), ("", "main"));
+        assert_eq!(s.workspace(&parent.id).unwrap(), parent);
+    }
+
+    #[test]
     fn repo_workspace_session_round_trip() {
         let s = Store::in_memory().unwrap();
         let r = sample_repo();
@@ -693,7 +727,7 @@ mod tests {
             title: String::new(),
             status: String::new(),
             pair_id: String::new(),
-            section_id: String::new(),
+            section_id: String::new(), parent_id: String::new(),
         };
         s.insert_workspace(&w).unwrap();
         let sec = s.create_section("Today").unwrap();

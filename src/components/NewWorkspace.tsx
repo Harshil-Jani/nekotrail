@@ -14,11 +14,13 @@ const MODES: { value: PermissionMode; label: string }[] = [
 export type NewWorkspaceRequest = {
   /** "both" runs a bake-off: the same task in two workspaces, one per agent. */
   repoId: string; prompt: string; agent: Agent | "both"; model: string | null; effort?: string | null; mode: PermissionMode;
-  /** "pr:123" or "branch:name" to start from existing work; empty for a fresh branch. */
+  /** "pr:123", "branch:name" or "workspace:<id>" (stack on it) to start from existing work; empty for a fresh branch. */
   from?: string;
 };
 
-type Source = "task" | "pr" | "branch" | "issue";
+export type Source = "task" | "pr" | "branch" | "issue" | "stack";
+/** An active workspace a new one can be stacked on. */
+export type StackTarget = { id: string; repo_id: string; name: string; branch: string };
 type IssueItem = { number: number; title: string; body: string; url: string; labels: { name: string }[] };
 type PrItem = { number: number; title: string; headRefName: string; author: { login: string }; isDraft: boolean };
 
@@ -30,12 +32,18 @@ export function NewWorkspace({
   repos,
   initialRepo,
   initialSource = "task",
+  stackTargets = [],
+  initialStack,
   onCreate,
   onClose,
 }: {
   repos: Repo[];
   initialRepo: string;
   initialSource?: Source;
+  /** Active workspaces, for "Stack on a workspace". */
+  stackTargets?: StackTarget[];
+  /** Preselected workspace to stack on (from its ⋯ menu). */
+  initialStack?: string;
   onCreate: (r: NewWorkspaceRequest) => Promise<void>;
   onClose: () => void;
 }) {
@@ -55,6 +63,9 @@ export function NewWorkspace({
   const [branch, setBranch] = useState("");
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuePick, setIssuePick] = useState<number | null>(null);
+  const [stackPick, setStackPick] = useState<string | null>(initialStack ?? null);
+  const stackable = stackTargets.filter((t) => t.repo_id === repoId);
+  const stackOn = stackable.find((t) => t.id === stackPick);
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     setLoadError(null);
@@ -77,7 +88,8 @@ export function NewWorkspace({
     setBusy(true);
     localStorage.setItem("nekotrail.new", JSON.stringify({ agent, model, mode, effort }));
     try {
-      const from = source === "pr" && prPick ? `pr:${prPick}` : source === "branch" && branch.trim() ? `branch:${branch.trim()}` : undefined;
+      const from = source === "pr" && prPick ? `pr:${prPick}` : source === "branch" && branch.trim() ? `branch:${branch.trim()}`
+        : source === "stack" && stackOn ? `workspace:${stackOn.id}` : undefined;
       await onCreate({ repoId, prompt: prompt.trim(), agent, model: model.trim() || null, effort, mode, from });
     } finally {
       setBusy(false);
@@ -133,7 +145,7 @@ export function NewWorkspace({
           </div>
         </div>
         <nav className="seg nw-source" role="tablist" aria-label="Start from">
-          {([["task", "New branch"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"]] as [Source, string][]).map(([id, label]) => (
+          {([["task", "New branch"], ["issue", "Issue"], ["pr", "PR"], ["branch", "Existing branch"], ["stack", "On a workspace"]] as [Source, string][]).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={source === id} className={source === id ? "on" : ""} onClick={() => setSource(id)}>{label}</button>
           ))}
         </nav>
@@ -167,6 +179,24 @@ export function NewWorkspace({
             ))}
           </div>
         )}
+        {source === "stack" && (
+          <>
+            <div className="nw-list" role="listbox" aria-label="Workspaces to stack on">
+              {stackable.length === 0 && <p className="muted">No other active workspace in this repo yet.</p>}
+              {stackable.map((t) => (
+                <button key={t.id} role="option" aria-selected={stackPick === t.id} className={stackPick === t.id ? "on" : ""} onClick={() => setStackPick(t.id)}>
+                  <span className="nw-pr-title">{t.name}</span>
+                  <code className="muted nw-stack-branch">{t.branch}</code>
+                </button>
+              ))}
+            </div>
+            <p className="muted nw-note">
+              {stackOn
+                ? `Starts from ${stackOn.name}'s last commit, and its PR goes into ${stackOn.name}'s branch. When ${stackOn.name}'s PR merges, one click moves this one over.`
+                : "Build on work that isn't merged yet. The new PR goes into that workspace's branch, so reviewers see only the new changes."}
+            </p>
+          </>
+        )}
         {source === "branch" && (
           <div className="nw-branch">
             <input list="nw-branches" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch name, e.g. fix/login" aria-label="Branch" autoFocus />
@@ -174,7 +204,7 @@ export function NewWorkspace({
           </div>
         )}
         <textarea
-          className={`nw-prompt ${source === "pr" || source === "branch" ? "short" : ""}`}
+          className={`nw-prompt ${source === "pr" || source === "branch" || source === "stack" ? "short" : ""}`}
           autoFocus
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -200,9 +230,9 @@ export function NewWorkspace({
           </select>
           <span className="spacer" />
           <span className="muted nw-hint">⇧↵ new line · Esc to close</span>
-          <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick)}>
+          <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "stack" && !stackOn)}>
             {busy ? <span className="spinner" /> : null}
-            {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : prompt.trim() ? "Create workspace" : "Create empty workspace"}
+            {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? `Stack on ${stackOn.name}` : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
             <CornerDownLeft size={14} />
           </button>
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Bot, TriangleAlert, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, ScanSearch, Sparkles, Upload } from "lucide-react";
-import { api, avatar, errText, type Pr, type Repo, type Workspace } from "../api";
+import { Bot, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Layers, MessageSquare, ScanSearch, Sparkles, SquareStack, Upload } from "lucide-react";
+import { api, avatar, errText, type Collision, type Pr, type Repo, type StackParent, type Workspace } from "../api";
+import { ask } from "./Confirm";
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
 import { getSettings } from "../settings";
@@ -27,12 +28,72 @@ function PrState({ pr }: { pr: NonNullable<Pr> }) {
   return <span className="pill good"><GitPullRequest size={14} />Open</span>;
 }
 
+/** Why a workspace sits where it does in the merge order, in a few words. */
+export function mergeReason(pr: string | undefined, lines: [number, number] | undefined): string {
+  const n = lines ? lines[0] + lines[1] : 0;
+  const state = pr === "OPEN" ? "PR ready" : pr === "DRAFT" ? "draft PR" : "no PR yet";
+  return `${state}, ${n.toLocaleString()} ${n === 1 ? "line" : "lines"}`;
+}
+
+/** Collision radar details: which files overlap, and a suggested merge order for the group. */
+function RadarPopover({ here, collision, overlap, nameOf, prStates, lines, onOpen, onClose }: {
+  here: string;
+  collision: Collision;
+  overlap: { workspace_id: string; files: string[] }[];
+  nameOf: (id: string) => string;
+  prStates: Record<string, string>;
+  lines: Record<string, [number, number]>;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>("button")?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    const onDown = (e: MouseEvent) => { if (!box.current?.parentElement?.contains(e.target as Node)) onClose(); };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown);
+    return () => { window.removeEventListener("keydown", onKey, true); window.removeEventListener("mousedown", onDown); };
+  }, []);
+  const first = collision.order[0];
+  return (
+    <div className="menu radar-pop" role="dialog" aria-label="Workspaces changing the same files" ref={box}>
+      <div className="radar-sec">
+        {overlap.map((o) => (
+          <p key={o.workspace_id} className="radar-files">
+            <b>{nameOf(o.workspace_id)}</b> also changes <code>{o.files.slice(0, 3).join(", ")}</code>
+            {o.files.length > 3 && <> and {o.files.length - 3} more</>}
+          </p>
+        ))}
+      </div>
+      <div className="menu-label">Suggested merge order</div>
+      <ol className="radar-order">
+        {collision.order.map((id) => (
+          <li key={id}>
+            {id === here ? (
+              <span className="radar-row here"><span className="radar-name">{nameOf(id)} <span className="muted">(this one)</span></span><small>{mergeReason(prStates[id], lines[id])}</small></span>
+            ) : (
+              <button className="radar-row" onClick={() => onOpen(id)} title={`Open ${nameOf(id)}`}>
+                <span className="radar-name">{nameOf(id)}</span><small>{mergeReason(prStates[id], lines[id])}</small>
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+      <p className="menu-hint muted">
+        {first === here ? "Merge this one first, then pull it into the others." : `Merge ${nameOf(first)} first, then pull it in here before you merge this one.`}
+        {" "}Ready PRs go first, then the smaller change, so the next one rebases over less.
+      </p>
+    </div>
+  );
+}
+
 /** Prompts for the git actions the agent does for you. The repo's own instructions are added. */
 export const agentPrompts = {
   createPr: (ws: Workspace, repo?: Repo) =>
     `Open a pull request for this workspace:
 1. Commit any uncommitted work with a clear message.
-2. Push the branch \`${ws.branch}\` to origin.
+2. Push the branch \`${ws.branch}\` to origin.${ws.parent_id ? ` This PR is stacked: it goes into \`${ws.target_branch}\`, so push that branch to origin too if it isn't there yet.` : ""}
 3. Run \`gh pr create --base ${ws.target_branch}\` with a short title and a description of what changed, why, and how you tested it.
 Reply with the PR link.${repo?.prefs?.pr_prompt ? `\n\n${repo.prefs.pr_prompt}` : ""}`,
   review: (ws: Workspace, repo?: Repo) =>
@@ -47,6 +108,14 @@ Then one line saying whether it is ready to merge.${repo?.prefs?.review_prompt ?
     `CI is failing on PR #${prNumber}. Failing logs:\n\n\`\`\`\n${logs.slice(-12000)}\n\`\`\`\n\nFind the cause, fix it, run the relevant tests locally, then commit and push.`,
   conflicts: (ws: Workspace) =>
     `Merging origin/${ws.target_branch} into this branch left conflicts (see \`git status\`). Resolve each one keeping the intent of both sides, run the tests, and commit the merge. Then push.`,
+  restack: (ws: Workspace, parentName: string, base: string, fork: string) =>
+    `This branch was stacked on ${parentName}'s branch \`${ws.target_branch}\`, whose PR has now merged into \`${base}\`. Move this branch onto \`${base}\`, keeping only its own commits:
+1. \`git fetch origin ${base}\`
+2. \`git rebase --onto origin/${base} ${fork || ws.target_branch}\` (everything after that commit is this branch's own work).
+3. Resolve each conflict keeping the intent of both sides, run the tests, and finish the rebase.
+4. \`git push --force-with-lease origin ${ws.branch}\`
+5. If this branch has a PR, run \`gh pr edit --base ${base}\`.
+Then tell me it's done, and I'll press "Move onto ${base}" once more to update nekotrail.`,
 };
 
 type Action = { id: string; label: string; keys: string; icon: React.ReactNode; run: () => void; disabled?: boolean };
@@ -59,19 +128,27 @@ export function PrBar({
   repo,
   name,
   refreshKey,
-  overlapKey,
+  collision,
+  prStates,
+  lines,
+  onOpenWorkspace,
   onSendAgent,
   onArchive,
   onSay,
   autopilot,
   nameOf,
+  stackedOnThis,
+  onRestacked,
 }: {
   ws: Workspace;
   repo?: Repo;
   name: string;
   refreshKey: number;
-  /** Bumps when any workspace's agent finishes: overlapping files can change from either side. */
-  overlapKey: number;
+  /** This workspace's collision group, if another workspace changes the same files. */
+  collision?: Collision;
+  prStates: Record<string, string>;
+  lines: Record<string, [number, number]>;
+  onOpenWorkspace: (id: string) => void;
   /** Send a prompt to the agent right away. */
   onSendAgent: (prompt: string) => void;
   /** `auto` is true when archiving by itself after a merge; `id` is set once it is no longer the open workspace. */
@@ -80,6 +157,10 @@ export function PrBar({
   /** Agent turns autopilot has used on this PR; undefined when it's off. */
   autopilot?: number;
   nameOf: (workspaceId: string) => string;
+  /** Active workspaces stacked on this one. */
+  stackedOnThis: string[];
+  /** The workspace moved off its stack: reload the workspace list. */
+  onRestacked: () => void;
 }) {
   const [pr, setPr] = useState<Pr | undefined>(undefined);
   const [form, setForm] = useState<{ title: string; body: string; draft: boolean } | null>(null);
@@ -87,13 +168,22 @@ export function PrBar({
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [overlap, setOverlap] = useState<{ workspace_id: string; files: string[] }[]>([]);
-  useEffect(() => { setOverlap([]); api.overlaps(ws.id).then(setOverlap).catch(() => {}); }, [ws.id, overlapKey]);
+  const [radarOpen, setRadarOpen] = useState(false);
+  useEffect(() => setRadarOpen(false), [ws.id]);
+  // Workspaces sharing files with this one directly, and which files.
+  const overlap = (collision?.pairs ?? [])
+    .filter((p) => p.a === ws.id || p.b === ws.id)
+    .map((p) => ({ workspace_id: p.a === ws.id ? p.b : p.a, files: p.files }));
 
-  const load = () =>
+  // Stacked PRs: the workspace this one sits on, and its PR. Polled with this PR, only when stacked.
+  const [parent, setParent] = useState<StackParent | undefined>(undefined);
+  const load = () => {
     api.prStatus(ws.id).then((p) => { setPr(p); setError(null); }).catch((e) => { setPr(null); setError(errText(e)); });
+    if (ws.parent_id) api.stackParent(ws.id).then(setParent).catch(() => setParent(null));
+  };
 
   useEffect(() => {
+    setParent(undefined);
     setPr(undefined);
     setError(null);
     setForm(null);
@@ -102,7 +192,7 @@ export function PrBar({
     // Poll GitHub only while you can see the window.
     const t = setInterval(() => { if (!document.hidden) load(); }, 60_000);
     return () => clearInterval(t);
-  }, [ws.id, refreshKey]);
+  }, [ws.id, ws.parent_id, refreshKey]);
 
   // Files changed against the target branch: Create PR needs at least one.
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -140,6 +230,32 @@ export function PrBar({
       setBusy(null);
       load();
     }
+  };
+
+  // The parent PR merged: move this workspace onto where it merged, after one confirm.
+  const parentName = parent ? nameOf(parent.id) : "";
+  const parentMerged = parent?.pr?.state === "MERGED";
+  const newBase = parent?.pr?.baseRefName || parent?.target || "";
+  const restack = async () => {
+    if (!parent) return;
+    const ok = await ask({
+      title: `Move ${name} onto ${newBase}?`,
+      body: `${parentName}'s PR merged into ${newBase}. nekotrail replays only ${name}'s own commits on top of ${newBase}, updates the branch on GitHub (a force push with lease, so someone else's push is never overwritten) and points the PR at ${newBase}. Commit any uncommitted work first. If git hits a conflict, nothing changes and the agent gets the job instead.`,
+      ok: `Move onto ${newBase}`,
+    });
+    if (!ok) return;
+    await task("restack", async () => {
+      const r = await api.restackWorkspace(ws.id);
+      if (r.result === "conflicts") {
+        onSay(`Moving onto ${r.base} hit conflicts, so nothing changed. The agent is doing it by hand.`);
+        onSendAgent(agentPrompts.restack(ws, parentName, r.base, r.fork ?? ""));
+        return;
+      }
+      onSay(r.result === "rebased"
+        ? `${name} now sits on ${r.base}${r.pushed ? ", pushed" : ""}${r.pr ? `, and PR #${r.pr} points at ${r.base}` : ""}.`
+        : `${name} already had everything it needs, so it now targets ${r.base}${r.pr ? ` and PR #${r.pr} points there` : ""}.`);
+      onRestacked();
+    });
   };
 
   const create = async () => {
@@ -276,9 +392,46 @@ export function PrBar({
           <GitBranch size={14} /><span className="branch-text">{ws.branch} → {ws.target_branch}</span>
         </button>
       )}
-      {overlap.length > 0 && (
-        <span className="pill wait overlap" title={overlap.map((o) => `${nameOf(o.workspace_id)}: ${o.files.join(", ")}`).join("\n")}>
-          <TriangleAlert size={13} /><span className="pill-text">Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
+      {ws.parent_id && parent && (
+        <span className="stack-link" title={`Stacked: this PR goes into ${parentName}'s branch ${parent.branch}`}>
+          <SquareStack size={13} />
+          <span className="pill-text">On <button className="link" onClick={() => onOpenWorkspace(parent.id)}>{parentName}</button></span>
+          {parent.pr && (
+            <button className={`link num ${parentMerged ? "merged" : ""}`} onClick={() => openUrl(parent.pr!.url)} title={`${parent.pr.title} (${parent.pr.state.toLowerCase()})`}>
+              #{parent.pr.number}{parentMerged ? " merged" : ""}
+            </button>
+          )}
+        </span>
+      )}
+      {stackedOnThis.length > 0 && (
+        <span className="stack-link" title={`Stacked on this one: ${stackedOnThis.map(nameOf).join(", ")}. Merge this PR first.`}>
+          <SquareStack size={13} />
+          <span className="pill-text">{stackedOnThis.length === 1 ? `${nameOf(stackedOnThis[0])} builds on this` : `${stackedOnThis.length} build on this`}</span>
+        </span>
+      )}
+      {collision && overlap.length > 0 && (
+        <span className="git-menu overlap">
+          <button
+            className="pill wait"
+            aria-expanded={radarOpen}
+            aria-haspopup="dialog"
+            onClick={() => setRadarOpen((o) => !o)}
+            title="Another workspace changes the same files. Click for a merge order."
+          >
+            <Layers size={13} /><span className="pill-text">Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
+          </button>
+          {radarOpen && (
+            <RadarPopover
+              here={ws.id}
+              collision={collision}
+              overlap={overlap}
+              nameOf={nameOf}
+              prStates={prStates}
+              lines={lines}
+              onOpen={(id) => { setRadarOpen(false); onOpenWorkspace(id); }}
+              onClose={() => setRadarOpen(false)}
+            />
+          )}
         </span>
       )}
       <span className="spacer" />
@@ -335,6 +488,16 @@ export function PrBar({
             )}
           </span>
         </span>
+      )}
+      {ws.parent_id && parentMerged && pr?.state !== "MERGED" && (
+        <div className="merged-banner stack-banner" role="status">
+          <SquareStack size={18} className="muted" aria-hidden />
+          <span><b>{parentName}'s PR merged into {newBase}.</b> Move {name} onto {newBase} so its PR shows only its own changes.</span>
+          <span className="spacer" />
+          <button className="primary" onClick={restack} disabled={!!busy}>
+            {busy === "restack" ? <span className="spinner" /> : <SquareStack size={15} />}Move onto {newBase}
+          </button>
+        </div>
       )}
       {pr?.state === "MERGED" && (
         <div className="merged-banner" role="status">
