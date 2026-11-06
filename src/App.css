@@ -1281,3 +1281,18 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .review-quote { tab-size: 4; }
 /* Unchanged diff lines share the class name of the composer's context ring: keep them full-width grid rows. */
 .dl.ctx, .sl.ctx { display: grid; gap: 0; padding: 0; font-size: inherit; }
+
+/* Toolbar folds up instead of clipping (useFit in App.tsx): icons, then tighter tabs, then all into ⋯. */
+.ws-header .tabs { flex-shrink: 0; }
+.ws-actions { flex-shrink: 0; }
+.tb-url .tb-label { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-header.tb-icons .ws-actions > button:not(.primary) { width: 28px; padding: 0; justify-content: center; }
+.ws-header.tb-compact .tab { padding: 0 9px; }
+.app:not(.no-sidebar) .ws-header.tb-min { padding-left: var(--s4); }
+/* PR bar folds the same way (useFit in PrBar.tsx). The stack link never truncates: it is the one way to the parent. */
+.prbar > .stack-link { flex-shrink: 0; }
+.prbar.pb-1 > button.branch { display: none; }
+.prbar.pb-2 > .avatar, .prbar.pb-2 > .reviewers, .prbar.pb-2 > .pr-comments, .prbar.pb-2 > .mascot { display: none; }
+.prbar.pb-3 > span.num, .prbar.pb-3 .pb-text { display: none; }
+.prbar.pb-3 .pill.autopilot { padding: 0 6px; }
+.prbar.pb-4 .pb-long, .prbar.pb-5 > .overlap .pill-text, .prbar.pb-5 .pb-label { display: none; }

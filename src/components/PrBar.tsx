@@ -7,6 +7,7 @@ import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
 import { getSettings } from "../settings";
 import { agentName, otherAgent } from "../agents";
+import { useFit, overflows } from "../useFit";
 
 type Checks = { cls: "good" | "bad" | "wait"; text: string; names: string[] };
 
@@ -370,6 +371,14 @@ export function PrBar({
     return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("nekotrail-action", onAction); };
   }, []);
 
+  // One line at any width, folding instead of clipping: 1 the branch goes (the toolbar subtitle has it)
+  // once it would show only a few letters, 2 avatars and comments go, 3 counts and pill texts become
+  // icons, 4 the overlap note keeps only the other workspace's name, 5 that and the main button become
+  // icons too. Every hidden thing keeps its tooltip.
+  const branchShown = (el: HTMLElement) => el.querySelector<HTMLElement>(":scope > button.branch .branch-text")?.clientWidth || 999;
+  const [barRef, fold] = useFit(5, (el) => overflows(el) || branchShown(el) < 110,
+    [ws.id, pr?.number, pr?.state, checks?.text, autopilot, collision?.pairs.length, stackedOnThis.length, !!parent, renaming !== null, !!form, primary?.id, busy]);
+
   const renameBranch = async () => {
     const next = renaming?.trim();
     setRenaming(null);
@@ -377,7 +386,7 @@ export function PrBar({
   };
 
   return (
-    <div className="prbar">
+    <div className={["prbar", ...[1, 2, 3, 4, 5].filter((n) => fold >= n).map((n) => `pb-${n}`)].join(" ")} ref={barRef}>
       {renaming !== null ? (
         <input
           className="branch-edit"
@@ -419,7 +428,7 @@ export function PrBar({
             onClick={() => setRadarOpen((o) => !o)}
             title="Another workspace changes the same files. Click for a merge order."
           >
-            <Layers size={13} /><span className="pill-text">Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
+            <Layers size={13} /><span className="pill-text"><span className="pb-long">Same files as </span>{nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
           </button>
           {radarOpen && (
             <RadarPopover
@@ -454,11 +463,11 @@ export function PrBar({
               ))}
             </span>
           )}
-          {checks && <span className={`pill ${checks.cls}`} title={checks.names.join(", ")}><CheckIcon size={14} />CI {checks.text}</span>}
+          {checks && <span className={`pill ${checks.cls}`} title={`CI ${checks.text}: ${checks.names.join(", ")}`}><CheckIcon size={14} /><span className="pb-text">CI {checks.text}</span></span>}
           {open && checks?.cls === "bad" && autopilot === undefined && <Mascot size={28} mood="worried" title="CI is failing" />}
           {autopilot !== undefined && (
             <button className="pill autopilot" onClick={() => actions.autopilot.run()} title="Autopilot keeps this PR moving. Click to turn it off.">
-              <Bot size={13} />Autopilot · {autopilot} of 3 tries
+              <Bot size={13} /><span className="pb-text">Autopilot · {autopilot} of 3 tries</span>
             </button>
           )}
         </>
@@ -466,9 +475,9 @@ export function PrBar({
       {pr !== undefined && pr?.state !== "MERGED" && (
         <span className="git-actions">
           {primary && (
-            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy || !!primary.disabled}
+            <button className={primary.id === "merge" ? "good-btn" : "primary"} onClick={primary.run} disabled={!!busy || !!primary.disabled} aria-label={primary.label}
               title={primary.id === "createPr" && noChanges ? noChanges : primary.keys ? `${primary.label} (${primary.keys})` : undefined}>
-              {busy ? <span className="spinner" /> : primary.icon}{primary.label}
+              {busy ? <span className="spinner" /> : primary.icon}<span className="pb-label">{primary.label}</span>
             </button>
           )}
           <span className="git-menu">

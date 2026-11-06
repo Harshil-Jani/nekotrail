@@ -10,6 +10,7 @@ import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrBar } from "./components/PrBar";
+import { useFit, overflows } from "./useFit";
 import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
 import { NewWorkspace, type NewWorkspaceRequest, type Source as NewSource } from "./components/NewWorkspace";
@@ -533,6 +534,13 @@ export default function App() {
     return `${c.name} · ${all.filter((x) => lit.has(x.slug)).length} of ${all.length} stars lit`;
   };
   const repo = ws ? repos.find((r) => r.id === ws.repo_id) : null;
+  // The toolbar folds up instead of clipping (zoomed in, narrow window, wide sidebar):
+  // 1 labels become icons and "Open in" moves into ⋯, 2 the tabs tighten, 3 Run and Compare move into ⋯ too.
+  const paired = !!ws?.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1;
+  const runLive = !!ws && livePtys.has(`${ws.id}:run`);
+  const urlShown = !!ws && !!localUrls[ws.id] && runLive;
+  const [toolbarRef, fold] = useFit(3, (el) => overflows(el) || (el.querySelector<HTMLElement>(".ws-title")?.clientWidth ?? 999) < 120,
+    [ws?.id, ws?.state, paired, runLive, urlShown, repo?.prefs?.actions?.length ?? 0, tab, openTargets.length]);
 
   useEffect(() => {
     if (!ws) return;
@@ -960,7 +968,7 @@ export default function App() {
 
         {view === "workspace" && ws && (
           <>
-            <header className="ws-header" data-tauri-drag-region>
+            <header className={`ws-header${fold >= 1 ? " tb-icons" : ""}${fold >= 2 ? " tb-compact" : ""}${fold >= 3 ? " tb-min" : ""}`} ref={toolbarRef} data-tauri-drag-region>
               <div className="ws-title" data-tauri-drag-region>
                 {editingTitle !== null ? (
                   <input
@@ -999,17 +1007,19 @@ export default function App() {
                   </button>
                 ) : (
                   <>
-                    {localUrls[ws.id] && livePtys.has(`${ws.id}:run`) && (
-                      <button className="quiet" onClick={openLocal} title="Open in browser (⌘⇧B)"><ExternalLink size={14} />{localUrls[ws.id].replace(/^https?:\/\//, "")}</button>
+                    {fold < 3 && urlShown && (
+                      <button className="quiet tb-url" onClick={openLocal} title={`Open ${localUrls[ws.id]} in your browser (⌘⇧B)`} aria-label="Open in browser">
+                        <ExternalLink size={14} />{fold < 1 && <span className="tb-label">{localUrls[ws.id].replace(/^https?:\/\//, "")}</span>}
+                      </button>
                     )}
-                    {ws.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1 && (
-                      <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results"><Columns2 size={14} />Compare</button>
+                    {fold < 3 && paired && (
+                      <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results" aria-label="Compare"><Columns2 size={14} />{fold < 1 && "Compare"}</button>
                     )}
-                    {livePtys.has(`${ws.id}:run`) ? (
-                      <button className="danger" onClick={() => runScript()} title="Stop the run script (⌘R)"><Square size={13} />Stop</button>
+                    {fold < 3 && (runLive ? (
+                      <button className="danger" onClick={() => runScript()} title="Stop the run script (⌘R)" aria-label="Stop"><Square size={13} />{fold < 1 && "Stop"}</button>
                     ) : (
-                      <button onClick={() => runScript({ stay: tab === "preview" })} title="Run the repo's run script (⌘R)"><Play size={14} />Run</button>
-                    )}
+                      <button onClick={() => runScript({ stay: tab === "preview" })} title="Run the repo's run script (⌘R)" aria-label="Run"><Play size={14} />{fold < 1 && "Run"}</button>
+                    ))}
                     {(repo?.prefs?.actions?.length ?? 0) > 0 && (
                       <span className="git-menu">
                         <button className="icon" aria-label="More actions" title="More actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen((o) => !o)}><ChevronDown size={14} /></button>
@@ -1022,14 +1032,30 @@ export default function App() {
                         )}
                       </span>
                     )}
-                    <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value).catch((er) => say(errText(er), true))}>
+                    {fold < 1 && <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value).catch((er) => say(errText(er), true))}>
                       <option value="">Open in</option>
                       {openTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+                    </select>}
                     <span className="git-menu">
                       <button className="icon" aria-label="More actions" title="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
                       {moreOpen && (
                         <span className="menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+                          {/* What the folded toolbar has no room for. */}
+                          {fold >= 3 && <>
+                            {urlShown && <button role="menuitem" onClick={() => { setMoreOpen(false); openLocal(); }}><ExternalLink size={15} /><span>Open {localUrls[ws.id].replace(/^https?:\/\//, "")}</span><kbd>⌘⇧B</kbd></button>}
+                            {paired && <button role="menuitem" onClick={() => { setMoreOpen(false); setComparing(ws.pair_id); }}><Columns2 size={15} /><span>Compare</span></button>}
+                            {runLive
+                              ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the Run script</span><kbd>⌘R</kbd></button>
+                              : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>⌘R</kbd></button>}
+                            <div className="menu-sep" />
+                          </>}
+                          {fold >= 1 && openTargets.length > 0 && <>
+                            <div className="menu-label">Open in</div>
+                            {openTargets.map((t) => (
+                              <button key={t.id} role="menuitem" onClick={() => { setMoreOpen(false); api.openIn(ws.id, t.id).catch((er) => say(errText(er), true)); }}><AppWindow size={15} /><span>{t.name}</span></button>
+                            ))}
+                            <div className="menu-sep" />
+                          </>}
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(ws.title || displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
