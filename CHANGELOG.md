@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**VS Code and Cursor extension**
+- New extension (`extensions/vscode`): lists the open repo's workspaces with state, agent, PR and needs-you. Click one to see its changes in the editor's diff view, or open its worktree in a new window.
+- New task from selection sends the selected code and its file and line to nekotrail. nekotrail asks "Start Claude from your editor?" and nothing runs until you press Start agent.
+- Send selection to workspace chat puts the code in a workspace's message box; you add to it and press Send.
+- A status bar item shows how many workspaces need you. The extension talks only to nekotrail on your machine, over the terminal command's private socket, and sends no telemetry.
+
 **Away alerts**
 - New away alerts (Settings, Notifications): get a short message on your phone or in a team chat through ntfy, Slack, Discord, a webhook or Pushover. Off until you add one.
 - Pick the events for each destination: needs you, turn finished, PR checks failed or green, PR merged, queue done, a spend cap, a runaway agent stopped, and a morning summary of the queue.
