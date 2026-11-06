@@ -5,6 +5,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Checkpoints**
+- Rewind to here: every message you send saves your files first. Rewind puts them back as they were, including untracked files and what you had staged, and tells you how many files change before it does anything.
+- Rewinds can be undone: the chat shows "Rewound to before: ..." with an Undo button, and nothing in the chat is deleted. `.env`, `node_modules` and other ignored files are never touched.
+- Each workspace keeps its last 50 checkpoints, and archiving a workspace clears them. Saving one takes about a quarter of a second on a 15,000-file repo.
+
 **Gemini CLI**
 - Gemini CLI joins Claude and Codex. Pick it for a new workspace or start a Gemini chat in any workspace; it uses your own Gemini login.
 - Pick Gemini's model (Auto, Pro, Flash, Flash-Lite) in the model picker, and set its defaults for new chats in Settings.
