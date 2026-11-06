@@ -425,7 +425,7 @@ function MessageMenu({ text }: { text: string }) {
 /** "Hand off to another agent…", for cards that offer it. */
 function HandoffButton() {
   const { handoff, offered, disabled } = useContext(RewindCtx);
-  return <button className={offered ? "accent" : undefined} onClick={handoff} disabled={disabled}><ArrowRightLeft size={13} />Hand off…</button>;
+  return <button className={offered ? "accent" : undefined} onClick={handoff} disabled={disabled} title="Another agent carries on in this workspace, with a brief of what was done"><ArrowRightLeft size={13} />Hand off to another agent…</button>;
 }
 
 /** "Handed off to Codex" or "Continued from Claude", opening the other chat. */
