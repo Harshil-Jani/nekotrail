@@ -89,7 +89,7 @@ export type Workspace = {
   /** What the task is called: from the first prompt, then the PR, or typed by hand. The star name is shown when empty. */
   title: string;
   /** Where `title` came from; "" while there is none. A PR title replaces "auto", nothing replaces "user". */
-  title_source: "" | "auto" | "pr" | "user";
+  title_source: "" | "auto" | "issue" | "pr" | "user";
   /** Set by hand; empty means derived from the PR. */
   status: WsStatus;
   /** Shared by the workspaces of one bake-off (same task, different agents). */

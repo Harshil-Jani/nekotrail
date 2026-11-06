@@ -1554,7 +1554,7 @@ export default function App() {
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingTitle(null); }}
                   />
                 ) : (
-                  <h1 onDoubleClick={() => setEditingTitle(displayName(sky, ws))} title={`${ws.title_source === "auto" ? "Named after the first message. " : ws.title_source === "pr" ? "Named after the PR. " : ""}Double-click to rename.`}>
+                  <h1 onDoubleClick={() => setEditingTitle(displayName(sky, ws))} title={`${ws.title_source === "auto" ? "Named after the first message. " : ws.title_source === "issue" ? "Named after the Linear issue. " : ws.title_source === "pr" ? "Named after the PR. " : ""}Double-click to rename.`}>
                     <span className="ws-title-text">{displayName(sky, ws)}</span>
                     {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                   </h1>

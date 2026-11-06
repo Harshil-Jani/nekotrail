@@ -1,9 +1,11 @@
 //! Workspace titles: a short name for the task, so 20 workspaces stay readable. The star name
 //! stays as the workspace's id and shows as its subtitle.
 //!
-//! A title comes from one of three places, recorded as `title_source`:
+//! A title comes from one of four places, recorded as `title_source`:
 //! - `auto`: derived here from the first prompt, locally (no model call);
-//! - `pr`: the PR's title, which replaces an `auto` one and follows later renames of the PR;
+//! - `issue`: the Linear issue the workspace was started from ("ENG-123 Fix the login loop"),
+//!   which the first prompt never replaces;
+//! - `pr`: the PR's title, which replaces an `auto` or `issue` one and follows later renames of the PR;
 //! - `user`: typed by hand, never overwritten by either of the others.
 //!
 //! An empty source means no title yet (the star name is shown).
@@ -12,6 +14,7 @@
 pub const MAX: usize = 48;
 
 pub const AUTO: &str = "auto";
+pub const ISSUE: &str = "issue";
 pub const PR: &str = "pr";
 pub const USER: &str = "user";
 
@@ -20,8 +23,21 @@ pub fn may_replace(current: &str, incoming: &str) -> bool {
     match incoming {
         USER => true,
         PR => current != USER,
+        ISSUE => current.is_empty() || current == AUTO,
         AUTO => current.is_empty(),
         _ => false,
+    }
+}
+
+/// A workspace started from an issue: its identifier, then its title, cut like any other title.
+/// The identifier comes first so it survives the cut.
+pub fn issue_title(identifier: &str, title: &str) -> String {
+    let t = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let id = identifier.trim();
+    match (id.is_empty(), t.is_empty()) {
+        (true, _) => shorten(&t),
+        (false, true) => id.to_string(),
+        (false, false) => shorten(&format!("{id} {t}")),
     }
 }
 
@@ -320,5 +336,19 @@ mod tests {
         // The user always wins.
         assert!(may_replace(AUTO, USER) && may_replace(PR, USER) && may_replace(USER, USER) && may_replace("", USER));
         assert!(!may_replace("", "other"));
+        // An issue's title beats the first prompt's, and gives way to the PR's and the user's.
+        assert!(may_replace("", ISSUE) && may_replace(AUTO, ISSUE));
+        assert!(!may_replace(ISSUE, AUTO) && !may_replace(PR, ISSUE) && !may_replace(USER, ISSUE));
+        assert!(may_replace(ISSUE, PR) && may_replace(ISSUE, USER));
+    }
+
+    #[test]
+    fn issue_titles_keep_the_identifier() {
+        assert_eq!(issue_title("ENG-123", "Fix the  login loop"), "ENG-123 Fix the login loop");
+        assert_eq!(issue_title("ENG-7", "  "), "ENG-7");
+        assert_eq!(issue_title("", "Only a title"), "Only a title");
+        let long = issue_title("ENG-123", "Make the checkout page remember the last shipping address across devices");
+        assert!(long.starts_with("ENG-123 Make the checkout"), "{long}");
+        assert!(long.ends_with('…') && long.chars().count() <= MAX, "{long}");
     }
 }
