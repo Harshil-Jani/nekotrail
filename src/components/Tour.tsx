@@ -8,15 +8,29 @@ type Box = { top: number; left: number; width: number; height: number };
 const CARD_W = 300;
 const GAP = 12;
 
-/** Where the card goes: beside the target if it fits, else below, else above; always on screen. */
-function place(t: Box | null, cardH: number): { top: number; left: number } {
+type Side = "right" | "below" | "above" | "center";
+type Pos = { top: number; left: number; side: Side; arrow: number };
+const ARROW = 14;
+const GAP_ARROW = GAP + ARROW / 2;
+
+/**
+ * Where the card goes: beside the target if it fits, else below, else above; always on screen.
+ * `arrow` is how far along the card's near edge its arrow sits, so it points at the target.
+ */
+function place(t: Box | null, cardH: number): Pos {
   const vw = window.innerWidth, vh = window.innerHeight;
   const clampX = (x: number) => Math.min(Math.max(GAP, x), vw - CARD_W - GAP);
   const clampY = (y: number) => Math.min(Math.max(GAP, y), vh - cardH - GAP);
-  if (!t) return { top: clampY((vh - cardH) / 2), left: clampX((vw - CARD_W) / 2) };
-  if (t.left + t.width + GAP + CARD_W <= vw - GAP && t.height > cardH * 0.6) return { top: clampY(t.top + 16), left: t.left + t.width + GAP };
-  if (t.top + t.height + GAP + cardH <= vh - GAP) return { top: t.top + t.height + GAP, left: clampX(t.left + t.width / 2 - CARD_W / 2) };
-  return { top: clampY(t.top - GAP - cardH), left: clampX(t.left + t.width / 2 - CARD_W / 2) };
+  const along = (at: number, size: number) => Math.min(Math.max(20, at), size - 20);
+  if (!t) return { top: clampY((vh - cardH) / 2), left: clampX((vw - CARD_W) / 2), side: "center", arrow: 0 };
+  if (t.left + t.width + GAP_ARROW + CARD_W <= vw - GAP && t.height > cardH * 0.6) {
+    const top = clampY(t.top + 16);
+    return { top, left: t.left + t.width + GAP_ARROW, side: "right", arrow: along(Math.min(t.top + t.height / 2, top + 32) - top, cardH) };
+  }
+  const left = clampX(t.left + t.width / 2 - CARD_W / 2);
+  const x = along(t.left + t.width / 2 - left, CARD_W);
+  if (t.top + t.height + GAP_ARROW + cardH <= vh - GAP) return { top: t.top + t.height + GAP_ARROW, left, side: "below", arrow: x };
+  return { top: clampY(t.top - GAP_ARROW - cardH), left, side: "above", arrow: x };
 }
 
 /**
@@ -26,7 +40,7 @@ function place(t: Box | null, cardH: number): { top: number; left: number } {
 export function Tour({ onClose }: { onClose: () => void }) {
   const [i, setI] = useState(0);
   const [box, setBox] = useState<Box | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<Pos | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const next = useRef<HTMLButtonElement>(null);
   const stop = TOUR[i];
@@ -36,7 +50,13 @@ export function Tour({ onClose }: { onClose: () => void }) {
     const measure = () => {
       const el = stop.target ? document.querySelector<HTMLElement>(`[data-tour="${stop.target}"]`) : null;
       const r = el?.getBoundingClientRect();
-      const b = r && r.width > 0 && r.height > 0 ? { top: r.top - 4, left: r.left - 4, width: r.width + 8, height: r.height + 8 } : null;
+      // The ring stays inside the window, so a target that runs to the edge still gets all four corners.
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const edge = (n: number, max: number) => Math.min(Math.max(3, n), max - 3);
+      const b = r && r.width > 0 && r.height > 0 ? (() => {
+        const top = edge(r.top - 4, vh), left = edge(r.left - 4, vw);
+        return { top, left, width: edge(r.right + 4, vw) - left, height: edge(r.bottom + 4, vh) - top };
+      })() : null;
       setBox(b);
       setPos(place(b, card.current?.offsetHeight ?? 180));
     };
@@ -70,6 +90,9 @@ export function Tour({ onClose }: { onClose: () => void }) {
         aria-describedby="tour-body"
         style={{ width: CARD_W, top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
       >
+        {pos && pos.side !== "center" && (
+          <span className={`tour-arrow ${pos.side}`} aria-hidden style={pos.side === "right" ? { top: pos.arrow } : { left: pos.arrow }} />
+        )}
         <div className="row">
           <span className="tour-count num">{i + 1} of {TOUR.length}</span>
           <span className="spacer" />

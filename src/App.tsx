@@ -722,7 +722,7 @@ export default function App() {
                 onClick={() => setRepoView((v) => ({ ...v, [ws.id]: m.id }))}
                 title={m.id === ws.id ? `${repoNameOf(m.repo_id)}: the agent works here` : repoNameOf(m.repo_id)}>
                 {repoNameOf(m.repo_id)}
-                {l && (l[0] > 0 || l[1] > 0) && <span className="num repo-switch-lines"><span className="add">+{l[0]}</span> <span className="del">-{l[1]}</span></span>}
+                {l && (l[0] > 0 || l[1] > 0) && <span className="num repo-switch-lines">{l[0] > 0 && <span className="add">+{l[0]}</span>}{l[0] > 0 && l[1] > 0 && " "}{l[1] > 0 && <span className="del">-{l[1]}</span>}</span>}
                 {dot && dot !== "passed" && <span className={`ws-check ck-${dot}`} role="img" aria-label={dot === "failed" ? "checks failing" : "checks running"} />}
               </button>
             );
@@ -1413,6 +1413,7 @@ export default function App() {
         onNewWorkspace={setNewFor}
         onAddRepo={addRepo}
         onClone={() => setCloning(true)}
+        firstRun={!!onboardStep}
         onRepoSettings={setSettingsFor}
         onToggleArchived={() => setShowArchived((v) => !v)}
         onSky={() => setView("sky")}
@@ -1481,7 +1482,7 @@ export default function App() {
             onSay={(text, bad) => say(text, bad)}
           />
         )}
-        {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} onNew={() => openNew()} />}
+        {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} onNew={() => openNew()} hasRepos={repos.length > 0} />}
 
         {view === "workspace" && !ws && onboardStep && (
           <FirstRun

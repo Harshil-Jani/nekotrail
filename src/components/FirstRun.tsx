@@ -219,6 +219,7 @@ function TryStep({ repos, ready, onBack, onSkip, onStart }: {
           </div>
         )}
         {error && <p className="banner error" role="alert">{error}</p>}
+        <p className="muted fr-note">The agent works in a new workspace of its own. While it works, a short tour shows you around.</p>
       </div>
       <div className="fr-actions">
         <button className="quiet" onClick={onBack}><ArrowLeft size={14} />Back</button>
@@ -229,7 +230,6 @@ function TryStep({ repos, ready, onBack, onSkip, onStart }: {
           {busy ? <span className="spinner" /> : <Play size={14} />}Start in Plan mode
         </button>
       </div>
-      <p className="muted fr-note">The agent works in a new workspace of its own. While it works, a short tour shows you around.</p>
     </>
   );
 }

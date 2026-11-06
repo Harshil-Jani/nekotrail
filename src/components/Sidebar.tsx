@@ -25,6 +25,8 @@ type Props = {
   onAddRepo: () => void;
   /** Clone from GitHub, offered when there are no repos yet. */
   onClone?: () => void;
+  /** The first run is showing, with its own ways to add code: the empty list only says where repos go. */
+  firstRun?: boolean;
   onRepoSettings: (repoId: string) => void;
   onToggleArchived: () => void;
   onSky: () => void;
@@ -252,7 +254,7 @@ export function Sidebar(p: Props) {
     const task = p.taskRepos?.[w.id];
     const taskNote = task ? `One task across ${task.join(", ")}` : "";
     const meta = <>
-      {task && <span className="ws-repos num" role="img" aria-label={taskNote} title={taskNote}><FolderGit2 size={12} />{task.length}</span>}
+      {task && <span className="ws-repos num" role="img" aria-label={taskNote} title={taskNote}><FolderGit2 size={12} />{task.length} repos</span>}
       {ck && <span className={`ws-check ck-${ck}`} role="img" aria-label={CHECK_LABEL[ck]} title={CHECK_LABEL[ck]} />}
       {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
       {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
@@ -394,9 +396,9 @@ export function Sidebar(p: Props) {
         onFocus={(e) => { const el = (e.target as HTMLElement).closest<HTMLElement>(ITEMS); if (el) kb.current = el; }}>
         {p.repos.length === 0 && (
           <div className="sidebar-empty">
-            <p className="muted">No repos yet. Add one to start your first workspace.</p>
-            <button className="ws-empty" onClick={p.onAddRepo}><FolderOpen size={13} />Add a local repo</button>
-            {p.onClone && <button className="ws-empty" onClick={p.onClone}><GitFork size={13} />Clone from GitHub</button>}
+            <p className="muted">{p.firstRun ? "Your repos and their workspaces show up here." : "No repos yet. Add one to start your first workspace."}</p>
+            {!p.firstRun && <button className="ws-empty" onClick={p.onAddRepo}><FolderOpen size={13} />Add a local repo</button>}
+            {!p.firstRun && p.onClone && <button className="ws-empty" onClick={p.onClone}><GitFork size={13} />Clone from GitHub</button>}
           </div>
         )}
         <ReviewRequests

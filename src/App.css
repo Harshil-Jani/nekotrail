@@ -665,7 +665,9 @@ button.good-btn:hover { background: var(--good); }
 .check-row.ok > svg { color: var(--good); }
 .check-row.bad > svg { color: var(--bad); }
 .check-row.warn > svg { color: var(--muted); }
-.check-fix { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: 4px; font-size: 12px; }
+.check-fix { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: center; margin-top: 4px; font-size: 12px; }
+/* The "then sign in" line always sits under the command, so every missing agent reads the same. */
+.check-fix > .muted { flex-basis: 100%; }
 .cmd { display: inline-flex; align-items: center; border: 0.5px solid var(--line-strong); background: var(--bg); }
 .cmd code { padding: 2px 8px; font-size: 12px; }
 .cmd .icon { padding: 4px; }
@@ -1137,6 +1139,7 @@ html.native .repo-actions { background: none; }
 .approval-card.stale .plan-head, .approval-card.stale .plan-head svg { color: var(--muted); }
 .approval-done.denied { color: var(--bad); }
 .modal.storage { width: 620px; }
+.modal.storage > p { margin: 0; }
 .storage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface); max-height: 52vh; overflow-y: auto; }
 .storage-list li { display: grid; grid-template-columns: 1fr 120px auto; align-items: center; gap: var(--s3); padding: 8px var(--s3); border-bottom: 0.5px solid var(--line); }
 .storage-list li:last-child { border-bottom: none; }
@@ -2053,7 +2056,8 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .export-foot { flex-wrap: wrap; }
 
 /* ---------- first run: welcome flow, coach-mark tour, empty states ---------- */
-.first-run { width: 100%; max-width: 600px; }
+/* Top-aligned, so the step list stays put from one step to the next. */
+.welcome.first-run { width: 100%; max-width: 600px; margin: 0 auto; padding-top: max(var(--s7), 9vh); }
 .first-run h1 { margin-top: var(--s3); }
 .first-run .lede { margin-bottom: var(--s4); }
 .fr-steps { list-style: none; padding: 0; margin: 0 0 var(--s6); display: flex; gap: var(--s5); font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -2064,15 +2068,17 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .fr-steps li.done .fr-dot { background: var(--good-soft); color: var(--good-text); }
 .first-run .setup-check { border-radius: var(--radius); margin: 0; }
 .fr-note { margin: var(--s3) 0 0; font-size: 12.5px; }
+.fr-try .fr-note { margin: 0; }
 .fr-looking { display: flex; align-items: center; gap: var(--s2); margin: var(--s4) 0; }
-.welcome .import-card.fr-hero { margin: 0 0 var(--s2); }
+.welcome .import-card.fr-hero { margin: 0 0 var(--s2); gap: var(--s1); }
+.fr-hero > button { margin-top: var(--s3); }
 .fr-actions { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s5); }
 .fr-hint { font-size: 12px; }
 .fr-try { display: flex; flex-direction: column; gap: var(--s3); }
 .fr-fields { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); }
 .fr-fields label { display: inline-flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: 12px; font-weight: 600; }
 .fr-fields label select { color: var(--text); font-weight: 400; }
-.chip.fr-mode { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--purple-soft); color: var(--purple); }
+.chip.fr-mode { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--purple-soft); color: light-dark(var(--purple), #d48cf8); }
 .fr-prompt { width: 100%; resize: vertical; min-height: 92px; padding: var(--s3); border-radius: var(--r-xl); box-shadow: inset 0 0 0 0.5px var(--line-strong); font-size: 13.5px; line-height: 1.5; }
 .fr-prompt:focus { box-shadow: var(--ring); }
 .fr-ideas { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: 12px; }
@@ -2087,6 +2093,11 @@ button.fr-idea.on { background: var(--accent-soft); color: var(--accent-chip-tex
 .tour-ring { position: absolute; border-radius: var(--r-lg); box-shadow: 0 0 0 2px var(--accent), 0 0 0 9999px var(--tour-dim); pointer-events: none; transition: top 0.25s var(--ease), left 0.25s var(--ease), width 0.25s var(--ease), height 0.25s var(--ease); }
 .tour-card { position: absolute; background: var(--raised); border-radius: var(--r-xl); padding: var(--s4); box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong); display: flex; flex-direction: column; gap: var(--s2); }
 .tour-card h2 { margin: 0; font-size: 15px; font-weight: 600; }
+/* The arrow: a square turned 45 degrees, half under the card, pointing at what the ring marks. */
+.tour-arrow { position: absolute; width: 14px; height: 14px; background: var(--raised); transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 0 0.5px var(--line-strong); clip-path: polygon(0 0, 100% 0, 0 100%); }
+.tour-arrow.right { left: 0; transform: translate(-50%, -50%) rotate(-45deg); }
+.tour-arrow.below { top: 0; }
+.tour-arrow.above { top: 100%; transform: translate(-50%, -50%) rotate(225deg); }
 .tour-card p { margin: 0; color: var(--muted); line-height: 1.5; }
 .tour-card .icon { width: 22px; height: 22px; margin: -4px -6px 0 0; }
 .tour-count { font-size: 11px; font-weight: 600; color: var(--muted); }
@@ -2103,5 +2114,5 @@ body:has(.tour) .repo-head .repo-actions { opacity: 1; }
 .sidebar-empty .ws-empty { padding-left: 0; gap: 6px; }
 .board-empty { padding: var(--s7); }
 .board-empty p { margin: 0; }
-.sky-first { margin-bottom: var(--s3); }
+.sky-first { margin-top: var(--s3); }
 @media (prefers-reduced-motion: reduce) { .tour-ring { transition: none; } }
