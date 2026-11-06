@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 export type Ask = {
   title: string;
+  /** Plain text; each "\n" starts a new paragraph. */
   body?: string;
   /** Label of the button that goes ahead, e.g. "Archive anyway". */
   ok: string;
@@ -50,7 +51,8 @@ export function ConfirmHost() {
     <div className="modal-backdrop confirm-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) done(false); }}>
       <div className="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby={cur.body ? "confirm-body" : undefined} ref={box}>
         <h2 id="confirm-title">{cur.title}</h2>
-        {cur.body && <p id="confirm-body" className="muted">{cur.body}</p>}
+        {/* Each line of the body is its own paragraph, so a consequence can stand on its own line. */}
+        {cur.body && <div id="confirm-body" className="confirm-body">{cur.body.split("\n").map((line, i) => <p key={i} className="muted">{line}</p>)}</div>}
         <div className="row end">
           {!cur.notice && <button onClick={() => done(false)}>{cur.cancel ?? "Cancel"}</button>}
           <button className={cur.danger ? "danger-fill" : "primary"} onClick={() => done(true)}>{cur.ok}</button>

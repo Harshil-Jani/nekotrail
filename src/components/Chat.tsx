@@ -542,10 +542,10 @@ export function Chat({
         const first = (prompt ?? "").split("\n").find((l) => l.trim())?.trim() ?? "";
         const short = first.length > 60 ? `${first.slice(0, 59)}…` : first;
         const what = `${files} ${files === 1 ? "file goes" : "files go"} back to how ${files === 1 ? "it was" : "they were"}`;
-        const off = commits ? ` ${commits} ${commits === 1 ? "commit comes" : "commits come"} off the branch.` : "";
+        const off = commits ? `\n${commits} ${commits === 1 ? "commit comes" : "commits come"} off the branch.` : "";
         const ok = await ask({
           title: prompt === null ? "Undo this rewind?" : "Rewind files to before this message?",
-          body: `${what} ${prompt === null ? "right before the rewind" : `before "${short}"`}.${off} Your current files are saved first, so you can undo this. Ignored files like .env and node_modules are not touched.`,
+          body: `${what} ${prompt === null ? "right before the rewind" : `before "${short}"`}.${off}\nYour current files are saved first, so you can undo this. Ignored files like .env and node_modules are not touched.`,
           ok: prompt === null ? "Undo rewind" : "Rewind",
         });
         if (ok) await api.restoreCheckpoint(active, checkpoint);

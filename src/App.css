@@ -1308,3 +1308,4 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .chat-tab > button[role="tab"] .spinner { margin-right: 6px; vertical-align: -2px; }
 .menu-icon-space { width: 13px; flex-shrink: 0; display: inline-block; }
 .preview-empty p code { white-space: nowrap; }
+.confirm-body { display: flex; flex-direction: column; gap: var(--s2); }
