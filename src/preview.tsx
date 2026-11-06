@@ -198,23 +198,43 @@ mockIPC(
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
       case "model_catalog": return catalog;
       case "mcp_list": return "Checking MCP server health…\n\ngithub: https://api.githubcopilot.com/mcp - ✔ Connected\nlinear: https://mcp.linear.app/sse - ✔ Connected\npostgres: npx -y @modelcontextprotocol/server-postgres - ✗ Failed to connect";
-      // ?mcp opens the sheet (made-up servers and skills).
-      case "mcp_share_overview": return {
-        servers: [
-          { name: "github", transport: "http", summary: "https://api.githubcopilot.com/mcp", env: [], has: [{ agent: "claude", scope: "user", file: "~/.claude.json" }, { agent: "codex", scope: "user", file: "~/.codex/config.toml" }], from: { agent: "claude", scope: "user", file: "~/.claude.json" }, secrets: [], targets: [{ agent: "gemini", ok: true, why: null }], problem: null },
-          { name: "linear", transport: "sse", summary: "https://mcp.linear.app/sse", env: [], has: [{ agent: "claude", scope: "user", file: "~/.claude.json" }], from: { agent: "claude", scope: "user", file: "~/.claude.json" }, secrets: [], targets: [{ agent: "codex", ok: false, why: "Codex only connects to command servers and streamable HTTP servers. This one uses SSE, so Codex can't use it." }, { agent: "gemini", ok: true, why: null }], problem: null },
-          { name: "postgres", transport: "stdio", summary: "npx -y @modelcontextprotocol/server-postgres", env: ["PGHOST", "PGPASSWORD"], has: [{ agent: "claude", scope: "project", file: ".mcp.json" }], from: { agent: "claude", scope: "project", file: ".mcp.json" }, secrets: [{ id: "env:PGPASSWORD", kind: "env", key: "PGPASSWORD", can_ref: true }], targets: [{ agent: "codex", ok: true, why: null }, { agent: "gemini", ok: true, why: null }], problem: null },
-        ],
-        skills: [
-          { name: "release-notes", description: "Write release notes from merged PRs", has: ["claude", "codex", "gemini"], share: [] },
-          { name: "triage", description: "Label and prioritise new issues", has: ["claude"], share: [{ target: "agents", label: "Add to Codex and Gemini", link: "~/.agents/skills/triage", to: "~/.claude/skills/triage", ok: true, why: null }] },
-        ],
-        files: { claude: "~/.claude.json", codex: "~/.codex/config.toml", gemini: "~/.gemini/settings.json" }, problems: [],
-      };
+      // ?mcp opens the sheet (made-up servers and skills). ?mcp=empty, ?mcp=error and ?mcp=loading show
+      // those states; ?mcp=stale makes "Add" fail as if the file changed after the preview.
+      case "mcp_share_overview": {
+        const st = new URLSearchParams(location.search).get("mcp");
+        if (st === "loading") return new Promise(() => {});
+        if (st === "error") throw "Couldn't read ~/.codex/config.toml: expected `=` at line 14, column 9.";
+        const files = { claude: "~/.claude.json", codex: "~/.codex/config.toml", gemini: "~/.gemini/settings.json", opencode: "~/.config/opencode/opencode.json" };
+        const dirs = ["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"];
+        if (st === "empty") return { servers: [], skills: [], files, opencode_skill_dirs: dirs, problems: [] };
+        const u = (agent: string, file: string) => ({ agent, scope: "user", file });
+        const ok = (agent: string) => ({ agent, ok: true, why: null });
+        const sse = "Codex only connects to command servers and streamable HTTP servers. This one uses SSE, so Codex can't use it.";
+        return {
+          servers: [
+            { name: "github", transport: "http", summary: "https://api.githubcopilot.com/mcp", env: [], has: [u("claude", files.claude), u("codex", files.codex)], from: u("claude", files.claude), secrets: [], targets: [ok("gemini"), ok("opencode")], problem: null },
+            { name: "linear", transport: "sse", summary: "https://mcp.linear.app/sse", env: [], has: [u("claude", files.claude)], from: u("claude", files.claude), secrets: [], targets: [{ agent: "codex", ok: false, why: sse }, ok("gemini"), ok("opencode")], problem: null },
+            { name: "postgres", transport: "stdio", summary: "npx -y @modelcontextprotocol/server-postgres", env: ["PGHOST", "PGPASSWORD"], has: [{ agent: "claude", scope: "project", file: ".mcp.json" }], from: { agent: "claude", scope: "project", file: ".mcp.json" }, secrets: [{ id: "env:PGPASSWORD", kind: "env", key: "PGPASSWORD", can_ref: true }], targets: [ok("codex"), ok("gemini"), ok("opencode")], problem: null },
+            { name: "playwright", transport: "stdio", summary: "npx @playwright/mcp@latest --headless --browser chromium --viewport-size 1440,900", env: [], has: [u("claude", files.claude), u("codex", files.codex), u("gemini", files.gemini), u("opencode", files.opencode)], from: u("claude", files.claude), secrets: [], targets: [], problem: null },
+            { name: "sentry", transport: "http", summary: "https://mcp.sentry.dev/mcp", env: [], has: [u("opencode", files.opencode)], from: u("opencode", files.opencode), secrets: [{ id: "header:Authorization", kind: "header", key: "Authorization", can_ref: false }], targets: [ok("claude"), ok("codex"), ok("gemini")], problem: null },
+          ],
+          skills: [
+            { name: "release-notes", description: "Write release notes from merged PRs", has: ["claude", "codex", "gemini", "opencode"], share: [] },
+            { name: "triage", description: "Label and prioritise new issues, then post a summary of what changed in the last day to the team channel", has: ["claude", "opencode"], share: [{ target: "agents", label: "Add to Codex and Gemini", link: "~/.agents/skills/triage", to: "~/.claude/skills/triage", ok: true, why: null }] },
+            { name: "db-migrate", description: "Plan and check a database migration", has: ["codex", "gemini", "opencode"], share: [{ target: "claude", label: "Add to Claude", link: "~/.claude/skills/db-migrate", to: "~/.agents/skills/db-migrate", ok: false, why: "~/.claude/skills/db-migrate already exists and isn't a link. nekotrail won't replace it." }] },
+          ],
+          files, opencode_skill_dirs: dirs, problems: [],
+        };
+      }
       case "mcp_share_preview": {
-        if (args.name !== "postgres") return {
-          file: "~/.codex/config.toml", creates: false, backup: null, snippet: `[mcp_servers.${args.name}]\nurl = "https://mcp.linear.app/sse"`, notes: [], asks: [], secrets: [], token: "t",
+        if (args.name === "linear" && args.target === "codex") return {
+          file: "~/.codex/config.toml", creates: false, backup: null, snippet: `[mcp_servers.linear]\nurl = "https://mcp.linear.app/sse"`, notes: [], asks: [], secrets: [], token: "t",
           blockers: ["Codex only connects to command servers and streamable HTTP servers. This one uses SSE, so Codex can't use it."],
+        };
+        if (args.target === "opencode") return {
+          // No OpenCode config yet: the preview is the whole new file.
+          file: "~/.config/opencode/opencode.json", creates: true, backup: null, notes: [], blockers: [], asks: [], secrets: [], token: "t",
+          snippet: `{\n  "$schema": "https://opencode.ai/config.json",\n  "mcp": {\n    "${args.name}": {\n      "type": "remote",\n      "url": "https://api.githubcopilot.com/mcp",\n      "enabled": true\n    }\n  }\n}`,
         };
         const ref = args.choices["env:PGPASSWORD"] === "ref";
         const answered = !!args.choices["env:PGPASSWORD"];
@@ -226,6 +246,10 @@ mockIPC(
           secrets: [{ id: "env:PGPASSWORD", kind: "env", key: "PGPASSWORD", can_ref: true }], token: "t",
         };
       }
+      case "mcp_share_apply":
+        if (new URLSearchParams(location.search).get("mcp") === "stale") throw "The file changed since the preview. Look at it again before adding.";
+        return { file: args.target === "opencode" ? "~/.config/opencode/opencode.json" : "~/.codex/config.toml", backup: args.target === "opencode" ? null : "~/.codex/config.toml.bak-nekotrail-20261106-142233" };
+      case "skill_share": return "~/.agents/skills/triage";
       case "slash_commands": return [["ship", "Run tests, bump the version and open the release PR"], ["triage", "Label and prioritise new issues"]];
       case "sections": return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
