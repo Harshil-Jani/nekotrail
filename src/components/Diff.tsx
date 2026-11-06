@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, MessageSquarePlus, Pencil, RefreshCw, Save, Send, X } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -38,6 +38,77 @@ export function parseDiff(text: string): Line[] {
   return out;
 }
 
+const NONE: never[] = [];
+const COMMENT_ICON = <MessageSquarePlus size={13} />;
+
+/** The box for writing one review comment. Its draft lives here, so typing redraws only this box. */
+function ReviewEdit({ onSave, onCancel }: { onSave: (text: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="review-edit">
+      <textarea
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="What should change here? ⌘↵ to add, Esc to cancel"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(draft); }
+          if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
+        }}
+      />
+      <div className="row">
+        <span className="spacer" />
+        <button className="quiet" onClick={onCancel}>Cancel</button>
+        <button className="primary" onClick={() => onSave(draft)} disabled={!draft.trim()}>Add comment</button>
+      </div>
+    </div>
+  );
+}
+
+/** One diff line with its comments. Memoized: big diffs redraw only the lines that changed. */
+const DiffRow = memo(function DiffRow({ l, i, here, ghHere, editing, onEdit, onSave, onRemove }: {
+  l: Line;
+  i: number;
+  here: ReviewComment[];
+  ghHere: GhComment[];
+  editing: boolean;
+  onEdit: (i: number | null) => void;
+  onSave: (l: Line, text: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  if (l.kind === "hunk") return <div className="dl hunk"><span className="ln" /><span className="ln" /><code>{l.text}</code></div>;
+  const num = l.kind === "del" ? l.old : l.new;
+  return (
+    <div>
+      <div className={`dl ${l.kind}`}>
+        <span className="ln">{l.old ?? ""}</span>
+        <span className="ln">{l.new ?? ""}</span>
+        <button className="add-comment" aria-label={`Comment on line ${num}`} onClick={() => onEdit(i)}>
+          {COMMENT_ICON}
+        </button>
+        <code>{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}{l.text || " "}</code>
+      </div>
+      {ghHere.map((c) => (
+        <div key={c.id} className={`gh-comment ${c.reply_to ? "reply" : ""}`}>
+          <Avatar src={c.avatar} size={18} label={c.user} />
+          <div>
+            <b>@{c.user}</b>
+            <span className="gh-body">{c.body}</span>
+          </div>
+          <button className="icon" aria-label="Open on GitHub" title="Open on GitHub" onClick={() => openUrl(c.url)}><ExternalLink size={13} /></button>
+        </div>
+      ))}
+      {here.map((c) => (
+        <div key={c.id} className="review-comment">
+          <span>{c.text}</span>
+          <button className="icon" aria-label="Delete comment" onClick={() => onRemove(c.id)}><X size={13} /></button>
+        </div>
+      ))}
+      {editing && <ReviewEdit onSave={(t) => onSave(l, t)} onCancel={() => onEdit(null)} />}
+    </div>
+  );
+});
+
 const DiffLines = memo(function DiffLines({
   file,
   text,
@@ -55,76 +126,42 @@ const DiffLines = memo(function DiffLines({
   onRemove: (id: string) => void;
   split: boolean;
 }) {
-  const lines = parseDiff(text);
+  const lines = useMemo(() => parseDiff(text), [text]);
   const [editing, setEditing] = useState<number | null>(null);
-  const [draft, setDraft] = useState("");
-  useEffect(() => { setEditing(null); setDraft(""); }, [file]);
-  if (split) return <SplitLines lines={lines} file={file} />;
-
-  const save = (l: Line) => {
+  useEffect(() => { setEditing(null); }, [file]);
+  // Comments by side and line number, so each row looks up its own instead of filtering the list.
+  const byLine = useMemo(() => {
+    const ours = new Map<string, ReviewComment[]>();
+    for (const c of comments) { const k = `${c.side}:${c.line}`; ours.set(k, [...(ours.get(k) ?? []), c]); }
+    const theirs = new Map<string, GhComment[]>();
+    for (const c of gh) { const k = `${c.side === "LEFT" ? "old" : "new"}:${c.line}`; theirs.set(k, [...(theirs.get(k) ?? []), c]); }
+    return { ours, theirs };
+  }, [comments, gh]);
+  // Stable callbacks keep the memoized rows from redrawing when the parent does.
+  const cb = useRef({ onAdd, onRemove });
+  cb.current = { onAdd, onRemove };
+  const save = useCallback((l: Line, draft: string) => {
     const t = draft.trim();
     if (t) {
       const side = l.kind === "del" ? "old" : "new";
-      onAdd({ id: crypto.randomUUID(), file, line: (side === "old" ? l.old : l.new)!, side, code: l.text.trim(), text: t });
+      cb.current.onAdd({ id: crypto.randomUUID(), file, line: (side === "old" ? l.old : l.new)!, side, code: l.text.trim(), text: t });
     }
     setEditing(null);
-    setDraft("");
-  };
+  }, [file]);
+  const remove = useCallback((id: string) => cb.current.onRemove(id), []);
+  if (split) return <SplitLines lines={lines} file={file} />;
 
   return (
     <div className="diff" role="table" aria-label={`Changes in ${file}`}>
       {lines.map((l, i) => {
-        if (l.kind === "hunk") return <div key={i} className="dl hunk"><span className="ln" /><span className="ln" /><code>{l.text}</code></div>;
-        const side = l.kind === "del" ? "old" : "new";
-        const num = side === "old" ? l.old : l.new;
-        const here = comments.filter((c) => c.side === side && c.line === num);
-        const ghHere = gh.filter((c) => c.line === num && (c.side === "LEFT") === (side === "old"));
+        const k = `${l.kind === "del" ? "old" : "new"}:${l.kind === "del" ? l.old : l.new}`;
         return (
-          <div key={i}>
-            <div className={`dl ${l.kind}`}>
-              <span className="ln">{l.old ?? ""}</span>
-              <span className="ln">{l.new ?? ""}</span>
-              <button className="add-comment" aria-label={`Comment on line ${num}`} onClick={() => { setEditing(i); setDraft(""); }}>
-                <MessageSquarePlus size={13} />
-              </button>
-              <code>{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}{l.text || " "}</code>
-            </div>
-            {ghHere.map((c) => (
-              <div key={c.id} className={`gh-comment ${c.reply_to ? "reply" : ""}`}>
-                <Avatar src={c.avatar} size={18} label={c.user} />
-                <div>
-                  <b>@{c.user}</b>
-                  <span className="gh-body">{c.body}</span>
-                </div>
-                <button className="icon" aria-label="Open on GitHub" title="Open on GitHub" onClick={() => openUrl(c.url)}><ExternalLink size={13} /></button>
-              </div>
-            ))}
-            {here.map((c) => (
-              <div key={c.id} className="review-comment">
-                <span>{c.text}</span>
-                <button className="icon" aria-label="Delete comment" onClick={() => onRemove(c.id)}><X size={13} /></button>
-              </div>
-            ))}
-            {editing === i && (
-              <div className="review-edit">
-                <textarea
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="What should change here? ⌘↵ to add, Esc to cancel"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(l); }
-                    if (e.key === "Escape") { e.stopPropagation(); setEditing(null); }
-                  }}
-                />
-                <div className="row">
-                  <span className="spacer" />
-                  <button className="quiet" onClick={() => setEditing(null)}>Cancel</button>
-                  <button className="primary" onClick={() => save(l)} disabled={!draft.trim()}>Add comment</button>
-                </div>
-              </div>
-            )}
-          </div>
+          <DiffRow
+            key={i} l={l} i={i}
+            here={l.kind === "hunk" ? NONE : byLine.ours.get(k) ?? NONE}
+            ghHere={l.kind === "hunk" ? NONE : byLine.theirs.get(k) ?? NONE}
+            editing={editing === i} onEdit={setEditing} onSave={save} onRemove={remove}
+          />
         );
       })}
     </div>
@@ -132,7 +169,7 @@ const DiffLines = memo(function DiffLines({
 });
 
 /** Side by side: old on the left, new on the right; removed and added runs are paired up. */
-function SplitLines({ lines, file }: { lines: Line[]; file: string }) {
+const SplitLines = memo(function SplitLines({ lines, file }: { lines: Line[]; file: string }) {
   type Cell = Line | null;
   const rows: [Cell, Cell][] = [];
   for (let i = 0; i < lines.length; ) {
@@ -155,7 +192,7 @@ function SplitLines({ lines, file }: { lines: Line[]; file: string }) {
       ))}
     </div>
   );
-}
+});
 
 /** Turn review comments into one message the agent can act on. */
 export function reviewPrompt(comments: ReviewComment[]): string {
@@ -249,6 +286,11 @@ export function Diff({
     return () => window.removeEventListener("nekotrail-review", load);
   }, [key]);
   const saveComments = (c: ReviewComment[]) => { setComments(c); localStorage.setItem(key, JSON.stringify(c)); };
+  // Stable handlers for the diff, so a re-render here (a turn ending elsewhere) skips its 5,000 rows.
+  const latest = useRef({ comments, saveComments });
+  latest.current = { comments, saveComments };
+  const addComment = useCallback((c: ReviewComment) => latest.current.saveComments([...latest.current.comments, c]), []);
+  const removeComment = useCallback((id: string) => latest.current.saveComments(latest.current.comments.filter((c) => c.id !== id)), []);
   // "Viewed" ticks reset when a file changes again (its +/- counts move).
   const vkey = `nekotrail.viewed.${workspaceId}`;
   const [viewed, setViewed] = useState<Record<string, string>>(() => JSON.parse(localStorage.getItem(vkey) || "{}"));
@@ -302,12 +344,15 @@ export function Diff({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Same arrays between renders, so the memoized diff below skips work when nothing it shows changed.
+  const fileComments = useMemo(() => comments.filter((c) => c.file === open), [comments, open]);
+  const fileGh = useMemo(() => gh.filter((c) => c.path === open), [gh, open]);
+
   if (error) return <div className="banner error">{error}</div>;
   if (!files) return <div className="empty"><span className="spinner" /></div>;
 
   const add = files.reduce((n, f) => n + f.additions, 0);
   const del = files.reduce((n, f) => n + f.deletions, 0);
-  const fileComments = comments.filter((c) => c.file === open);
   const ghTop = gh.filter((c) => !c.reply_to);
   const seen = files.filter((f) => viewed[f.path] === sig(f)).length;
   const scope = (
@@ -380,10 +425,10 @@ export function Diff({
               file={open}
               text={diff}
               comments={fileComments}
-              gh={gh.filter((c) => c.path === open)}
+              gh={fileGh}
               split={split}
-              onAdd={(c) => saveComments([...comments, c])}
-              onRemove={(id) => saveComments(comments.filter((c) => c.id !== id))}
+              onAdd={addComment}
+              onRemove={removeComment}
             />
           </>
         ) : (

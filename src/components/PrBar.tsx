@@ -59,6 +59,7 @@ export function PrBar({
   repo,
   name,
   refreshKey,
+  overlapKey,
   onSendAgent,
   onArchive,
   onSay,
@@ -69,6 +70,8 @@ export function PrBar({
   repo?: Repo;
   name: string;
   refreshKey: number;
+  /** Bumps when any workspace's agent finishes: overlapping files can change from either side. */
+  overlapKey: number;
   /** Send a prompt to the agent right away. */
   onSendAgent: (prompt: string) => void;
   /** `auto` is true when archiving by itself after a merge. */
@@ -85,7 +88,7 @@ export function PrBar({
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [overlap, setOverlap] = useState<{ workspace_id: string; files: string[] }[]>([]);
-  useEffect(() => { setOverlap([]); api.overlaps(ws.id).then(setOverlap).catch(() => {}); }, [ws.id, refreshKey]);
+  useEffect(() => { setOverlap([]); api.overlaps(ws.id).then(setOverlap).catch(() => {}); }, [ws.id, overlapKey]);
 
   const load = () =>
     api.prStatus(ws.id).then((p) => { setPr(p); setError(null); }).catch((e) => { setPr(null); setError(errText(e)); });

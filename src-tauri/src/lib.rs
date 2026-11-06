@@ -13,7 +13,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use store::{new_id, Repo, Session, Store, Workspace};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -47,7 +47,8 @@ pub struct AppState {
     runs: Arc<Mutex<Runs>>,
     ptys: pty::Ptys,
     home: PathBuf,
-    branch_prefix: String,
+    /// Your GitHub login, or "purr". Looked up in the background so `gh` never delays the window.
+    branch_prefix: Arc<OnceLock<String>>,
     github: Mutex<Option<Value>>,
     repo_meta: Mutex<HashMap<String, Value>>,
     /// Changed-line counts per workspace, and which ones need recounting (an agent touched them).
@@ -57,6 +58,11 @@ pub struct AppState {
 impl AppState {
     fn db(&self) -> std::sync::MutexGuard<'_, Store> {
         self.store.lock().unwrap()
+    }
+
+    /// Waits for the startup lookup only if it hasn't finished yet (about half a second after launch).
+    fn branch_prefix(&self) -> &str {
+        self.branch_prefix.wait()
     }
 }
 
@@ -373,7 +379,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         return Err(format!("\"{base}\" isn't a valid branch name."));
     }
     let dir = st.home.join("workspaces").join(&repo.name);
-    while taken.contains(&name) || dir.join(&name).exists() || git::branch_exists(&root, &format!("{}/{name}", st.branch_prefix)) {
+    while taken.contains(&name) || dir.join(&name).exists() || git::branch_exists(&root, &format!("{}/{name}", st.branch_prefix())) {
         name = names::pick(&taken.iter().cloned().chain([name.clone()]).collect::<Vec<_>>());
     }
     let path = dir.join(&name);
@@ -408,7 +414,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
             (b.to_string(), base)
         }
         _ => {
-            let branch = format!("{}/{name}", st.branch_prefix);
+            let branch = format!("{}/{name}", st.branch_prefix());
             git::add_worktree(&root, &path, &branch, &base).map_err(e)?;
             (branch, base)
         }
@@ -582,18 +588,30 @@ async fn set_target_branch(st: State<'_, AppState>, id: String, branch: String) 
     st.db().set_target_branch(&id, &branch).map_err(e)
 }
 
-#[tauri::command]
-async fn changes(st: State<'_, AppState>, id: String, uncommitted: Option<bool>) -> Res<Vec<git::FileChange>> {
-    let ws = st.db().workspace(&id).map_err(e)?;
-    let dir = Path::new(&ws.path);
-    if uncommitted.unwrap_or(false) { git::changes_since(dir, "HEAD") } else { git::changes(dir, &ws.target_branch) }.map_err(e)
+/// Run a command's subprocess work (git, gh, ps) on the blocking pool. Async commands share a few
+/// workers (one per core); a handful of slow `gh` calls there would stall every other command.
+async fn blocking<T: Send + 'static>(app: AppHandle, f: impl FnOnce(&AppState) -> Res<T> + Send + 'static) -> Res<T> {
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>())).await.map_err(e)?
 }
 
 #[tauri::command]
-async fn file_diff(st: State<'_, AppState>, id: String, file: String, uncommitted: Option<bool>) -> Res<String> {
-    let ws = st.db().workspace(&id).map_err(e)?;
-    let dir = Path::new(&ws.path);
-    if uncommitted.unwrap_or(false) { git::file_diff_since(dir, "HEAD", &file) } else { git::file_diff(dir, &ws.target_branch, &file) }.map_err(e)
+async fn changes(app: AppHandle, id: String, uncommitted: Option<bool>) -> Res<Vec<git::FileChange>> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let dir = Path::new(&ws.path);
+        if uncommitted.unwrap_or(false) { git::changes_since(dir, "HEAD") } else { git::changes(dir, &ws.target_branch) }.map_err(e)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn file_diff(app: AppHandle, id: String, file: String, uncommitted: Option<bool>) -> Res<String> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let dir = Path::new(&ws.path);
+        if uncommitted.unwrap_or(false) { git::file_diff_since(dir, "HEAD", &file) } else { git::file_diff(dir, &ws.target_branch, &file) }.map_err(e)
+    })
+    .await
 }
 
 /// A path inside the workspace, refusing anything that escapes it, symlinks included (a repo can
@@ -807,7 +825,7 @@ async fn repo_issues(st: State<'_, AppState>, id: String) -> Res<Value> {
     let repo = st.db().repo(&id).map_err(e)?;
     let out = gh(&repo.root_path, &["issue", "list", "--state", "open", "--limit", "100", "--json", "number,title,body,labels,assignees,url"])?;
     let mut v: Vec<Value> = serde_json::from_str(&out).map_err(e)?;
-    let me = st.branch_prefix.clone();
+    let me = st.branch_prefix().to_string();
     v.sort_by_key(|i| !i["assignees"].as_array().is_some_and(|a| a.iter().any(|x| x["login"] == me.as_str())));
     Ok(Value::Array(v))
 }
@@ -857,7 +875,11 @@ async fn set_section(st: State<'_, AppState>, id: String, section: String) -> Re
 /// Returns the total in MB and the biggest processes, for the toolbar's RAM meter.
 #[tauri::command]
 async fn resource_usage() -> Res<Value> {
-    let out = Command::new("ps").args(["-A", "-o", "pid=,ppid=,rss=,comm="]).output().map_err(e)?;
+    // Polled every 5s: keep `ps` off the async workers.
+    let out = tauri::async_runtime::spawn_blocking(|| Command::new("ps").args(["-A", "-o", "pid=,ppid=,rss=,comm="]).output())
+        .await
+        .map_err(e)?
+        .map_err(e)?;
     let text = String::from_utf8_lossy(&out.stdout);
     let rows: Vec<(u32, u32, u64, String)> = text
         .lines()
@@ -1138,7 +1160,11 @@ async fn workspace_storage(app: AppHandle) -> Res<Vec<Value>> {
 /// Free space on the disk that holds nekotrail's workspaces, in MB.
 #[tauri::command]
 async fn free_disk_mb(st: State<'_, AppState>) -> Res<u64> {
-    let out = Command::new("df").arg("-k").arg(st.home.parent().unwrap_or(&st.home)).output().map_err(e)?;
+    let dir = st.home.parent().unwrap_or(&st.home).to_path_buf();
+    let out = tauri::async_runtime::spawn_blocking(move || Command::new("df").arg("-k").arg(dir).output())
+        .await
+        .map_err(e)?
+        .map_err(e)?;
     let text = String::from_utf8_lossy(&out.stdout);
     let avail = text.lines().nth(1).and_then(|l| l.split_whitespace().nth(3)).and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
     Ok(avail / 1024)
@@ -1416,8 +1442,8 @@ async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: Str
 
 /// The signed-in GitHub user (`gh auth`), or null when gh is not logged in.
 #[tauri::command]
-async fn github_profile(st: State<'_, AppState>) -> Res<Value> {
-    Ok(st.github.lock().unwrap().get_or_insert_with(|| {
+async fn github_profile(app: AppHandle) -> Res<Value> {
+    blocking(app, |st| Ok(st.github.lock().unwrap().get_or_insert_with(|| {
         Command::new("gh")
             .args(["api", "user"])
             .output()
@@ -1429,27 +1455,31 @@ async fn github_profile(st: State<'_, AppState>) -> Res<Value> {
                 "html_url": u["html_url"], "public_repos": u["public_repos"], "followers": u["followers"],
             }))
             .unwrap_or(Value::Null)
-    }).clone())
+    }).clone()))
+    .await
 }
 
 /// GitHub facts for a repo: owner avatar, description, stars, default branch.
 #[tauri::command]
-async fn repo_github(st: State<'_, AppState>, id: String) -> Res<Value> {
-    let Ok(r) = st.db().repo(&id) else { return Ok(Value::Null) };
-    if let Some(v) = st.repo_meta.lock().unwrap().get(&id) {
-        return Ok(v.clone());
-    }
-    let v = gh(&r.root_path, &["repo", "view", "--json", "nameWithOwner,description,stargazerCount,url,owner,isPrivate"])
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .map(|mut v| {
-            let login = v["owner"]["login"].as_str().unwrap_or_default().to_string();
-            v["owner_avatar"] = json!(format!("https://github.com/{login}.png?size=64"));
-            v
-        })
-        .unwrap_or(Value::Null);
-    st.repo_meta.lock().unwrap().insert(id, v.clone());
-    Ok(v)
+async fn repo_github(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let Ok(r) = st.db().repo(&id) else { return Ok(Value::Null) };
+        if let Some(v) = st.repo_meta.lock().unwrap().get(&id) {
+            return Ok(v.clone());
+        }
+        let v = gh(&r.root_path, &["repo", "view", "--json", "nameWithOwner,description,stargazerCount,url,owner,isPrivate"])
+            .ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .map(|mut v| {
+                let login = v["owner"]["login"].as_str().unwrap_or_default().to_string();
+                v["owner_avatar"] = json!(format!("https://github.com/{login}.png?size=64"));
+                v
+            })
+            .unwrap_or(Value::Null);
+        st.repo_meta.lock().unwrap().insert(id, v.clone());
+        Ok(v)
+    })
+    .await
 }
 
 #[derive(Serialize)]
@@ -1593,7 +1623,8 @@ async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String)
             return Ok(());
         }
     }
-    start_turn(app, &st, id, text)
+    // Starting a turn runs git (checkpoint, branch name) and spawns the CLI.
+    blocking(app.clone(), move |st| start_turn(app, st, id, text)).await
 }
 
 #[tauri::command]
@@ -1722,22 +1753,27 @@ fn probe(cmd: &str, args: &[&str]) -> (bool, String) {
 /// First-run check: git, GitHub CLI login, and the agent CLIs.
 #[tauri::command]
 async fn doctor() -> Res<Value> {
+    // About a second of subprocesses (two of them `gh` network calls): keep it off the async workers.
+    tauri::async_runtime::spawn_blocking(doctor_blocking).await.map_err(e)
+}
+
+fn doctor_blocking() -> Value {
     let (git_ok, git_v) = probe("git", &["--version"]);
     let (gh_installed, _) = probe("gh", &["--version"]);
     let (gh_ok, _) = probe("gh", &["auth", "status"]);
     let login = if gh_ok { github_login() } else { None };
     let (claude_ok, claude_v) = probe("claude", &["--version"]);
     let (codex_ok, codex_v) = probe("codex", &["--version"]);
-    Ok(json!({
+    json!({
         "git": {"ok": git_ok, "version": git_v},
         "gh": {"installed": gh_installed, "ok": gh_ok, "login": login},
         "claude": {"ok": claude_ok, "version": claude_v},
         "codex": {"ok": codex_ok, "version": codex_v},
-    }))
+    })
 }
 
 fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) -> Workspace {
-    let placeholder = format!("{}/{}", st.branch_prefix, ws.name);
+    let placeholder = format!("{}/{}", st.branch_prefix(), ws.name);
     if ws.branch != placeholder || ws.imported_from.is_some() || st.db().setting("auto_branch").ok().flatten().as_deref() == Some("off") {
         return ws;
     }
@@ -1746,10 +1782,10 @@ fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) 
         return ws;
     }
     let dir = Path::new(&ws.path);
-    let mut name = format!("{}/{slug}", st.branch_prefix);
+    let mut name = format!("{}/{slug}", st.branch_prefix());
     let mut n = 2;
     while git::branch_exists(dir, &name) {
-        name = format!("{}/{slug}-{n}", st.branch_prefix);
+        name = format!("{}/{slug}-{n}", st.branch_prefix());
         n += 1;
     }
     let pushed = git::git(dir, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", ws.branch)]).is_ok();
@@ -1831,7 +1867,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
         let _ = Command::new("caffeinate").args(["-i", "-w", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
     }
-    let _ = app.emit("running", json!({"session_id": id, "running": true}));
+    let _ = app.emit("running", json!({"session_id": id, "running": true, "workspace_id": ws.id}));
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -2118,17 +2154,25 @@ pub fn run() {
     let data = dirs::data_dir().expect("data dir").join("dev.nekotrail.app");
     migrate_old_data(&data);
     let store = Store::open(&data.join("nekotrail.db")).expect("open database");
-    let branch_prefix = github_login().unwrap_or_else(|| "purr".into());
     // Chats imported before history import existed get their messages now (once; skips filled chats).
     if let Some(db) = importer::default_db_path()
         && let Err(err) = importer::backfill_history(&store, &db) {
             eprintln!("could not copy Conductor chat history: {err}");
         }
 
-    // Protect secrets in every known repo (also covers workspaces imported from Conductor).
-    for r in store.repos().unwrap_or_default() {
-        ensure_local_excludes(Path::new(&r.root_path), &r.prefs.copy_files);
-    }
+    // Network and repo calls run beside the window instead of before it (`gh api user` alone is ~0.5s, more offline).
+    let branch_prefix: Arc<OnceLock<String>> = Default::default();
+    let repos = store.repos().unwrap_or_default();
+    std::thread::spawn({
+        let prefix = branch_prefix.clone();
+        move || {
+            let _ = prefix.set(github_login().unwrap_or_else(|| "purr".into()));
+            // Protect secrets in every known repo (also covers workspaces imported from Conductor).
+            for r in repos {
+                ensure_local_excludes(Path::new(&r.root_path), &r.prefs.copy_files);
+            }
+        }
+    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
