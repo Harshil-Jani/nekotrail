@@ -5,6 +5,13 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Protected files**
+- Protect files per repo (`.env*`, `migrations/**`, `infra/**`) in Repo settings or in `nekotrail.json`. The repo file can add to your list but never remove from it.
+- Claude and OpenCode can't edit protected files, in any mode. Other agents are refused whenever they ask first, and every agent's turn is checked afterwards.
+- If a turn changes a protected file anyway, the chat says which one, the workspace moves to Needs you, and "Put it back" restores just those files. The agent's copies go to the Trash.
+- New "Commands the agent ran" view for each workspace, in the ⋯ menu and ⌘K.
+- The first time you pick Full auto, nekotrail explains what it means and asks once.
+
 **Twelve more agents**
 - Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo join Claude, Codex, Gemini and OpenCode. Pick one for a workspace or chat; each uses your own login, and setup shows its install command if it's missing.
 - The agent pickers show Claude, Codex and the agents installed on your Mac; the rest are one click away under "More agents".
