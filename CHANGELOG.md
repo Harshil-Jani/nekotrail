@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.14.0 (2026-11-06)
 
 **Checks: tests, lint and typecheck**
 - New Checks tab (⌘5): runs your test, lint and typecheck commands in the background and lists each failure with its file, line and the code around it. The raw output is one click away.
