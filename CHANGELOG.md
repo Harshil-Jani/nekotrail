@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Import terminal sessions**
+- Bring in the Claude Code, Codex and Gemini chats you ran in a terminal: ⌘K, "Import terminal sessions". nekotrail only reads the CLIs' folders and never changes them.
+- Sessions are grouped by the repo and folder they ran in, with sessions, messages, dates and size shown before anything comes in. Tick a whole repo, a folder or single chats.
+- A worktree's chats land in a workspace pointing at that folder. Your main checkout's chats land in a read-only History workspace, and no worktree is made.
+- Imported chats keep their session, so a new message continues it. They show up in ⌘⇧F search, and importing again only adds new sessions.
+
 **One set of rules for every agent**
 - New Rules sheet (⋯ menu or ⌘K): see which rules files your repo has (AGENTS.md, CLAUDE.md, GEMINI.md, Copilot's, Cursor's, Cline's and more), which of the 16 agents reads which, and how each one differs from your main file.
 - "Use AGENTS.md for every agent" makes the other files point at one file: an `@AGENTS.md` import for Claude and Gemini, a short note where the agents read AGENTS.md anyway, or a copy marked do-not-edit. You see every change first, and a file with your own words is only replaced after you confirm its diff. Old files are backed up and nothing is committed.
