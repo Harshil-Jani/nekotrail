@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import { Play, Plus, RotateCw, Square, SquareTerminal, Wrench, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "../api";
+import { fontStack, TERM_SIZE, TERM_STACK } from "../appearance";
+import { getSettings } from "../settings";
 
 /**
  * One terminal view. `shell` starts a login shell (or reattaches to the running one);
@@ -16,9 +18,10 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
   const [idle, setIdle] = useState(false);
 
   useEffect(() => {
+    const look = getSettings();
     const t = new XTerm({
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      fontSize: 13,
+      fontFamily: fontStack(look.termFont, TERM_STACK),
+      fontSize: look.termSize || TERM_SIZE,
       cursorBlink: mode === "shell",
       scrollback: 5000,
       theme: { background: "#1e1e1e", foreground: "#d8dee9", cursor: "#ff9a4d", selectionBackground: "#ff9a4d55" },
@@ -51,8 +54,23 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
       api.ptyResize(ptyId, t.cols, t.rows).catch(() => {});
     });
     ro.observe(host.current!);
+
+    // Settings, Appearance: a new terminal font or size applies right away, then the grid refits.
+    const onLook = () => {
+      const { termFont, termSize } = getSettings();
+      const family = fontStack(termFont, TERM_STACK);
+      const size = termSize || TERM_SIZE;
+      if (t.options.fontFamily === family && t.options.fontSize === size) return;
+      t.options.fontFamily = family;
+      t.options.fontSize = size;
+      if (!host.current?.offsetWidth) return; // hidden tab: the ResizeObserver refits when it shows
+      fit.fit();
+      api.ptyResize(ptyId, t.cols, t.rows).catch(() => {});
+    };
+    window.addEventListener("nekotrail-settings", onLook);
     return () => {
       live = false;
+      window.removeEventListener("nekotrail-settings", onLook);
       ro.disconnect();
       onData.dispose();
       un.then((f) => f());

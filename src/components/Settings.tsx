@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Volume2, X } from "lucide-react";
+import { Minus, Plus, Volume2, X } from "lucide-react";
+import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
 import { AGENTS, AGENT_INFO } from "../agents";
 import { getVersion } from "@tauri-apps/api/app";
@@ -36,10 +37,85 @@ const SHORTCUTS: [string, string][] = [
   ["@ and /", "Mention a file, run a command"],
 ];
 
-type Pane = "general" | "notifications" | "agents" | "shortcuts";
-const PANES: [Pane, string][] = [["general", "General"], ["notifications", "Notifications"], ["agents", "Agents"], ["shortcuts", "Shortcuts"]];
+type Pane = "general" | "appearance" | "notifications" | "agents" | "shortcuts";
+const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["shortcuts", "Shortcuts"]];
 
-/** ⌘, : preferences in four panes, like a Mac settings window. Changes save as you make them. */
+const SIZES = [10, 11, 12, 13, 14, 15, 16, 18];
+const CODE_SAMPLE = "const purr = (cat) => cat.nap ?? 0; // {}[]|0O1lI";
+const TERM_SAMPLE = "~/nekotrail $ git status  // 0O 1lI";
+
+/** A font pop-up (SF Mono plus the monospace fonts this Mac has) with a size pop-up next to it. */
+function FontPicker({ label, fonts, font, size, defaultSize, onFont, onSize }: {
+  label: string; fonts: string[]; font: string; size: number; defaultSize: number;
+  onFont: (f: string) => void; onSize: (n: number) => void;
+}) {
+  // A font chosen earlier stays in the list even if it was uninstalled since, so the pop-up shows the truth.
+  const list = font && !fonts.includes(font) ? [font, ...fonts] : fonts;
+  return (
+    <span className="font-control">
+      <select value={font} onChange={(e) => onFont(e.target.value)} aria-label={`${label} font`}>
+        <option value="">SF Mono (default)</option>
+        {list.map((f) => <option key={f} value={f}>{f}</option>)}
+      </select>
+      <select value={size} onChange={(e) => onSize(Number(e.target.value))} aria-label={`${label} size`}>
+        {SIZES.map((n) => <option key={n} value={n}>{n} pt{n === defaultSize ? " (default)" : ""}</option>)}
+      </select>
+    </span>
+  );
+}
+
+/** Appearance pane: light or dark, zoom, and the code and terminal fonts. Font detection runs only here. */
+function AppearancePane({ s, set }: { s: S; set: <K extends keyof S>(k: K, v: S[K]) => void }) {
+  const zoom = useZoom();
+  const [fonts] = useState(availableMonoFonts);
+  const pct = (z: number) => `${Math.round(z * 100)}%`;
+  return <>
+    <section>
+      <h3>Look</h3>
+      <div className="setting">
+        <span id="theme-label">Appearance</span>
+        <div className="seg" role="radiogroup" aria-labelledby="theme-label">
+          {([["system", "Follow system"], ["light", "Light"], ["dark", "Dark"]] as const).map(([id, name]) => (
+            <button key={id} role="radio" aria-checked={s.theme === id} className={s.theme === id ? "on" : ""} onClick={() => set("theme", id)}>{name}</button>
+          ))}
+        </div>
+      </div>
+      <div className="setting">
+        <span id="zoom-label">Zoom</span>
+        <span className="zoom-control">
+          <button className="icon" aria-label="Zoom out" title="Zoom out (⌘-)" disabled={zoom <= ZOOM_MIN} onClick={() => setZoom(stepZoom(zoom, -1))}><Minus size={14} /></button>
+          <select aria-labelledby="zoom-label" value={String(zoom)} onChange={(e) => setZoom(Number(e.target.value))}>
+            {!ZOOM_LEVELS.includes(zoom) && <option value={String(zoom)}>{pct(zoom)}</option>}
+            {ZOOM_LEVELS.map((z) => <option key={z} value={String(z)}>{pct(z)}{z === 1 ? " (actual size)" : ""}</option>)}
+          </select>
+          <button className="icon" aria-label="Zoom in" title="Zoom in (⌘+)" disabled={zoom >= ZOOM_MAX} onClick={() => setZoom(stepZoom(zoom, 1))}><Plus size={14} /></button>
+        </span>
+      </div>
+      <p className="muted setting-note">⌘+ and ⌘- zoom anywhere in the app, ⌘0 goes back to 100%.</p>
+    </section>
+
+    <section>
+      <h3>Code</h3>
+      <p className="muted setting-note">Diffs, code blocks in chat and tool output.</p>
+      <div className="setting">
+        <span>Font</span>
+        <FontPicker label="Code" fonts={fonts} font={s.codeFont} size={s.codeSize} defaultSize={CODE_SIZE} onFont={(f) => set("codeFont", f)} onSize={(n) => set("codeSize", n)} />
+      </div>
+      <div className="font-sample" style={{ fontFamily: fontStack(s.codeFont, CODE_STACK), fontSize: s.codeSize }} aria-hidden="true">{CODE_SAMPLE}</div>
+    </section>
+
+    <section>
+      <h3>Terminal</h3>
+      <div className="setting">
+        <span>Font</span>
+        <FontPicker label="Terminal" fonts={fonts} font={s.termFont} size={s.termSize} defaultSize={TERM_SIZE} onFont={(f) => set("termFont", f)} onSize={(n) => set("termSize", n)} />
+      </div>
+      <div className="font-sample term" style={{ fontFamily: fontStack(s.termFont, TERM_STACK), fontSize: s.termSize }} aria-hidden="true">{TERM_SAMPLE}</div>
+    </section>
+  </>;
+}
+
+/** ⌘, : preferences in five panes, like a Mac settings window. Changes save as you make them. */
 export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: () => void; home: string; update?: UpdatePhase | null; onCheckUpdates?: () => void }) {
   // ?settings=agents opens a pane directly (the preview page uses it for screenshots).
   const [pane, setPane] = useState<Pane>(() => {
@@ -85,6 +161,8 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
         </nav>
 
         <div className="settings-body" role="tabpanel" aria-label={PANES.find(([id]) => id === pane)?.[1]}>
+        {pane === "appearance" && <AppearancePane s={s} set={set} />}
+
         {pane === "notifications" && <>
         <section>
           <h3>When an agent needs you</h3>

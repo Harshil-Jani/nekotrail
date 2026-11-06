@@ -16,6 +16,7 @@
     "notification:allow-notify",
     "core:window:allow-set-badge-count",
     "core:webview:allow-set-webview-zoom",
+    "core:window:allow-set-theme",
     "core:window:allow-start-dragging",
     "core:window:allow-request-user-attention",
     "updater:allow-check",
