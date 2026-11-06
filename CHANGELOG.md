@@ -15,6 +15,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - MCP servers share with OpenCode too: add Claude, Codex or Gemini servers to OpenCode, and copy OpenCode's servers to them, with variables converted or refused with a reason. A new settings file is previewed in full before it is written.
 - Share Claude skills with Codex and Gemini in one click. It's a link in `~/.agents/skills`, so the skill lives in one place and edits show up for every agent. OpenCode already reads `~/.claude/skills` and `~/.agents/skills`, and the sheet says so.
 
+**Design ship-gate fixes**
+- The MCP sheet shows one column per agent (Claude, Codex, Gemini, OpenCode) with a tick where an agent already has a server or skill and an Add button where it doesn't, so rows line up and never wrap.
+- Servers an agent can't take say "Can't add" right in the row; open it to see why.
+- If a settings file changes between the preview and Add, the sheet shows the preview again from the file as it is now, with the reason next to the button.
+- A settings file nekotrail can't read gets a Try again button, and the sheet stays anchored at the top as you move between the list and a preview.
+
 ## 0.12.0 (2026-11-06)
 
 **OpenCode, and any ACP agent**
