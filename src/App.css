@@ -356,7 +356,7 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .review-comment, .review-edit { margin: var(--s1) var(--s4) var(--s2) 108px; max-width: 640px; border: 0.5px solid var(--line-strong); background: var(--surface); font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; font-size: 13px; }
 .review-comment { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s2) var(--s3); white-space: pre-wrap; border-color: var(--accent-ring); }
 .review-comment span { flex: 1; line-height: 1.5; }
-.review-edit { padding: var(--s2); display: flex; flex-direction: column; gap: var(--s2); border-color: var(--accent-text); }
+.review-edit { padding: var(--s2); display: flex; flex-direction: column; gap: var(--s2); }
 .review-edit textarea { min-height: 64px; resize: vertical; font-size: 13px; background: var(--bg); }
 
 /* ---------- terminal + notes ---------- */
@@ -735,7 +735,7 @@ button.good-btn:hover { background: var(--good); }
 .fix-card { background: var(--bad-soft); }
 .welcome .import-card.hero { box-shadow: inset 0 0 0 1px var(--accent-ring); background: var(--accent-soft); }
 .review-comment { box-shadow: inset 0 0 0 1px var(--accent-ring); }
-.review-edit { box-shadow: var(--ring); }
+/* The textarea carries the focus ring; the card itself stays neutral so there is one orange ring, not two. */
 .cmd { border: none; border-radius: var(--r); background: var(--hover); }
 .cmd-inline { border: none; border-radius: var(--r); background: var(--hover); }
 .findings-btn { color: var(--accent-text); }
