@@ -1234,11 +1234,12 @@ export default function App() {
               )}
               <span className="spacer" />
               <div className="ws-actions">
-                {ws.state === "archived" ? (
+                {ws.state === "archived" ? (<>
+                  <span className="chip read-only" title="Archived workspaces open read-only. Its branch is kept."><Archive size={11} />Archived, read only</span>
                   <button className="primary" onClick={() => api.restoreWorkspace(ws.id).then(refresh).catch((e) => say(errText(e), true))}>
                     <ArchiveRestore size={16} />Restore workspace
                   </button>
-                ) : (
+                </>) : (
                   <>
                     {fold < 3 && urlShown && (
                       <button className="quiet tb-url" onClick={openLocal} title={`Open ${localUrls[ws.id]} in your browser (${keyHint("⌘⇧B")})`} aria-label="Open in browser">
