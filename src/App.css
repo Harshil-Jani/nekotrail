@@ -1386,7 +1386,7 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .confirm-body { display: flex; flex-direction: column; gap: var(--s2); }
 /* A prompt from a link, exactly as it will be sent. */
 .confirm-quote {
-  margin: var(--s2) 0 0; padding: var(--s2) var(--s3); max-height: 220px; overflow: auto;
+  margin: 0; padding: var(--s2) var(--s3); max-height: min(40vh, 280px); overflow: auto;
   white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; color: var(--text);
   background: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06)); border-radius: 8px;
 }
