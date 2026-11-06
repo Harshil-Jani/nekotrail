@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, MoveUpRight, PenLine, Play, RectangleHorizontal, RotateCw, Settings2, Undo2 } from "lucide-react";
+import { ExternalLink, MoveUpRight, PenLine, Play, RectangleHorizontal, RotateCw, Settings2, TriangleAlert, Undo2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { api, errText } from "../api";
+import { api, errText, type PortProblem } from "../api";
 import { snapshotScale } from "../appearance";
 
 /**
@@ -99,6 +99,7 @@ export function Preview({
   onSetup,
   onAttach,
   onSay,
+  show,
 }: {
   workspaceId: string;
   /** Local URL spotted in the Run script's output, if any. */
@@ -113,10 +114,22 @@ export function Preview({
   /** Text for the chat composer, with the saved screenshot's @path. */
   onAttach: (text: string) => void;
   onSay: (text: string, error?: boolean) => void;
+  /** Show this address now (from the Ports popover). */
+  show?: { url: string; nonce: number };
 }) {
-  const auto = detected ? toLocalUrl(detected) : null;
+  // Until the Run script prints an address, the Preview opens the workspace's own port.
+  const [own, setOwn] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.workspacePorts(workspaceId).then((p) => { if (live && p) setOwn(`http://localhost:${p.main}/`); }).catch(() => {});
+    return () => { live = false; };
+  }, [workspaceId]);
+  const detectedUrl = detected ? toLocalUrl(detected) : null;
+  const auto = detectedUrl ?? own;
   const [manual, setManual] = useState<string | null>(null);
   const src = manual ?? auto;
+  /** Showing the workspace's own port only because nothing else is known yet. */
+  const onOwn = !manual && !detectedUrl && !!own;
   const [field, setField] = useState(src ?? "");
   const [fieldError, setFieldError] = useState(false);
   const [probe, setProbe] = useState<Probe | null>(null);
@@ -126,6 +139,11 @@ export function Preview({
   const fieldRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setField(src ?? ""); setFieldError(false); }, [src]);
+  useEffect(() => {
+    if (!show) return;
+    const u = toLocalUrl(show.url);
+    if (u) { setManual(u === auto ? null : u); setReload((n) => n + 1); }
+  }, [show?.nonce]);
 
   // Without a Run script there is nothing to start: say how to set one instead of offering Start.
   const [hasRun, setHasRun] = useState<boolean | null>(null);
@@ -158,6 +176,24 @@ export function Preview({
   }, [src, reload, active]);
 
   const showing = !!src && probe !== null && (probe === "unknown" || (probe.up && !probe.blocked));
+  // Nothing answers on the workspace's port: nothing started yet, the same as having no address.
+  const waiting = !src || (onOwn && probe !== null && probe !== "unknown" && !probe.up);
+
+  // While the app runs but its port stays quiet, ask whether it went somewhere else (it ignored
+  // PORT, or its default was taken by another workspace), and say so with the fix.
+  const [problem, setProblem] = useState<PortProblem | null>(null);
+  useEffect(() => {
+    if (!active || !running || !waiting) { setProblem(null); return; }
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const look = () =>
+      api.portsStatus(workspaceId)
+        .then((l) => { if (live) { const ps = l[0]?.problems ?? []; setProblem(ps[ps.length - 1] ?? null); } })
+        .catch(() => {})
+        .finally(() => { if (live) timer = setTimeout(look, 4000); });
+    timer = setTimeout(look, 1500);
+    return () => { live = false; clearTimeout(timer); };
+  }, [active, running, waiting, workspaceId]);
   useEffect(() => { if (showing) setLoading(true); }, [showing, src, reload]);
 
   const go = () => {
@@ -346,12 +382,28 @@ export function Preview({
 
         {!showing && (
           <div className="empty preview-empty">
-            {!src ? (
+            {problem ? (
+              <>
+                <h2>Your app isn't on this workspace's port</h2>
+                <div className="preview-problem" role="note">
+                  <TriangleAlert size={16} aria-hidden />
+                  <div>
+                    <p>{problem.text}</p>
+                    <p className="muted">{problem.fix.split("`").map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))}</p>
+                  </div>
+                </div>
+                {problem.port !== null && (
+                  <button className="link" onClick={() => { setManual(`http://localhost:${problem.port}/`); setReload((n) => n + 1); }}>Show localhost:{problem.port} anyway</button>
+                )}
+              </>
+            ) : waiting ? (
               running ? (
                 <>
                   <span className="spinner" aria-hidden />
                   <h2>Waiting for your app</h2>
-                  <p>It shows up here as soon as the Run script prints a localhost address. You can also type one above.</p>
+                  <p>{own
+                    ? <>It shows up here as soon as it answers on {short(own)}, this workspace's port, or the Run script prints a localhost address.</>
+                    : "It shows up here as soon as the Run script prints a localhost address. You can also type one above."}</p>
                 </>
               ) : hasRun === false ? (
                 <>
@@ -363,7 +415,7 @@ export function Preview({
               ) : (
                 <>
                   <h2>Nothing running yet</h2>
-                  <p>Start the Run script and your app shows up here, ready to click through and mark up for the agent.</p>
+                  <p>Start the Run script and your app shows up here{own ? <> on {short(own)}, this workspace's port</> : null}, ready to click through and mark up for the agent.</p>
                   <button onClick={onRun}><Play size={14} />Start Run script</button>
                   <button className="link" onClick={() => fieldRef.current?.focus()}>Or type a localhost address</button>
                 </>

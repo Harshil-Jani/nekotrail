@@ -134,6 +134,12 @@ impl Ptys {
         self.0.lock().unwrap().contains_key(id)
     }
 
+    /// (terminal id, pid of its shell or script) for every running terminal. What they start
+    /// descends from these pids, which is how the Ports popover knows a server is a workspace's.
+    pub fn pids(&self) -> Vec<(String, u32)> {
+        self.0.lock().unwrap().iter().filter_map(|(id, p)| Some((id.clone(), p.child.process_id()?))).collect()
+    }
+
     /// Terminals doing work that a restart would stop: every running script, and every
     /// interactive shell with a command in the foreground. A shell at its prompt is not counted,
     /// even if it keeps background helpers (prompt themes often run one).

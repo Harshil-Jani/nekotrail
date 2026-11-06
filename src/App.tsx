@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Network } from "lucide-react";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -28,6 +28,7 @@ import { TrustSheet } from "./components/TrustSheet";
 import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
 import { ask, ConfirmHost } from "./components/Confirm";
+import { PortsPopover } from "./components/PortsPopover";
 import { chime, getSettings, saveSettings, ting } from "./settings";
 import { getZoom, setZoom, stepZoom } from "./appearance";
 import { AGENTS, agentName } from "./agents";
@@ -613,6 +614,23 @@ export default function App() {
     setTimeout(() => setToast((t) => (t?.text === text ? null : t)), error || action ? 8000 : 4000);
   };
 
+  // Ports: the toolbar popover, and addresses it asks a workspace's Preview tab to show.
+  const [portsOpen, setPortsOpen] = useState(false);
+  const [previewShow, setPreviewShow] = useState<{ ws: string; url: string; nonce: number } | null>(null);
+  const wsLabel = (id: string) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; };
+  const showInPreview = (wsId: string, url: string) => {
+    select(wsId);
+    setTab("preview");
+    setPreviewShow({ ws: wsId, url, nonce: Date.now() });
+  };
+  // A Run script stopped because its port was taken: say who holds it and how to fix it.
+  useEffect(() => {
+    const un = listen<{ workspace_id: string; text: string; fix: string }>("port-clash", ({ payload }) => {
+      say(`${payload.text} ${payload.fix.replace(/`/g, "")}`, true, { label: "Show ports", run: () => { select(payload.workspace_id); setPortsOpen(true); } });
+    });
+    return () => { un.then((f) => f()); };
+  }, []);
+
   // "While you were away": opening a workspace with news shows one line on what happened.
   const [away, setAway] = useState<{ id: string; text: string } | null>(null);
   const summarize = async (w: Workspace) => {
@@ -853,6 +871,7 @@ export default function App() {
         { id: "tab-chat", group: here, label: "Show chat", hint: "⌘1", icon: <MessageSquare size={15} />, run: () => setTab("chat") },
         { id: "tab-changes", group: here, label: "Show changes", hint: "⌘2", icon: <FilePlus2 size={15} />, run: () => setTab("changes") },
         { id: "tab-term", group: here, label: "Show terminal", hint: "⌘3", icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
+        { id: "ports", group: here, label: "Show ports", keywords: "port localhost listening free kill server clash", icon: <Network size={15} />, run: () => setPortsOpen(true) },
         { id: "tab-preview", group: here, label: "Show preview", hint: "⌘4", keywords: "browser localhost app web annotate screenshot", icon: <AppWindow size={15} />, run: () => setTab("preview") },
         { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
@@ -1082,6 +1101,11 @@ export default function App() {
                         <ExternalLink size={14} />{fold < 1 && <span className="tb-label">{localUrls[ws.id].replace(/^https?:\/\//, "")}</span>}
                       </button>
                     )}
+                    {/* Folded away, the button moves into ⋯; the popover still opens from here. */}
+                    <span className="tb-ports-wrap">
+                      {fold < 3 && <button className="quiet tb-ports" onClick={() => setPortsOpen((o) => !o)} aria-expanded={portsOpen} title="Ports: what each workspace's app listens on" aria-label="Ports"><Network size={14} />{fold < 1 && "Ports"}</button>}
+                      {portsOpen && <PortsPopover selected={ws.id} label={wsLabel} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
+                    </span>
                     {fold < 3 && paired && (
                       <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results" aria-label="Compare"><Columns2 size={14} />{fold < 1 && "Compare"}</button>
                     )}
@@ -1114,6 +1138,7 @@ export default function App() {
                           {fold >= 3 && <>
                             {urlShown && <button role="menuitem" onClick={() => { setMoreOpen(false); openLocal(); }}><ExternalLink size={15} /><span>Open {localUrls[ws.id].replace(/^https?:\/\//, "")}</span><kbd>⌘⇧B</kbd></button>}
                             {paired && <button role="menuitem" onClick={() => { setMoreOpen(false); setComparing(ws.pair_id); }}><Columns2 size={15} /><span>Compare</span></button>}
+                            <button role="menuitem" onClick={() => { setMoreOpen(false); setPortsOpen(true); }}><Network size={15} /><span>Ports</span></button>
                             {runLive
                               ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the Run script</span><kbd>⌘R</kbd></button>
                               : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>⌘R</kbd></button>}
@@ -1212,6 +1237,7 @@ export default function App() {
                           onSetup={() => setSettingsFor(ws.repo_id)}
                           onAttach={(text) => { setTab("chat"); setAppend({ text, nonce: Date.now() }); say("Screenshot attached. Add anything else and send."); }}
                           onSay={say}
+                          show={previewShow?.ws === ws.id ? previewShow : undefined}
                         />
                       </Suspense>
                     )}

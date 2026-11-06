@@ -97,7 +97,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 | Stacks | Start a workspace on top of another. The PR bar links the parent, and when the parent merges, one click moves it onto main and retargets its PR. The sidebar marks workspaces that change the same files and suggests which to merge first. |
 | Terminal | A real login shell in the workspace folder. |
 | PRs | One button for the next step: the agent opens the PR, fixes failing checks from their logs, or resolves conflicts; then squash and merge. Also commit and push, pull latest, agent review, and GitHub review comments shown in the diff. Start a workspace from any open PR. |
-| Scripts | Setup, run and archive scripts per repo, each in its own terminal tab. Commit a `nekotrail.json` to share them with your team. Every workspace gets its own ports (`NEKOTRAIL_PORT` and the next 9). |
+| Scripts | Setup, run and archive scripts per repo, each in its own terminal tab. Commit a `nekotrail.json` to share them with your team. Every workspace gets its own 10 ports (`NEKOTRAIL_PORT`, `NEKOTRAIL_PORT_1` to `_9`, and `PORT`), and the Ports popover shows what listens on them. |
 | Repo settings | Instructions for every chat, review and PR prompts, `.env` files copied into new workspaces, environment variables. |
 | Appearance | Light, Dark or Follow system, zoom from 80% to 150%, and your choice of monospace font and size for code and the terminal. |
 | GitHub | Your avatar and name, repo owner avatars and stars, PR authors and reviewers, all through your `gh` login. |
@@ -171,6 +171,29 @@ Codex skip their own trust prompt when run headless, so nekotrail lists what wou
 Until you trust it, Claude, Codex and OpenCode run with that repo config off (`claude --setting-sources user`,
 Codex with the folder marked untrusted), and Gemini asks before it runs, while your own settings and MCP
 servers stay on.
+
+## Ports for each workspace
+
+Five workspaces running the same app no longer fight over port 3000. Each active workspace holds its own
+block of 10 ports (4100 to 4109 for the first, 4110 to 4119 for the next, and so on). The block stays the same
+across restarts, skips ports something already listens on, and is given back when you archive the workspace.
+
+Terminals, setup and run scripts and agent turns get `NEKOTRAIL_PORT` (the first port), `NEKOTRAIL_PORT_1` to
+`NEKOTRAIL_PORT_9`, and `PORT`. A `PORT` you export in your shell or set in Repo settings is never replaced.
+To give ports names, add them to `nekotrail.json` in the order you want them:
+
+```json
+{ "ports": { "web": "PORT", "api": "API_PORT" } }
+```
+
+Here web gets the first port as `PORT` and api the second as `API_PORT`. Only variables whose name contains
+`PORT` can be set this way, so a repo can't use it to change anything else.
+
+The Preview tab opens the workspace's port until the Run script prints another address. The Ports button in
+the toolbar lists every workspace's ports and what listens on them, opens one in your browser or the Preview
+tab, and frees a port by stopping its server, after you confirm, only if that workspace's own terminal, script
+or agent started it. If a dev server ignores `PORT` and lands on its default (or finds another workspace
+already there), the Preview tab and the popover say so and show the fix for that server.
 
 ## Develop
 

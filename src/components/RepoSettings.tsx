@@ -74,7 +74,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
               These run in each workspace folder. A <code>nekotrail.json</code> committed in the repo overrides these, so your team can share one setup.
             </p>
             {script("setup", "Setup: runs when a workspace is created", "bun install")}
-            {script("run", "Run: runs from the Run button (⌘R)", "bun dev --port $NEKOTRAIL_PORT")}
+            {script("run", "Run: runs from the Run button (⌘R)", "bun dev --port $PORT")}
             {script("archive", "Archive: runs before the folder is removed", "docker compose down")}
             <div className="field">
               <span>More actions</span>
@@ -116,7 +116,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
             </label>
             <div className="field">
               <span>Environment variables</span>
-              <small className="muted">For agents, scripts and terminals in this repo. Every workspace also gets <code>NEKOTRAIL_PORT</code> (10 free ports from there), <code>NEKOTRAIL_WORKSPACE_NAME</code> and <code>NEKOTRAIL_ROOT_PATH</code>.</small>
+              <small className="muted">For agents, scripts and terminals in this repo. Every workspace also gets 10 ports of its own (<code>NEKOTRAIL_PORT</code>, <code>_1</code> to <code>_9</code>, and <code>PORT</code> unless you set it here), <code>NEKOTRAIL_WORKSPACE_NAME</code> and <code>NEKOTRAIL_ROOT_PATH</code>.</small>
               {p.env.map(([k, v], i) => (
                 <div className="env-row" key={i}>
                   <input value={k} placeholder="NAME" aria-label="Variable name" onChange={(e) => setP({ ...p, env: p.env.map((x, j) => (j === i ? [e.target.value, x[1]] : x)) })} />

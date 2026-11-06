@@ -1503,3 +1503,50 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 /* Archived: the chat reads like any other, but nothing in it can be acted on. */
 .chat.read-only [data-row] button:not([role="radio"]) { display: none; }
 .chat-readonly { padding: var(--s3) var(--s4); border-top: 0.5px solid var(--line); text-align: center; font-size: 12px; }
+
+/* Ports popover (toolbar): every workspace's ports and who listens on them */
+.tb-ports-wrap { position: relative; display: inline-flex; }
+.ports-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; width: 440px; max-height: min(70vh, 560px);
+  display: flex; flex-direction: column; border-radius: var(--r-lg);
+  background: light-dark(rgba(246, 246, 248, 0.94), rgba(44, 44, 46, 0.94));
+  backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
+  cursor: default;
+}
+.ports-pop .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.ports-pop .faint { color: var(--faint); }
+.ports-pop .bad-text { color: var(--bad-text); }
+.ports-pop code { font-size: 11.5px; }
+.ports-head { display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s4) var(--s2); border-bottom: 0.5px solid var(--line); }
+.ports-head strong { font-size: 13px; }
+.ports-head .muted { font-size: 12px; }
+.ports-body { overflow-y: auto; padding: var(--s1) var(--s2) var(--s2); display: flex; flex-direction: column; }
+.ports-body > .spinner { margin: var(--s4) auto; }
+.ports-note { margin: var(--s3) var(--s2); }
+.ports-ws { padding: var(--s2) 0 var(--s1); }
+.ports-ws + .ports-ws { border-top: 0.5px solid var(--line); }
+.ports-ws-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); padding: 0 var(--s2) var(--s1); font-size: 11px; }
+.ports-ws-name { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ports-row { display: flex; align-items: center; gap: var(--s3); min-height: 36px; padding: 2px var(--s2); border-radius: var(--r); }
+.ports-row:hover { background: var(--hover); }
+.ports-num { width: 44px; flex: none; font-size: 12.5px; }
+.ports-row.outside .ports-num { color: var(--wait); }
+.ports-what { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.ports-label { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ports-holder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ports-actions { display: flex; gap: 2px; flex: none; }
+.ports-actions button.icon { width: 24px; height: 24px; }
+.ports-actions button.icon:disabled { opacity: 0.35; }
+.ports-problem { display: flex; gap: var(--s2); margin: var(--s1) 0 var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--wait-soft); }
+.ports-problem svg { flex: none; margin-top: 2px; color: var(--wait); }
+.ports-problem p { margin: 0; }
+.ports-problem p + p { margin-top: var(--s1); font-size: 12px; }
+.ports-quiet { margin: var(--s1) var(--s2) 0; font-size: 12px; }
+.ports-foot { margin: 0; padding: var(--s2) var(--s4) var(--s3); border-top: 0.5px solid var(--line); font-size: 12px; }
+
+/* Preview: a dev server that ignored this workspace's port */
+.preview-problem { max-width: 520px; text-align: left; display: flex; gap: var(--s2); padding: var(--s3) var(--s4); border-radius: var(--r-lg); background: var(--wait-soft); }
+.preview-problem svg { flex: none; margin-top: 2px; color: var(--wait); }
+.preview-problem p { margin: 0; }
+.preview-problem p + p { margin-top: var(--s1); }
