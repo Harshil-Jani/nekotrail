@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Away alerts**
+- New away alerts (Settings, Notifications): get a short message on your phone or in a team chat through ntfy, Slack, Discord, a webhook or Pushover. Off until you add one.
+- Pick the events for each destination: needs you, turn finished, PR checks failed or green, PR merged, queue done, a spend cap, a runaway agent stopped, and a morning summary of the queue.
+- Each message names the workspace, its repo and what happened, with a link that opens it on your Mac. It never contains your code, prompts, commands or diffs. "Include the agent's last line" is off by default, and hides secrets in that line as Export session does.
+- Addresses and tokens are kept in your Keychain (on Linux, your keyring), never in nekotrail's database or logs.
+- Several updates within a minute arrive as one message, and quiet hours hold messages until they end. "Send a test" checks a destination, and the last error shows under it.
+
 ## 0.17.0 (2026-11-07)
 
 **Spend you can trust**
