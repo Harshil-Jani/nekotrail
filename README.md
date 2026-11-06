@@ -94,7 +94,7 @@ The cat reflects the real state of your work, so its moods carry information:
 - **Asleep (z z):** nothing has happened for five minutes.
 - **Worried:** CI is failing or a turn ended in an error.
 - **Happy:** a PR was merged. Its star starts to shine, and the cat offers to archive the workspace.
-- **Brings you something:** when an agent finishes while you're elsewhere, you get a macOS notification and a Dock badge. Press ⌘J to jump to the next workspace with news.
+- **Brings you something:** when an agent finishes while you're elsewhere, you get a macOS notification and a Dock badge. Press ⌘⌥L to jump to the next workspace with news.
 - Its eyes follow your cursor. Click it and it purrs the story of one of your constellations.
 - Archiving a workspace knocks it off the table.
 
@@ -117,15 +117,15 @@ bun run tauri dev
 
 ## Keyboard
 
-The shortcuts match Conductor's, so muscle memory carries over. The full list is in Settings (⌘,).
+Conductor's shortcuts still work, so muscle memory carries over. The full list is in Settings (⌘,), under Shortcuts.
 
 | Keys | Action |
 |---|---|
 | ⌘K | Command palette: jump to any workspace, run any action |
 | ⌘N / ⌘⇧N | New workspace / from a pull request or branch |
-| ⌘1 to ⌘9, ⌘⌥↑ / ⌘⌥↓ | Switch workspace |
+| ⌃1 to ⌃9, ⌘⌥↑ / ⌘⌥↓ | Switch workspace |
 | ⌘⌥L | Next workspace with news |
-| ⌘L / ⌘⇧D / ⌘J | Chat / Changes / Terminal |
+| ⌘1 / ⌘2 / ⌘3 | Chat / Changes / Terminal (⌘L, ⌘⇧D and ⌘J also work) |
 | ⌘⇧P / ⌘⇧Y / ⌘⇧M | Create PR / commit and push / merge |
 | ⌘⇧R / ⌘⇧X / ⌘⇧L | Agent review / fix failing checks / pull latest |
 | ⌘R / ⌘⇧B | Run or stop the app / open localhost |
