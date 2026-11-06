@@ -1402,7 +1402,8 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .ws-sub-line .ws-lines, .ws-sub-line > svg, .ws-sub-line .ws-clash { flex-shrink: 0; }
 .ws-star { color: var(--muted); font-size: 11px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prbar .stack-link button.stack-name { display: inline-block; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
-.compare-task { margin: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compare-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.compare-task { margin: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nw-stack-star { font-weight: 400; }
 
 /* MCP sheet: a 16px fade at the bottom edge while the list continues below. */

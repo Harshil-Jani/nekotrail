@@ -438,7 +438,7 @@ export function PrBar({
             onClick={() => setRadarOpen((o) => !o)}
             title="Another workspace changes the same files. Click for a merge order."
           >
-            <Layers size={13} /><span className="pill-text"><span className="pb-long">Same files as </span>{nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
+            <Layers size={13} /><span className="pill-text"><span className="pb-long">Same files as </span>{textNameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
           </button>
           {radarOpen && (
             <RadarPopover

@@ -56,11 +56,14 @@ export function Compare({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal compare" role="dialog" aria-modal="true" aria-label="Compare agents" onClick={(e) => e.stopPropagation()}>
         <div className="row">
-          <h2>Compare agents</h2>
+          {/* The shared task is the sheet's subtitle, right under its title. */}
+          <div className="compare-head">
+            <h2>Compare agents</h2>
+            {task && <p className="compare-task" title={task}>{task}</p>}
+          </div>
           <span className="spacer" />
           <button className="icon" aria-label="Close" onClick={onClose}><X size={16} /></button>
         </div>
-        {task && <p className="compare-task">{task}</p>}
         <p className="muted">Same prompt, different agents. Open each to read the diff, then keep the one you like. The other workspace is archived, and its branch is kept.</p>
         <div className="compare-grid" style={{ gridTemplateColumns: `repeat(${workspaces.length}, 1fr)` }}>
           {workspaces.map((w) => {
