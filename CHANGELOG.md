@@ -5,6 +5,14 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Tasks across repos**
+- New workspace, "Several repos": pick 2 to 5 repos and nekotrail makes a workspace in each, all on one branch. The sidebar shows them as one task.
+- One chat works across all of them: the agent runs in the main repo and can read and change the others. Claude, Codex, Gemini and Copilot can do this; agents that only open one folder aren't offered.
+- Changes and Checks have a repo switcher, and Ports lists each repo of the task by name.
+- Create PRs opens one PR per repo, and every description links to the others ("Part of a change across: org/api#12, org/web#34").
+- Merge all merges in the order you pick, only when every PR is green, and stops at the first one that fails.
+- Archive takes the whole task, and every repo keeps its branch. Protected files and repo trust hold per repo.
+
 **Task queue**
 - New Queue (sidebar, ⌘K, `nekotrail queue add "task"`): line up tasks and nekotrail runs 3 at a time, each in its own workspace, starting the next when one finishes or needs you. Set how many run at once overall and per repo.
 - Each task picks its repo, branch, agent, model and permissions, and what happens after: run checks, open a draft PR, or autopilot to green.
