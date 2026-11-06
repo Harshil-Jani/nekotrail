@@ -145,7 +145,7 @@ function CommandLine() {
       <h3>Command line</h3>
       <p className="muted setting-note">Run <code>nekotrail .</code> to open a repo, or <code>nekotrail new "fix the login bug"</code> to start an agent, from any terminal.</p>
       <div className="setting">
-        <span>{path ? <>Installed at <code>{path}</code></> : "The nekotrail command"}</span>
+        <span>{path ? <>Installed at <code>{path}</code></> : "Terminal command"}</span>
         <button onClick={install} disabled={busy}>{path ? "Reinstall" : "Install command line tool"}</button>
       </div>
       {note && <p className={`setting-note ${note.error ? "bad" : "muted"}`} role="status">{note.text}</p>}
