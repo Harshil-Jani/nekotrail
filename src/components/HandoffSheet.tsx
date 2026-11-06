@@ -97,7 +97,7 @@ export function HandoffSheet({ session, title, multiRepo, busy, initialAgent, in
                 : `No other agent is installed. Install Codex (${AGENT_INFO.codex.install}) or another agent, then come back.`}
             </p>
           ) : (
-            <div className="handoff-agents" role="radiogroup" aria-label="Agent">
+            <div className="seg handoff-agents" role="radiogroup" aria-label="Agent">
               {targets.map((a) => (
                 <button key={a} role="radio" aria-checked={a === agent} className={a === agent ? "on" : ""} onClick={() => pick(a)}>{AGENT_INFO[a].name}</button>
               ))}

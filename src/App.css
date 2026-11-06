@@ -2249,9 +2249,8 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .handoff-why { font-size: 12.5px; }
 .handoff-pick { display: flex; flex-direction: column; gap: var(--s2); }
 .handoff-pick .mcp-h, .handoff-brief .mcp-h { margin: 0; }
-.handoff-agents { display: flex; flex-wrap: wrap; gap: 6px; }
-.handoff-agents button { height: 26px; padding: 0 12px; border-radius: 13px; font-size: 12.5px; }
-.handoff-agents button.on { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-text); font-weight: 600; }
+.seg.handoff-agents { flex-wrap: wrap; }
+.seg.handoff-agents button { height: 26px; padding: 0 var(--s3); font-size: 12.5px; }
 .handoff-model { gap: var(--s2); flex-wrap: wrap; }
 .handoff-model .picker-btn { box-shadow: inset 0 0 0 0.5px var(--line-strong); }
 .handoff .picker-menu { top: calc(100% + 6px); bottom: auto; }
