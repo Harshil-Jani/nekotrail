@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -315,6 +315,9 @@ export default function App() {
     const t = setInterval(load, 5 * 60_000);
     return () => clearInterval(t);
   }, [workspaces.length]);
+  // Collision radar: reads the file lists the line counts just cached, so it adds no git work.
+  const [collisions, setCollisions] = useState<Collision[]>([]);
+  useEffect(() => { api.collisions(prStates).then(setCollisions).catch(() => {}); }, [lines, prStates]);
   const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
   const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -368,7 +371,7 @@ export default function App() {
   useEffect(() => {
     const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
       refresh();
-      setRefreshKey((k) => k + 1); // a turn ended: reload line counts and file overlaps
+      setRefreshKey((k) => k + 1); // a turn ended: reload line counts and the collision radar
       // Changes and PR state only move for the workspace whose agent ran.
       if (!payload.workspace_id || payload.workspace_id === selectedRef.current) setWsRefreshKey((k) => k + 1);
       lastActive.current = Date.now();
@@ -909,6 +912,7 @@ export default function App() {
         onGroupBy={(g) => { setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); }}
         prStates={prStates}
         lines={lines}
+        collisions={collisions}
         usage={usage}
         sections={sections}
         onChanged={refresh}
@@ -1058,7 +1062,10 @@ export default function App() {
                 repo={repo ?? undefined}
                 name={displayName(sky, ws)}
                 refreshKey={wsRefreshKey}
-                overlapKey={refreshKey}
+                collision={collisions.find((c) => c.order.includes(ws.id))}
+                prStates={prStates}
+                lines={lines}
+                onOpenWorkspace={select}
                 onArchive={(auto, id) => archive({ auto, id })}
                 onSay={say}
                 autopilot={autopilot[ws.id]}

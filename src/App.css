@@ -916,6 +916,9 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 .ws .ws-name { flex: 1; min-width: 0; font-size: 13px; }
 .ws.selected .ws-name { font-weight: 500; }
 .ws-lines { font-size: 11px; }
+/* Collision radar: a quiet mark on rows that share files with another workspace. */
+.ws-clash { display: inline-flex; color: var(--muted); flex-shrink: 0; }
+.ws:hover .ws-clash, .ws.selected .ws-clash { color: var(--wait); }
 .ws-lines .del { display: none; }
 .ws:hover .ws-lines .del, .ws.selected .ws-lines .del { display: inline; }
 .repo { padding-top: var(--s2); }
@@ -1056,6 +1059,24 @@ html.native .repo-actions { background: none; }
 .prbar .pill.bad { color: var(--bad); }
 .prbar .pill.merged svg { color: var(--purple); }
 .prbar .pill.wait { background: var(--wait-soft); color: var(--wait); padding: 0 7px; }
+/* The branch gives up room first, so "Same files as <name>" stays readable at 1100 px. */
+.prbar > button.branch { flex-shrink: 4; }
+.prbar .overlap > button.pill { border: none; box-shadow: none; min-width: 0; max-width: 100%; cursor: pointer; }
+.prbar .overlap > button.pill:hover { background: color-mix(in srgb, var(--wait) 18%, transparent); }
+.radar-pop { left: 0; right: auto; width: 340px; max-width: calc(100vw - 32px); border-radius: var(--r-lg); padding: var(--s2) 0; }
+.radar-sec { padding: 0 var(--s3) var(--s1); }
+.radar-files { margin: 0 0 4px; font-size: 12.5px; line-height: 1.45; color: var(--text); overflow-wrap: anywhere; }
+.radar-files code { font-size: 11.5px; }
+.radar-order { margin: 0; padding: 2px 0 var(--s1); list-style: none; counter-reset: radar; }
+.radar-order li { counter-increment: radar; }
+.radar-row { display: flex; align-items: baseline; gap: var(--s2); width: 100%; padding: 5px var(--s3); font-size: 13px; }
+.radar-row::before { content: counter(radar) "."; color: var(--muted); font-variant-numeric: tabular-nums; width: 14px; }
+.menu button.radar-row { font-weight: 500; }
+.radar-row .radar-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.radar-row small { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.radar-row.here { font-weight: 600; }
+.menu button.radar-row:hover small, .menu button.radar-row:hover::before { color: inherit; }
+.radar-pop .menu-hint { line-height: 1.45; }
 .prbar button.link.num { color: var(--muted); font-weight: 500; }
 .prbar button.link.num:hover { color: var(--text); }
 .prbar button.branch, .prbar .git-actions > button, .prbar .icon-btn { height: 24px; }

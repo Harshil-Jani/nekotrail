@@ -174,7 +174,8 @@ mockIPC(
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
       case "imported_outside": return location.search.includes("moveimport") ? ["w1", "w2", "w3"] : [];
       case "autopilot_status": return { w2: 1 };
-      case "overlaps": return args.id === "w1" ? [{ workspace_id: "w2", files: ["internal/server/http.go"] }] : [];
+      // Mochi (w1, PR open, 39 lines) and Comet (w2, draft, 151 lines) both change http.go.
+      case "collisions": return [{ repo_id: "r1", order: ["w1", "w2"], pairs: [{ a: "w1", b: "w2", files: ["internal/server/http.go"] }] }];
       case "agent_scorecard": return [
         { agent: "claude", turns: 212, errors: 9, duration_ms: 212 * 96000, merged: 31, cost_usd: 148.2 },
         { agent: "codex", turns: 87, errors: 6, duration_ms: 87 * 71000, merged: 11, cost_usd: 39.6 },

@@ -6,6 +6,7 @@ pub mod importer;
 pub mod names;
 pub mod preview;
 pub mod pty;
+pub mod radar;
 pub mod safe;
 pub mod store;
 
@@ -41,8 +42,9 @@ struct Runs {
     forks: std::collections::HashSet<String>,
 }
 
-/// (counts with when they were taken, workspaces to recount)
-type LineCache = (HashMap<String, (std::time::Instant, (u32, u32))>, std::collections::HashSet<String>);
+/// (per workspace: when counted, lines added and removed, changed file paths; workspaces to recount).
+/// The file paths feed the collision radar, so it never runs git of its own.
+type LineCache = (HashMap<String, (std::time::Instant, (u32, u32), Vec<String>)>, std::collections::HashSet<String>);
 
 pub struct AppState {
     store: Mutex<Store>,
@@ -814,7 +816,7 @@ async fn line_counts(app: AppHandle) -> Res<HashMap<String, (u32, u32)>> {
             let mut todo = vec![];
             for w in wss {
                 match cache.0.get(&w.id) {
-                    Some((at, v)) if !cache.1.contains(&w.id) && at.elapsed() < FRESH => { out.insert(w.id.clone(), *v); }
+                    Some((at, v, _)) if !cache.1.contains(&w.id) && at.elapsed() < FRESH => { out.insert(w.id.clone(), *v); }
                     _ => todo.push(w),
                 }
             }
@@ -824,14 +826,15 @@ async fn line_counts(app: AppHandle) -> Res<HashMap<String, (u32, u32)>> {
             .into_iter()
             .map(|w| std::thread::spawn(move || {
                 let c = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
-                Some((w.id, (c.iter().map(|f| f.additions).sum::<u32>(), c.iter().map(|f| f.deletions).sum::<u32>())))
+                let counts = (c.iter().map(|f| f.additions).sum::<u32>(), c.iter().map(|f| f.deletions).sum::<u32>());
+                Some((w.id, counts, c.into_iter().map(|f| f.path).collect::<Vec<_>>()))
             }))
             .collect();
-        let fresh: Vec<(String, (u32, u32))> = handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect();
+        let fresh: Vec<(String, (u32, u32), Vec<String>)> = handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect();
         let mut cache = st.lines.lock().unwrap();
-        for (id, v) in fresh {
+        for (id, v, files) in fresh {
             cache.1.remove(&id);
-            cache.0.insert(id.clone(), (std::time::Instant::now(), v));
+            cache.0.insert(id.clone(), (std::time::Instant::now(), v, files));
             out.insert(id, v);
         }
         Ok(out)
@@ -1172,37 +1175,22 @@ async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String,
     Ok(out)
 }
 
-/// Other workspaces in the same repo that changed some of the same files as this one, so you hear
-/// about the merge conflict before it happens. Runs git in parallel, off the async workers.
+/// Collision radar: active workspaces in one repo changing the same files, grouped, each group in
+/// a suggested merge order. Reads only the file lists `line_counts` cached, so it runs no git at
+/// all; a workspace not counted yet is simply left out until it is. `prs` is the PR state per
+/// workspace the UI already has from `pr_states`.
 #[tauri::command]
-async fn overlaps(app: AppHandle, id: String) -> Res<Vec<Value>> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let st = app.state::<AppState>();
-        let (me, others) = {
-            let db = st.db();
-            let me = db.workspace(&id).map_err(e)?;
-            let others: Vec<Workspace> = db.workspaces(false).map_err(e)?.into_iter().filter(|w| w.repo_id == me.repo_id && w.id != me.id).collect();
-            (me, others)
-        };
-        let mine: std::collections::HashSet<String> = git::changes(Path::new(&me.path), &me.target_branch).map_err(e)?.into_iter().map(|f| f.path).collect();
-        if mine.is_empty() {
-            return Ok(vec![]);
-        }
-        let handles: Vec<_> = others.into_iter().map(|w| std::thread::spawn(move || {
-            let theirs = git::changes(Path::new(&w.path), &w.target_branch).ok()?;
-            Some((w, theirs.into_iter().map(|f| f.path).collect::<Vec<_>>()))
-        })).collect();
-        let mut out = vec![];
-        for (w, files) in handles.into_iter().filter_map(|h| h.join().ok().flatten()) {
-            let shared: Vec<&String> = files.iter().filter(|f| mine.contains(*f)).collect();
-            if !shared.is_empty() {
-                out.push(json!({"workspace_id": w.id, "files": shared}));
-            }
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(e)?
+async fn collisions(st: State<'_, AppState>, prs: HashMap<String, String>) -> Res<Vec<radar::Group>> {
+    let wss = st.db().workspaces(false).map_err(e)?;
+    let cache = st.lines.lock().unwrap();
+    let entries: Vec<radar::Entry> = wss
+        .iter()
+        .filter_map(|w| {
+            let c = cache.0.get(&w.id)?;
+            Some(radar::Entry { id: &w.id, repo: &w.repo_id, created: &w.created_at, lines: c.1.0 + c.1.1, files: &c.2, pr: prs.get(&w.id).map(String::as_str) })
+        })
+        .collect();
+    Ok(radar::collisions(&entries))
 }
 
 /// Disk used by each workspace folder, and how much of it is build output that can be cleaned.
@@ -2285,7 +2273,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, overlaps, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work

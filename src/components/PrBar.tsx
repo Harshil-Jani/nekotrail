@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Bot, TriangleAlert, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MessageSquare, ScanSearch, Sparkles, Upload } from "lucide-react";
-import { api, avatar, errText, type Pr, type Repo, type Workspace } from "../api";
+import { Bot, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Layers, MessageSquare, ScanSearch, Sparkles, Upload } from "lucide-react";
+import { api, avatar, errText, type Collision, type Pr, type Repo, type Workspace } from "../api";
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
 import { getSettings } from "../settings";
@@ -25,6 +25,66 @@ function PrState({ pr }: { pr: NonNullable<Pr> }) {
   if (pr.state === "CLOSED") return <span className="pill bad"><GitPullRequestClosed size={14} />Closed</span>;
   if (pr.isDraft) return <span className="pill"><GitPullRequestDraft size={14} />Draft</span>;
   return <span className="pill good"><GitPullRequest size={14} />Open</span>;
+}
+
+/** Why a workspace sits where it does in the merge order, in a few words. */
+export function mergeReason(pr: string | undefined, lines: [number, number] | undefined): string {
+  const n = lines ? lines[0] + lines[1] : 0;
+  const state = pr === "OPEN" ? "PR ready" : pr === "DRAFT" ? "draft PR" : "no PR yet";
+  return `${state}, ${n.toLocaleString()} ${n === 1 ? "line" : "lines"}`;
+}
+
+/** Collision radar details: which files overlap, and a suggested merge order for the group. */
+function RadarPopover({ here, collision, overlap, nameOf, prStates, lines, onOpen, onClose }: {
+  here: string;
+  collision: Collision;
+  overlap: { workspace_id: string; files: string[] }[];
+  nameOf: (id: string) => string;
+  prStates: Record<string, string>;
+  lines: Record<string, [number, number]>;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>("button")?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    const onDown = (e: MouseEvent) => { if (!box.current?.parentElement?.contains(e.target as Node)) onClose(); };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown);
+    return () => { window.removeEventListener("keydown", onKey, true); window.removeEventListener("mousedown", onDown); };
+  }, []);
+  const first = collision.order[0];
+  return (
+    <div className="menu radar-pop" role="dialog" aria-label="Workspaces changing the same files" ref={box}>
+      <div className="radar-sec">
+        {overlap.map((o) => (
+          <p key={o.workspace_id} className="radar-files">
+            <b>{nameOf(o.workspace_id)}</b> also changes <code>{o.files.slice(0, 3).join(", ")}</code>
+            {o.files.length > 3 && <> and {o.files.length - 3} more</>}
+          </p>
+        ))}
+      </div>
+      <div className="menu-label">Suggested merge order</div>
+      <ol className="radar-order">
+        {collision.order.map((id) => (
+          <li key={id}>
+            {id === here ? (
+              <span className="radar-row here"><span className="radar-name">{nameOf(id)} <span className="muted">(this one)</span></span><small>{mergeReason(prStates[id], lines[id])}</small></span>
+            ) : (
+              <button className="radar-row" onClick={() => onOpen(id)} title={`Open ${nameOf(id)}`}>
+                <span className="radar-name">{nameOf(id)}</span><small>{mergeReason(prStates[id], lines[id])}</small>
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+      <p className="menu-hint muted">
+        {first === here ? "Merge this one first, then pull it into the others." : `Merge ${nameOf(first)} first, then pull it in here before you merge this one.`}
+        {" "}Ready PRs go first, then the smaller change, so the next one rebases over less.
+      </p>
+    </div>
+  );
 }
 
 /** Prompts for the git actions the agent does for you. The repo's own instructions are added. */
@@ -59,7 +119,10 @@ export function PrBar({
   repo,
   name,
   refreshKey,
-  overlapKey,
+  collision,
+  prStates,
+  lines,
+  onOpenWorkspace,
   onSendAgent,
   onArchive,
   onSay,
@@ -70,8 +133,11 @@ export function PrBar({
   repo?: Repo;
   name: string;
   refreshKey: number;
-  /** Bumps when any workspace's agent finishes: overlapping files can change from either side. */
-  overlapKey: number;
+  /** This workspace's collision group, if another workspace changes the same files. */
+  collision?: Collision;
+  prStates: Record<string, string>;
+  lines: Record<string, [number, number]>;
+  onOpenWorkspace: (id: string) => void;
   /** Send a prompt to the agent right away. */
   onSendAgent: (prompt: string) => void;
   /** `auto` is true when archiving by itself after a merge; `id` is set once it is no longer the open workspace. */
@@ -87,8 +153,12 @@ export function PrBar({
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [overlap, setOverlap] = useState<{ workspace_id: string; files: string[] }[]>([]);
-  useEffect(() => { setOverlap([]); api.overlaps(ws.id).then(setOverlap).catch(() => {}); }, [ws.id, overlapKey]);
+  const [radarOpen, setRadarOpen] = useState(false);
+  useEffect(() => setRadarOpen(false), [ws.id]);
+  // Workspaces sharing files with this one directly, and which files.
+  const overlap = (collision?.pairs ?? [])
+    .filter((p) => p.a === ws.id || p.b === ws.id)
+    .map((p) => ({ workspace_id: p.a === ws.id ? p.b : p.a, files: p.files }));
 
   const load = () =>
     api.prStatus(ws.id).then((p) => { setPr(p); setError(null); }).catch((e) => { setPr(null); setError(errText(e)); });
@@ -276,9 +346,29 @@ export function PrBar({
           <GitBranch size={14} /><span className="branch-text">{ws.branch} → {ws.target_branch}</span>
         </button>
       )}
-      {overlap.length > 0 && (
-        <span className="pill wait overlap" title={overlap.map((o) => `${nameOf(o.workspace_id)}: ${o.files.join(", ")}`).join("\n")}>
-          <TriangleAlert size={13} /><span className="pill-text">Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
+      {collision && overlap.length > 0 && (
+        <span className="git-menu overlap">
+          <button
+            className="pill wait"
+            aria-expanded={radarOpen}
+            aria-haspopup="dialog"
+            onClick={() => setRadarOpen((o) => !o)}
+            title="Another workspace changes the same files. Click for a merge order."
+          >
+            <Layers size={13} /><span className="pill-text">Same files as {nameOf(overlap[0].workspace_id)}{overlap.length > 1 ? ` and ${overlap.length - 1} more` : ""}</span>
+          </button>
+          {radarOpen && (
+            <RadarPopover
+              here={ws.id}
+              collision={collision}
+              overlap={overlap}
+              nameOf={nameOf}
+              prStates={prStates}
+              lines={lines}
+              onOpen={(id) => { setRadarOpen(false); onOpenWorkspace(id); }}
+              onClose={() => setRadarOpen(false)}
+            />
+          )}
         </span>
       )}
       <span className="spacer" />
