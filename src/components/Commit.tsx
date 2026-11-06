@@ -457,7 +457,7 @@ function SplitSheet({ workspaceId, plan, onClose }: { workspaceId: string; plan:
                         <div className="split-hunk">
                           <button className="link split-hunk-name" onClick={() => setPeek(peek === h ? null : h)} aria-expanded={peek === h} title={x.whole ? x.path : "Show this change"}>
                             <code>{x.path.split("/").pop()}</code>
-                            <span className="muted">{x.whole ? x.header : x.header.replace(/^@@ .*? @@\s*/, "") || `line ${x.header.match(/\+(\d+)/)?.[1] ?? ""}`}</span>
+                            <span className={`muted${x.whole ? " prose" : ""}`}>{x.whole ? x.header : x.header.replace(/^@@ .*? @@\s*/, "") || `line ${x.header.match(/\+(\d+)/)?.[1] ?? ""}`}</span>
                           </button>
                           {x.protected && <Lock size={12} className="stage-lock" aria-label="Protected" />}
                           {!x.whole && <span className="num"><span className="add">+{x.additions}</span> <span className="del">-{x.deletions}</span></span>}
@@ -472,7 +472,12 @@ function SplitSheet({ workspaceId, plan, onClose }: { workspaceId: string; plan:
                             <option value={groups.length}>New commit</option>
                           </select>
                         </div>
-                        {peek === h && !x.whole && <pre className="split-peek">{x.path}{"\n"}{x.header}{"\n"}{x.preview}</pre>}
+                        {peek === h && !x.whole && (
+                          <pre className="split-peek" aria-label={`${x.path}, ${x.header}`}>
+                            <span className="pk-hunk">{x.header}</span>
+                            {x.preview.split("\n").map((ln, k) => <span key={k} className={ln.startsWith("+") ? "pk-add" : ln.startsWith("-") ? "pk-del" : undefined}>{"\n"}{ln}</span>)}
+                          </pre>
+                        )}
                       </li>
                     );
                   })}
