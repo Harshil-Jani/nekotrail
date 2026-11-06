@@ -16,7 +16,8 @@ describe("how protected files hold, per agent", () => {
 
   test("Repo settings groups agents that hold the same way, strongest first, each listed once", () => {
     const groups = guardGroups();
-    expect(groups.map((g) => g.level)).toEqual(["blocked", "blocked", "asks", "asks", "after", "after"]);
+    expect(groups.map((g) => g.level)).toEqual(["blocked", "blocked", "asks", "asks", "after"]);
+    expect(groups.find((g) => g.level === "after")!.agents).toEqual(["codex", "gemini"]);
     expect(groups.flatMap((g) => g.agents).sort()).toEqual([...AGENTS].sort());
     const shared = groups.find((g) => g.agents.includes("cursor"))!;
     expect(shared.agents).toEqual(["cursor", "goose", "qwen", "kimi", "auggie", "grok", "kiro", "droid", "vibe", "cline", "kilo"]);

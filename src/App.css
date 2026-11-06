@@ -1456,3 +1456,8 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .commands-list details summary code { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 16px; }
 .commands-list details.failed summary code { color: var(--text); }
 .commands-list details p { margin: var(--s1) 0 var(--s2) var(--s5); font-size: 12px; }
+
+/* Repo settings: the sheet keeps its top edge when tabs change height, and Save stays in view on long tabs. */
+.modal-backdrop:has(> .modal.repo-settings) { align-items: flex-start; padding-top: 7vh; }
+.modal.repo-settings { max-height: 86vh; }
+.modal.repo-settings > .row.end { position: sticky; bottom: calc(-1 * var(--s6)); margin: 0 calc(-1 * var(--s6)) calc(-1 * var(--s6)); padding: var(--s3) var(--s6) var(--s6); background: var(--bg); border-top: 0.5px solid var(--line); z-index: 1; }

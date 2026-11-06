@@ -148,6 +148,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
             )}
             <div className="field">
               <span>How each agent is held to it</span>
+              <small className="muted">Whatever the agent, nekotrail also checks what changed when each turn ends.</small>
               <ul className="guard-levels">
                 {guardGroups().map(({ agents, level, how }) => (
                   <li key={agents.join()}>
