@@ -20,6 +20,13 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 **MCP sheet polish**
 - The sheet fades at the bottom when there's more to scroll, clears an old error when you change how a secret comes across, and its Skills note is shorter.
 
+**Design ship-gate fixes**
+- Sidebar rows give the task title the full width: line counts, the overlap mark and the pin sit on the star's line underneath, and two-line rows are 36 px instead of 40, so more workspaces fit.
+- Compare shows the shared task right under its title, and the "Same files as" note in the PR bar quotes task titles like the rest of the app.
+- Setup lists the agents you have first, and "more agents you can add" folds open in line with the other checks.
+- "Installed" and "Not installed" in the agent menus line up with the agent names. Settings, Agents says other agents show up once they're installed.
+- The Settings footer reads as one line (version, What's new, Check for updates), with Sponsor set apart by a heart.
+
 ## 0.12.1 (2026-11-06)
 
 **Sponsor**
