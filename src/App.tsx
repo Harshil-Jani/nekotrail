@@ -631,7 +631,7 @@ export default function App() {
   };
 
   // Ports: the toolbar popover, and addresses it asks a workspace's Preview tab to show.
-  const [portsOpen, setPortsOpen] = useState(false);
+  const [portsOpen, setPortsOpen] = useState(() => params.has("ports"));
   const [previewShow, setPreviewShow] = useState<{ ws: string; url: string; nonce: number } | null>(null);
   const wsLabel = (id: string) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; };
   const showInPreview = (wsId: string, url: string) => {

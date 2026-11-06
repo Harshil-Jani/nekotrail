@@ -70,7 +70,7 @@ const reviews: Record<string, any[]> = new URLSearchParams(location.search).has(
   { id: "c2", file: "internal/server/http.go", side: "new", line: 22, end_line: 22, code: "+\t\tIdleTimeout: 75 * time.Second,", text: "Read this from config instead, so ops can tune it per environment." },
   { id: "c3", file: "internal/server/http.go", side: "new", line: 24, end_line: 24, code: "+\t\tReadHeaderTimeout: 5 * time.Second,", text: "Is 5s enough for slow mobile clients?" },
 ] };
-// ?review: two PRs wait for your review, and Biscuit (w6) is a read-only review of #731 with the
+// ?review: two PRs wait for your review (?folded puts one draft outside the diff), and Biscuit (w6) is a read-only review of #731 with the
 // agent's findings as drafts, one with a suggested change. ?ws=w6&tab=changes opens its drafts.
 const reviewing = new URLSearchParams(location.search).has("review");
 const reviewRequests = reviewing ? [
@@ -229,6 +229,31 @@ const diff = `diff --git a/internal/server/http.go b/internal/server/http.go
 +		// connections we already closed and clients see 502s.
 +		IdleTimeout: 75 * time.Second,
  	}`;
+
+// Ports (?ports opens the popover). Each workspace has a block of 10 from 4100. ?ports=empty, =error and
+// =loading show those states; ?portclash raises the toast a Run script gives when its port is taken;
+// ?portProblem makes Preview say the app landed outside its block (use with ?tab=preview&previewDown).
+const portsMode = new URLSearchParams(location.search).get("ports");
+const blockOf = (id: string) => 4100 + Math.max(0, ["w1", "w2", "w3", "w4", "w5", "w6"].indexOf(id)) * 10;
+const holder = (command: string, pid: number, workspace_id: string | null, can_free = true) => ({ pid, command, workspace_id, how: workspace_id ? "tree" : null, can_free });
+const portsList = () => [
+  { id: "w1", base: 4100, main: 4100, problems: [], rows: [
+    { port: 4100, vars: ["NEKOTRAIL_PORT", "PORT", "WEB_PORT"], name: "web", outside: false, holder: holder("node", 41230, "w1") },
+    { port: 4101, vars: ["NEKOTRAIL_PORT_1", "API_PORT"], name: "api", outside: false, holder: holder("api", 41388, "w1") },
+    { port: 4102, vars: ["NEKOTRAIL_PORT_2", "ADMIN_PORT"], name: "admin", outside: false, holder: null },
+  ] },
+  { id: "w2", base: 4110, main: 4110, rows: [
+    { port: 4110, vars: ["NEKOTRAIL_PORT", "PORT"], name: null, outside: false, holder: null },
+    { port: 3000, vars: [], name: null, outside: true, holder: holder("next-server", 52011, "w2") },
+  ], problems: [{ port: 3000, text: "Comet's app is on 3000, not its own port 4110. It ignored PORT.", fix: "Start it with `next dev -p $PORT`, or set `\"dev\": \"next dev -p $PORT\"` in package.json." }] },
+  { id: "w4", base: 4130, main: 4130, problems: [], rows: [
+    { port: 4130, vars: ["NEKOTRAIL_PORT", "PORT"], name: null, outside: false, holder: holder("vite", 50112, null, false) },
+  ] },
+];
+if (new URLSearchParams(location.search).has("portclash")) setTimeout(() => emit("port-clash", { workspace_id: "w2", text: "Comet's Run script stopped: port 3000 is taken by Mochi (node, pid 41230).", fix: "Use `$PORT` in the Run script so each workspace gets its own." }), 1200);
+// ?link: a nekotrail://new link waiting for "Start this task?". ?link=long has a long prompt and adds the repo.
+const linkMode = new URLSearchParams(location.search).get("link");
+let linkTaken = false;
 
 mockIPC(
   (cmd, args: any) => {
@@ -391,7 +416,7 @@ mockIPC(
       case "checkpoint_preview": return { files: 2, commits: 1 };
       case "review_comments": return reviews[args.id] ?? [];
       case "review_requests": return reviewRequests;
-      case "review_plan": return { number: 731, url: "https://github.com", title: "Retry webhook deliveries with backoff", author: "octocat", head_sha: "b7c1d2e", inline: (reviews[args.id] ?? []).length, folded: [], suggestions: 1 };
+      case "review_plan": return { number: 731, url: "https://github.com", title: "Retry webhook deliveries with backoff", author: "octocat", head_sha: "b7c1d2e", inline: (reviews[args.id] ?? []).length, folded: location.search.includes("folded") ? ["internal/server/retry.go:88"] : [], suggestions: 1 };
       case "update_review_comment": reviews[args.id] = (reviews[args.id] ?? []).map((c) => (c.id === args.comment ? { ...c, text: args.text } : c)); return null;
       // The preview never posts anything: it only says what would happen.
       case "submit_review": { const n = (reviews[args.id] ?? []).length; reviews[args.id] = []; return { url: "https://github.com", inline: n, folded: 0, archived: true }; }
@@ -399,8 +424,24 @@ mockIPC(
       case "remove_review_comments": reviews[args.id] = (reviews[args.id] ?? []).filter((c) => !args.ids.includes(c.id)); return null;
       case "send": (window as any).__sent = [...((window as any).__sent ?? []), args.text]; return null;
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
-      case "remote_take": return [];
-      case "cli_status": return { path: null };
+      case "remote_take": if (linkMode === null || linkTaken) return [];
+        linkTaken = true;
+        return [{ kind: "confirm", token: "t1", repo: linkMode === "long" ? "pawprint-mobile" : "pawprint-api", repo_path: linkMode === "long" ? "~/code/pawprint-mobile" : "/code/pawprint-api", adds_repo: linkMode === "long", agent: linkMode === "long" ? "codex" : "claude", base: linkMode === "long" ? "release/2.4" : null, plan: linkMode === "long",
+          prompt: linkMode === "long" ? "The iOS app crashes on launch for users upgrading from 2.3 when the keychain still holds the old token format.\n\n1. Reproduce it with the 2.3 fixture in test/fixtures/keychain-2.3.json.\n2. Migrate the token on first launch instead of reading it as the new format.\n3. Add a test that upgrades from 2.3 and launches twice.\n4. Don't touch the Android code.\n\nOpen a draft PR when the tests pass, and list anything you weren't sure about in its description so a reviewer can check it." : "Fix the flaky login test on CI" }];
+      case "link_confirm": return null;
+      case "cli_status": return { path: new URLSearchParams(location.search).get("cli") === "installed" ? "/usr/local/bin/nekotrail" : null };
+      case "cli_install": if (new URLSearchParams(location.search).get("cli") === "fail") throw "Couldn't write /usr/local/bin/nekotrail: permission denied. Run it again and allow the admin prompt."; return { path: "/usr/local/bin/nekotrail", hint: null };
+      case "workspace_ports": return { base: blockOf(args.id), main: blockOf(args.id) };
+      case "ports_status": {
+        if (portsMode === "loading") return new Promise(() => {});
+        if (portsMode === "error") throw "Couldn't list ports: lsof exited with status 1.";
+        if (portsMode === "empty") return [];
+        const all = portsList();
+        if (args.id) { const one = all.find((w) => w.id === args.id) ?? { id: args.id, base: blockOf(args.id), main: blockOf(args.id), rows: [], problems: [] };
+          return new URLSearchParams(location.search).has("portProblem") ? [{ ...one, problems: all[1].problems }] : [one]; }
+        return all;
+      }
+      case "free_port": return args.port;
       default: return null;
     }
   },
