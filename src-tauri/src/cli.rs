@@ -18,6 +18,8 @@ Usage:
       --agent <name>             Agent to use (claude, codex, gemini, ...). Default: claude
       --base <branch>            Branch to start from. Default: the repo's default branch
       --plan                     The agent plans first and waits for your OK before editing
+      --linear <ENG-123>         Start from a Linear issue: its branch, title and text (connect
+                                 Linear in Settings, Integrations first). A task is then optional
   nekotrail ls [--all] [--json]  Workspaces in this repo (or every repo): state, agent, PR
   nekotrail open <name>          Show a workspace, by name, branch or title
   nekotrail status [--json]      What needs you
@@ -122,13 +124,18 @@ fn parse_new(args: &[String]) -> Result<Action, String> {
             _ => (a.as_str(), None),
         };
         let mut value = |name: &str| -> Result<String, String> {
-            inline.clone().or_else(|| it.next().cloned()).filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} needs a value, for example {name} {}.", if name == "--agent" { "codex" } else { "main" }))
+            let example = match name { "--agent" => "codex", "--linear" => "ENG-123", _ => "main" };
+            inline.clone().or_else(|| it.next().cloned()).filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} needs a value, for example {name} {example}."))
         };
         match flag {
             "--" => flags_done = true,
             "--agent" | "-a" => task.agent = Some(value("--agent")?),
             "--base" | "-b" => task.base = Some(value("--base")?),
             "--plan" | "-p" => task.plan = true,
+            "--linear" | "-l" => {
+                let v = value("--linear")?;
+                task.linear = Some(crate::linear::issue_ref(&v).ok_or_else(|| format!("\"{v}\" isn't a Linear issue. Use its identifier, for example --linear ENG-123."))?);
+            }
             f if f.starts_with('-') && f.len() > 1 => return Err(format!("nekotrail new doesn't know \"{f}\". Run nekotrail --help.")),
             _ => words.push(a.clone()),
         }
@@ -340,6 +347,7 @@ fn format_done(action: &Action, data: &Value) -> String {
     match action {
         Action::Add { .. } if data["added"].as_bool() == Some(true) => format!("Added {} to nekotrail.\n", s("repo")),
         Action::Add { .. } => format!("Showing {} in nekotrail.\n", s("repo")),
+        Action::New { .. } if data["issue"].is_string() => format!("Started {} for {} in {} with {} (branch {}).\nIts folder: {}\n", s("workspace"), s("issue"), s("repo"), s("agent"), s("branch"), s("path")),
         Action::New { .. } => format!("Started {} in {} with {} (branch {}).\nIts folder: {}\n", s("workspace"), s("repo"), s("agent"), s("branch"), s("path")),
         Action::Open { .. } => format!("Showing {} in nekotrail.\n", s("workspace")),
         Action::Ls { json: true, .. } | Action::Status { json: true } | Action::QueueLs { json: true } => format!("{}\n", serde_json::to_string_pretty(data).unwrap_or_default()),
@@ -622,7 +630,7 @@ mod tests {
     #[test]
     fn parses_new() {
         let new = |prompt: &str, agent: Option<&str>, base: Option<&str>, plan: bool| {
-            Ok(Action::New { task: Task { prompt: prompt.into(), agent: agent.map(Into::into), base: base.map(Into::into), plan } })
+            Ok(Action::New { task: Task { prompt: prompt.into(), agent: agent.map(Into::into), base: base.map(Into::into), plan, linear: None } })
         };
         assert_eq!(p(&["new", "fix the login bug"]), new("fix the login bug", None, None, false));
         assert_eq!(p(&["new", "fix", "the", "bug"]), new("fix the bug", None, None, false));
@@ -630,6 +638,23 @@ mod tests {
         assert_eq!(p(&["new", "--agent=gemini", "-b", "dev", "fix it"]), new("fix it", Some("gemini"), Some("dev"), false));
         // After --, a task may start with a dash.
         assert_eq!(p(&["new", "--", "--weird", "task"]), new("--weird task", None, None, false));
+    }
+
+    #[test]
+    fn parses_new_from_linear() {
+        let linear = |args: &[&str]| match p(args) { Ok(Action::New { task }) => (task.linear, task.prompt, task.agent), other => panic!("{other:?}") };
+        assert_eq!(linear(&["new", "--linear", "ENG-123"]), (Some("ENG-123".into()), String::new(), None));
+        assert_eq!(linear(&["new", "--linear=eng-7", "--agent", "codex", "add", "tests", "too"]), (Some("ENG-7".into()), "add tests too".into(), Some("codex".into())));
+        assert_eq!(linear(&["new", "-l", "https://linear.app/acme/issue/OPS-9/fix"]).0.as_deref(), Some("OPS-9"));
+        assert!(p(&["new", "--linear", "fix-the-bug"]).unwrap_err().contains("isn't a Linear issue"));
+        assert!(p(&["new", "--linear"]).unwrap_err().contains("--linear ENG-123"));
+        // Without an issue, a task is still required.
+        assert!(p(&["new"]).unwrap_err().contains("Write the task"));
+        // An old app that doesn't know the field still reads the request; a new one keeps it.
+        let task = Task { linear: Some("ENG-1".into()), ..Default::default() };
+        let req = crate::remote::Request::New { cwd: "/r".into(), task };
+        assert_eq!(crate::remote::decode(&crate::remote::encode(&req)).unwrap(), req);
+        assert!(!crate::remote::encode(&crate::remote::Request::New { cwd: "/r".into(), task: Task { prompt: "x".into(), ..Default::default() } }).contains("linear"));
     }
 
     #[test]
