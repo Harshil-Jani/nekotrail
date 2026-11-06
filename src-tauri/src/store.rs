@@ -128,6 +128,9 @@ fn migrate(conn: &Connection) -> Result<()> {
         migrate_title_source(conn)?;
         conn.execute("INSERT INTO settings (key, value) VALUES ('migrated_title_source', '1')", [])?;
     }
+    // Each active workspace's block of 10 ports (see ports.rs). A row lives only while its
+    // workspace is active; `base` is unique so two workspaces can never hold the same block.
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS port_blocks (workspace_id TEXT PRIMARY KEY, base INTEGER NOT NULL UNIQUE);")?;
     // Global search: new messages are indexed as they arrive, older ones in the background.
     crate::search::ensure(conn)?;
     Ok(())
@@ -475,6 +478,44 @@ impl Store {
 
     pub fn set_workspace_state(&self, id: &str, state: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET state=?2 WHERE id=?1", params![id, state])?;
+        // An archived workspace gives its ports back. Restoring it hands out a block again.
+        if state != "active" {
+            self.release_port_block(id)?;
+        }
+        Ok(())
+    }
+
+    // ---- port blocks (see ports.rs) ----
+
+    pub fn port_block(&self, workspace_id: &str) -> Result<Option<u16>> {
+        Ok(self.conn.query_row("SELECT base FROM port_blocks WHERE workspace_id=?1", [workspace_id], |r| r.get(0)).optional()?)
+    }
+
+    /// Every block held by an active workspace, as (workspace id, first port).
+    pub fn port_blocks(&self) -> Result<Vec<(String, u16)>> {
+        let mut st = self.conn.prepare(
+            "SELECT p.workspace_id, p.base FROM port_blocks p JOIN workspaces w ON w.id = p.workspace_id AND w.state = 'active' ORDER BY p.base",
+        )?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    /// Give `base` to the workspace. False when another active workspace already holds it.
+    /// Rows left by workspaces that are no longer active are cleared first.
+    pub fn claim_port_block(&self, workspace_id: &str, base: u16) -> Result<bool> {
+        self.conn.execute(
+            "DELETE FROM port_blocks WHERE workspace_id NOT IN (SELECT id FROM workspaces WHERE state = 'active')",
+            [],
+        )?;
+        let n = self.conn.execute(
+            "INSERT OR IGNORE INTO port_blocks (workspace_id, base) VALUES (?1, ?2)",
+            params![workspace_id, base],
+        )?;
+        Ok(n == 1)
+    }
+
+    pub fn release_port_block(&self, workspace_id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM port_blocks WHERE workspace_id=?1", [workspace_id])?;
         Ok(())
     }
 

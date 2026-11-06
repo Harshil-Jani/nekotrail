@@ -154,6 +154,30 @@ export type Scripts = { setup: string | null; run: string | null; archive: strin
 export type ScriptTrust = Scripts & { fingerprint: string };
 export type WorkspaceScripts = Scripts & { trust?: ScriptTrust | null };
 
+/** Who listens on a port (from lsof, your own processes only). */
+export type PortHolder = {
+  pid: number;
+  command: string;
+  /** The workspace that started it, if any. */
+  workspace_id: string | null;
+  /** "tree": its terminal, script or agent started it. "folder": it runs in its folder, parent gone. */
+  how: "tree" | "folder" | null;
+  /** In this workspace's process tree, so "Free this port" may stop it. */
+  can_free: boolean;
+};
+export type PortRow = {
+  port: number;
+  /** Variables holding this port: NEKOTRAIL_PORT, PORT, a name from nekotrail.json. */
+  vars: string[];
+  /** Its name from nekotrail.json ("web"). */
+  name: string | null;
+  /** Outside the workspace's block: something it started ignored PORT. */
+  outside: boolean;
+  holder: PortHolder | null;
+};
+export type PortProblem = { port: number | null; text: string; fix: string };
+export type WsPorts = { id: string; base: number; main: number; rows: PortRow[]; problems: PortProblem[] };
+
 export type Pr = {
   number: number;
   url: string;
@@ -405,6 +429,12 @@ export const api = {
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),
   /** Preview tab: is a local dev server up, and will it show inside a frame? Local addresses only. */
   previewProbe: (url: string) => invoke<{ up: boolean; status: number | null; blocked: string | null }>("preview_probe", { url }),
+  /** The workspace's port block and the port its Preview opens. Null when it holds none (archived). */
+  workspacePorts: (id: string) => invoke<{ base: number; main: number } | null>("workspace_ports", { id }),
+  /** Every active workspace's ports and who listens on them, or just one workspace's. */
+  portsStatus: (id?: string) => invoke<WsPorts[]>("ports_status", { id: id ?? null }),
+  /** Stop what listens on `port`, only if this workspace started it. Resolves to how many processes stopped. */
+  freePort: (id: string, port: number) => invoke<number>("free_port", { id, port }),
   /** PNG of the whole app web view right now, at screen resolution (Annotate crops it). */
   previewSnapshot: () => invoke<ArrayBuffer>("preview_snapshot"),
   /** Start a shell, or reattach to a running one; returns what it printed so far. */

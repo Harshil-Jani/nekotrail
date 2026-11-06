@@ -10,6 +10,7 @@ pub mod importer;
 #[cfg(unix)]
 pub mod linux;
 pub mod names;
+pub mod ports;
 pub mod preview;
 pub mod prpoll;
 pub mod pty;
@@ -103,6 +104,9 @@ pub struct AppState {
     pr_wake: Mutex<Option<std::sync::mpsc::Sender<()>>>,
     /// What the `nekotrail` command and `nekotrail://` links asked the window to do.
     inbox: remote::Inbox,
+    /// Workspaces whose Run script stopped on "address already in use", and the port it named
+    /// (None when it didn't say). Cleared when Run starts again.
+    port_failures: Mutex<HashMap<String, Option<u16>>>,
 }
 
 /// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
@@ -362,24 +366,46 @@ async fn trust_agent_config(st: State<'_, AppState>, id: String, fingerprint: St
 
 // ---------- workspaces ----------
 
-/// Environment for anything running in a workspace: the repo's variables plus workspace facts.
-/// Each workspace gets 10 ports from `NEKOTRAIL_PORT`, stable for its lifetime.
-fn workspace_env(repo: &Repo, ws: &Workspace) -> Vec<(String, String)> {
-    let hash = ws.id.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
-    let port = 41000 + (hash % 1800) * 10; // 41000..58990
+/// Environment for anything running in a workspace: workspace facts, its ports (when it holds a
+/// block, see `ports`), then the repo's variables from Repo settings.
+fn workspace_env(repo: &Repo, ws: &Workspace, base: Option<u16>) -> Vec<(String, String)> {
     let mut env = vec![
-        ("NEKOTRAIL_PORT".to_string(), port.to_string()),
         ("NEKOTRAIL_WORKSPACE_NAME".to_string(), ws.name.clone()),
         ("NEKOTRAIL_WORKSPACE_PATH".to_string(), ws.path.clone()),
         ("NEKOTRAIL_ROOT_PATH".to_string(), repo.root_path.clone()),
         ("NEKOTRAIL_DEFAULT_BRANCH".to_string(), ws.target_branch.clone()),
     ];
+    if let Some(base) = base {
+        env.extend(port_env(repo, ws, base));
+    }
     env.extend(repo.prefs.env.iter().cloned());
     // A review workspace never pushes, whoever runs git in it: agent, terminal or script.
     if ws.review_pr > 0 {
         env.extend(review::read_only_env());
     }
     env
+}
+
+/// The port variables for a workspace. A variable you set yourself, exported in your shell (the
+/// app copies your login shell's environment at start) or in Repo settings, is never replaced.
+fn port_env(repo: &Repo, ws: &Workspace, base: u16) -> Vec<(String, String)> {
+    let names = config::port_names_from_file(Path::new(&ws.path));
+    ports::env(base, &names, |k| std::env::var_os(k).is_some() || repo.prefs.env.iter().any(|(x, _)| x == k))
+}
+
+/// The workspace's port block, handed out the first time it is needed. None for an archived one.
+fn port_block(st: &AppState, ws: &Workspace) -> Option<u16> {
+    match ports::ensure(&st.db(), &ws.id, ports::in_use) {
+        Ok(b) => b,
+        Err(err) => {
+            eprintln!("no ports for {}: {err}", ws.id);
+            None
+        }
+    }
+}
+
+fn env_for(st: &AppState, repo: &Repo, ws: &Workspace) -> Vec<(String, String)> {
+    workspace_env(repo, ws, port_block(st, ws))
 }
 
 /// Local files that must never be committed: secrets copied into workspaces, and nekotrail's own folder.
@@ -575,6 +601,8 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
     ensure_local_excludes(&root, &prefs.copy_files);
     copy_into_workspace(&root, &path, &prefs.copy_files);
     st.db().insert_workspace(&ws).map_err(e)?;
+    // Its ports, now, so they are the same from the first setup script on.
+    let _ = port_block(&st, &ws);
     Ok(ws)
 }
 
@@ -599,7 +627,7 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
             let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
                 .args(["-lc", &script])
                 .current_dir(path)
-                .envs(workspace_env(&repo, &ws))
+                .envs(env_for(&st, &repo, &ws))
                 .status();
         }
         git::remove_worktree(Path::new(&repo.root_path), path).map_err(e)?;
@@ -2801,7 +2829,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }
         (s, ws, repo)
     };
-    let env = workspace_env(&repo, &ws);
+    let env = env_for(st, &repo, &ws);
     let prefs = &repo.prefs;
     let dirs = st.db().extra_dirs(&id).unwrap_or_default();
     let ws = maybe_name_branch(&app, st, ws, &text);
@@ -3149,9 +3177,16 @@ fn start_pty(app: &AppHandle, st: &AppState, id: &str, cwd: &str, cmd: Option<&s
         .split(':')
         .next()
         .and_then(|ws_id| st.db().workspace(ws_id).ok())
-        .and_then(|w| st.db().repo(&w.repo_id).ok().map(|r| workspace_env(&r, &w)))
+        .and_then(|w| st.db().repo(&w.repo_id).ok().map(|r| env_for(st, &r, &w)))
         .unwrap_or_default();
     let (a1, a2, id1, id2) = (app.clone(), app.clone(), id.to_string(), id.to_string());
+    // The Run script: watch its output for "address already in use", the sign of a dev server that
+    // ignored PORT and tried a default another workspace already holds.
+    let run_of = id.strip_suffix(":run").map(str::to_string);
+    if let Some(ws_id) = &run_of {
+        st.port_failures.lock().unwrap().remove(ws_id);
+    }
+    let tail = Mutex::new(String::new());
     st.ptys
         .open(
             id,
@@ -3160,7 +3195,24 @@ fn start_pty(app: &AppHandle, st: &AppState, id: &str, cwd: &str, cmd: Option<&s
             cmd,
             cols,
             rows,
-            move |data| { let _ = a1.emit("pty", json!({"id": id1, "data": data})); },
+            move |data| {
+                if let Some(ws_id) = &run_of {
+                    // Keep a little of the last chunk, so an error split across two reads still matches.
+                    let mut t = tail.lock().unwrap();
+                    t.push_str(&data);
+                    if let Some(port) = ports::in_use_error(&t) {
+                        t.clear();
+                        port_failed(&a1, ws_id, port);
+                    } else if t.len() > 512 {
+                        let mut cut = t.len() - 256;
+                        while !t.is_char_boundary(cut) {
+                            cut += 1;
+                        }
+                        t.drain(..cut);
+                    }
+                }
+                let _ = a1.emit("pty", json!({"id": id1, "data": data}));
+            },
             move |generation| {
                 let st = a2.state::<AppState>();
                 st.ptys.close_if(&id2, generation);
@@ -3169,6 +3221,111 @@ fn start_pty(app: &AppHandle, st: &AppState, id: &str, cwd: &str, cmd: Option<&s
         )
         .map(|_| ())
         .map_err(e)
+}
+
+/// The Run script said its port was taken. Remember it for the Ports popover, and tell the window
+/// once, with who holds the port and the fix (lsof runs off the terminal's reader thread).
+fn port_failed(app: &AppHandle, ws_id: &str, port: Option<u16>) {
+    let st = app.state::<AppState>();
+    if st.port_failures.lock().unwrap().insert(ws_id.to_string(), port) == Some(port) {
+        return;
+    }
+    let (app, ws_id) = (app.clone(), ws_id.to_string());
+    std::thread::spawn(move || {
+        let st = app.state::<AppState>();
+        if let Some(p) = ports_report(&st, Some(&ws_id)).into_iter().next()
+            && let Some(problem) = p.problems.into_iter().rfind(|x| x.port == port) {
+                let _ = app.emit("port-clash", json!({"workspace_id": ws_id, "text": problem.text, "fix": problem.fix}));
+            }
+    });
+}
+
+/// Every process a workspace started and still runs, by workspace: its terminals and scripts,
+/// and its agent turns. Anything descending from these is that workspace's.
+fn workspace_roots(st: &AppState) -> HashMap<String, Vec<u32>> {
+    let mut roots: HashMap<String, Vec<u32>> = HashMap::new();
+    for (id, pid) in st.ptys.pids() {
+        if let Some(ws) = id.split(':').next() {
+            roots.entry(ws.to_string()).or_default().push(pid);
+        }
+    }
+    let running: Vec<(String, u32)> = st.runs.lock().unwrap().running.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    let db = st.db();
+    for (session, pid) in running {
+        if let Ok(s) = db.session(&session) {
+            roots.entry(s.workspace_id).or_default().push(pid);
+        }
+    }
+    roots
+}
+
+/// The Ports popover's data for every active workspace, or just `only`.
+fn ports_report(st: &AppState, only: Option<&str>) -> Vec<ports::WsPorts> {
+    let (list, repos) = {
+        let db = st.db();
+        (db.workspaces(false).unwrap_or_default(), db.repos().unwrap_or_default())
+    };
+    let titles = |w: &Workspace| if w.title.trim().is_empty() { w.name.clone() } else { format!("\"{}\"", w.title.trim()) };
+    let failures = st.port_failures.lock().unwrap().clone();
+    let mut infos = vec![];
+    for w in &list {
+        let Some(repo) = repos.iter().find(|r| r.id == w.repo_id) else { continue };
+        // Only the one asked about may be handed a block here; the others show what they hold.
+        let base = if only.is_none_or(|o| o == w.id) { port_block(st, w) } else { st.db().port_block(&w.id).ok().flatten() };
+        let Some(base) = base else { continue };
+        let names = config::port_names_from_file(Path::new(&w.path));
+        let run = scripts_for(st, w).ok().and_then(|s| s.run).map(|r| ports::resolve_run(&r, Path::new(&w.path))).unwrap_or_default();
+        infos.push(ports::WsInfo {
+            id: w.id.clone(),
+            label: titles(w),
+            base,
+            env: port_env(repo, w, base),
+            names,
+            run,
+            failed: failures.get(&w.id).copied(),
+        });
+    }
+    let listeners = ports::listeners();
+    let roots = workspace_roots(st);
+    let parents = ports::parents();
+    let cwds = ports::cwds(&listeners.iter().map(|l| l.pid).collect::<Vec<_>>());
+    let owner = |pid: u32| -> Option<(String, ports::How)> {
+        if let Some((id, _)) = roots.iter().find(|(_, r)| ports::in_tree(pid, r, &parents)) {
+            return Some((id.clone(), ports::How::Tree));
+        }
+        let cwd = cwds.get(&pid)?;
+        list.iter().find(|w| ports::inside(cwd, &w.path)).map(|w| (w.id.clone(), ports::How::Folder))
+    };
+    ports::report(&infos, &listeners, owner, only)
+}
+
+/// A workspace's port block and the port its Preview opens, without asking lsof (cheap).
+#[tauri::command]
+async fn workspace_ports(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let Some(base) = port_block(&st, &ws) else { return Ok(Value::Null) };
+    let names = config::port_names_from_file(Path::new(&ws.path));
+    Ok(json!({"base": base, "main": ports::main_port(base, &names)}))
+}
+
+/// Ports, who listens on them and what looks wrong, for the Ports popover (or one workspace).
+#[tauri::command]
+async fn ports_status(app: AppHandle, id: Option<String>) -> Res<Vec<ports::WsPorts>> {
+    tauri::async_runtime::spawn_blocking(move || ports_report(&app.state::<AppState>(), id.as_deref())).await.map_err(e)
+}
+
+/// "Free this port": stop what listens on `port`, only if this workspace's own terminal, script
+/// or agent started it. Returns how many processes it stopped.
+#[tauri::command]
+async fn free_port(app: AppHandle, id: String, port: u16) -> Res<usize> {
+    app.state::<AppState>().db().workspace(&id).map_err(e)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<AppState>();
+        ports::free(port, || workspace_roots(&st).remove(&id).unwrap_or_default())
+    })
+    .await
+    .map_err(e)?
+    .map_err(e)
 }
 
 #[tauri::command]
@@ -3312,7 +3469,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default() })
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default() })
         .setup(move |app| {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
@@ -3338,7 +3495,7 @@ pub fn run() {
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_cache, pr_refresh, pr_visible, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
-            restore_checkpoint, checkpoint_preview, live_checkpoints, repo_guard, put_back_protected, workspace_files, save_attachment, preview_probe, preview_snapshot,
+            restore_checkpoint, checkpoint_preview, live_checkpoints, repo_guard, put_back_protected, workspace_files, save_attachment, preview_probe, preview_snapshot, workspace_ports, ports_status, free_port,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
@@ -3387,7 +3544,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_env_has_stable_ports_and_repo_vars() {
+    fn workspace_env_has_ports_and_repo_vars_and_keeps_your_port() {
         let mut repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: "/code/demo".into(), default_branch: "main".into(),
             remote_url: None, setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
@@ -3398,13 +3555,19 @@ mod tests {
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
         };
-        let env = workspace_env(&repo, &ws);
+        let env = workspace_env(&repo, &ws, Some(4120));
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
-        let port: u32 = get("NEKOTRAIL_PORT").parse().unwrap();
-        assert!((41000..59000).contains(&port) && port.is_multiple_of(10));
-        assert_eq!(get("NEKOTRAIL_PORT"), workspace_env(&repo, &ws).iter().find(|(k, _)| k == "NEKOTRAIL_PORT").unwrap().1);
+        assert_eq!(get("NEKOTRAIL_PORT"), "4120");
+        assert_eq!(get("NEKOTRAIL_PORT_9"), "4129");
         assert_eq!(get("API_URL"), "http://localhost");
         assert_eq!(get("NEKOTRAIL_ROOT_PATH"), "/code/demo");
+        // No block (archived): no port variables at all.
+        assert!(!workspace_env(&repo, &ws, None).iter().any(|(k, _)| k.contains("PORT")));
+        // A PORT set in Repo settings wins: nekotrail doesn't add its own, and yours is the one left.
+        repo.prefs.env.push(("PORT".into(), "3000".into()));
+        let env = workspace_env(&repo, &ws, Some(4120));
+        let ports: Vec<&str> = env.iter().filter(|(k, _)| k == "PORT").map(|(_, v)| v.as_str()).collect();
+        assert_eq!(ports, ["3000"]);
     }
 
     #[test]
@@ -3512,7 +3675,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
@@ -3554,7 +3717,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
         };
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
@@ -3630,7 +3793,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
         };
         let repo = |id: &str, remote: Option<&str>| Repo {
             id: id.into(), name: id.into(), root_path: dir.path().join(id).to_string_lossy().into(), default_branch: "main".into(),
