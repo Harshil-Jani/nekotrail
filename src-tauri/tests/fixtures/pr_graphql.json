@@ -1,0 +1,181 @@
+{
+ "data": {
+  "rateLimit": {
+   "remaining": 4988,
+   "resetAt": "2026-11-06T14:07:06Z"
+  },
+  "repository": {
+   "b0": {
+    "nodes": [
+     {
+      "number": 14960,
+      "url": "https://github.com/cli/cli/pull/14960",
+      "state": "OPEN",
+      "title": "Add a ghmock usage skill",
+      "isDraft": true,
+      "reviewDecision": "REVIEW_REQUIRED",
+      "mergeable": "MERGEABLE",
+      "headRefOid": "810eba8083328420293efab653503c506dd76dc7",
+      "baseRefName": "bagtoad/triage-workflow-updates",
+      "additions": 196,
+      "deletions": 0,
+      "author": {
+       "login": "BagToad"
+      },
+      "comments": {
+       "totalCount": 0
+      },
+      "latestReviews": {
+       "nodes": [
+        {
+         "author": {
+          "login": "copilot-pull-request-reviewer"
+         },
+         "state": "COMMENTED"
+        }
+       ]
+      },
+      "reviewRequests": {
+       "nodes": []
+      },
+      "commits": {
+       "nodes": [
+        {
+         "commit": {
+          "statusCheckRollup": {
+           "contexts": {
+            "nodes": [
+             {
+              "__typename": "CheckRun",
+              "name": "build (ubuntu-latest)",
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/42173899952/job/127747822098"
+             },
+             {
+              "__typename": "CheckRun",
+              "name": "build (ubuntu-latest)",
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/42173900767/job/127747824991"
+             },
+             {
+              "__typename": "CheckRun",
+              "name": "build (windows-latest)",
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/42173899952/job/127747822343"
+             }
+            ]
+           }
+          }
+         }
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "b1": {
+    "nodes": [
+     {
+      "number": 14927,
+      "url": "https://github.com/cli/cli/pull/14927",
+      "state": "OPEN",
+      "title": "Add guided multi-account setup and evaluation",
+      "isDraft": true,
+      "reviewDecision": "REVIEW_REQUIRED",
+      "mergeable": "MERGEABLE",
+      "headRefOid": "d43c4e3ad3c34332c803a568f85f116e3ee58f19",
+      "baseRefName": "williammartin-multiaccount-draft-07-explain",
+      "additions": 4835,
+      "deletions": 1,
+      "author": {
+       "login": "williammartin"
+      },
+      "comments": {
+       "totalCount": 0
+      },
+      "latestReviews": {
+       "nodes": [
+        {
+         "author": {
+          "login": "copilot-pull-request-reviewer"
+         },
+         "state": "COMMENTED"
+        }
+       ]
+      },
+      "reviewRequests": {
+       "nodes": [
+        {
+         "requestedReviewer": {
+          "__typename": "User",
+          "login": "octocat"
+         }
+        },
+        {
+         "requestedReviewer": {
+          "__typename": "Team",
+          "name": "core"
+         }
+        }
+       ]
+      },
+      "commits": {
+       "nodes": [
+        {
+         "commit": {
+          "statusCheckRollup": {
+           "contexts": {
+            "nodes": [
+             {
+              "__typename": "CheckRun",
+              "name": "label-external",
+              "status": "COMPLETED",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/41722208901/job/126217657403"
+             },
+             {
+              "__typename": "CheckRun",
+              "name": "CodeQL-Build (go, manual, ./.github/codeql/codeql-config.yml)",
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/41721000240/job/126213408501"
+             },
+             {
+              "__typename": "CheckRun",
+              "name": "lint",
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/41720843855/job/126212878043"
+             },
+             {
+              "__typename": "CheckRun",
+              "name": "build (windows-latest)",
+              "status": "COMPLETED",
+              "conclusion": "FAILURE",
+              "detailsUrl": "https://github.com/cli/cli/actions/runs/41720844033/job/126212878432"
+             },
+             {
+              "__typename": "StatusContext",
+              "context": "ci/legacy",
+              "state": "SUCCESS",
+              "targetUrl": "https://ci.example.com/1"
+             }
+            ]
+           }
+          }
+         }
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "b2": {
+    "nodes": []
+   }
+  }
+ }
+}

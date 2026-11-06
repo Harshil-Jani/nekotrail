@@ -6,6 +6,7 @@ pub mod git;
 pub mod importer;
 pub mod names;
 pub mod preview;
+pub mod prpoll;
 pub mod pty;
 pub mod radar;
 pub mod safe;
@@ -87,6 +88,21 @@ pub struct AppState {
     repo_meta: Mutex<HashMap<String, Value>>,
     /// Changed-line counts per workspace, and which ones need recounting (an agent touched them).
     lines: Mutex<LineCache>,
+    /// Every workspace's PR, from the one background poller (`pr_poll_loop`).
+    prs: Mutex<PrCache>,
+    /// Wakes the poller early (a push, a merge, the window coming back).
+    pr_wake: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+}
+
+/// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
+#[derive(Default)]
+struct PrCache {
+    sched: prpoll::Schedule,
+    by_branch: HashMap<(String, String), Value>,
+    /// Branches GitHub was asked about at least once (answered or not), per repo.
+    asked: std::collections::HashSet<(String, String)>,
+    /// The last `pr` event each workspace got, so only changes go out.
+    sent: HashMap<String, Value>,
 }
 
 impl AppState {
@@ -845,39 +861,255 @@ fn open_in_targets() -> Vec<Value> {
     v
 }
 
-/// PR state (OPEN / MERGED / CLOSED) per active workspace, one `gh` call per repo.
-/// Merged ones are recorded, so their stars shine even if you never opened them.
-#[tauri::command]
-async fn pr_states(app: AppHandle) -> Res<HashMap<String, String>> {
-    tauri::async_runtime::spawn_blocking(move || pr_states_blocking(&app.state::<AppState>())).await.map_err(e)?
+// ---------- the PR poller ----------
+
+/// One repo the poller asks GitHub about.
+struct PrTarget {
+    repo_id: String,
+    dir: String,
+    remote: Option<String>,
+    /// Active workspace branches, plus the parents of stacked ones (even archived), de-duplicated.
+    branches: Vec<String>,
+    /// Autopilot is on for one of its workspaces: poll fast, and keep polling while hidden.
+    autopilot: bool,
 }
 
-fn pr_states_blocking(st: &AppState) -> Res<HashMap<String, String>> {
-    let (repos, wss) = {
-        let db = st.db();
-        (db.repos().map_err(e)?, db.workspaces(false).map_err(e)?)
-    };
-    let mut out = HashMap::new();
-    for r in repos {
-        if r.remote_url.is_none() || !wss.iter().any(|w| w.repo_id == r.id) {
-            continue;
-        }
-        let Ok(list) = gh(&r.root_path, &["pr", "list", "--state", "all", "--limit", "300", "--json", "headRefName,state,isDraft"]) else { continue };
-        let prs: Vec<Value> = serde_json::from_str(&list).unwrap_or_default();
-        for w in wss.iter().filter(|w| w.repo_id == r.id) {
-            // gh lists newest first, so the first match is the current PR for that branch.
-            let pr = prs.iter().find(|p| p["headRefName"] == w.branch.as_str());
-            // Drafts are their own state, so the sidebar can tell them from PRs ready for review.
-            let state = pr.and_then(|p| if p["isDraft"].as_bool() == Some(true) && p["state"] == "OPEN" { Some("DRAFT") } else { p["state"].as_str() });
-            if let Some(state) = state {
-                if state == "MERGED" {
-                    let _ = st.db().set_merged(&w.id);
-                }
-                out.insert(w.id.clone(), state.to_string());
-            }
+/// Workspaces whose PR the UI wants: active ones, and the parents active ones are stacked on.
+fn pr_workspaces(st: &AppState) -> Vec<Workspace> {
+    let db = st.db();
+    let mut wss = db.workspaces(false).unwrap_or_default();
+    let parents: Vec<String> = wss.iter().filter(|w| !w.parent_id.is_empty()).map(|w| w.parent_id.clone()).collect();
+    for p in parents {
+        if !wss.iter().any(|w| w.id == p) && let Ok(w) = db.workspace(&p) {
+            wss.push(w);
         }
     }
-    Ok(out)
+    wss
+}
+
+fn pr_targets(st: &AppState, wss: &[Workspace]) -> Vec<PrTarget> {
+    let repos = st.db().repos().unwrap_or_default();
+    let autopilot: Vec<String> = st.db().settings_with_prefix("autopilot:").unwrap_or_default()
+        .into_iter().map(|(k, _)| k.trim_start_matches("autopilot:").to_string()).collect();
+    repos
+        .into_iter()
+        .filter_map(|r| {
+            let mine: Vec<&Workspace> = wss.iter().filter(|w| w.repo_id == r.id).collect();
+            if mine.is_empty() {
+                return None;
+            }
+            let mut branches: Vec<String> = vec![];
+            for w in &mine {
+                if !branches.contains(&w.branch) { branches.push(w.branch.clone()); }
+            }
+            Some(PrTarget {
+                autopilot: mine.iter().any(|w| autopilot.contains(&w.id)),
+                repo_id: r.id, dir: r.root_path, remote: r.remote_url, branches,
+            })
+        })
+        .collect()
+}
+
+/// One gh call per repo (per 40 branches). Repos without a GitHub remote never spawn gh.
+fn poll_target(t: &PrTarget) -> Result<prpoll::Parsed, prpoll::Problem> {
+    let Some(remote) = t.remote.as_deref().filter(|r| !prpoll::clearly_not_github(r)) else {
+        return Err(prpoll::Problem::NotGithub);
+    };
+    if !Path::new(&t.dir).is_dir() {
+        return Err(prpoll::Problem::Other("The repo folder is missing".into()));
+    }
+    prpoll::fetch_repo("gh", &t.dir, &t.branches, prpoll::enterprise_host(remote).as_deref())
+}
+
+/// What the UI gets for one workspace: `pr` (object or null) once known, and a `problem` when
+/// GitHub couldn't be asked. None while nothing is known yet.
+fn pr_view(c: &PrCache, w: &Workspace) -> Option<Value> {
+    let pr = c.by_branch.get(&(w.repo_id.clone(), w.branch.clone()));
+    let problem = c.sched.repos.get(&w.repo_id).and_then(|r| r.problem.as_ref());
+    if pr.is_none() && problem.is_none() {
+        return None;
+    }
+    let mut v = json!({"workspace_id": w.id});
+    if let Some(pr) = pr { v["pr"] = pr.clone(); }
+    if let Some(p) = problem { v["problem"] = json!({"code": p.code(), "message": p.message()}); }
+    Some(v)
+}
+
+/// The PR for a workspace from the poller's cache, or None before the first poll of its repo.
+fn cached_pr(st: &AppState, w: &Workspace) -> Option<Value> {
+    st.prs.lock().unwrap().by_branch.get(&(w.repo_id.clone(), w.branch.clone())).cloned()
+}
+
+/// Ask the poller for a fresh look at one repo (or all) soon. `force` comes from an action that
+/// just changed the PR (push, create, merge); otherwise a look under 15 s old is good enough.
+fn pr_poke(st: &AppState, repo_id: Option<&str>, force: bool) {
+    let now = std::time::Instant::now();
+    let min_age = std::time::Duration::from_secs(if force { 2 } else { 15 });
+    {
+        let mut c = st.prs.lock().unwrap();
+        let ids: Vec<String> = match repo_id {
+            Some(id) => vec![id.to_string()],
+            None => c.sched.repos.keys().cloned().collect(),
+        };
+        for id in ids {
+            c.sched.poke(&id, now, min_age, force);
+        }
+    }
+    // Wake the loop even if no poke went through: it also picks up new or renamed branches, and
+    // a pass with nothing due costs a few database reads and no gh.
+    if let Some(tx) = st.pr_wake.lock().unwrap().as_ref() {
+        let _ = tx.send(());
+    }
+}
+
+fn pr_poke_workspace(st: &AppState, id: &str, force: bool) {
+    // Own statement, so the database lock is let go before the poller's.
+    let repo = st.db().workspace(id).map(|w| w.repo_id);
+    if let Ok(repo) = repo {
+        pr_poke(st, Some(&repo), force);
+    }
+}
+
+/// The background poller: per repo, one `gh api graphql` for every workspace branch. 20 s while
+/// checks run or autopilot is on, 5 min otherwise, paused while the window is hidden (autopilot
+/// repos excepted, since autopilot is for when you're away). Emits `pr` per changed workspace,
+/// records merges, names untitled workspaces after their PR, and drives autopilot.
+fn pr_poll_loop(app: AppHandle) {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    *app.state::<AppState>().pr_wake.lock().unwrap() = Some(tx);
+    std::thread::spawn(move || loop {
+        let st = app.state::<AppState>();
+        let wss = pr_workspaces(&st);
+        let targets = pr_targets(&st, &wss);
+        let keys: Vec<(String, bool)> = targets.iter().map(|t| (t.repo_id.clone(), t.autopilot)).collect();
+        let now = std::time::Instant::now();
+        let due = {
+            let mut c = st.prs.lock().unwrap();
+            // A branch never asked about (new workspace, renamed branch) makes its repo due.
+            // Not while the repo is failing: its back-off decides when to try again.
+            for t in &targets {
+                if c.sched.repos.get(&t.repo_id).is_none_or(|r| r.problem.is_none()) && t.branches.iter().any(|b| !c.asked.contains(&(t.repo_id.clone(), b.clone()))) {
+                    c.sched.poke(&t.repo_id, now, std::time::Duration::from_secs(2), false);
+                }
+            }
+            c.sched.due(now, &keys)
+        };
+        let todo: Vec<&PrTarget> = targets.iter().filter(|t| due.contains(&t.repo_id)).collect();
+        // Repos in parallel, so one slow repo doesn't hold up the others.
+        let results: Vec<(&PrTarget, Result<prpoll::Parsed, prpoll::Problem>)> = std::thread::scope(|s| {
+            let hs: Vec<_> = todo.iter().map(|t| s.spawn(move || (*t, poll_target(t)))).collect();
+            hs.into_iter().filter_map(|h| h.join().ok()).collect()
+        });
+        let mut polled: Vec<String> = vec![];
+        {
+            let mut c = st.prs.lock().unwrap();
+            let done = std::time::Instant::now();
+            for (t, res) in results {
+                match res {
+                    Ok(p) => {
+                        for b in &t.branches {
+                            c.asked.insert((t.repo_id.clone(), b.clone()));
+                        }
+                        for (b, pr) in p.prs {
+                            c.by_branch.insert((t.repo_id.clone(), b), pr);
+                        }
+                        let hot = t.autopilot || t.branches.iter().any(|b| c.by_branch.get(&(t.repo_id.clone(), b.clone())).is_some_and(prpoll::is_hot));
+                        let low = p.remaining.filter(|r| *r < prpoll::LOW_RATE).map(|_| p.reset_in.unwrap_or(prpoll::IDLE));
+                        c.sched.record(&t.repo_id, done, hot, Ok(low));
+                        polled.push(t.repo_id.clone());
+                    }
+                    Err(problem) => c.sched.record(&t.repo_id, done, t.autopilot, Err(problem)),
+                }
+            }
+        }
+        if !todo.is_empty() {
+            pr_emit_changes(&app, &st, &wss);
+        }
+        // Autopilot reacts to what was just fetched.
+        for w in wss.iter().filter(|w| w.state == "active" && polled.contains(&w.repo_id)) {
+            if st.db().setting(&autopilot_key(&w.id)).ok().flatten().is_some() {
+                let (app2, id) = (app.clone(), w.id.clone());
+                std::thread::spawn(move || autopilot_tick(&app2, &id));
+            }
+        }
+        let wait = st.prs.lock().unwrap().sched.wait(std::time::Instant::now(), &keys);
+        let _ = rx.recv_timeout(wait.max(std::time::Duration::from_millis(500)));
+        while rx.try_recv().is_ok() {}
+    });
+}
+
+/// Send a `pr` event for every workspace whose PR (or problem) changed since last time.
+fn pr_emit_changes(app: &AppHandle, st: &AppState, wss: &[Workspace]) {
+    let changed: Vec<(Workspace, Value)> = {
+        let mut c = st.prs.lock().unwrap();
+        let mut out = vec![];
+        for w in wss {
+            let Some(v) = pr_view(&c, w) else { continue };
+            if c.sent.get(&w.id) != Some(&v) {
+                c.sent.insert(w.id.clone(), v.clone());
+                out.push((w.clone(), v));
+            }
+        }
+        out
+    };
+    for (w, v) in changed {
+        let pr = &v["pr"];
+        if pr["state"] == "MERGED" {
+            let _ = st.db().set_merged(&w.id);
+        }
+        if w.title.is_empty() && let Some(t) = pr["title"].as_str() {
+            let _ = st.db().set_title(&w.id, t);
+        }
+        let _ = app.emit("pr", v);
+    }
+}
+
+/// Everything the poller knows right now, per workspace (same payload as the `pr` event).
+/// Never calls GitHub; the UI asks once at start and then listens.
+#[tauri::command]
+async fn pr_cache(app: AppHandle) -> Res<HashMap<String, Value>> {
+    blocking(app, |st| {
+        let wss = pr_workspaces(st);
+        let c = st.prs.lock().unwrap();
+        Ok(wss.iter().filter_map(|w| pr_view(&c, w).map(|v| (w.id.clone(), v))).collect())
+    })
+    .await
+}
+
+/// Look again soon at the repo of this workspace (or every repo). The answer arrives as `pr` events.
+#[tauri::command]
+async fn pr_refresh(app: AppHandle, id: Option<String>, force: Option<bool>) -> Res<()> {
+    blocking(app, move |st| {
+        match id {
+            Some(id) => pr_poke_workspace(st, &id, force.unwrap_or(false)),
+            None => pr_poke(st, None, force.unwrap_or(false)),
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// The window was hidden or came back. Coming back refreshes anything older than 20 s.
+#[tauri::command]
+async fn pr_visible(app: AppHandle, visible: bool) -> Res<()> {
+    blocking(app, move |st| {
+        {
+            let mut c = st.prs.lock().unwrap();
+            c.sched.visible = visible;
+            if !visible { return Ok(()); }
+            let now = std::time::Instant::now();
+            let ids: Vec<String> = c.sched.repos.keys().cloned().collect();
+            for id in ids {
+                c.sched.poke(&id, now, std::time::Duration::from_secs(20), false);
+            }
+        }
+        // Always wake: the loop may be sleeping on a timetable worked out while hidden.
+        if let Some(tx) = st.pr_wake.lock().unwrap().as_ref() {
+            let _ = tx.send(());
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Lines added and removed per active workspace versus its target branch (for the sidebar).
@@ -937,31 +1169,6 @@ fn gh(dir: &str, args: &[&str]) -> Res<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// PR for the workspace branch (open, merged or closed), or null when there is none yet.
-/// `gh pr list --head` also finds PRs opened from a fork, which `gh pr view <branch>` misses.
-#[tauri::command]
-async fn pr_status(app: AppHandle, id: String) -> Res<Value> {
-    tauri::async_runtime::spawn_blocking(move || pr_status_blocking(&app.state::<AppState>(), &id)).await.map_err(e)?
-}
-
-fn pr_status_blocking(st: &AppState, id: &str) -> Res<Value> {
-    let id = id.to_string();
-    let ws = st.db().workspace(&id).map_err(e)?;
-    let out = gh(&ws.path, &[
-        "pr", "list", "--head", &ws.branch, "--state", "all", "--limit", "1", "--json",
-        "number,url,state,title,isDraft,reviewDecision,mergeable,statusCheckRollup,author,latestReviews,reviewRequests,additions,deletions,comments,headRefOid",
-    ])?;
-    let list: Value = serde_json::from_str(&out).map_err(e)?;
-    let pr = list.get(0).cloned().unwrap_or(Value::Null);
-    if pr["state"] == "MERGED" {
-        st.db().set_merged(&id).map_err(e)?;
-    }
-    if ws.title.is_empty() && let Some(t) = pr["title"].as_str() {
-        st.db().set_title(&id, t).map_err(e)?;
-    }
-    Ok(pr)
-}
-
 // ---------- stacked PRs ----------
 
 /// The PR for `branch`, looked up from `dir`. A merged parent is often archived (its folder is
@@ -980,7 +1187,11 @@ async fn stack_parent(app: AppHandle, id: String) -> Res<Value> {
             return Ok(Value::Null);
         }
         let parent = st.db().workspace(&ws.parent_id).map_err(e)?;
-        let pr = pr_for_branch(&ws.path, &parent.branch).unwrap_or(Value::Null);
+        // From the poller when it has looked already; one gh call only before its first look.
+        let pr = match cached_pr(st, &parent) {
+            Some(pr) => pr,
+            None => pr_for_branch(&ws.path, &parent.branch).unwrap_or(Value::Null),
+        };
         if pr["state"] == "MERGED" {
             let _ = st.db().set_merged(&parent.id);
         }
@@ -1045,6 +1256,7 @@ async fn restack_workspace(app: AppHandle, id: String) -> Res<Value> {
             retargeted = json!(n);
         }
         st.db().unstack(&id, &new_base).map_err(e)?;
+        pr_poke(st, Some(&ws.repo_id), true);
         Ok(json!({"result": result, "base": new_base, "pushed": pushed, "pr": retargeted}))
     })
     .await
@@ -1351,7 +1563,7 @@ async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String,
 /// Collision radar: active workspaces in one repo changing the same files, grouped, each group in
 /// a suggested merge order. Reads only the file lists `line_counts` cached, so it runs no git at
 /// all; a workspace not counted yet is simply left out until it is. `prs` is the PR state per
-/// workspace the UI already has from `pr_states`.
+/// workspace the UI already has from the PR poller.
 #[tauri::command]
 async fn collisions(st: State<'_, AppState>, prs: HashMap<String, String>) -> Res<Vec<radar::Group>> {
     let wss = st.db().workspaces(false).map_err(e)?;
@@ -1460,8 +1672,8 @@ async fn set_autopilot(app: AppHandle, st: State<'_, AppState>, id: String, on: 
     let key = autopilot_key(&id);
     if on {
         st.db().set_setting(&key, &json!({"tries": 0, "last": ""}).to_string()).map_err(e)?;
-        let app2 = app.clone();
-        std::thread::spawn(move || autopilot_tick(&app2, &id));
+        // The poller looks right away (and every 20 s from now on) and runs autopilot after.
+        pr_poke_workspace(&st, &id, true);
     } else {
         st.db().delete_setting(&key).map_err(e)?;
     }
@@ -1490,7 +1702,8 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     if busy {
         return;
     }
-    let Ok(pr) = pr_status_blocking(&st, id) else { return };
+    let ws = st.db().workspace(id);
+    let Some(pr) = ws.ok().and_then(|w| cached_pr(&st, &w)) else { return };
     let (kind, print) = autopilot_next(&pr);
     let say = |state: &str, detail: &str| { let _ = app.emit("autopilot", json!({"workspace_id": id, "state": state, "detail": detail})); };
     match kind {
@@ -1545,18 +1758,6 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     let _ = start_turn(app.clone(), &st, sid, prompt);
 }
 
-/// Every 90 seconds, check each workspace with autopilot on.
-fn autopilot_loop(app: AppHandle) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(90));
-        let ids: Vec<String> = app.state::<AppState>().db().settings_with_prefix("autopilot:").unwrap_or_default()
-            .into_iter().map(|(k, _)| k.trim_start_matches("autopilot:").to_string()).collect();
-        for id in ids {
-            autopilot_tick(&app, &id);
-        }
-    });
-}
-
 /// Commit everything and push. An empty message uses the chat's first task as the subject.
 #[tauri::command]
 async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
@@ -1573,6 +1774,7 @@ async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Re
         git::git(dir, &["commit", "-q", "-m", &msg]).map_err(e)?;
     }
     git::git(dir, &["push", "-u", "origin", &ws.branch]).map_err(e)?;
+    pr_poke(&st, Some(&ws.repo_id), true);
     Ok(msg)
 }
 
@@ -1595,10 +1797,12 @@ async fn merge_pr(st: State<'_, AppState>, id: String, auto: Option<bool>) -> Re
     if auto.unwrap_or(false) {
         // GitHub merges it once the required checks pass.
         gh(&ws.path, &["pr", "merge", &ws.branch, flag, "--auto"])?;
+        pr_poke(&st, Some(&ws.repo_id), true);
         return Ok(());
     }
     gh(&ws.path, &["pr", "merge", &ws.branch, flag])?;
     st.db().set_merged(&id).map_err(e)?;
+    pr_poke(&st, Some(&ws.repo_id), true);
     Ok(())
 }
 
@@ -1610,8 +1814,10 @@ async fn failing_logs(st: State<'_, AppState>, id: String) -> Res<String> {
 
 fn failing_logs_blocking(st: &AppState, id: &str) -> Res<String> {
     let ws = st.db().workspace(id).map_err(e)?;
-    let out = gh(&ws.path, &["pr", "view", &ws.branch, "--json", "statusCheckRollup"])?;
-    let v: Value = serde_json::from_str(&out).map_err(e)?;
+    let v: Value = match cached_pr(st, &ws).filter(|p| p.is_object()) {
+        Some(pr) => pr,
+        None => serde_json::from_str(&gh(&ws.path, &["pr", "view", &ws.branch, "--json", "statusCheckRollup"])?).map_err(e)?,
+    };
     let mut runs: Vec<String> = vec![];
     let mut names: Vec<String> = vec![];
     for c in v["statusCheckRollup"].as_array().into_iter().flatten() {
@@ -1665,7 +1871,9 @@ async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: Str
     if draft {
         args.push("--draft");
     }
-    Ok(gh(&ws.path, &args)?.trim().to_string())
+    let url = gh(&ws.path, &args)?.trim().to_string();
+    pr_poke(&st, Some(&ws.repo_id), true);
+    Ok(url)
 }
 
 // ---------- github ----------
@@ -2566,20 +2774,20 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default() })
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default() })
         .setup(|app| {
-            autopilot_loop(app.handle().clone());
+            pr_poll_loop(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts, trust_scripts, agent_config_trust, trust_agent_config,
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
-            changes, file_diff, open_in, pr_status, create_pr,
+            changes, file_diff, open_in, pr_cache, pr_refresh, pr_visible, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
             restore_checkpoint, checkpoint_preview, live_checkpoints, workspace_files, save_attachment, preview_probe, preview_snapshot,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
-            pty_run, pty_attach, open_in_targets, line_counts, pr_states,
+            pty_run, pty_attach, open_in_targets, line_counts,
             remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
@@ -2706,6 +2914,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
@@ -2747,6 +2956,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(),
         };
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
@@ -2814,5 +3024,55 @@ mod tests {
         assert_eq!(branch_slug("Fix the 502 on /v1/tickets after a deploy"), "fix-502-v1-tickets-after");
         assert_eq!(branch_slug("Can you please add dark mode?\nmore text"), "add-dark-mode");
         assert_eq!(branch_slug("!!!"), "");
+    }
+
+    #[test]
+    fn poller_asks_about_active_branches_and_archived_stack_parents() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = AppState {
+            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(),
+        };
+        let repo = |id: &str, remote: Option<&str>| Repo {
+            id: id.into(), name: id.into(), root_path: dir.path().join(id).to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: remote.map(String::from), setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        };
+        let ws = |id: &str, repo: &str, branch: &str, parent: &str| Workspace {
+            id: id.into(), repo_id: repo.into(), name: id.into(), branch: branch.into(), path: dir.path().join("ws").join(id).to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(),
+        };
+        st.db().insert_repo(&repo("r1", Some("git@github.com:me/app.git"))).unwrap();
+        st.db().insert_repo(&repo("r2", None)).unwrap();
+        st.db().insert_repo(&repo("idle", Some("git@github.com:me/idle.git"))).unwrap();
+        for w in [ws("parent", "r1", "me/base", ""), ws("child", "r1", "me/on-top", "parent"), ws("twin", "r1", "me/on-top", ""), ws("local", "r2", "me/x", "")] {
+            st.db().insert_workspace(&w).unwrap();
+        }
+        st.db().set_workspace_state("parent", "archived").unwrap();
+        st.db().set_setting(&autopilot_key("child"), "{}").unwrap();
+
+        let wss = pr_workspaces(&st);
+        assert!(wss.iter().any(|w| w.id == "parent"), "an archived parent of a stacked workspace still gets its PR");
+        let targets = pr_targets(&st, &wss);
+        assert_eq!(targets.len(), 2, "a repo without workspaces is skipped");
+        let r1 = targets.iter().find(|t| t.repo_id == "r1").unwrap();
+        assert_eq!(r1.branches, vec!["me/on-top".to_string(), "me/base".to_string()], "one entry per branch");
+        assert!(r1.autopilot);
+        // No remote: answered without spawning gh.
+        let r2 = targets.iter().find(|t| t.repo_id == "r2").unwrap();
+        assert_eq!(poll_target(r2), Err(prpoll::Problem::NotGithub));
+
+        // Views: nothing until the first look, then the PR, and problems alongside.
+        let child = wss.iter().find(|w| w.id == "child").unwrap();
+        assert_eq!(pr_view(&st.prs.lock().unwrap(), child), None);
+        st.prs.lock().unwrap().by_branch.insert(("r1".into(), "me/on-top".into()), json!({"number": 3, "state": "OPEN"}));
+        assert_eq!(pr_view(&st.prs.lock().unwrap(), child), Some(json!({"workspace_id": "child", "pr": {"number": 3, "state": "OPEN"}})));
+        assert_eq!(cached_pr(&st, child), Some(json!({"number": 3, "state": "OPEN"})));
+        st.prs.lock().unwrap().sched.record("r1", std::time::Instant::now(), false, Err(prpoll::Problem::RateLimited { reset_in: None }));
+        assert_eq!(pr_view(&st.prs.lock().unwrap(), child).unwrap()["problem"]["code"], "rate_limited");
+        let local = wss.iter().find(|w| w.id == "local").unwrap();
+        st.prs.lock().unwrap().sched.record("r2", std::time::Instant::now(), false, Err(prpoll::Problem::NotGithub));
+        assert_eq!(pr_view(&st.prs.lock().unwrap(), local), Some(json!({"workspace_id": "local", "problem": {"code": "not_github", "message": "This repo has no GitHub remote"}})));
     }
 }

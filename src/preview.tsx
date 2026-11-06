@@ -121,7 +121,7 @@ const events = [
 if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Rewound to before: The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", undo: "def456", files: 2 } as any);
 const pr = {
   number: 482, url: "https://github.com", state: "OPEN", title: "Fix 502s after deploy: outlive the ALB idle timeout", isDraft: false,
-  reviewDecision: "REVIEW_REQUIRED", mergeable: "MERGEABLE", additions: 38, deletions: 1, comments: [{}, {}],
+  reviewDecision: "REVIEW_REQUIRED", mergeable: "MERGEABLE", additions: 38, deletions: 1, commentCount: 2,
   author: { login: "Harshil-Jani" },
   latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }],
   reviewRequests: [{ login: "hubot" }],
@@ -152,12 +152,17 @@ mockIPC(
       case "session_events_tail": { const all = args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
       case "session_events": return args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
-      case "pr_status":
-        if (args.id === "w1") return pr;
-        // Comet's PR is the draft the sidebar shows, with the same +120 -31 as its files.
-        if (args.id === "w2") return { ...pr, number: 479, isDraft: true, additions: 120, deletions: 31, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };
-        if (args.id === "w4") return { ...pr, number: 471, state: "MERGED", additions: 6, deletions: 2, latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }], reviewRequests: [] };
-        return null;
+      case "pr_cache": {
+        // What the PR poller would have pushed by now: one view per workspace.
+        const prFor = (id: string) => {
+          if (id === "w1") return pr;
+          // Comet's PR is the draft the sidebar shows, with the same +120 -31 as its files.
+          if (id === "w2") return { ...pr, number: 479, isDraft: true, additions: 120, deletions: 31, statusCheckRollup: [{ name: "go test", conclusion: "FAILURE" }, { name: "lint", conclusion: "SUCCESS" }], latestReviews: [], reviewRequests: [] };
+          if (id === "w4") return { ...pr, number: 471, state: "MERGED", additions: 6, deletions: 2, latestReviews: [{ author: { login: "octocat" }, state: "APPROVED" }], reviewRequests: [] };
+          return null;
+        };
+        return Object.fromEntries(["w1", "w2", "w3", "w4", "w5"].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
+      }
       // Files per workspace add up to line_counts below. Dash (w3) and Pip (w5) have no changes yet.
       case "changes": return args.id === "w1" ? [
         { path: "internal/server/http.go", status: "M", additions: 3, deletions: 1 },
@@ -186,7 +191,6 @@ mockIPC(
       case "pty_open": return "\x1b[32m~/code/ws/mochi\x1b[0m on \x1b[35mharshil/fix-502-gateway\x1b[0m\r\n$ ";
       case "pty_attach": return String(args.id).endsWith(":run") ? "$ make dev\r\ngo run ./cmd/api\r\n2026/11/06 01:40:12 listening on http://localhost:41230\r\n" : null;
       case "line_counts": return { w1: [38, 1], w2: [120, 31], w4: [6, 2] };
-      case "pr_states": return { w1: "OPEN", w2: "DRAFT", w4: "MERGED" };
       case "open_in_targets": return [{ id: "cursor", name: "Cursor" }, { id: "vscode", name: "Visual Studio Code" }, { id: "zed", name: "Zed" }, { id: "ghostty", name: "Ghostty" }, { id: "finder", name: "Finder" }];
       case "doctor": return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: !location.search.includes("fresh"), login: location.search.includes("fresh") ? null : "Harshil-Jani" }, claude: { ok: true, version: "2.4.1 (Claude Code)" }, codex: { ok: false, version: "" }, gemini: { ok: false, version: "" }, opencode: { ok: false, version: "" } };
       case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };

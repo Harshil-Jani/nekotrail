@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bot, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Layers, MessageSquare, ScanSearch, Sparkles, SquareStack, Upload } from "lucide-react";
-import { api, avatar, errText, type Collision, type Pr, type Repo, type StackParent, type Workspace } from "../api";
+import { api, avatar, errText, prFromView, type Collision, type Pr, type PrView, type Repo, type StackParent, type Workspace } from "../api";
 import { ask } from "./Confirm";
 import { Mascot } from "./Mascot";
 import { Avatar } from "./Avatar";
@@ -132,6 +132,8 @@ export function PrBar({
   refreshKey,
   collision,
   prStates,
+  prView,
+  parentPr,
   lines,
   onOpenWorkspace,
   onSendAgent,
@@ -149,6 +151,10 @@ export function PrBar({
   /** This workspace's collision group, if another workspace changes the same files. */
   collision?: Collision;
   prStates: Record<string, string>;
+  /** This workspace's PR from the background poller; undefined until its first look. */
+  prView?: PrView;
+  /** The PR of the workspace this one is stacked on, from the same poller. */
+  parentPr?: Pr;
   lines: Record<string, [number, number]>;
   onOpenWorkspace: (id: string) => void;
   /** Send a prompt to the agent right away. */
@@ -164,10 +170,10 @@ export function PrBar({
   /** The workspace moved off its stack: reload the workspace list. */
   onRestacked: () => void;
 }) {
-  const [pr, setPr] = useState<Pr | undefined>(undefined);
+  // The PR comes from the poller (see prFromView for how problems show).
+  const { pr, error } = prFromView(prView);
   const [form, setForm] = useState<{ title: string; body: string; draft: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [radarOpen, setRadarOpen] = useState(false);
@@ -177,24 +183,19 @@ export function PrBar({
     .filter((p) => p.a === ws.id || p.b === ws.id)
     .map((p) => ({ workspace_id: p.a === ws.id ? p.b : p.a, files: p.files }));
 
-  // Stacked PRs: the workspace this one sits on, and its PR. Polled with this PR, only when stacked.
+  // Stacked PRs: the workspace this one sits on, and its PR (from the poller's cache, so no gh call).
   const [parent, setParent] = useState<StackParent | undefined>(undefined);
-  const load = () => {
-    api.prStatus(ws.id).then((p) => { setPr(p); setError(null); }).catch((e) => { setPr(null); setError(errText(e)); });
-    if (ws.parent_id) api.stackParent(ws.id).then(setParent).catch(() => setParent(null));
-  };
-
+  // Ask the poller for a look (it skips one if its last look is under 15 s old).
+  const load = () => { api.prRefresh(ws.id).catch(() => {}); };
   useEffect(() => {
-    setParent(undefined);
-    setPr(undefined);
-    setError(null);
     setForm(null);
     setMenu(false);
     load();
-    // Poll GitHub only while you can see the window.
-    const t = setInterval(() => { if (!document.hidden) load(); }, 60_000);
-    return () => clearInterval(t);
-  }, [ws.id, ws.parent_id, refreshKey]);
+  }, [ws.id, refreshKey]);
+  useEffect(() => { setParent(undefined); }, [ws.id, ws.parent_id]);
+  useEffect(() => {
+    if (ws.parent_id) api.stackParent(ws.id).then(setParent).catch(() => setParent(null));
+  }, [ws.id, ws.parent_id, parentPr?.state, parentPr?.number, parentPr?.baseRefName]);
 
   // Files changed against the target branch: Create PR needs at least one.
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -223,7 +224,6 @@ export function PrBar({
 
   const task = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
-    setError(null);
     try {
       await fn();
     } catch (e) {
@@ -452,7 +452,7 @@ export function PrBar({
           <PrState pr={pr} />
           <button className="link num" onClick={() => openUrl(pr.url)} title={pr.title}>#{pr.number}</button>
           <span className="num"><span className="add">+{pr.additions}</span> <span className="del">-{pr.deletions}</span></span>
-          {pr.comments.length > 0 && <span className="check num pr-comments" title={`${pr.comments.length} comments`}><MessageSquare size={14} />{pr.comments.length}</span>}
+          {pr.commentCount > 0 && <span className="check num pr-comments" title={`${pr.commentCount} comments`}><MessageSquare size={14} />{pr.commentCount}</span>}
           {reviewers.length > 0 && (
             <span className="reviewers" aria-label="Reviewers">
               {reviewers.map((r) => (

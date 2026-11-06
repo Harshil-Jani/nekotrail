@@ -122,8 +122,32 @@ export type Pr = {
   reviewRequests: { login?: string; name?: string }[];
   additions: number;
   deletions: number;
-  comments: unknown[];
+  /** Conversation comments on the PR (not review comments on lines). */
+  commentCount: number;
+  baseRefName?: string;
+  headRefOid?: string;
 } | null;
+
+/** What the PR poller knows about one workspace (the `pr` event payload). `pr` is missing until the
+ * first look; `problem` is set when GitHub couldn't be asked. */
+export type PrView = {
+  workspace_id: string;
+  pr?: Pr;
+  problem?: { code: "no_gh" | "not_logged_in" | "not_github" | "rate_limited" | "error"; message: string };
+};
+
+/** What the PR bar shows for a poller view. `pr`: undefined while unknown ("Looking for a PR"), null
+ * for no PR. A problem waiting can't fix (no gh, not logged in, no GitHub remote) settles it to null;
+ * a rate limit keeps the last answer and says nothing. `error` is only for what you can act on. */
+export function prFromView(view?: PrView): { pr: Pr | undefined; error: string | null } {
+  const problem = view?.problem;
+  const pr = view?.pr !== undefined ? view.pr : problem && problem.code !== "rate_limited" ? null : undefined;
+  const actionable = problem && (problem.code === "no_gh" || problem.code === "not_logged_in" || (problem.code === "error" && view?.pr === undefined));
+  return { pr, error: actionable ? problem.message : null };
+}
+
+/** PR state for the sidebar, board and radar: OPEN, DRAFT, MERGED or CLOSED. */
+export const prStateOf = (pr?: Pr) => (pr ? (pr.isDraft && pr.state === "OPEN" ? "DRAFT" : pr.state) : undefined);
 
 export type GithubUser = { login: string; name: string | null; avatar_url: string; html_url: string; public_repos: number; followers: number } | null;
 export type RepoGithub = { nameWithOwner: string; description: string; stargazerCount: number; url: string; owner_avatar: string; isPrivate: boolean } | null;
@@ -245,8 +269,12 @@ export const api = {
   openIn: (id: string, app: string) => invoke<void>("open_in", { id, app }),
   openInTargets: () => invoke<{ id: string; name: string }[]>("open_in_targets"),
   lineCounts: () => invoke<Record<string, [number, number]>>("line_counts"),
-  prStates: () => invoke<Record<string, "OPEN" | "MERGED" | "CLOSED">>("pr_states"),
-  prStatus: (id: string) => invoke<Pr>("pr_status", { id }),
+  /** Every workspace's PR as the background poller last saw it. Never calls GitHub; updates come as `pr` events. */
+  prCache: () => invoke<Record<string, PrView>>("pr_cache"),
+  /** Ask the poller to look at this workspace's repo again soon (`force` right after a change you made). */
+  prRefresh: (id?: string, force = false) => invoke<void>("pr_refresh", { id, force }),
+  /** The window was hidden or came back: polling pauses while hidden. */
+  prVisible: (visible: boolean) => invoke<void>("pr_visible", { visible }),
   createPr: (id: string, title: string, body: string, draft: boolean) =>
     invoke<string>("create_pr", { id, title, body, draft }),
   sessions: (workspaceId: string) => invoke<Session[]>("sessions", { workspaceId }),
