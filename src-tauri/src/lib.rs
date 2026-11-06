@@ -26,6 +26,7 @@ pub mod queuerun;
 pub mod radar;
 pub mod redact;
 pub mod remote;
+pub mod rescue;
 pub mod rules;
 pub mod runaway;
 pub mod review;
@@ -2055,45 +2056,117 @@ async fn imported_outside(st: State<'_, AppState>) -> Res<Vec<String>> {
         .map(|w| w.id).collect())
 }
 
-/// Move imported workspaces into ~/nekotrail/workspaces with `git worktree move`, so cleaning up
-/// Conductor can't delete them. Skips any with an agent running. Returns (moved, problems).
+/// Where a move would put a workspace: ~/nekotrail/workspaces/<repo>/<its folder name>, or the next
+/// free name. `skip` holds destinations already promised to other workspaces in the same plan.
+fn rescue_destination(home: &Path, repo: &str, from: &str, fallback: &str, skip: &[PathBuf]) -> PathBuf {
+    let base = Path::new(from).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| fallback.to_string());
+    rescue::destination(&home.join("workspaces").join(repo), &base, |p| p.exists() || skip.iter().any(|s| s == p))
+}
+
+fn rescue_item(home: &Path, ws: &Workspace, repo: &str, imported: bool, skip: &[PathBuf]) -> rescue::Item {
+    let p = Path::new(&ws.path);
+    rescue::Item {
+        id: if imported { ws.id.clone() } else { String::new() },
+        repo: repo.to_string(),
+        label: if ws.title.is_empty() { ws.name.clone() } else { ws.title.clone() },
+        branch: ws.branch.clone(),
+        from: ws.path.clone(),
+        to: rescue_destination(home, repo, &ws.path, &ws.name, skip).to_string_lossy().to_string(),
+        kb: git::dir_kb(p),
+        uncommitted: rescue::snapshot(p).map(|s| s.status.len()).unwrap_or(0),
+        imported,
+    }
+}
+
+/// What the Conductor sheet shows before anything changes: what an import would bring (when
+/// Conductor's data is on this Mac), and every Conductor worktree that would move into
+/// ~/nekotrail/workspaces, imported already or not, with its size and uncommitted files.
 #[tauri::command]
-async fn relocate_imported(st: State<'_, AppState>) -> Res<(usize, Vec<String>)> {
-    let ids = imported_outside(st.clone()).await?;
+async fn conductor_rescue_plan(st: State<'_, AppState>) -> Res<Value> {
+    let root = st.home.join("workspaces");
+    let mut items: Vec<rescue::Item> = vec![];
+    let mut promised: Vec<PathBuf> = vec![];
+    for id in imported_outside(st.clone()).await? {
+        let (ws, repo) = { let db = st.db(); let ws = db.workspace(&id).map_err(e)?; let repo = db.repo(&ws.repo_id).map_err(e)?; (ws, repo) };
+        let it = rescue_item(&st.home, &ws, &repo.name, true, &promised);
+        promised.push(PathBuf::from(&it.to));
+        items.push(it);
+    }
+    let mut report = None;
+    if let Some(cdb) = importer::default_db_path() {
+        // A dry run into a scratch copy that already knows what you have, as import_preview does.
+        let scratch = Store::in_memory().map_err(e)?;
+        let known: std::collections::HashSet<String> = {
+            let cur = st.db();
+            for r in cur.repos().map_err(e)? {
+                scratch.insert_repo(&r).map_err(e)?;
+            }
+            let all = cur.workspaces(true).map_err(e)?;
+            for w in &all {
+                scratch.insert_workspace(w).map_err(e)?;
+            }
+            all.into_iter().map(|w| w.id).collect()
+        };
+        report = Some(importer::import(&scratch, &cdb).map_err(e)?);
+        for ws in scratch.workspaces(false).map_err(e)? {
+            if known.contains(&ws.id) || ws.imported_from.as_deref() != Some("conductor") || Path::new(&ws.path).starts_with(&root) {
+                continue;
+            }
+            let repo = scratch.repo(&ws.repo_id).map_err(e)?;
+            let it = rescue_item(&st.home, &ws, &repo.name, false, &promised);
+            promised.push(PathBuf::from(&it.to));
+            items.push(it);
+        }
+    }
+    Ok(json!({ "report": report, "items": items, "root": root.to_string_lossy() }))
+}
+
+/// Move imported Conductor workspaces into ~/nekotrail/workspaces with `git worktree move`, and
+/// check each one after (git lists it at the new path, same branch and head, same uncommitted
+/// files). `ids` picks which; none means every one still outside. Skips any with an agent running.
+/// Nothing in Conductor's folder is ever deleted: a workspace that can't move stays where it is.
+#[tauri::command]
+async fn relocate_imported(st: State<'_, AppState>, ids: Option<Vec<String>>) -> Res<Vec<rescue::Outcome>> {
+    let outside = imported_outside(st.clone()).await?;
+    let ids: Vec<String> = match ids {
+        Some(want) => outside.into_iter().filter(|id| want.contains(id)).collect(),
+        None => outside,
+    };
     let running: Vec<String> = {
         let runs = st.runs.lock().unwrap();
         let db = st.db();
         ids.iter().filter(|id| db.sessions(id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(false)).cloned().collect()
     };
-    let (mut moved, mut problems) = (0, vec![]);
+    let mut out = vec![];
     for id in ids {
         let (ws, repo) = { let db = st.db(); let ws = db.workspace(&id).map_err(e)?; let repo = db.repo(&ws.repo_id).map_err(e)?; (ws, repo) };
         let label = if ws.title.is_empty() { ws.name.clone() } else { ws.title.clone() };
+        let to = rescue_destination(&st.home, &repo.name, &ws.path, &ws.name, &[]);
+        let mut o = rescue::Outcome {
+            id: id.clone(), label, from: ws.path.clone(), to: to.to_string_lossy().to_string(),
+            moved: false, error: None, problems: vec![], uncommitted: 0,
+        };
         if running.contains(&id) {
-            problems.push(format!("{label}: an agent is working. Move it later."));
+            o.error = Some("An agent is working in it. Move it once the turn ends.".into());
+            out.push(o);
             continue;
-        }
-        let base = Path::new(&ws.path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| ws.name.clone());
-        let dir = st.home.join("workspaces").join(&repo.name);
-        let mut to = dir.join(&base);
-        let mut n = 2;
-        while to.exists() {
-            to = dir.join(format!("{base}-{n}"));
-            n += 1;
         }
         // Terminals hold the old folder open; close them first.
         for key in [format!("{id}:term"), format!("{id}:run"), format!("{id}:setup")] {
             st.ptys.close(&key);
         }
-        match git::move_worktree(Path::new(&repo.root_path), Path::new(&ws.path), &to) {
-            Ok(()) => {
-                st.db().set_path(&id, &to.to_string_lossy()).map_err(e)?;
-                moved += 1;
+        match rescue::move_checked(Path::new(&repo.root_path), Path::new(&ws.path), &to) {
+            Ok((problems, n)) => {
+                st.db().set_path(&id, &o.to).map_err(e)?;
+                o.moved = true;
+                o.problems = problems;
+                o.uncommitted = n;
             }
-            Err(err) => problems.push(format!("{label}: {err}")),
+            Err(err) => o.error = Some(err),
         }
+        out.push(o);
     }
-    Ok((moved, problems))
+    Ok(out)
 }
 
 /// Link workspaces that got the same task (a bake-off).
@@ -4898,7 +4971,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, handoff_brief, handoff_start, show_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, handoff_brief, handoff_start, show_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, conductor_rescue_plan, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
