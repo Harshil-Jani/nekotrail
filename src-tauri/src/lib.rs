@@ -4,6 +4,7 @@ pub mod agentcfg;
 pub mod mcpshare;
 pub mod config;
 pub mod git;
+pub mod guard;
 pub mod importer;
 pub mod names;
 pub mod preview;
@@ -586,6 +587,7 @@ async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> 
     if let Ok(repo) = st.db().repo(&ws.repo_id) {
         let root = Path::new(&repo.root_path);
         let _ = git::prune_checkpoints(root, &git::checkpoint_prefix(&id), 0);
+        let _ = git::prune_checkpoints(root, &guard::prefix(&id), 0);
         let _ = git::git(root, &["update-ref", "-d", &git::legacy_checkpoint_ref(&id)]);
     }
     st.ptys.close(&format!("{id}:term"));
@@ -666,7 +668,8 @@ async fn rename_branch(st: State<'_, AppState>, id: String, branch: String) -> R
 }
 
 #[tauri::command]
-async fn set_repo_prefs(st: State<'_, AppState>, id: String, prefs: store::RepoPrefs) -> Res<()> {
+async fn set_repo_prefs(st: State<'_, AppState>, id: String, mut prefs: store::RepoPrefs) -> Res<()> {
+    prefs.protected = config::clean_globs(std::mem::take(&mut prefs.protected));
     if let Ok(r) = st.db().repo(&id) {
         ensure_local_excludes(Path::new(&r.root_path), &prefs.copy_files);
     }
@@ -788,6 +791,79 @@ async fn write_file(st: State<'_, AppState>, id: String, path: String, content: 
     std::fs::write(inside(&ws, &path)?, content).map_err(e)
 }
 
+/// Move a file to the macOS Trash, so it can be fished out again.
+fn to_trash(p: &Path) -> anyhow::Result<()> {
+    use trash::macos::{DeleteMethod, TrashContextExtMacos};
+    let mut t = trash::TrashContext::default();
+    // The system call, not Finder: no Automation prompt and no sound.
+    t.set_delete_method(DeleteMethod::NsFileManager);
+    t.delete(p).map_err(|err| anyhow::anyhow!("{err}"))
+}
+
+/// The protected paths for a workspace: the app's list for its repo, plus the `protected` list in
+/// the repo's `nekotrail.json`, read from the workspace and from the main checkout. The main
+/// checkout's comes last, so an exception an agent adds to the workspace's copy can't carve out
+/// of it. Neither file can remove what the app sets (see `guard`).
+fn guard_rules(repo: &Repo, ws: &Workspace) -> guard::Rules {
+    let mut file = config::protected_from_file(Path::new(&ws.path));
+    if Path::new(&repo.root_path) != Path::new(&ws.path) {
+        file.extend(config::protected_from_file(Path::new(&repo.root_path)));
+    }
+    guard::Rules::new(&repo.prefs.protected, &file)
+}
+
+/// Protected paths for Repo settings: what the app has, and what the repo's `nekotrail.json` adds.
+#[tauri::command]
+async fn repo_guard(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let r = st.db().repo(&id).map_err(e)?;
+    Ok(json!({"app": r.prefs.protected, "file": config::protected_from_file(Path::new(&r.root_path))}))
+}
+
+/// "Put it back": restore the protected files a turn changed, from that turn's checkpoint (and its
+/// saved ignored files), and nothing else. The agent's copies go to the Trash first.
+#[tauri::command]
+async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, ignored: Option<String>, paths: Vec<String>) -> Res<Vec<String>> {
+    blocking(app.clone(), move |st| {
+        let ws = idle_workspace(st, &id, &checkpoint, true)?;
+        let release = || { st.runs.lock().unwrap().rewinding.remove(&ws.id); };
+        let root = Path::new(&ws.path);
+        if let Some(i) = ignored.as_deref().filter(|i| !i.is_empty())
+            && (!safe::object_id(i) || !guard::is_snapshot(root, i)) {
+                release();
+                return Err("The saved copies from before this turn are gone, so nekotrail can't put these back. Use Rewind instead.".into());
+            }
+        let repo = match st.db().repo(&ws.repo_id) {
+            Ok(r) => r,
+            Err(err) => { release(); return Err(e(err)); }
+        };
+        let rules = guard_rules(&repo, &ws);
+        let base = guard::Base { checkpoint: Some(checkpoint.clone()), ignored };
+        mark_changed(st, &ws.id);
+        let done = guard::put_back(root, &rules, &base, &paths, to_trash);
+        release();
+        let done = done.map_err(e)?;
+        if done.is_empty() {
+            return Err("nekotrail couldn't tell what these files looked like before the turn, so it left them alone.".into());
+        }
+        let ev = json!({"kind": "guard_restored", "files": done, "checkpoint": checkpoint});
+        st.db().append_event(&id, &ev).map_err(e)?;
+        emit_event(&app, &id, &ev);
+        let _ = app.emit("workspaces-changed", json!({}));
+        let note = format!(
+            "[Note from nekotrail: the user put back protected files you changed: {}. They are protected for this repo. Don't change them again; ask the user if you need to.]",
+            done.join(", ")
+        );
+        let mut runs = st.runs.lock().unwrap();
+        let merged = match runs.notes.remove(&id) {
+            Some(old) => format!("{old}\n{note}"),
+            None => note,
+        };
+        runs.notes.insert(id, merged);
+        Ok(done)
+    })
+    .await
+}
+
 /// Discard the uncommitted changes to one file. The current copy goes to the macOS Trash first,
 /// so nothing is ever deleted outright. Returns "trashed" (a new file) or "restored".
 #[tauri::command]
@@ -802,14 +878,7 @@ async fn discard_file(app: AppHandle, id: String, path: String) -> Res<String> {
         } else if path.is_empty() || Path::new(&path).components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             return Err("That file is outside the workspace.".into());
         }
-        let r = git::discard_file(root, &path, |p| {
-            use trash::macos::{DeleteMethod, TrashContextExtMacos};
-            let mut t = trash::TrashContext::default();
-            // The system call, not Finder: no Automation prompt and no sound.
-            t.set_delete_method(DeleteMethod::NsFileManager);
-            t.delete(p).map_err(|err| anyhow::anyhow!("{err}"))
-        })
-        .map_err(e)?;
+        let r = git::discard_file(root, &path, to_trash).map_err(e)?;
         mark_changed(st, &id);
         Ok(if r == git::Discarded::Trashed { "trashed" } else { "restored" }.to_string())
     })
@@ -2415,6 +2484,22 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     // Keep the newest 50, without making the turn wait for it.
     let ws_path = ws.path.clone();
     std::thread::spawn(move || git::prune_checkpoints(Path::new(&ws_path), &prefix, git::CHECKPOINT_KEEP));
+    // Protected paths: checkpoints skip ignored files like .env, so save the protected ones too.
+    // The list is read now, so an agent editing nekotrail.json can't change this turn's check.
+    let rules = guard_rules(&repo, &ws);
+    let guarded = !rules.is_empty();
+    let guard_base = guard::Base {
+        checkpoint: checkpoint.clone(),
+        ignored: if guarded {
+            let gp = guard::prefix(&ws.id);
+            let saved = guard::snapshot_ignored(Path::new(&ws.path), &gp, &rules).ok();
+            let p = ws.path.clone();
+            std::thread::spawn(move || git::prune_checkpoints(Path::new(&p), &gp, git::CHECKPOINT_KEEP));
+            saved
+        } else {
+            None
+        },
+    };
     let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
     st.db().append_event(&id, &user).map_err(e)?;
     emit_event(&app, &id, &user);
@@ -2453,6 +2538,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         instructions: Some(prefs.general_prompt.trim()).filter(|p| !p.is_empty()),
         env: &env,
         dirs: &dirs,
+        guard: Some(&rules),
     };
     let mut cmd = agent::command(&spec);
     let parser: SharedParser = Arc::new(Mutex::new(agent::parser(&spec)));
@@ -2505,6 +2591,7 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
 
     let agent_name = session.agent.clone();
     let workspace_id = ws.id.clone();
+    let ws_dir = ws.path.clone();
     let pid = child.id();
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
@@ -2628,6 +2715,17 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let _ = st.db().append_event(&id, &ev);
             emit_event(&app, &id, &ev);
         }
+        // Every agent, whatever it enforces itself: did this turn change a protected file?
+        let mut guard_hit: Option<String> = None;
+        if guarded
+            && let Ok(hits) = guard::check(Path::new(&ws_dir), &rules, &guard_base)
+            && !hits.is_empty() {
+                let ev = json!({"kind": "guard", "files": hits, "checkpoint": guard_base.checkpoint, "ignored": guard_base.ignored, "level": harness.guard_level()});
+                let _ = st.db().append_event(&id, &ev);
+                emit_event(&app, &id, &ev);
+                let names: Vec<&str> = hits.iter().map(|h| h.path.as_str()).collect();
+                guard_hit = Some(format!("Changed a protected file: {}", names.join(", ")));
+            }
         let _ = st.db().set_unread(&workspace_id, true);
         mark_changed(&st, &workspace_id);
         let next = {
@@ -2641,11 +2739,11 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             let _ = app.emit("queue", json!({"session_id": id, "queued": rest}));
             next
         };
-        let title = st.db().session(&id).map(|s| s.title).unwrap_or_default();
+        let title = guard_hit.clone().unwrap_or_else(|| st.db().session(&id).map(|s| s.title).unwrap_or_default());
         let _ = app.emit("running", json!({
             "session_id": id, "running": false, "workspace_id": workspace_id,
             "ok": ok, "title": title, "more_queued": next.is_some(),
-            "needs": if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs },
+            "needs": if guard_hit.is_some() { Some("protected".to_string()) } else if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs },
         }));
         if let Some(text) = next {
             let _ = start_turn(app.clone(), &st, id, text);
@@ -2842,7 +2940,7 @@ pub fn run() {
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_cache, pr_refresh, pr_visible, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
-            restore_checkpoint, checkpoint_preview, live_checkpoints, workspace_files, save_attachment, preview_probe, preview_snapshot,
+            restore_checkpoint, checkpoint_preview, live_checkpoints, repo_guard, put_back_protected, workspace_files, save_attachment, preview_probe, preview_snapshot,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
@@ -2858,6 +2956,35 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn protected_paths_merge_app_repo_and_workspace_files() {
+        let root = tempfile::tempdir().unwrap();
+        let wsd = tempfile::tempdir().unwrap();
+        let mut repo = Repo {
+            id: "r".into(), name: "demo".into(), root_path: root.path().to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: None, setup_script: None, run_script: None, archive_script: None, prefs: Default::default(),
+        };
+        repo.prefs.protected = vec![".env*".into()];
+        let ws = Workspace {
+            id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: wsd.path().to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
+        };
+        // The main checkout protects infra; the workspace's copy (which an agent could edit)
+        // tries to free everything and adds docs.
+        std::fs::write(root.path().join("nekotrail.json"), r#"{"protected":["infra/**"]}"#).unwrap();
+        std::fs::write(wsd.path().join("nekotrail.json"), r#"{"protected":["!*", "!infra/**", "!.env", "docs/**"]}"#).unwrap();
+        let g = guard_rules(&repo, &ws);
+        assert!(g.protects(".env"), "the app's list can't be removed by a repo file");
+        assert!(g.protects("infra/main.tf"), "the workspace copy can't remove the main checkout's");
+        assert!(g.protects("docs/a.md"), "the workspace copy can add");
+        assert!(!g.protects("src/main.rs"));
+        repo.prefs.protected.clear();
+        std::fs::remove_file(root.path().join("nekotrail.json")).unwrap();
+        std::fs::remove_file(wsd.path().join("nekotrail.json")).unwrap();
+        assert!(guard_rules(&repo, &ws).is_empty());
+    }
 
     #[test]
     fn workspace_env_has_stable_ports_and_repo_vars() {

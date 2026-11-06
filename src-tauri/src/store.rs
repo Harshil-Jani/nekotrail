@@ -204,6 +204,9 @@ pub struct RepoPrefs {
     pub merge_method: String,
     /// Named commands besides Run, e.g. ("test", "bun test"). Run from the Run menu, ⌘K or /run name.
     pub actions: Vec<(String, String)>,
+    /// Paths agents should leave alone, as gitignore-style globs (`.env*`, `migrations/**`).
+    /// A repo's `nekotrail.json` can add more but never remove these (see `guard`).
+    pub protected: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

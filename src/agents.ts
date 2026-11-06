@@ -1,4 +1,4 @@
-import type { Agent, McpAgent } from "./api";
+import type { Agent, GuardLevel, McpAgent } from "./api";
 
 /**
  * The agent CLIs nekotrail drives, in the order the UI lists them. The backend twin is `ALL` in
@@ -31,25 +31,43 @@ type AgentInfo = {
   effort: boolean;
   /** Can run with an untrusted repo config switched off. False: "Not now" means it doesn't run in that repo. */
   configOff: boolean;
+  /** How protected paths hold (twin of `Agent::guard_level`), in plain words for Repo settings. */
+  guard: { level: GuardLevel; how: string };
 };
 
 export const AGENT_INFO: Record<Agent, AgentInfo> = {
-  claude: { name: "Claude", full: "Claude Code", cli: "claude", install: "npm install -g @anthropic-ai/claude-code", login: "claude /login", setup: "claude", ask: true, effort: true, configOff: true },
-  codex: { name: "Codex", full: "Codex", cli: "codex", install: "npm install -g @openai/codex", login: "codex login", setup: "codex", ask: false, effort: true, configOff: true },
-  gemini: { name: "Gemini", full: "Gemini CLI", cli: "gemini", install: "npm install -g @google/gemini-cli", login: "gemini", setup: "gemini", ask: false, effort: false, configOff: false },
-  opencode: { name: "OpenCode", full: "OpenCode", cli: "opencode", install: "curl -fsSL https://opencode.ai/install | bash", login: "opencode auth login", setup: "opencode auth login", ask: true, effort: false, configOff: true },
-  cursor: { name: "Cursor", full: "Cursor CLI", cli: "cursor-agent", install: "curl https://cursor.com/install -fsS | bash", login: "cursor-agent login", setup: "cursor-agent login", ask: false, effort: false, configOff: false },
-  copilot: { name: "Copilot", full: "GitHub Copilot CLI", cli: "copilot", install: "npm install -g @github/copilot", login: "copilot login", setup: "copilot login", ask: true, effort: false, configOff: false },
-  goose: { name: "Goose", full: "Goose", cli: "goose", install: "brew install block-goose-cli", login: "goose configure", setup: "goose configure", ask: false, effort: false, configOff: false },
-  qwen: { name: "Qwen", full: "Qwen Code", cli: "qwen", install: "npm install -g @qwen-code/qwen-code", login: "qwen", setup: "qwen", ask: false, effort: false, configOff: false },
-  kimi: { name: "Kimi", full: "Kimi Code CLI", cli: "kimi", install: "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash", login: "kimi", setup: "kimi", ask: false, effort: false, configOff: false },
-  auggie: { name: "Auggie", full: "Auggie CLI", cli: "auggie", install: "npm install -g @augmentcode/auggie", login: "auggie login", setup: "auggie login", ask: false, effort: false, configOff: false },
-  grok: { name: "Grok", full: "Grok Build", cli: "grok", install: "npm install -g @xai-official/grok", login: "grok login", setup: "grok login", ask: false, effort: false, configOff: false },
-  kiro: { name: "Kiro", full: "Kiro CLI", cli: "kiro-cli", install: "curl -fsSL https://cli.kiro.dev/install | bash", login: "kiro-cli login", setup: "kiro-cli login", ask: false, effort: false, configOff: false },
-  droid: { name: "Droid", full: "Factory Droid", cli: "droid", install: "curl -fsSL https://app.factory.ai/cli | sh", login: "droid", setup: "droid", ask: false, effort: false, configOff: false },
-  vibe: { name: "Vibe", full: "Mistral Vibe", cli: "vibe", install: "curl -LsSf https://mistral.ai/vibe/install.sh | bash", login: "vibe --setup", setup: "vibe --setup", ask: false, effort: false, configOff: false },
-  cline: { name: "Cline", full: "Cline CLI", cli: "cline", install: "npm install -g cline", login: "cline auth", setup: "cline auth", ask: false, effort: false, configOff: false },
-  kilo: { name: "Kilo", full: "Kilo CLI", cli: "kilo", install: "npm install -g @kilocode/cli", login: "kilo auth login", setup: "kilo auth login", ask: false, effort: false, configOff: false },
+  claude: { name: "Claude", full: "Claude Code", cli: "claude", install: "npm install -g @anthropic-ai/claude-code", login: "claude /login", setup: "claude", ask: true, effort: true, configOff: true,
+    guard: { level: "blocked", how: "Can't edit them with its file tools or simple shell writes, in every mode. A script could still get around that, so each turn is checked too." } },
+  codex: { name: "Codex", full: "Codex", cli: "codex", install: "npm install -g @openai/codex", login: "codex login", setup: "codex", ask: false, effort: true, configOff: true,
+    guard: { level: "after", how: "Codex has no way to block single files yet, so each turn is checked when it ends." } },
+  gemini: { name: "Gemini", full: "Gemini CLI", cli: "gemini", install: "npm install -g @google/gemini-cli", login: "gemini", setup: "gemini", ask: false, effort: false, configOff: false,
+    guard: { level: "after", how: "Checked when each turn ends." } },
+  opencode: { name: "OpenCode", full: "OpenCode", cli: "opencode", install: "curl -fsSL https://opencode.ai/install | bash", login: "opencode auth login", setup: "opencode auth login", ask: true, effort: false, configOff: true,
+    guard: { level: "blocked", how: "Its edits to them are refused in every mode, with the reason in the chat. Shell commands aren't, so each turn is checked too." } },
+  cursor: { name: "Cursor", full: "Cursor CLI", cli: "cursor-agent", install: "curl https://cursor.com/install -fsS | bash", login: "cursor-agent login", setup: "cursor-agent login", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  copilot: { name: "Copilot", full: "GitHub Copilot CLI", cli: "copilot", install: "npm install -g @github/copilot", login: "copilot login", setup: "copilot login", ask: true, effort: false, configOff: false,
+    guard: { level: "asks", how: "In Ask before changes it asks before every write, and protected ones are refused. In other modes it may write without asking, so each turn is checked when it ends too." } },
+  goose: { name: "Goose", full: "Goose", cli: "goose", install: "brew install block-goose-cli", login: "goose configure", setup: "goose configure", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  qwen: { name: "Qwen", full: "Qwen Code", cli: "qwen", install: "npm install -g @qwen-code/qwen-code", login: "qwen", setup: "qwen", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  kimi: { name: "Kimi", full: "Kimi Code CLI", cli: "kimi", install: "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash", login: "kimi", setup: "kimi", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  auggie: { name: "Auggie", full: "Auggie CLI", cli: "auggie", install: "npm install -g @augmentcode/auggie", login: "auggie login", setup: "auggie login", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  grok: { name: "Grok", full: "Grok Build", cli: "grok", install: "npm install -g @xai-official/grok", login: "grok login", setup: "grok login", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  kiro: { name: "Kiro", full: "Kiro CLI", cli: "kiro-cli", install: "curl -fsSL https://cli.kiro.dev/install | bash", login: "kiro-cli login", setup: "kiro-cli login", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  droid: { name: "Droid", full: "Factory Droid", cli: "droid", install: "curl -fsSL https://app.factory.ai/cli | sh", login: "droid", setup: "droid", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  vibe: { name: "Vibe", full: "Mistral Vibe", cli: "vibe", install: "curl -LsSf https://mistral.ai/vibe/install.sh | bash", login: "vibe --setup", setup: "vibe --setup", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  cline: { name: "Cline", full: "Cline CLI", cli: "cline", install: "npm install -g cline", login: "cline auth", setup: "cline auth", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
+  kilo: { name: "Kilo", full: "Kilo CLI", cli: "kilo", install: "npm install -g @kilocode/cli", login: "kilo auth login", setup: "kilo auth login", ask: false, effort: false, configOff: false,
+    guard: { level: "asks", how: "If the agent asks before changing a protected file, nekotrail says no. It often edits without asking, so each turn is checked when it ends too." } },
 };
 
 /** Display name for a stored agent id. Unknown ids are Claude, as in the backend. */
@@ -73,4 +91,20 @@ export function splitAgents(installed: Agent[] | null, keep?: Agent | null, max 
   const shown = AGENTS.filter((a) => front.includes(a));
   const rest = AGENTS.filter((a) => !front.includes(a));
   return { shown, installed: rest.filter((a) => inst.has(a)), missing: rest.filter((a) => !inst.has(a)) };
+}
+
+/** Short label for how protected paths hold for an agent. */
+export const GUARD_TAG: Record<GuardLevel, string> = { blocked: "Blocked", asks: "When it asks", after: "Checked after" };
+
+/** Agents that hold protected paths the same way, together, strongest first: one row each in Repo settings. */
+export function guardGroups(): { agents: Agent[]; level: GuardLevel; how: string }[] {
+  const rank: Record<GuardLevel, number> = { blocked: 0, asks: 1, after: 2 };
+  const groups: { agents: Agent[]; level: GuardLevel; how: string }[] = [];
+  for (const a of AGENTS) {
+    const { level, how } = AGENT_INFO[a].guard;
+    const g = groups.find((x) => x.level === level && x.how === how);
+    if (g) g.agents.push(a);
+    else groups.push({ agents: [a], level, how });
+  }
+  return groups.sort((x, y) => rank[x.level] - rank[y.level]);
 }

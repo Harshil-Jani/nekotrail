@@ -1,7 +1,7 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
-import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
@@ -11,6 +11,7 @@ import { getSettings } from "../settings";
 import { AGENT_INFO, agentName, otherAgent, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
+import { okFullAuto } from "../fullAuto";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
 export function matchFiles(files: string[], q: string, max = 8): string[] {
@@ -73,13 +74,16 @@ type Row =
   | { type: "text" | "thinking" | "error" | "note"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { type: "tool"; name: string; input: string; output?: string; is_error?: boolean; pending: boolean }
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> }
-  | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" };
+  | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" }
+  | { type: "blocked"; text: string; files: string[] }
+  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] };
 
 /** Pair each tool call with its result so one row shows both. */
 function toRows(events: ChatEvent[]): Row[] {
   const rows: Row[] = [];
   const toolIdx = new Map<string, number>();
   const approvalIdx = new Map<string, number>();
+  const guardIdx = new Map<string, number>();
   for (const ev of events) {
     switch (ev.kind) {
       case "tool":
@@ -112,6 +116,21 @@ function toRows(events: ChatEvent[]): Row[] {
       case "rewind":
         rows.push({ type: "rewind", text: ev.text, undo: ev.undo });
         break;
+      case "blocked":
+        rows.push({ type: "blocked", text: ev.text, files: ev.files });
+        break;
+      case "guard":
+        guardIdx.set(ev.checkpoint ?? "", rows.length);
+        rows.push({ type: "guard", files: ev.files, checkpoint: ev.checkpoint, ignored: ev.ignored, level: ev.level });
+        break;
+      case "guard_restored": {
+        const i = guardIdx.get(ev.checkpoint);
+        if (i !== undefined) {
+          const r = rows[i] as Extract<Row, { type: "guard" }>;
+          rows[i] = { ...r, restored: [...(r.restored ?? []), ...ev.files] };
+        }
+        break;
+      }
       default:
         rows.push("fix" in ev && ev.fix ? { type: ev.kind, text: ev.text, fix: ev.fix, agent: ev.agent } : { type: ev.kind, text: ev.text });
     }
@@ -138,6 +157,8 @@ type ChatCtxValue = {
   fanOut: (plan: string, steps: string[]) => void;
   /** Put `file:line` findings from a reply into the Changes tab as review comments. */
   addFindings: (f: Finding[]) => void;
+  /** Put back the protected files a turn changed, after the confirm sheet. */
+  putBack: (checkpoint: string, ignored: string | null, files: GuardHit[]) => Promise<void>;
 };
 
 export type Finding = { file: string; line: number; text: string };
@@ -150,7 +171,45 @@ export function parseFindings(text: string): Finding[] {
   }
   return out;
 }
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {} });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {} });
+
+const CHANGE: Record<GuardHit["change"], string> = { added: "new", changed: "changed", deleted: "deleted" };
+
+/** A turn changed protected files: say which, and offer to put just those back. */
+function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
+  const { putBack, disabled } = useContext(RewindCtx);
+  const [busy, setBusy] = useState(false);
+  const left = r.files.filter((f) => !r.restored?.includes(f.path));
+  const names = r.files.map((f) => f.path);
+  const title = names.length === 1 ? `Changed a protected file: ${names[0]}` : `Changed ${names.length} protected files`;
+  return (
+    <div className={`guard-card ${left.length ? "" : "settled"}`}>
+      <div className="fix-head"><ShieldAlert size={15} /><b>{title}</b></div>
+      <ul className="guard-files">
+        {r.files.map((f) => (
+          <li key={f.path}>
+            <code>{f.path}</code>
+            <span className="muted">{r.restored?.includes(f.path) ? "put back" : CHANGE[f.change]}</span>
+          </li>
+        ))}
+      </ul>
+      {left.length > 0 ? (
+        <div className="row">
+          <span className="muted">{r.level === "blocked" ? "It got past the block, likely through a script." : r.level === "asks" ? "It changed this without asking first, so nekotrail caught it after the turn." : "This agent can't be blocked up front, so nekotrail checks after each turn."}</span>
+          <span className="spacer" />
+          {r.checkpoint && (
+            <button className="accent" disabled={disabled || busy} title={disabled ? "Stop the agent first" : "Restore only these files from before the turn"}
+              onClick={async () => { setBusy(true); try { await putBack(r.checkpoint!, r.ignored, left); } finally { setBusy(false); } }}>
+              <Undo2 size={14} />Put {left.length === 1 ? "it" : "them"} back
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="muted">Put back. The agent's copies are in the Trash.</p>
+      )}
+    </div>
+  );
+}
 
 function FindingsButton({ text }: { text: string }) {
   const { addFindings } = useContext(RewindCtx);
@@ -324,6 +383,10 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       );
     case "note":
       return <div className="msg note"><History size={14} />{r.text}</div>;
+    case "blocked":
+      return <div className="msg note blocked"><ShieldX size={14} /><span>{r.text} <code>{r.files.join(", ")}</code> is protected in this repo.</span></div>;
+    case "guard":
+      return <GuardCard r={r} />;
     case "rewind":
       return (
         <div className="msg note rewound">
@@ -531,6 +594,25 @@ export function Chat({
         .catch((e) => setError(errText(e)));
     },
     approvePlan: () => live.current.approvePlan(),
+    putBack: async (checkpoint: string, ignored: string | null, files: GuardHit[]) => {
+      const { active } = live.current;
+      if (!active) return;
+      setError(null);
+      const gone = files.filter((f) => f.change === "added").length;
+      const back = files.length - gone;
+      const list = files.map((f) => f.path).join(", ");
+      const ok = await ask({
+        title: files.length === 1 ? `Put ${files[0].path} back?` : `Put ${files.length} protected files back?`,
+        body: [
+          back ? `${back === 1 ? "It goes" : `${back} go`} back to how ${back === 1 ? "it was" : "they were"} before this turn.` : "",
+          gone ? `${gone === 1 ? "A file" : `${gone} files`} the agent created ${gone === 1 ? "goes" : "go"} to the Trash.` : "",
+          `Only ${list} ${files.length === 1 ? "is" : "are"} touched. The agent's copies go to the Trash, so you can get them back.`,
+        ].filter(Boolean).join("\n"),
+        ok: "Put back",
+      });
+      if (!ok) return;
+      try { await api.putBackProtected(active, checkpoint, ignored, files.map((f) => f.path)); } catch (e) { setError(errText(e)); }
+    },
     expandAll,
     query: (search ?? "").trim().toLowerCase(),
     disabled: anyBusy,
@@ -1094,7 +1176,7 @@ export function Chat({
                 />
                 <select
                   value={session.permission_mode}
-                  onChange={(e) => update({ permission_mode: e.target.value as PermissionMode })}
+                  onChange={async (e) => { const m = e.target.value as PermissionMode; if (await okFullAuto(m)) await update({ permission_mode: m }); }}
                   aria-label="Permissions"
                   title="What the agent may do without asking"
                 >

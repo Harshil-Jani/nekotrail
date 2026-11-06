@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, ShieldCheck, ShieldAlert, X } from "lucide-react";
 import { api, errText, type Repo, type RepoPrefs } from "../api";
+import { AGENT_INFO, GUARD_TAG, guardGroups } from "../agents";
 
-type Section = "scripts" | "agent" | "files";
+type Section = "scripts" | "agent" | "files" | "guard";
 
 /** Everything nekotrail knows about one repo: scripts, instructions for the agent, files and env. */
 export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => void }) {
   const [section, setSection] = useState<Section>("scripts");
   const [s, setS] = useState({ setup: repo.setup_script ?? "", run: repo.run_script ?? "", archive: repo.archive_script ?? "" });
   const [p, setP] = useState<RepoPrefs>(() => ({
-    ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [], merge_method: "", actions: [] },
+    ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [], merge_method: "", actions: [], protected: [] },
     ...(repo.prefs as Partial<RepoPrefs> | undefined),
   }));
   const [globs, setGlobs] = useState(p.copy_files.join("\n"));
+  const [guard, setGuard] = useState((p.protected ?? []).join("\n"));
+  const [fromFile, setFromFile] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.repoGuard(repo.id).then((g) => setFromFile(g.file)).catch(() => {});
+  }, [repo.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -28,6 +35,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
       await api.setRepoPrefs(repo.id, {
         ...p,
         copy_files: globs.split("\n").map((g) => g.trim()).filter(Boolean),
+        protected: guard.split("\n").map((g) => g.trim()).filter(Boolean),
         env: p.env.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v]),
         actions: (p.actions ?? []).filter(([n, c]) => n.trim() && c.trim()).map(([n, c]) => [n.trim(), c.trim()]),
       });
@@ -55,7 +63,7 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
       <div className="modal repo-settings" role="dialog" aria-modal="true" aria-label={`${repo.name} settings`} onClick={(e) => e.stopPropagation()}>
         <h2>{repo.name}</h2>
         <nav className="seg" role="tablist">
-          {([["scripts", "Scripts"], ["agent", "Agent"], ["files", "Files and env"]] as [Section, string][]).map(([id, label]) => (
+          {([["scripts", "Scripts"], ["agent", "Agent"], ["files", "Files and env"], ["guard", "Protected files"]] as [Section, string][]).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={section === id} className={section === id ? "on" : ""} onClick={() => setSection(id)}>{label}</button>
           ))}
         </nav>
@@ -117,6 +125,39 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
                 </div>
               ))}
               <button className="quiet add-env" onClick={() => setP({ ...p, env: [...p.env, ["", ""]] })}><Plus size={14} />Add variable</button>
+            </div>
+          </>
+        )}
+
+        {section === "guard" && (
+          <>
+            <label className="field">
+              <span>Files agents should leave alone</span>
+              <textarea rows={4} value={guard} placeholder={".env*\nmigrations/**\ninfra/**"} onChange={(e) => setGuard(e.target.value)} spellCheck={false} />
+              <small className="muted">
+                One per line, like <code>.gitignore</code>: <code>.env*</code> matches in any folder, <code>migrations/**</code> only at the top, <code>!</code> makes an exception.
+                If a turn changes one anyway, the chat says so, the workspace moves to Needs you, and one click puts it back.
+              </small>
+            </label>
+            {fromFile.length > 0 && (
+              <div className="field">
+                <span>Also protected by this repo's <code>nekotrail.json</code></span>
+                <div className="guard-file">{fromFile.map((g) => <code key={g}>{g}</code>)}</div>
+                <small className="muted">The repo file can add to your list but can't remove anything from it.</small>
+              </div>
+            )}
+            <div className="field">
+              <span>How each agent is held to it</span>
+              <ul className="guard-levels">
+                {guardGroups().map(({ agents, level, how }) => (
+                  <li key={agents.join()}>
+                    {level === "blocked" ? <ShieldCheck size={15} className="ok" /> : <ShieldAlert size={15} className="warn" />}
+                    <b>{agents.map((a) => AGENT_INFO[a].name).join(", ")}</b>
+                    <span className="guard-tag">{GUARD_TAG[level]}</span>
+                    <span className="muted">{how}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </>
         )}

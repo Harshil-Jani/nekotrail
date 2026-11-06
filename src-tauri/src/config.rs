@@ -3,8 +3,12 @@
 //! user approved their exact text for that repo (see `file_commands`).
 //!
 //! ```json
-//! { "scripts": { "setup": "bun install", "run": "bun dev", "archive": "docker compose down" } }
+//! { "scripts": { "setup": "bun install", "run": "bun dev", "archive": "docker compose down" },
+//!   "protected": [".env*", "migrations/**", "infra/**"] }
 //! ```
+//!
+//! `protected` lists paths agents should leave alone (see `guard`). It only ever adds to the
+//! protections set in the app, so it needs no approval: it can't run anything or remove one.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -20,6 +24,32 @@ pub struct Scripts {
 struct File {
     #[serde(default)]
     scripts: Scripts,
+}
+
+#[derive(Deserialize)]
+struct Protected {
+    #[serde(default)]
+    protected: Vec<String>,
+}
+
+/// The `protected` globs in a folder's `nekotrail.json`. Empty when there is no file, it doesn't
+/// parse, or it has no list. Blank lines and duplicates are dropped.
+pub fn protected_from_file(dir: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(dir.join("nekotrail.json")) else { return vec![] };
+    let list = serde_json::from_str::<Protected>(&text).map(|p| p.protected).unwrap_or_default();
+    clean_globs(list)
+}
+
+/// Trimmed, non-empty, first copy of each.
+pub fn clean_globs(list: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for g in list {
+        let g = g.trim().to_string();
+        if !g.is_empty() && !out.contains(&g) {
+            out.push(g);
+        }
+    }
+    out
 }
 
 pub fn from_file(dir: &Path) -> Option<Scripts> {
@@ -111,6 +141,18 @@ mod tests {
         let only = |run: bool| if run { Scripts { run: Some("x".into()), ..Default::default() } } else { Scripts { archive: Some("x".into()), ..Default::default() } };
         assert_ne!(fingerprint(&only(true)), fingerprint(&only(false)));
         assert_eq!(trust_key("r1", "ff"), "trusted_scripts:r1:ff");
+    }
+
+    #[test]
+    fn protected_list_from_the_repo_file() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(protected_from_file(d.path()).is_empty());
+        std::fs::write(d.path().join("nekotrail.json"), r#"{"scripts":{"setup":"x"},"protected":[" .env* ","","migrations/**",".env*"]}"#).unwrap();
+        assert_eq!(protected_from_file(d.path()), [".env*", "migrations/**"]);
+        // The scripts still read the same file.
+        assert_eq!(from_file(d.path()).unwrap().setup.as_deref(), Some("x"));
+        std::fs::write(d.path().join("nekotrail.json"), r#"{"protected":"not a list"}"#).unwrap();
+        assert!(protected_from_file(d.path()).is_empty());
     }
 
     #[test]

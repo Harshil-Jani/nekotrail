@@ -4,6 +4,7 @@ import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom
 import { api, type AppSettings } from "../api";
 import { AGENTS, AGENT_INFO } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
+import { okFullAuto } from "../fullAuto";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
@@ -270,7 +271,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
                   <option value="xhigh">Extra high</option>
                   {a === "claude" && <option value="max">Max</option>}
                 </select>}
-                <select value={backend?.[`${a}_mode`] || "acceptEdits"} onChange={(e) => setRaw(`${a}_mode`, e.target.value)} aria-label={`${a} default permissions`}>
+                <select value={backend?.[`${a}_mode`] || "acceptEdits"} onChange={async (e) => { const m = e.target.value; if (await okFullAuto(m)) setRaw(`${a}_mode`, m); }} aria-label={`${a} default permissions`}>
                   <option value="plan">Plan</option>
                   <option value="acceptEdits">Auto-accept edits</option>
                   <option value="bypassPermissions">Full auto</option>

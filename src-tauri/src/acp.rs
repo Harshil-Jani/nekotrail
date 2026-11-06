@@ -19,6 +19,12 @@
 //! edit requests inside the worktree itself and shows a card for the rest; an agent that wants
 //! `authenticate` before `session/new` gets it once, only after it says "auth required".
 //!
+//! Protected paths (see `guard`) hold for every agent here: any permission request to change a
+//! protected file is refused, with the reason in the chat, before Full auto or "Auto-accept edits"
+//! could allow it. That only works when the agent asks. An agent that edits without asking (its
+//! own default in most modes) is caught by the check after the turn instead. OpenCode can be told
+//! to ask before every edit (`edit_ask_env`), so for it the refusal holds in every mode.
+//!
 //! Adding an ACP agent is one `AcpAgent` entry (command, args, name, repo config) in
 //! `agent::ALL`, plus its line in `src/agents.ts` and `models.json`.
 
@@ -54,6 +60,11 @@ pub struct AcpAgent {
     pub config_off_env: &'static [(&'static str, &'static str)],
     /// Environment for "Ask before changes": the agent asks before edits, commands and fetches.
     pub ask_env: &'static [(&'static str, &'static str)],
+    /// Environment that makes the agent ask before every edit, used in the other modes when the
+    /// workspace has protected paths: nekotrail answers each request itself, refusing edits to a
+    /// protected path and allowing the rest (see `guard`). Empty: protected paths are refused only
+    /// when the agent asks on its own, and checked after the turn.
+    pub edit_ask_env: &'static [(&'static str, &'static str)],
     /// A session config option set for "Ask before changes" (`configId`, `value`), when the agent
     /// offers one that makes it ask (Copilot's `allow_all` off). A turn whose agent doesn't offer
     /// it stops instead of running without asking.
@@ -92,6 +103,7 @@ impl AcpAgent {
         login: "",
         config_off_env: &[],
         ask_env: &[],
+        edit_ask_env: &[],
         ask_option: None,
         auth_method: None,
         probe: &[],
@@ -115,6 +127,7 @@ pub static OPENCODE: AcpAgent = AcpAgent {
     login: "opencode auth login",
     config_off_env: &[("OPENCODE_DISABLE_PROJECT_CONFIG", "1")],
     ask_env: &[("OPENCODE_PERMISSION", r#"{"edit":"ask","bash":"ask","webfetch":"ask"}"#)],
+    edit_ask_env: &[("OPENCODE_PERMISSION", r#"{"edit":"ask"}"#)],
     repo_config: RepoConfig::Check(crate::agentcfg::check_opencode),
     ..AcpAgent::BASE
 };
@@ -301,8 +314,14 @@ impl Agent for AcpAgent {
         }
         if spec.permission_mode == "ask" {
             c.envs(self.ask_env.iter().copied());
+        } else if guards_edits(self, spec) {
+            c.envs(self.edit_ask_env.iter().copied());
         }
         c
+    }
+    fn guard_level(&self) -> &'static str {
+        // "asks": refused whenever the agent asks, which nekotrail can't make it do in every mode.
+        if self.edit_ask_env.is_empty() { "asks" } else { "blocked" }
     }
     fn parser(&self, spec: &TurnSpec, ok: &Checked) -> Box<dyn Parser> {
         Box::new(Client::new(self, spec, ok))
@@ -339,6 +358,12 @@ impl Agent for AcpAgent {
         // so a process that ends without an answer crashed.
         false
     }
+}
+
+/// Outside "Ask before changes" and Plan, with protected paths, for an agent that can be told to
+/// ask before each edit: it asks, and nekotrail answers for the user (`Client::on_request`).
+fn guards_edits(agent: &AcpAgent, spec: &TurnSpec) -> bool {
+    !agent.edit_ask_env.is_empty() && !matches!(spec.permission_mode, "ask" | "plan") && crate::agent::active_guard(spec).is_some()
 }
 
 /// What we are waiting for an answer to.
@@ -408,6 +433,11 @@ pub struct Client {
     auto_allow: bool,
     /// "Auto-accept edits": requests to read or edit files are allowed without asking.
     auto_edits: bool,
+    /// Protected paths: requests to change them are refused without asking, in every mode.
+    guard: Option<crate::guard::Rules>,
+    /// The agent was told to ask before every edit only for the guard (`guards_edits`), so edits
+    /// to anything else are allowed without asking, as they would have been.
+    guard_edits: bool,
     /// "Ask before changes", and the config option that makes this agent ask.
     ask: Option<(&'static str, &'static str)>,
     /// "Ask before changes" for an agent with no way to promise it.
@@ -462,6 +492,8 @@ impl Client {
             plan: spec.permission_mode == "plan",
             auto_allow: spec.permission_mode == "bypassPermissions",
             auto_edits: spec.permission_mode == "acceptEdits",
+            guard: crate::agent::active_guard(spec).cloned(),
+            guard_edits: guards_edits(agent, spec),
             ask: agent.ask_option.filter(|_| spec.permission_mode == "ask"),
             ask_missing: spec.permission_mode == "ask" && !agent.asks(),
             auth_method: agent.auth_method,
@@ -772,6 +804,26 @@ impl Client {
         if self.cancelled {
             return self.reply(id, json!({"outcome": {"outcome": "cancelled"}}));
         }
+        // First, before Full auto or "Auto-accept edits" could allow it.
+        let write = self.tools.get(&tid).filter(|t| self.is_write(t)).map(|t| self.write_paths(t));
+        if let Some(paths) = write {
+            let hit: Vec<String> = match &self.guard {
+                Some(g) => paths.into_iter().filter(|p| g.protects(p)).collect(),
+                None => vec![],
+            };
+            if !hit.is_empty() {
+                ev.push(json!({"kind": "blocked", "files": hit, "text": format!("{} tried to change a protected file, so nekotrail said no.", self.name)}));
+                let outcome = match pick(&options, &["reject_once", "reject_always"]) {
+                    Some(o) => json!({"outcome": "selected", "optionId": o}),
+                    None => json!({"outcome": "cancelled"}),
+                };
+                return self.reply(id, json!({"outcome": outcome}));
+            }
+            if self.guard_edits
+                && let Some(o) = pick(&options, &["allow_once", "allow_always"]) {
+                    return self.reply(id, json!({"outcome": {"outcome": "selected", "optionId": o}}));
+                }
+        }
         if self.auto_allow
             && let Some(o) = pick(&options, &["allow_once", "allow_always"]) {
                 return self.reply(id, json!({"outcome": {"outcome": "selected", "optionId": o}}));
@@ -852,6 +904,54 @@ impl Client {
                 // A relative path, or one with `..` in it, could point anywhere.
                 !p.split('/').any(|c| c == "..") && [&self.cwd_real, &self.cwd].iter().any(|root| p.strip_prefix(root.as_str()).is_some_and(|r| r.starts_with('/')))
             })
+    }
+
+    /// A call that changes files: by its kind, or by the name the chat gives it.
+    fn is_write(&self, t: &Tool) -> bool {
+        matches!(t.kind.as_str(), "edit" | "delete" | "move") || matches!(self.view(t).0.as_str(), "Write" | "Edit" | "Delete" | "Move")
+    }
+
+    /// Every file a writing call names, relative to the worktree: its input, its locations, the
+    /// diffs it carries, and the files in an `apply_patch` body. Paths outside the worktree are
+    /// left out (nothing there is protected).
+    fn write_paths(&self, t: &Tool) -> Vec<String> {
+        let mut raw: Vec<String> = vec![];
+        for k in ["filePath", "filepath", "file_path", "path", "newPath", "new_path", "destination"] {
+            if let Some(p) = t.input[k].as_str() {
+                raw.push(p.to_string());
+            }
+        }
+        for l in t.locations.as_array().into_iter().flatten() {
+            if let Some(p) = l["path"].as_str() {
+                raw.push(p.to_string());
+            }
+        }
+        for c in t.content.as_array().into_iter().flatten() {
+            if let Some(p) = c["path"].as_str() {
+                raw.push(p.to_string());
+            }
+        }
+        for k in ["patchText", "patch", "input"] {
+            for line in t.input[k].as_str().unwrap_or("").lines() {
+                for head in ["*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "] {
+                    if let Some(p) = line.strip_prefix(head) {
+                        raw.push(p.trim().to_string());
+                    }
+                }
+            }
+        }
+        let mut out: Vec<String> = vec![];
+        for p in raw {
+            let rel = self.short(&p);
+            let rel = rel.trim_start_matches("./").to_string();
+            if rel.is_empty() || rel == "." || rel.starts_with('/') || rel.split('/').any(|s| s == "..") {
+                continue;
+            }
+            if !out.contains(&rel) {
+                out.push(rel);
+            }
+        }
+        out
     }
 
     /// A path inside the worktree, relative to it.
@@ -1093,7 +1193,7 @@ mod tests {
     static FAKE: AcpAgent = AcpAgent { id: "fake", name: "Fake", bin: "fake-acp", login: "fake login", ask_env: &[("FAKE_ASK", "1")], ..AcpAgent::BASE };
 
     fn spec<'a>(cwd: &'a Path, mode: &'a str, session: Option<&'a str>, model: Option<&'a str>) -> TurnSpec<'a> {
-        TurnSpec { fork: false, agent: "fake", prompt: "hi", agent_session_id: session, model, permission_mode: mode, cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true }
+        TurnSpec { fork: false, agent: "fake", prompt: "hi", agent_session_id: session, model, permission_mode: mode, cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true, guard: None }
     }
 
     fn client(cwd: &Path, mode: &str, session: Option<&str>, model: Option<&str>) -> Client {
@@ -1365,7 +1465,7 @@ mod tests {
         assert!(!a.stopped_by_user(None, ""), "Stop is reported by the client, so this is a crash");
         let cwd = Path::new("/tmp");
         let env = [("OPENCODE_DISABLE_PROJECT_CONFIG".to_string(), "0".to_string()), ("FOO".to_string(), "1".to_string())];
-        let mk = |mode, project_config| TurnSpec { fork: false, agent: "opencode", prompt: "-rf", agent_session_id: Some("--yolo"), model: Some("a/b"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config };
+        let mk = |mode, project_config| TurnSpec { fork: false, agent: "opencode", prompt: "-rf", agent_session_id: Some("--yolo"), model: Some("a/b"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config, guard: None };
         let c = crate::agent::command(&mk("ask", false));
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(args, ["acp"], "the prompt, model and session go over the protocol, never argv");
@@ -1518,6 +1618,100 @@ mod tests {
     }
 
     #[test]
+    fn protected_edits_are_refused_for_every_acp_agent() {
+        let g = crate::guard::Rules::new(&[".env*".into(), "migrations/**".into()], &[]);
+        let opts = json!([{"optionId": "once", "kind": "allow_once", "name": "Allow"}, {"optionId": "always", "kind": "allow_always", "name": "Always"}, {"optionId": "no", "kind": "reject_once", "name": "Reject"}]);
+        let req = |id: u64, tool: Value| json!({"jsonrpc": "2.0", "id": id, "method": "session/request_permission", "params": {"sessionId": "s1", "toolCall": tool, "options": opts}}).to_string();
+        let init = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{}}}"#;
+        let agents: Vec<&AcpAgent> = std::iter::once(&OPENCODE).chain(MORE.iter().copied()).collect();
+        assert_eq!(agents.len(), 13);
+        for agent in agents {
+            for mode in ["acceptEdits", "bypassPermissions", "default", "ask"] {
+                let s = TurnSpec { guard: Some(&g), ..spec(Path::new("/w/ws"), mode, None, None) };
+                let mut c = Client::new(agent, &s, &Checked { model: None, effort: None, session: None });
+                c.line(init);
+                sent(&mut c);
+                // In the worktree with a location, so "Auto-accept edits" and Full auto would allow
+                // it; by absolute path, through a diff, or inside an apply_patch body.
+                for (i, tool) in [
+                    json!({"toolCallId": "a", "title": "edit", "kind": "edit", "rawInput": {"filePath": "/w/ws/.env"}, "locations": [{"path": "/w/ws/.env"}]}),
+                    json!({"toolCallId": "b", "title": "write", "kind": "edit", "content": [{"type": "diff", "path": "/w/ws/migrations/001.sql", "newText": "x"}], "locations": [{"path": "/w/ws/migrations/001.sql"}]}),
+                    json!({"toolCallId": "c", "title": "patch", "kind": "edit", "rawInput": {"patchText": "*** Begin Patch\n*** Update File: src/a.ts\n*** Add File: apps/web/.env.local\n*** End Patch"}}),
+                    json!({"toolCallId": "d", "title": "rm", "kind": "delete", "locations": [{"path": "/w/ws/migrations/002.sql"}]}),
+                ].into_iter().enumerate() {
+                    let ev = c.line(&req(i as u64, tool));
+                    assert_eq!(kinds(&ev), ["tool", "blocked"], "{} {mode} {i}", agent.id);
+                    assert_eq!(sent(&mut c)[0]["result"]["outcome"]["optionId"], "no", "{} {mode} {i}", agent.id);
+                }
+                // Anything else is answered exactly as without protected paths.
+                let ev = c.line(&req(9, json!({"toolCallId": "e", "title": "edit", "kind": "edit", "rawInput": {"filePath": "/w/ws/src/a.ts"}, "locations": [{"path": "/w/ws/src/a.ts"}]})));
+                let asked = kinds(&ev).contains(&"approval");
+                let auto = matches!(mode, "acceptEdits" | "bypassPermissions") || (agent.id == "opencode" && mode == "default");
+                assert_eq!(asked, !auto, "{} {mode}", agent.id);
+                if auto {
+                    assert_eq!(sent(&mut c)[0]["result"]["outcome"]["optionId"], "once", "{} {mode}", agent.id);
+                }
+                // Reading a protected file is not a change.
+                let ev = c.line(&req(10, json!({"toolCallId": "f", "title": "read", "kind": "read", "rawInput": {"filePath": "/w/ws/.env"}, "locations": [{"path": "/w/ws/.env"}]})));
+                assert!(!kinds(&ev).contains(&"blocked"), "{} {mode}", agent.id);
+            }
+            // How it holds, for Repo settings: OpenCode can be made to ask in every mode.
+            assert_eq!(agent.guard_level(), if agent.id == "opencode" { "blocked" } else { "asks" }, "{}", agent.id);
+        }
+        // The env that makes OpenCode ask before edits: only with protected paths, outside ask and plan.
+        let env_of = |mode: &str, guard: Option<&crate::guard::Rules>| {
+            let s = TurnSpec { agent: "opencode", guard, ..spec(Path::new("/tmp"), mode, None, None) };
+            crate::agent::command(&s).get_envs().find(|(k, _)| *k == "OPENCODE_PERMISSION").and_then(|(_, v)| v.map(|v| v.to_string_lossy().to_string()))
+        };
+        assert_eq!(env_of("acceptEdits", Some(&g)).as_deref(), Some(r#"{"edit":"ask"}"#));
+        assert_eq!(env_of("bypassPermissions", Some(&g)).as_deref(), Some(r#"{"edit":"ask"}"#));
+        assert!(env_of("acceptEdits", None).is_none());
+        assert!(env_of("plan", Some(&g)).is_none());
+        assert!(env_of("ask", Some(&g)).unwrap().contains("\"bash\":\"ask\""));
+        // Without protected paths nothing changes: Full auto allows every edit.
+        let mut c = client(Path::new("/w/ws"), "bypassPermissions", None, None);
+        sent(&mut c);
+        let ev = c.line(&req(1, json!({"toolCallId": "a", "kind": "edit", "rawInput": {"filePath": "/w/ws/.env"}})));
+        assert_eq!(kinds(&ev), ["tool"]);
+    }
+
+    /// The real OpenCode in Auto-accept with protected paths: its edit to `.env` is refused by
+    /// nekotrail, its other edit goes through without asking. Needs an OpenCode sign-in, so it only
+    /// runs when asked: `NEKOTRAIL_REAL_OPENCODE=$(which opencode) cargo test real_opencode_guard -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_opencode_guard() {
+        let bin = std::env::var("NEKOTRAIL_REAL_OPENCODE").expect("set NEKOTRAIL_REAL_OPENCODE to the opencode binary");
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join(".env"), "TOKEN=old\n").unwrap();
+        let g = crate::guard::Rules::new(&[".env*".into()], &[]);
+        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "acceptEdits", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: Some(&g) };
+        let built = crate::agent::command(&spec);
+        let mut cmd = Command::new(&bin);
+        cmd.args(built.get_args());
+        for (k, v) in built.get_envs() {
+            if let Some(v) = v {
+                cmd.env(k, v);
+            }
+        }
+        let mut asked = 0;
+        let r = drive_command(cmd, &OPENCODE, d.path(), "acceptEdits", "Use your write tool to set .env to TOKEN=new, then use your write tool to create b.txt containing bye. If one fails, carry on with the other. Then reply with just DONE.", Some(&g), |ev, _| {
+            if ev["kind"] == "approval" {
+                asked += 1;
+            }
+            vec![]
+        });
+        for e in &r.events {
+            eprintln!("{e}");
+        }
+        eprintln!("stderr: {}", r.stderr.lines().take(5).collect::<Vec<_>>().join("\n"));
+        assert!(r.events.iter().any(|e| e["kind"] == "blocked" && e["files"][0] == ".env"), "the .env edit was refused");
+        assert_eq!(std::fs::read_to_string(d.path().join(".env")).unwrap(), "TOKEN=old\n");
+        assert_eq!(std::fs::read_to_string(d.path().join("b.txt")).unwrap().trim(), "bye");
+        assert_eq!(asked, 0, "nothing waited for the user");
+    }
+
+    #[test]
     fn every_acp_entry_builds_its_command() {
         let cwd = Path::new("/tmp");
         let want: [(&str, &str, &[&str]); 12] = [
@@ -1544,7 +1738,7 @@ mod tests {
             assert!(matches!(entry.repo_config, RepoConfig::Files(f) if !f.is_empty()), "{id} reads repo config conservatively");
             for mode in ["plan", "ask", "acceptEdits", "bypassPermissions"] {
                 let env = [("FOO".to_string(), "1".to_string())];
-                let s = TurnSpec { fork: false, agent: id, prompt: "--yolo", agent_session_id: Some("--resume"), model: Some("x/y"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config: false };
+                let s = TurnSpec { fork: false, agent: id, prompt: "--yolo", agent_session_id: Some("--resume"), model: Some("x/y"), permission_mode: mode, cwd, effort: Some("high"), instructions: None, env: &env, dirs: &[], project_config: false, guard: None };
                 let c = crate::agent::command(&s);
                 assert_eq!(c.get_program(), bin);
                 let got: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
@@ -1681,11 +1875,11 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let mut cmd = Command::new(std::env::current_exe().unwrap());
         cmd.args(["--exact", "acp::tests::fake_acp_agent", "--nocapture", "--test-threads=1", "-q"]).env(FAKE_ENV, scenario);
-        drive_command(cmd, agent, d.path(), mode, "hello", react)
+        drive_command(cmd, agent, d.path(), mode, "hello", None, react)
     }
 
-    fn drive_command(mut cmd: Command, agent: &AcpAgent, cwd: &Path, mode: &str, prompt: &str, mut react: impl FnMut(&Value, &mut dyn Parser) -> Vec<String>) -> Run {
-        let s = TurnSpec { fork: false, agent: agent.id, prompt, agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
+    fn drive_command(mut cmd: Command, agent: &AcpAgent, cwd: &Path, mode: &str, prompt: &str, guard: Option<&crate::guard::Rules>, mut react: impl FnMut(&Value, &mut dyn Parser) -> Vec<String>) -> Run {
+        let s = TurnSpec { fork: false, agent: agent.id, prompt, agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard };
         let mut parser = agent.parser(&s, &Checked { model: None, effort: None, session: None });
         let mut child = cmd
             .current_dir(cwd)
@@ -1799,7 +1993,7 @@ mod tests {
         std::fs::write(d.path().join("a.txt"), "hi\n").unwrap();
         // Untrusted repo config must stay off: this server would print a marker if it started.
         std::fs::write(d.path().join("opencode.json"), r#"{"mcp":{"evil":{"type":"local","command":["sh","-c","touch pwned"]}}}"#).unwrap();
-        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "ask", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false };
+        let spec = TurnSpec { fork: false, agent: "opencode", prompt: "", agent_session_id: None, model: None, permission_mode: "ask", cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: None };
         let built = crate::agent::command(&spec);
         let mut cmd = Command::new(&bin);
         cmd.args(built.get_args());
@@ -1809,7 +2003,7 @@ mod tests {
             }
         }
         let mut asked = vec![];
-        let r = drive_command(cmd, &OPENCODE, d.path(), "ask", "Run the shell command `cat a.txt`, then create b.txt containing bye with your write tool, then reply with just DONE.", |ev, p| {
+        let r = drive_command(cmd, &OPENCODE, d.path(), "ask", "Run the shell command `cat a.txt`, then create b.txt containing bye with your write tool, then reply with just DONE.", None, |ev, p| {
             if ev["kind"] != "approval" {
                 return vec![];
             }
@@ -1840,12 +2034,12 @@ mod tests {
         let agent = MORE.iter().find(|a| a.id == id).expect("an ACP agent id");
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("a.txt"), "hi\n").unwrap();
-        let spec = TurnSpec { fork: false, agent: agent.id, prompt: "", agent_session_id: None, model: None, permission_mode: &mode, cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
+        let spec = TurnSpec { fork: false, agent: agent.id, prompt: "", agent_session_id: None, model: None, permission_mode: &mode, cwd: d.path(), effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard: None };
         let built = crate::agent::command(&spec);
         let mut cmd = Command::new(built.get_program());
         cmd.args(built.get_args());
         let mut asked = vec![];
-        let r = drive_command(cmd, agent, d.path(), &mode, "Run the shell command `cat a.txt`, then create a file b.txt containing the word bye, then reply with just DONE.", |ev, p| {
+        let r = drive_command(cmd, agent, d.path(), &mode, "Run the shell command `cat a.txt`, then create a file b.txt containing the word bye, then reply with just DONE.", None, |ev, p| {
             if ev["kind"] != "approval" {
                 return vec![];
             }

@@ -119,6 +119,7 @@ fn conductor_prefs(src: &Connection, repo_id: &str) -> crate::store::RepoPrefs {
         env: vec![],
         merge_method: String::new(),
         actions: vec![],
+        protected: vec![],
     }
 }
 
