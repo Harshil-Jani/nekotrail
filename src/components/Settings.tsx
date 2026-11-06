@@ -11,6 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
 import type { UpdatePhase } from "../useUpdater";
 import { PromptsPane } from "./PromptsPane";
+import { AwayAlerts } from "./AwayAlerts";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
@@ -246,6 +247,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
             </span>
           </label>
         </section>
+        <AwayAlerts />
         </>}
 
         {pane === "general" && <>

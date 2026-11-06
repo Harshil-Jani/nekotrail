@@ -564,9 +564,42 @@ const prFor = (id: string) => {
   return null;
 };
 
+// Away alerts (?settings=notifications): a working ntfy, a Slack webhook whose last try failed and a
+// Pushover still to set up. ?alerts=empty shows the pane before any destination. Nothing is sent.
+const alertsMode = new URLSearchParams(location.search).get("alerts");
+const alertNow = Math.floor(Date.now() / 1000);
+const alertEvents = ["needs_you", "checks_failed", "pr_merged", "queue_drained", "cap_reached", "runaway", "morning_summary"];
+let alertsState: any = {
+  config: {
+    destinations: alertsMode === "empty" ? [] : [
+      { id: "a1", service: "ntfy", name: "My phone", on: true, events: alertEvents, last_line: true, saved: true, hint: "ntfy.sh" },
+      { id: "a2", service: "slack", name: "#builds", on: true, events: ["checks_failed", "checks_green", "pr_merged"], last_line: false, saved: true, hint: "hooks.slack.com" },
+      { id: "a3", service: "pushover", name: "Pushover", on: true, events: alertEvents, last_line: false, saved: false, hint: "" },
+    ],
+    quiet: { on: alertsMode !== "empty", from: "22:00", to: "07:00" },
+    morning: "08:00",
+  },
+  status: alertsMode === "empty" ? {} : { a1: { last_ok: alertNow - 1260 }, a2: { last_error: "The service answered 404 Not Found: no_service", last_error_at: alertNow - 300 } },
+  held: {},
+  quiet_now: false,
+};
+const alertsReply = (next: any) => (alertsState = { ...alertsState, ...next });
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
+      case "alerts_view": return alertsState;
+      case "alerts_save": return alertsReply({ config: args.config });
+      case "alerts_add": {
+        const d = { id: `a${Date.now()}`, service: args.service, name: { ntfy: "ntfy", slack: "Slack", discord: "Discord", webhook: "Webhook", pushover: "Pushover" }[args.service as string], on: true, events: alertEvents, last_line: false, saved: false, hint: "" };
+        return alertsReply({ config: { ...alertsState.config, destinations: [...alertsState.config.destinations, d] } });
+      }
+      case "alerts_set_secret": {
+        const host = (() => { try { return new URL(args.secret.url).host; } catch { return "api.pushover.net"; } })();
+        return alertsReply({ config: { ...alertsState.config, destinations: alertsState.config.destinations.map((d: any) => d.id === args.id ? { ...d, saved: true, hint: host } : d) } });
+      }
+      case "alerts_remove": return alertsReply({ config: { ...alertsState.config, destinations: alertsState.config.destinations.filter((d: any) => d.id !== args.id) } });
+      case "alerts_test": return alertsReply({ status: { ...alertsState.status, [args.id]: { last_ok: Math.floor(Date.now() / 1000) } } });
       // Save dialogs answer with a path in Downloads; the saved text is kept on window for screenshots.
       case "plugin:dialog|save": return `/Users/sam/Downloads/${args.options?.defaultPath ?? "export"}`;
       case "export_save": (window as any).__exported = args.text ?? args.contents ?? args; return null;

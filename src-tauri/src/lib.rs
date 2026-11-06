@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod alerts;
 pub mod agent;
 pub mod agentcfg;
 pub mod budget;
@@ -21,6 +22,7 @@ pub mod pty;
 pub mod queue;
 pub mod queuerun;
 pub mod radar;
+pub mod redact;
 pub mod remote;
 pub mod rules;
 pub mod runaway;
@@ -1657,19 +1659,22 @@ fn pr_poll_loop(app: AppHandle) {
 
 /// Send a `pr` event for every workspace whose PR (or problem) changed since last time.
 fn pr_emit_changes(app: &AppHandle, st: &AppState, wss: &[Workspace]) {
-    let changed: Vec<(Workspace, Value)> = {
+    let changed: Vec<(Workspace, Value, Option<Value>)> = {
         let mut c = st.prs.lock().unwrap();
         let mut out = vec![];
         for w in wss {
             let Some(v) = pr_view(&c, w) else { continue };
             if c.sent.get(&w.id) != Some(&v) {
-                c.sent.insert(w.id.clone(), v.clone());
-                out.push((w.clone(), v));
+                let before = c.sent.insert(w.id.clone(), v.clone());
+                out.push((w.clone(), v, before));
             }
         }
         out
     };
-    for (w, v) in changed {
+    for (w, v, before) in changed {
+        if let Some((event, what)) = alerts::pr_alert(before.as_ref(), &v) {
+            alerts::fire(app, event, Some(&w.id), None, &what);
+        }
         let pr = &v["pr"];
         if pr["state"] == "MERGED" {
             let _ = st.db().set_merged(&w.id);
@@ -2600,6 +2605,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     if tries >= AUTOPILOT_TRIES {
         let _ = st.db().delete_setting(&key);
         say("gave_up", &format!("Still not green after {AUTOPILOT_TRIES} tries. Take a look."));
+        alerts::fire(app, alerts::Event::NeedsYou, Some(id), None, alerts::needs_text("gave_up"));
         queuerun::autopilot_ended(app, id, "gave_up", None);
         return;
     }
@@ -2614,6 +2620,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
             emit_event(app, &sid.id, &ev);
         }
         say("budget", &note);
+        alerts::fire(app, alerts::Event::CapReached, Some(id), None, "autopilot stopped at a spend cap");
         queuerun::autopilot_ended(app, id, "budget", Some(queue::Halt { note, evidence: vec![] }));
         return;
     }
@@ -3977,6 +3984,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
                         let _ = st.db().append_event(&id, &ev);
                         emit_event(&app, &id, &ev);
                         let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{tool}: {}", ev["input"].as_str().unwrap_or(""))}));
+                        alerts::fire(&app, alerts::Event::NeedsYou, Some(&workspace_id), Some(&id), alerts::needs_text("approval"));
                         // A queued task waiting for your OK frees its slot for the next one.
                         queuerun::poke(&app);
                         continue;
@@ -4005,6 +4013,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
                     let _ = st.db().append_event(&id, &ev);
                     emit_event(&app, &id, &ev);
                     let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{}: {}", ev["tool"].as_str().unwrap_or("tool"), ev["input"].as_str().unwrap_or(""))}));
+                    alerts::fire(&app, alerts::Event::NeedsYou, Some(&workspace_id), Some(&id), alerts::needs_text("approval"));
                     queuerun::poke(&app);
                     continue;
                 }
@@ -4148,6 +4157,15 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
             "session_id": id, "running": false, "workspace_id": workspace_id,
             "ok": ok, "title": title, "more_queued": next.is_some(), "needs": needs,
         }));
+        // Away alerts: what happened, never the chat's title (it is the prompt) or the command.
+        if next.is_none() {
+            match needs.as_deref() {
+                Some("loop") => alerts::fire(&app, alerts::Event::Runaway, Some(&workspace_id), Some(&id), "was stopped: it was going in circles"),
+                Some(n) => alerts::fire(&app, alerts::Event::NeedsYou, Some(&workspace_id), Some(&id), alerts::needs_text(n)),
+                None if ok && !user_stopped => alerts::fire(&app, alerts::Event::TurnFinished, Some(&workspace_id), Some(&id), "finished its turn"),
+                None => {}
+            }
+        }
         let more = next.is_some();
         if let Some(text) = next {
             let _ = start_turn(app.clone(), &st, id.clone(), text);
@@ -4305,6 +4323,7 @@ fn start_checks(app: &AppHandle, st: &AppState, ws_id: &str, names: Option<Vec<S
             let _ = st.db().set_unread(&ws_id, true);
             let title = format!("{} passed before and {} now", regressed.join(" and "), if regressed.len() == 1 { "fails" } else { "fail" });
             let _ = app.emit("needs", json!({"workspace_id": ws_id, "session_id": session, "needs": "checks", "title": title}));
+            alerts::fire(&app, alerts::Event::NeedsYou, Some(&ws_id), Some(&session), alerts::needs_text("checks"));
             let _ = app.emit("workspaces-changed", json!({}));
         }
     });
@@ -4680,6 +4699,7 @@ pub fn run() {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
             queuerun::start_loop(app.handle().clone());
+            alerts::start(app.handle().clone());
             remote::serve(app.handle().clone(), data);
             cli::refresh_script();
             use tauri_plugin_deep_link::DeepLinkExt;
@@ -4715,7 +4735,8 @@ pub fn run() {
             checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output,
             stage_status, stage_diff, stage_apply, stage_everything, head_commit, commit_staged, undo_commit, draft_commit_message, split_plan, split_commit,
             queuerun::queue_view, queuerun::queue_add, queuerun::queue_remove, queuerun::queue_move, queuerun::queue_retry, queuerun::queue_start_now,
-            queuerun::queue_set_paused, queuerun::queue_set_limits, queuerun::queue_clear_finished, queuerun::queue_summary, queuerun::queue_summary_seen
+            queuerun::queue_set_paused, queuerun::queue_set_limits, queuerun::queue_clear_finished, queuerun::queue_summary, queuerun::queue_summary_seen,
+            alerts::alerts_view, alerts::alerts_add, alerts::alerts_save, alerts::alerts_set_secret, alerts::alerts_remove, alerts::alerts_test
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");

@@ -2184,3 +2184,29 @@ body:has(.tour) .repo-head .repo-actions { opacity: 1; }
 .stop-evidence li { overflow-wrap: anywhere; }
 .stop-foot { font-size: 12px; padding-left: 22px; }
 .usage-under { margin: var(--s2) var(--s1) 0; }
+
+/* ---------- Settings, Notifications: away alerts. Each destination is a grouped card. ---------- */
+.away-alerts > .row { margin-bottom: var(--s2); }
+.away-alerts > .row h3 { margin: 0; }
+select.alert-add { min-width: 0; }
+.alert-dest { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); margin: var(--s1) 0 var(--s2); border-radius: var(--r-lg); background: var(--surface); }
+.alert-dest.off .alert-events, .alert-dest.off > .setting { opacity: 0.55; }
+.alert-dest-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+input.alert-dest-name { width: 150px; font-weight: 600; background: transparent; box-shadow: none; padding: 0 var(--s1); margin-left: calc(-1 * var(--s1)); }
+input.alert-dest-name:hover { background: var(--hover); }
+input.alert-dest-name:focus { background: var(--field); box-shadow: var(--ring); }
+.alert-dest-host { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.alert-dest-head button.icon { width: 24px; height: 24px; }
+.alert-secret { display: flex; flex-direction: column; gap: var(--s2); }
+.alert-field { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: var(--s3); font-size: 13px; }
+.alert-field input { width: 100%; min-width: 0; }
+.alert-events { display: grid; grid-template-columns: 1fr 1fr; gap: 6px var(--s4); font-size: 12.5px; }
+.alert-events label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.alert-events input { margin: 0; flex-shrink: 0; }
+.alert-dest > .setting { padding: 2px 0; font-size: 13px; }
+.setting-sub { display: block; font-size: 12px; margin-top: 1px; }
+.alert-dest-foot { display: flex; align-items: center; gap: var(--s2); min-height: 26px; }
+.alert-status { font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.alert-status.bad { color: var(--bad); }
+.alert-times input, .setting > input[type="time"] { width: 124px; }
+.setting.dim > span:first-child { color: var(--muted); }

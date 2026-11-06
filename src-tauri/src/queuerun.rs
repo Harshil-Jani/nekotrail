@@ -105,6 +105,7 @@ static SAID: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(Hash
 fn announce(app: &AppHandle, key: String, text: &str) {
     if SAID.lock().unwrap().insert(key) {
         let _ = app.emit("budget", json!({"text": text}));
+        crate::alerts::fire(app, crate::alerts::Event::CapReached, None, None, text);
     }
 }
 
@@ -119,6 +120,9 @@ pub fn tick(app: &AppHandle) {
     let caps = Caps::load(&st, &resuming(&st));
     let gate = |t: &queue::Task| caps.stop(t).map(|s| caps.text(&s));
     let starts = update_in(&st, |q| q.claim_with(&asking, now(), &gate));
+    // Away alerts: "the queue is done" once the last task ends.
+    let busy = st.queue.lock().unwrap().has_work() || !starts.is_empty();
+    crate::alerts::queue_tick(app, busy, |since| st.queue.lock().unwrap().summary_since(since).text());
     if caps.budgets.any() {
         let held: Vec<(String, Stop)> = st.queue.lock().unwrap().tasks.iter()
             .filter(|t| t.state == State::Queued)
