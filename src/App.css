@@ -1416,3 +1416,6 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .settings-foot .foot-dot { color: var(--faint); font-size: 12px; margin: 0 -2px; }
 .settings-foot .foot-sep { width: 0.5px; height: 12px; background: var(--line-strong); margin: 0 var(--s1); }
 .settings-foot button.link.sponsor { display: inline-flex; align-items: center; gap: 4px; }
+/* Agent menus: "Installed" and "Not installed" line up with the agent names (icon space + gap), as macOS section titles do. */
+.nw-more-menu .menu-label { padding-left: calc(var(--s2) + 13px + 6px); }
+.newchat-more .menu-label { padding-left: calc(var(--s2) + 13px + var(--s2)); }
