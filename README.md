@@ -185,7 +185,7 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 
 ## Status
 
-Early (0.12.1). Built and used daily on macOS. Feedback and PRs welcome.
+Early (0.13). Built and used daily on macOS. Feedback and PRs welcome.
 
 ## Sponsor
 
