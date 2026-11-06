@@ -1202,3 +1202,58 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .preview-shot::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--accent); pointer-events: none; }
 .preview-empty { padding: var(--s6); }
 .preview-empty p { margin: 0; }
+
+/* ---------- review comments: line ranges, drafts, the Review control ---------- */
+.ln.pick { cursor: pointer; }
+.ln.pick:hover { color: var(--accent-text); }
+.diff.dragging, .diff.dragging * { cursor: pointer; user-select: none; }
+/* Selected lines: an accent edge and a light accent wash over the add/remove tint. */
+.dl.sel, .sl.sel { background-image: linear-gradient(var(--accent-soft), var(--accent-soft)); box-shadow: inset 3px 0 0 var(--accent); }
+.dl.sel .ln, .sl.sel .ln { color: var(--accent-text); }
+.review-where { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.review-edit .row { display: flex; align-items: center; gap: var(--s2); }
+.review-keys { font-size: 11.5px; }
+.review-comment-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.review-text { line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Comments whose lines are gone (or not in this view) sit above the diff, with the code they quoted. */
+.review-loose { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) var(--s4) 0; }
+.file-diff .review-loose .review-comment { position: static; margin: 0; max-width: min(720px, calc(100cqw - 32px)); }
+.review-comment.loose { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.review-quote { margin: 4px 0; padding: 6px var(--s2); border-radius: var(--r); background: var(--bg); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow-x: auto; color: var(--muted); }
+.chip.outdated { background: var(--wait-soft); color: var(--wait); border-radius: var(--r-xs); padding: 0 5px; font-size: 11px; }
+.review-where .chip { border-radius: var(--r-xs); padding: 0 5px; font-size: 11px; }
+.review-where .chip:not(.outdated) { background: var(--hover); color: var(--muted); }
+
+/* The review bar stays at the bottom of the file list, with the Review list opening above it. */
+.review-bar { position: sticky; bottom: 0; background: var(--surface); z-index: 3; }
+.review-ctl { display: flex; gap: 6px; }
+.review-ctl .accent { flex: 1; min-width: 0; }
+.review-toggle { padding: 0 8px; font-variant-numeric: tabular-nums; }
+.review-toggle svg { color: var(--muted); transition: transform 0.15s var(--ease); }
+.review-toggle svg.flip { transform: rotate(180deg); }
+.review-stale { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.review-stale span { flex: 1; }
+.review-stale button.quiet { height: 22px; padding: 0 6px; font-size: 12px; color: var(--accent-text); font-weight: 600; }
+.review-pop {
+  position: absolute; left: var(--s2); right: var(--s2); bottom: calc(100% - 4px); z-index: 20;
+  display: flex; flex-direction: column; max-height: min(420px, 60vh); padding: 5px; border-radius: var(--r-lg);
+  background: light-dark(rgba(246, 246, 248, 0.94), rgba(44, 44, 46, 0.94));
+  backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
+}
+.review-pop-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.review-item { display: flex; align-items: flex-start; border-radius: var(--r-sm); }
+.review-item:hover { background: var(--hover); }
+.review-item-go { flex: 1; min-width: 0; height: auto; padding: 4px 6px; flex-direction: column; align-items: stretch; gap: 1px; background: transparent; box-shadow: none; text-align: left; font-weight: 400; white-space: normal; }
+.review-item-go:hover { background: transparent; }
+.review-item-where { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.review-item-where code { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-item-text { font-size: 12.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.review-item .icon { width: 22px; height: 22px; margin: 3px 2px 0 0; flex-shrink: 0; }
+.review-pop-foot { display: flex; align-items: center; gap: 4px; border-top: 0.5px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.review-pop-foot button.quiet { height: 24px; padding: 0 8px; font-size: 12px; }
+.ln.pick { align-self: stretch; }
+.review-where .chip, .review-item-where .chip { flex: none; width: auto; }
+.review-quote { tab-size: 4; }
+/* Unchanged diff lines share the class name of the composer's context ring: keep them full-width grid rows. */
+.dl.ctx, .sl.ctx { display: grid; gap: 0; padding: 0; font-size: inherit; }

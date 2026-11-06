@@ -391,8 +391,12 @@ export function Chat({
   workspaceId: string;
   running: Set<string>;
   onRunningChange: () => void;
-  /** Text to drop into the composer (from PR buttons), for the user to review and send. */
-  inject?: { text: string; nonce: number };
+  /**
+   * Text to drop into the composer (from PR buttons), for the user to review and send. With `send`
+   * (Send review in Changes) it goes straight to the agent, unless the agent is busy: then it waits
+   * in the composer, where Queue sends it after the current turn.
+   */
+  inject?: { text: string; nonce: number; send?: boolean };
   /** Text to add to the end of the draft without replacing it (Annotate in the Preview tab). */
   append?: { text: string; nonce: number };
 }) {
@@ -490,12 +494,11 @@ export function Chat({
     },
     addFindings: (f: Finding[]) => {
       const { session, workspaceId } = live.current;
-      const key = `nekotrail.review.${workspaceId}`;
-      const cur = JSON.parse(localStorage.getItem(key) || "[]");
       const by = session?.agent === "codex" ? "Codex" : "Claude";
-      const add = f.map((x) => ({ id: crypto.randomUUID(), file: x.file, line: x.line, side: "new", code: "", text: `${by}: ${x.text}` }));
-      localStorage.setItem(key, JSON.stringify([...cur, ...add]));
-      window.dispatchEvent(new Event("nekotrail-review"));
+      const add = f.map((x) => ({ id: crypto.randomUUID(), file: x.file, side: "new" as const, line: x.line, end_line: x.line, code: "", text: `${by}: ${x.text}` }));
+      api.addReviewComments(workspaceId, add)
+        .then(() => window.dispatchEvent(new CustomEvent("nekotrail-review", { detail: workspaceId })))
+        .catch((e) => setError(errText(e)));
     },
     approvePlan: () => live.current.approvePlan(),
     expandAll,
@@ -565,7 +568,17 @@ export function Chat({
   useEffect(() => { stick.current = true; }, [active]);
 
   useEffect(() => {
-    if (inject?.text) setDraft(inject.text);
+    if (!inject?.text) return;
+    const text = inject.text;
+    const toComposer = () => setDraft((d) => (d.trim() ? `${d.trimEnd()}\n\n${text}` : text));
+    if (!inject.send || !active) { if (inject.send) toComposer(); else setDraft(text); return; }
+    if (busy) {
+      toComposer();
+      setNote("The agent is busy, so your review is waiting in the message box. Press Queue to send it after this turn.");
+      return;
+    }
+    setError(null);
+    api.send(active, text).then(onRunningChange).catch((e) => { toComposer(); setError(errText(e)); });
   }, [inject?.nonce]);
   useEffect(() => {
     if (!append?.text) return;

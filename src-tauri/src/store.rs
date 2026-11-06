@@ -82,6 +82,15 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Extra folders the agent may read and edit (/add-dir), as a JSON list.
     add("sessions", "extra_dirs", "TEXT NOT NULL DEFAULT '[]'")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")?;
+    // Draft review comments on the diff, kept per workspace until they are sent to the agent.
+    // `code` is the commented diff lines, each with its +, - or space marker, so the app can tell
+    // when the agent changed them (outdated). Empty for comments that have no lines to check.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS review_comments (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+            file TEXT NOT NULL, side TEXT NOT NULL, line INTEGER NOT NULL, end_line INTEGER NOT NULL,
+            code TEXT NOT NULL DEFAULT '', text TEXT NOT NULL, created_at TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS review_comments_by_ws ON review_comments(workspace_id);",
+    )?;
     // Spend per finished turn, so totals never have to scan every chat message.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS turn_costs (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
@@ -200,6 +209,20 @@ pub struct Session {
     pub permission_mode: String,
     #[serde(default)]
     pub effort: Option<String>,
+}
+
+/// A draft review comment on lines `line..=end_line` of one changed file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewComment {
+    pub id: String,
+    pub file: String,
+    /// "new" for added or unchanged lines, "old" when every commented line was removed.
+    pub side: String,
+    pub line: i64,
+    pub end_line: i64,
+    #[serde(default)]
+    pub code: String,
+    pub text: String,
 }
 
 /// (agent, finished turns, error turns, total turn time in ms, merged workspaces)
@@ -631,6 +654,49 @@ impl Store {
         Ok(())
     }
 
+    // ---- review comments ----
+
+    pub fn review_comments(&self, workspace_id: &str) -> Result<Vec<ReviewComment>> {
+        let mut st = self.conn.prepare(
+            "SELECT id, file, side, line, end_line, code, text FROM review_comments WHERE workspace_id=?1 ORDER BY created_at, rowid",
+        )?;
+        let rows = st
+            .query_map([workspace_id], |r| {
+                Ok(ReviewComment { id: r.get(0)?, file: r.get(1)?, side: r.get(2)?, line: r.get(3)?, end_line: r.get(4)?, code: r.get(5)?, text: r.get(6)? })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    /// Add comments in one go (one from the diff, or a batch of findings). An id already stored is
+    /// left as it is, so adding the same batch twice keeps one copy.
+    pub fn add_review_comments(&self, workspace_id: &str, comments: &[ReviewComment]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let at = now();
+        for c in comments {
+            anyhow::ensure!(c.side == "old" || c.side == "new", "unknown side {}", c.side);
+            anyhow::ensure!(!c.text.trim().is_empty(), "a review comment needs some text");
+            let (a, b) = (c.line.min(c.end_line), c.line.max(c.end_line));
+            tx.execute(
+                "INSERT OR IGNORE INTO review_comments (id, workspace_id, file, side, line, end_line, code, text, created_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                params![c.id, workspace_id, c.file, c.side, a, b, c.code, c.text.trim(), at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Remove these comments from one workspace (deleted, cleared as outdated, or sent).
+    pub fn remove_review_comments(&self, workspace_id: &str, ids: &[String]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for id in ids {
+            tx.execute("DELETE FROM review_comments WHERE workspace_id=?1 AND id=?2", params![workspace_id, id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn has_events(&self, session_id: &str) -> Result<bool> {
         Ok(self.conn.query_row("SELECT EXISTS(SELECT 1 FROM messages WHERE session_id=?1)", [session_id], |r| r.get(0))?)
     }
@@ -680,6 +746,37 @@ mod tests {
         if wal.exists() {
             assert_eq!(mode(&wal), 0o600);
         }
+    }
+
+    #[test]
+    fn review_comments_are_kept_per_workspace_until_removed() {
+        let d = tempfile::tempdir().unwrap();
+        let db = d.path().join("nekotrail.db");
+        let c = |id: &str, line: i64, end: i64, text: &str| ReviewComment {
+            id: id.into(), file: "src/app.ts".into(), side: "new".into(), line, end_line: end,
+            code: "+let a = 1;\n+let b = 2;".into(), text: text.into(),
+        };
+        {
+            let s = Store::open(&db).unwrap();
+            s.add_review_comments("w1", &[c("a", 12, 13, "  Use const.  "), c("b", 40, 40, "Name this better.")]).unwrap();
+            s.add_review_comments("w2", &[c("z", 1, 1, "Other workspace.")]).unwrap();
+            // The same id twice keeps the first copy.
+            s.add_review_comments("w1", &[c("a", 1, 1, "Duplicate")]).unwrap();
+            // A range given backwards is stored start first; empty notes and unknown sides are refused.
+            s.add_review_comments("w1", &[c("c", 9, 7, "Backwards range")]).unwrap();
+            assert!(s.add_review_comments("w1", &[c("d", 1, 1, "   ")]).is_err());
+            assert!(s.add_review_comments("w1", &[ReviewComment { side: "left".into(), ..c("e", 1, 1, "x") }]).is_err());
+        }
+        // Drafts survive a restart.
+        let s = Store::open(&db).unwrap();
+        let got = s.review_comments("w1").unwrap();
+        assert_eq!(got.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["a", "b", "c"]);
+        assert_eq!(got[0], c("a", 12, 13, "Use const."));
+        assert_eq!((got[2].line, got[2].end_line), (7, 9));
+        // Removing only touches the named comments in that workspace.
+        s.remove_review_comments("w1", &["a".into(), "z".into()]).unwrap();
+        assert_eq!(s.review_comments("w1").unwrap().len(), 2);
+        assert_eq!(s.review_comments("w2").unwrap().len(), 1);
     }
 
     #[test]

@@ -112,7 +112,7 @@ export default function App() {
   const [canImport, setCanImport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [wsRefreshKey, setWsRefreshKey] = useState(0); // bumps only for the selected workspace's turns
-  const [inject, setInject] = useState<{ text: string; nonce: number } | undefined>();
+  const [inject, setInject] = useState<{ text: string; nonce: number; send?: boolean } | undefined>();
   const [append, setAppend] = useState<{ text: string; nonce: number } | undefined>();
   // Run and setup scripts that are alive (pty ids), the terminal tab to show, and dev-server URLs.
   const [livePtys, setLivePtys] = useState<Set<string>>(new Set());
@@ -1101,7 +1101,7 @@ export default function App() {
                     <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
-                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile} onSendReview={(text) => { setTab("chat"); setInject({ text, nonce: Date.now() }); }} />}
+                    {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile} onSendReview={(text, send) => { setTab("chat"); setInject({ text, nonce: Date.now(), send }); }} />}
                   </div>
                   <div className="pane" hidden={tab !== "terminal"}>
                     <Suspense fallback={null}>

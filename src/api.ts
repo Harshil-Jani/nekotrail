@@ -240,6 +240,10 @@ export const api = {
   /** Discard one file's uncommitted changes; its current copy goes to the Trash. */
   discardFile: (id: string, path: string) => invoke<"trashed" | "restored">("discard_file", { id, path }),
   prReviewComments: (id: string) => invoke<import("./components/Diff").GhComment[]>("pr_review_comments", { id }),
+  /** Draft review comments on the diff, per workspace. */
+  reviewComments: (id: string) => invoke<import("./components/Diff").ReviewComment[]>("review_comments", { id }),
+  addReviewComments: (id: string, comments: import("./components/Diff").ReviewComment[]) => invoke<void>("add_review_comments", { id, comments }),
+  removeReviewComments: (id: string, ids: string[]) => invoke<void>("remove_review_comments", { id, ids }),
   openIn: (id: string, app: string) => invoke<void>("open_in", { id, app }),
   openInTargets: () => invoke<{ id: string; name: string }[]>("open_in_targets"),
   lineCounts: () => invoke<Record<string, [number, number]>>("line_counts"),

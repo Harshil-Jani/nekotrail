@@ -551,6 +551,18 @@ async fn set_notes(st: State<'_, AppState>, id: String, notes: String) -> Res<()
     st.db().set_notes(&id, &notes).map_err(e)
 }
 #[tauri::command]
+async fn review_comments(st: State<'_, AppState>, id: String) -> Res<Vec<store::ReviewComment>> {
+    st.db().review_comments(&id).map_err(e)
+}
+#[tauri::command]
+async fn add_review_comments(st: State<'_, AppState>, id: String, comments: Vec<store::ReviewComment>) -> Res<()> {
+    st.db().add_review_comments(&id, &comments).map_err(e)
+}
+#[tauri::command]
+async fn remove_review_comments(st: State<'_, AppState>, id: String, ids: Vec<String>) -> Res<()> {
+    st.db().remove_review_comments(&id, &ids).map_err(e)
+}
+#[tauri::command]
 async fn set_workspace_title(st: State<'_, AppState>, id: String, title: String) -> Res<()> {
     st.db().set_title(&id, title.trim()).map_err(e)
 }
@@ -2377,7 +2389,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work
