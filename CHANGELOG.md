@@ -5,6 +5,14 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Twelve more agents**
+- Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo join Claude, Codex, Gemini and OpenCode. Pick one for a workspace or chat; each uses your own login, and setup shows its install command if it's missing.
+- The agent pickers show Claude, Codex and the agents installed on your Mac; the rest are one click away under "More agents".
+- "Ask before changes" works for Copilot: each edit or command waits for Allow, Deny or "Allow for this chat".
+- "Auto-accept edits" approves file edits inside the workspace for these agents; commands still ask first.
+- Repo settings these agents would run (hooks, MCP servers, allow rules) ask before the agent starts. Until you trust them, that agent doesn't run in the repo.
+- Setup checks all agents at once, so it stays quick with sixteen.
+
 **Workspaces named after their task**
 - The first message names a workspace (no AI call, stays on your Mac), then the PR's title replaces it. A name you type is never replaced; clear it to go back to automatic.
 - The star moves under the title in the sidebar, the toolbar and ⌘K, and you can still search by it. Existing workspaces keep their names; untitled ones with a chat are named once.
