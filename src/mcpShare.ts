@@ -42,5 +42,5 @@ export function opencodeSkillsNote(dirs: string[]): string {
   const [own, ...shared] = dirs;
   if (!own) return "";
   if (shared.length === 0) return `OpenCode reads skills only from ${own}, because it's set to skip the shared folders.`;
-  return `OpenCode reads ${andList(shared)} as well as its own ${own}, so it already sees the skills in ${shared.length === 1 ? "that folder" : "those folders"}.`;
+  return `OpenCode already reads skills in ${andList(shared)}.`;
 }

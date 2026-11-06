@@ -38,9 +38,9 @@ describe("secrets", () => {
 describe("opencodeSkillsNote", () => {
   test("says which shared folders OpenCode already reads", () => {
     expect(opencodeSkillsNote(["~/.config/opencode/skills", "~/.claude/skills", "~/.agents/skills"])).toBe(
-      "OpenCode reads ~/.claude/skills and ~/.agents/skills as well as its own ~/.config/opencode/skills, so it already sees the skills in those folders.",
+      "OpenCode already reads skills in ~/.claude/skills and ~/.agents/skills.",
     );
-    expect(opencodeSkillsNote(["~/oc/skills", "~/.agents/skills"])).toBe("OpenCode reads ~/.agents/skills as well as its own ~/oc/skills, so it already sees the skills in that folder.");
+    expect(opencodeSkillsNote(["~/oc/skills", "~/.agents/skills"])).toBe("OpenCode already reads skills in ~/.agents/skills.");
     expect(opencodeSkillsNote(["~/oc/skills"])).toBe("OpenCode reads skills only from ~/oc/skills, because it's set to skip the shared folders.");
     expect(opencodeSkillsNote([])).toBe("");
   });
