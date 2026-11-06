@@ -170,7 +170,7 @@ export function NewWorkspace({
         {source === "branch" && (
           <div className="nw-branch">
             <input list="nw-branches" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch name, e.g. fix/login" aria-label="Branch" autoFocus />
-            <datalist id="nw-branches">{branches.map((b) => <option key={b} value={b} />)}</datalist>
+            <datalist id="nw-branches">{(branches ?? []).map((b) => <option key={b} value={b} />)}</datalist>
           </div>
         )}
         <textarea

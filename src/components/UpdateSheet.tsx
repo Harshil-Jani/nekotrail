@@ -69,7 +69,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
       break;
     case "downloading": {
       const pct = phase.total ? Math.min(100, Math.round((phase.got / phase.total) * 100)) : null;
-      art = null;
+      art = <Mascot size={48} mood="working" title="" />;
       title = `Getting nekotrail ${phase.version}`;
       sub = "You can keep working. It installs when you restart.";
       body = (
@@ -87,7 +87,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
             <span className="update-rail"><span className="update-fill" /></span>
           </div>
           <p className="update-count num" aria-live="polite">
-            {pct === null ? `${mb(phase.got)} MB` : `${mb(phase.got)} of ${mb(phase.total!)} MB`}
+            {pct === null ? `${mb(phase.got)} MB so far` : `${mb(phase.got)} of ${mb(phase.total!)} MB`}
           </p>
         </div>
       );
@@ -146,7 +146,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
       art = <Mascot size={64} mood="worried" title="" />;
       title = phase.title;
       sub = phase.message;
-      body = phase.detail ? <p className="update-detail">{phase.detail}</p> : null;
+      body = phase.detail ? <details><summary className="muted">Details</summary><p className="update-detail">{phase.detail}</p></details> : null;
       extra = { label: "Download from GitHub", run: () => open(releaseUrl(phase.version)) };
       primaryBtn = { label: "Try again", run: onUpdate };
       secondaryBtn = { label: "Close", run: onNotNow };

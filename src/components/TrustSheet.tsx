@@ -16,10 +16,10 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
   const rows = trust ? (["setup", "run", "archive"] as const).filter((k) => trust[k]) : [];
   return (
     <div className="modal-backdrop" onClick={() => onAnswer(false)}>
-      <div className="modal trust" role="alertdialog" aria-modal="true" aria-label="Run this repo's commands?" onClick={(e) => e.stopPropagation()}>
+      <div className="modal trust" role="alertdialog" aria-modal="true" aria-labelledby="trust-title" onClick={(e) => e.stopPropagation()}>
         <div className="row">
           <ShieldAlert size={16} />
-          <h2>{agent ? `Let ${repo}'s agent settings run?` : `Run commands from ${repo}?`}</h2>
+          <h2 id="trust-title">{agent ? `Let ${repo}'s agent settings run?` : `Run commands from ${repo}?`}</h2>
         </div>
         {agent ? (
           <p className="muted">
@@ -50,7 +50,7 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
         <div className="row">
           <span className="spacer" />
           <button onClick={() => onAnswer(false)} autoFocus>Not now</button>
-          <button className="primary" onClick={() => onAnswer(true)}>Trust and run</button>
+          <button className="primary" onClick={() => onAnswer(true)}>{agent ? "Trust and send" : "Trust and run"}</button>
         </div>
       </div>
     </div>
