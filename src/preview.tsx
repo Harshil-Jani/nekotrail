@@ -72,7 +72,8 @@ const reviews: Record<string, any[]> = new URLSearchParams(location.search).has(
 ] };
 
 const repos = [
-  { id: "r1", name: "pawprint-api", root_path: "/code/pawprint-api", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null },
+  { id: "r1", name: "pawprint-api", root_path: "/code/pawprint-api", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null,
+    prefs: new URLSearchParams(location.search).has("guard") ? { protected: [".env*", "migrations/**", "infra/**", "!migrations/README.md"] } : undefined },
   { id: "r2", name: "pawprint-web", root_path: "/code/pawprint-web", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null },
 ];
 const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
@@ -130,6 +131,29 @@ const events = [
 ];
 // ?rewound shows the marker a rewind leaves, with its Undo.
 if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Rewound to before: The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", undo: "def456", files: 2 } as any);
+// ?guard shows the protected-files cards: a refused edit, a turn caught after (one file, Put it back),
+// one that got past the block (three files), and one already put back. Mochi's repo protects .env*, migrations/** and infra/**.
+const guard = new URLSearchParams(location.search).has("guard");
+if (guard) {
+  events.splice(events.length - 1, 0,
+    { kind: "blocked", text: "OpenCode tried to change a protected file, so nekotrail said no.", files: [".env.production"] } as any,
+    { kind: "guard", files: [{ path: "migrations/0042_ticket_sla.sql", change: "changed" }], checkpoint: "g1", ignored: null, level: "asks" } as any,
+    { kind: "guard", files: [{ path: ".env", change: "changed" }, { path: "infra/terraform/alb.tf", change: "changed" }, { path: "migrations/0043_backfill_sla_deadlines_for_open_tickets.sql", change: "added" }], checkpoint: "g2", ignored: "i2", level: "blocked" } as any,
+    { kind: "guard", files: [{ path: "infra/terraform/alb.tf", change: "changed" }], checkpoint: "g3", ignored: null, level: "after" } as any,
+    { kind: "guard_restored", files: ["infra/terraform/alb.tf"], checkpoint: "g3" } as any,
+  );
+}
+// Shell commands for the "Commands the agent ran" sheet (?commands=w1): a long one, a failed one, one cut off mid-turn.
+const codexEvents = [
+  { kind: "user", checkpoint: "x1", text: "Second opinion on the idle timeout fix." },
+  { kind: "tool", id: "c1", name: "Bash", input: "rg -n \"IdleTimeout|ReadHeaderTimeout|WriteTimeout\" --type go internal/ cmd/" },
+  { kind: "tool_result", id: "c1", output: "internal/server/http.go:22:\t\tIdleTimeout: 75 * time.Second,\ninternal/server/http.go:24:\t\tReadHeaderTimeout: 5 * time.Second,", is_error: false },
+  { kind: "tool", id: "c2", name: "Bash", input: "aws elbv2 describe-load-balancer-attributes --load-balancer-arn arn:aws:elasticloadbalancing:ap-south-1:123456789012:loadbalancer/app/pawprint-api-prod/50dc6c495c0c9188 --query 'Attributes[?Key==`idle_timeout.timeout_seconds`].Value' --output text" },
+  { kind: "tool_result", id: "c2", output: "An error occurred (AccessDenied) when calling the DescribeLoadBalancerAttributes operation: User is not authorized to perform: elasticloadbalancing:DescribeLoadBalancerAttributes", is_error: true },
+  { kind: "tool", id: "c3", name: "Bash", input: "go test ./... -run TestIdle -count=1" },
+  { kind: "tool_result", id: "c3", output: "", is_error: false },
+  { kind: "tool", id: "c4", name: "Bash", input: "go test -race ./internal/server/..." },
+];
 const pr = {
   number: 482, url: "https://github.com", state: "OPEN", title: "Fix 502s after deploy: outlive the ALB idle timeout", isDraft: false,
   reviewDecision: "REVIEW_REQUIRED", mergeable: "MERGEABLE", additions: 38, deletions: 1, commentCount: 2,
@@ -161,7 +185,7 @@ mockIPC(
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
       case "session_events_tail": { const all = args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
-      case "session_events": return args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
+      case "session_events": return args.id === "s1" ? events : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_cache": {
         // What the PR poller would have pushed by now: one view per workspace.
@@ -300,6 +324,8 @@ mockIPC(
       case "preview_probe": return location.search.includes("previewDown") ? { up: false, status: null, blocked: null }
         : location.search.includes("previewBlocked") ? { up: true, status: 200, blocked: "x-frame-options" } : null;
       case "preview_snapshot": return fakeSnapshot();
+      case "repo_guard": return { app: guard ? [".env*", "migrations/**", "infra/**"] : [], file: guard ? ["*.tfstate", "deploy/prod/**"] : [] };
+      case "put_back_protected": setTimeout(() => emit("agent", { session_id: "s1", event: { kind: "guard_restored", files: args.paths, checkpoint: args.checkpoint } }), 300); return args.paths;
       case "live_checkpoints": return args.checkpoints;
       case "checkpoint_preview": return { files: 2, commits: 1 };
       case "review_comments": return reviews[args.id] ?? [];

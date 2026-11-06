@@ -116,7 +116,7 @@ export default function App() {
   const history = useRef<{ stack: Place[]; at: number; moving: boolean }>({ stack: [], at: -1, moving: false });
   const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
-  const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [settingsFor, setSettingsFor] = useState<string | null>(params.get("repoSettings")); // repo id
   const [trustAsk, setTrustAsk] = useState<{ repo: string; trust?: ScriptTrust; agent?: AgentConfigTrust; answer: (run: boolean) => void } | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
@@ -355,7 +355,7 @@ export default function App() {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
-  const [commandsFor, setCommandsFor] = useState<string | null>(null);
+  const [commandsFor, setCommandsFor] = useState<string | null>(params.get("commands")); // workspace id
   // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
   const [freeMb, setFreeMb] = useState<number | null>(null);
   useEffect(() => {
