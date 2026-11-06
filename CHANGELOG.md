@@ -74,6 +74,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - The rewind sheet puts "1 commit comes off the branch" on its own line.
 - Disabled orange and green buttons are a quiet grey in both appearances instead of muddy brown in dark mode.
 - Mermaid diagrams are flat (no node shadows) with larger labels, and very wide ones scroll instead of shrinking past readable.
+- At high zoom the chat box's controls wrap to a second line, so Send and Stop never go out of view.
 
 ## 0.10.1 (2026-11-06)
 
