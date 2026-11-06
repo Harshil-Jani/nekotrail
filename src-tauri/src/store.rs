@@ -257,6 +257,21 @@ fn session_from(r: &Row) -> rusqlite::Result<Session> {
 const SESSION_COLS: &str =
     "id, workspace_id, agent, agent_session_id, title, model, permission_mode, effort";
 
+/// The database holds repo environment variables (often API keys) and every chat, so only you may
+/// read it: the folder 0700, the database and its WAL files 0600 (SQLite gives new WAL files the
+/// database's mode).
+fn private_files(db: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Some(dir) = db.parent() {
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+    for suffix in ["", "-wal", "-shm"] {
+        let mut p = db.as_os_str().to_owned();
+        p.push(suffix);
+        let _ = std::fs::set_permissions(Path::new(&p), std::fs::Permissions::from_mode(0o600));
+    }
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(dir) = path.parent() {
@@ -266,6 +281,7 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
+        private_files(path);
         Ok(Self { conn })
     }
 
@@ -632,6 +648,25 @@ mod tests {
             run_script: None,
             archive_script: None,
             prefs: RepoPrefs { general_prompt: "Use bun.".into(), copy_files: vec![".env*".into()], ..Default::default() },
+        }
+    }
+
+    #[test]
+    fn database_is_private_to_the_user() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("data");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let db = dir.join("nekotrail.db");
+        let s = Store::open(&db).unwrap();
+        s.set_setting("k", "v").unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(&db), 0o600);
+        let wal = dir.join("nekotrail.db-wal");
+        if wal.exists() {
+            assert_eq!(mode(&wal), 0o600);
         }
     }
 

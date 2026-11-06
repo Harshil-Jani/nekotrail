@@ -173,6 +173,11 @@ pub struct TurnSpec<'a> {
 /// Build the CLI command for one turn.
 pub fn command(spec: &TurnSpec) -> Command {
     let mut c;
+    // Every value below lands on a command line. The prompt can carry text an agent or a GitHub
+    // issue wrote, and a leading `-` would be read as an option (`--settings=...` = hooks = shell).
+    let model = spec.model.filter(|m| crate::safe::model_id(m));
+    let effort = spec.effort.filter(|e| crate::safe::model_id(e));
+    let session = spec.agent_session_id.filter(|id| crate::safe::not_a_flag(id));
     if spec.agent == "codex" {
         let sandbox = match spec.permission_mode {
             "plan" => "read-only",
@@ -181,25 +186,25 @@ pub fn command(spec: &TurnSpec) -> Command {
         };
         c = Command::new("codex");
         c.arg("exec");
-        if let Some(id) = spec.agent_session_id {
+        if let Some(id) = session {
             c.args(["resume", id]);
         }
         c.args(["--json", "--skip-git-repo-check", "-c", &format!("sandbox_mode=\"{sandbox}\"")]);
-        if let Some(m) = spec.model {
+        if let Some(m) = model {
             c.args(["-m", m]);
         }
         for d in spec.dirs {
             c.args(["--add-dir", d]);
         }
-        if let Some(e) = spec.effort {
+        if let Some(e) = effort {
             // The model catalog only offers levels the chosen model supports, so pass them through.
             let e = if e.chars().all(|ch| ch.is_ascii_lowercase()) { e } else { "high" };
             c.args(["-c", &format!("model_reasoning_effort=\"{e}\"")]);
         }
         // Codex has no flag for extra instructions, so they lead the first message of a chat.
-        match spec.instructions.filter(|_| spec.agent_session_id.is_none()) {
-            Some(i) => c.arg(format!("{i}\n\n{}", spec.prompt)),
-            None => c.arg(spec.prompt),
+        match spec.instructions.filter(|_| session.is_none()) {
+            Some(i) => c.arg(crate::safe::positional(&format!("{i}\n\n{}", spec.prompt))),
+            None => c.arg(crate::safe::positional(spec.prompt)),
         };
     } else {
         c = Command::new("claude");
@@ -209,19 +214,19 @@ pub fn command(spec: &TurnSpec) -> Command {
             c.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]);
             c.args(["--permission-mode", "default", "--permission-prompts", "host", "--permission-prompt-tool", "stdio"]);
         } else {
-            c.args(["-p", spec.prompt, "--output-format", "stream-json", "--verbose"]);
+            c.args(["-p", &crate::safe::positional(spec.prompt), "--output-format", "stream-json", "--verbose"]);
             c.args(["--permission-mode", spec.permission_mode]);
         }
-        if let Some(m) = spec.model {
+        if let Some(m) = model {
             c.args(["--model", m]);
         }
-        if let Some(id) = spec.agent_session_id {
+        if let Some(id) = session {
             c.args(["--resume", id]);
             if spec.fork {
                 c.arg("--fork-session");
             }
         }
-        if let Some(e) = spec.effort {
+        if let Some(e) = effort {
             c.args(["--effort", e]);
         }
         if let Some(i) = spec.instructions {
