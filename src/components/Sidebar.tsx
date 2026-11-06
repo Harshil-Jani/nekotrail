@@ -221,6 +221,11 @@ export function Sidebar(p: Props) {
     const clash = w.state === "active" ? collisionNote(w) : null;
     // A titled row says what the task is; its star sits underneath.
     const sub = subName(p.sky, w);
+    const meta = <>
+      {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
+      {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
+      {w.pinned && <Pin size={sub ? 12 : 14} className="muted" aria-label="Pinned" />}
+    </>;
     return (
       <button
         key={w.id}
@@ -241,11 +246,10 @@ export function Sidebar(p: Props) {
         </span>
         <span className="ws-text" title={`${label(w)}${sub ? `\n${sub}` : ""}\n${repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>
           <span className="ws-name">{label(w)}</span>
-          {sub && <span className="ws-star">{sub}</span>}
+          {/* Two-line rows keep the marks on the star's line, so the task title gets the full width. */}
+          {sub && <span className="ws-sub-line"><span className="ws-star">{sub}</span>{meta}</span>}
         </span>
-        {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
-        {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
-        {w.pinned && <Pin size={14} className="muted" aria-label="Pinned" />}
+        {!sub && meta}
       </button>
     );
   };
