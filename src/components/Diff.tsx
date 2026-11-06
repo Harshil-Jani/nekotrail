@@ -679,6 +679,12 @@ export function Diff({
   // The list as filtered by the box above it; ↑/↓ move through what you can see.
   const q = query.trim().toLowerCase();
   const shown = useMemo(() => (files && q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files ?? []), [files, q]);
+  // The diff always belongs to a row you can see: when the filter hides the open file, the first
+  // match opens instead. With no match the diff pane says so rather than showing a hidden file.
+  const openShown = !q || shown.some((f) => f.path === open);
+  useEffect(() => {
+    if (!openShown && shown.length > 0) setOpen(shown[0].path);
+  }, [openShown, shown]);
 
   // ↑/↓ move between files, ⌘⌥U switches all changes / uncommitted.
   const nav = useRef({ files: shown, open });
@@ -843,6 +849,8 @@ export function Diff({
       <div className="file-diff">
         {editing ? (
           <FileEditor workspaceId={workspaceId} path={editing} onDone={() => { setEditing(null); load(); }} />
+        ) : !openShown && shown.length === 0 ? (
+          <div className="empty"><h2>The filter hides every file</h2><button onClick={() => setQuery("")}>Clear filter</button></div>
         ) : open ? (
           <>
             <div className="file-head">
