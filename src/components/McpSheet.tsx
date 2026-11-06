@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, CircleAlert, CircleCheck, Plug, RotateCw, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronLeft, CircleAlert, CircleCheck, Plug, RotateCw, SquareTerminal, X } from "lucide-react";
 import { api, errText, type Agent, type McpOverview, type McpPreview, type McpRow, type SecretChoices, type SkillRow, type SkillShare } from "../api";
 import { AGENT_INFO, AGENTS, agentName } from "../agents";
 import { liveFor, opencodeSkillsNote, parseMcp, scopeText, secretLabel, secretsAnswered } from "../mcpShare";
@@ -50,12 +50,12 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
         ) : (
           <div className="mcp-body">
             {done && <div className="mcp-done"><CircleCheck size={14} /> <span>{done}</span></div>}
-            {error && <div className="mcp-note bad">{error}</div>}
+            {error && <div className="mcp-note bad mcp-error"><span>{error}</span><button onClick={load}>Try again</button></div>}
             {all?.problems.map((p) => <div key={p} className="mcp-note bad">{p}</div>)}
             {!all && !error && <p className="muted"><span className="spinner" /> Reading your Claude, Codex, Gemini and OpenCode settings…</p>}
             {all && (
               <>
-                <h3 className="mcp-h">Servers</h3>
+                <AgentHead title="Servers" />
                 {all.servers.length === 0 && <p className="muted">None of your agents has an MCP server yet.</p>}
                 {all.servers.length > 0 && (
                   <ul className="mcp-list">
@@ -72,13 +72,12 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
                           <div className="mcp-agents">
                             {AGENTS.map((a) => {
                               const has = row.has.filter((h) => h.agent === a);
-                              if (has.length) {
-                                return <span key={a} className="agent-chip has" title={has.map((h) => `${agentName(a)} has it for ${scopeText(h.scope)} (${h.file})`).join("\n")}>{agentName(a)}</span>;
-                              }
+                              if (has.length) return <Has key={a} label={has.map((h) => `${agentName(a)} has it for ${scopeText(h.scope)} (${h.file})`).join("\n")} />;
                               const t = row.targets.find((x) => x.agent === a);
+                              if (!t) return <None key={a} agent={a} />;
                               return (
-                                <button key={a} className={t?.ok ? "add-chip" : "add-chip off"} title={t?.why ?? `Copy it into ${all.files[a]}`} onClick={() => { setDone(null); setShare({ row, target: a }); }}>
-                                  Add to {agentName(a)}
+                                <button key={a} className={t.ok ? "add-chip" : "add-chip off"} title={t.why ?? `Copy it into ${all.files[a]}`} aria-label={t.ok ? `Add ${row.name} to ${agentName(a)}` : `Why ${agentName(a)} can't take ${row.name}`} onClick={() => { setDone(null); setShare({ row, target: a }); }}>
+                                  {t.ok ? "Add" : "Can't add"}
                                 </button>
                               );
                             })}
@@ -92,7 +91,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
                   <details className="mcp-raw-wrap"><summary className="muted">What {bin} says</summary><pre className="mcp-raw">{text}</pre></details>
                 )}
                 {liveError && <p className="muted">Couldn't ask {bin} which servers it reaches: {liveError}</p>}
-                <h3 className="mcp-h">Skills</h3>
+                <AgentHead title="Skills" />
                 <Skills skills={all.skills} opencodeNote={opencodeSkillsNote(all.opencode_skill_dirs)} onDone={(m) => { setDone(m); load(); }} />
               </>
             )}
@@ -212,12 +211,16 @@ function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencode
               <div>
                 <b>{k.name}</b>
                 {k.description && <span className="muted mcp-desc" title={k.description}>{k.description}</span>}
+                {k.share.length > 0 && (
+                  <span className="mcp-share">
+                    {k.share.map((s) => (
+                      <button key={s.target} className={s.ok ? "add-chip" : "add-chip off"} title={s.why ?? `Link ${s.link} to ${s.to}`} onClick={() => { setError(null); setAsk({ name: k.name, s }); }}>{s.ok ? s.label : `Can't ${s.label.charAt(0).toLowerCase()}${s.label.slice(1)}`}</button>
+                    ))}
+                  </span>
+                )}
               </div>
               <div className="mcp-agents">
-                {AGENTS.filter((a) => k.has.includes(a)).map((a) => <span key={a} className="agent-chip has">{agentName(a)}</span>)}
-                {k.share.map((s) => (
-                  <button key={s.target} className={s.ok ? "add-chip" : "add-chip off"} title={s.why ?? `Link ${s.link} to ${s.to}`} onClick={() => { setError(null); setAsk({ name: k.name, s }); }}>{s.label}</button>
-                ))}
+                {AGENTS.map((a) => (k.has.includes(a) ? <Has key={a} label={`${agentName(a)} sees this skill`} /> : <None key={a} agent={a} />))}
               </div>
             </div>
             {ask?.name === k.name && (
@@ -244,3 +247,21 @@ function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencode
     </>
   );
 }
+
+/** The section label with the agent column names over the cells below it. */
+function AgentHead({ title }: { title: string }) {
+  return (
+    <div className="mcp-head">
+      <h3 className="mcp-h">{title}</h3>
+      <div className="mcp-agents" aria-hidden>{AGENTS.map((a) => <span key={a}>{agentName(a)}</span>)}</div>
+    </div>
+  );
+}
+
+/** This agent already has it. */
+const Has = ({ label }: { label: string }) => (
+  <span className="mcp-cell has" role="img" aria-label={label} title={label}><Check size={14} strokeWidth={2.5} /></span>
+);
+
+/** This agent doesn't have it, and there's nothing to add from here. */
+const None = ({ agent }: { agent: Agent }) => <span className="mcp-cell none" role="img" aria-label={`Not in ${agentName(agent)}`} />;
