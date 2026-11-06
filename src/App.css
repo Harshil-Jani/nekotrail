@@ -1318,3 +1318,5 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .composer-bar .model-picker { min-width: 0; max-width: 100%; }
 .composer-bar .picker-btn { max-width: 100%; }
 .composer-bar > .spacer + span { margin-left: auto; }
+/* Status dots in menus stay dots: menu labels stretch every span, which drew them as long bars. */
+.menu .status-dot { flex: none; width: 8px; height: 8px; margin: 0 3px; }
