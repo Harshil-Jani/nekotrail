@@ -1381,3 +1381,9 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .prbar .stack-link button.stack-name { display: inline-block; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .compare-task { margin: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nw-stack-star { font-weight: 400; }
+
+/* MCP sheet: a 16px fade at the bottom edge while the list continues below. */
+.mcp-body.fade-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}
