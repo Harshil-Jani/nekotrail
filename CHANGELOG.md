@@ -5,6 +5,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Drive nekotrail from your terminal**
+- New `nekotrail` command: `nekotrail .` opens a repo, `nekotrail new "fix the login bug" --agent codex` starts an agent in a new workspace, and `nekotrail ls`, `open` and `status` show your workspaces and what needs you. Install it from Settings, General. nekotrail starts if it isn't running.
+- `nekotrail://open?workspace=...` links jump to a workspace. `nekotrail://new?repo=...&prompt=...` links ask first and show the full task, so a web page can never start an agent on its own.
+- The command reaches the app through a socket only your user can open, never a network port.
+
 **Linux (new, experimental)**
 - nekotrail runs on Linux (x86_64), shipped as a `.deb` and an `.AppImage` that update themselves from inside the app.
 - On Linux, shortcuts use Ctrl where the Mac uses ⌘. Switching workspace is Alt+1 to Alt+9 and Open in editor is Ctrl+Shift+O. The terminal copies and pastes with Ctrl+Shift+C / Ctrl+Shift+V.
