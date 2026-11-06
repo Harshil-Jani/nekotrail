@@ -1195,6 +1195,7 @@ fn new_workspace(repo: &Repo, p: &Place) -> Workspace {
         parent_id: String::new(),
         title_source: if history { crate::title::USER.into() } else { String::new() },
         review_pr: 0,
+        group_id: String::new(),
     }
 }
 

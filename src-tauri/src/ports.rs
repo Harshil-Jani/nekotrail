@@ -544,7 +544,7 @@ mod tests {
             id: id.into(), repo_id: "r".into(), name: id.into(), branch: format!("b/{id}"), path: format!("/w/{id}"),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         }
     }
 

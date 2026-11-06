@@ -79,6 +79,9 @@ fn migrate(conn: &Connection) -> Result<()> {
     add("workspaces", "title_source", "TEXT NOT NULL DEFAULT ''")?;
     // Review workspaces: the PR number being reviewed, 0 for every other workspace.
     add("workspaces", "review_pr", "INTEGER NOT NULL DEFAULT 0")?;
+    // Multi-repo tasks: every workspace of one task holds the id of its main workspace (the one
+    // the chat runs in), that one included; empty for every other workspace (see `multirepo`).
+    add("workspaces", "group_id", "TEXT NOT NULL DEFAULT ''")?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);")?;
     add("repos", "prefs", "TEXT NOT NULL DEFAULT '{}'")?;
     add("sessions", "effort", "TEXT")?;
@@ -256,6 +259,9 @@ pub struct Workspace {
     /// workspace. A review workspace is read-only: nothing is pushed from it (see `review`).
     #[serde(default)]
     pub review_pr: i64,
+    /// A multi-repo task: the id of its main workspace (this one's own id on the main one), or "".
+    #[serde(default)]
+    pub group_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -336,9 +342,10 @@ fn workspace_from(r: &Row) -> rusqlite::Result<Workspace> {
         parent_id: r.get(16)?,
         title_source: r.get(17)?,
         review_pr: r.get(18)?,
+        group_id: r.get(19)?,
     })
 }
-const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id, parent_id, title_source, review_pr";
+const WS_COLS: &str = "id, repo_id, name, branch, path, target_branch, state, pinned, unread, notes, imported_from, created_at, title, status, pair_id, section_id, parent_id, title_source, review_pr, group_id";
 
 fn session_from(r: &Row) -> rusqlite::Result<Session> {
     Ok(Session {
@@ -458,8 +465,8 @@ impl Store {
 
     pub fn insert_workspace(&self, w: &Workspace) -> Result<()> {
         self.conn.execute(
-            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)"),
-            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id, w.parent_id, w.title_source, w.review_pr],
+            &format!("INSERT INTO workspaces ({WS_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)"),
+            params![w.id, w.repo_id, w.name, w.branch, w.path, w.target_branch, w.state, w.pinned, w.unread, w.notes, w.imported_from, w.created_at, w.title, w.status, w.pair_id, w.section_id, w.parent_id, w.title_source, w.review_pr, w.group_id],
         )?;
         Ok(())
     }
@@ -631,6 +638,37 @@ impl Store {
 
     pub fn set_section(&self, workspace_id: &str, section_id: &str) -> Result<()> {
         self.conn.execute("UPDATE workspaces SET section_id=?2 WHERE id=?1", params![workspace_id, section_id])?;
+        Ok(())
+    }
+
+    /// Link the workspaces of one multi-repo task: each gets `group` (the main workspace's id).
+    pub fn set_group(&self, ids: &[String], group: &str) -> Result<()> {
+        for id in ids {
+            self.conn.execute("UPDATE workspaces SET group_id=?2 WHERE id=?1", params![id, group])?;
+        }
+        Ok(())
+    }
+
+    /// Every workspace of a multi-repo task, archived ones too: the main one first, then the
+    /// others in the order they were made.
+    pub fn group_members(&self, group: &str) -> Result<Vec<Workspace>> {
+        if group.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {WS_COLS} FROM workspaces WHERE group_id=?1 ORDER BY (id = group_id) DESC, created_at, rowid"
+        ))?;
+        let rows = st.query_map([group], workspace_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Forget a workspace that was never used (part of a multi-repo task that couldn't be made in
+    /// every repo). Refuses a workspace with chats.
+    pub fn delete_unused_workspace(&self, id: &str) -> Result<()> {
+        let chats: i64 = self.conn.query_row("SELECT COUNT(*) FROM sessions WHERE workspace_id=?1", [id], |r| r.get(0))?;
+        anyhow::ensure!(chats == 0, "workspace {id} has chats");
+        self.conn.execute("DELETE FROM port_blocks WHERE workspace_id=?1", [id])?;
+        self.conn.execute("DELETE FROM workspaces WHERE id=?1", [id])?;
         Ok(())
     }
 
@@ -1006,7 +1044,7 @@ mod tests {
             id: new_id(), repo_id: r.id.clone(), name: name.into(), branch: format!("me/{name}"), path: format!("/tmp/ws/{name}"),
             target_branch: target.into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: now(), title: String::new(), status: String::new(), pair_id: String::new(),
-            section_id: String::new(), parent_id: parent.into(), title_source: String::new(), review_pr: 0,
+            section_id: String::new(), parent_id: parent.into(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         let parent = ws("mittens", "main", "");
         let child = ws("socks", "me/mittens", &parent.id);
@@ -1042,7 +1080,7 @@ mod tests {
             title: String::new(),
             status: String::new(),
             pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         s.insert_workspace(&w).unwrap();
         let sec = s.create_section("Today").unwrap();
@@ -1111,7 +1149,7 @@ mod tests {
             id: new_id(), repo_id: r.id.clone(), name: name.into(), branch: format!("me/{name}"), path: format!("/tmp/ws/{name}"),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: now(), title: title.into(), status: String::new(), pair_id: String::new(),
-            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0,
+            section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         };
         s.insert_workspace(&w).unwrap();
         let sess = Session {
