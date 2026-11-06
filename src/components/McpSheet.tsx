@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, CircleAlert, CircleCheck, Plug, RotateCw, SquareTerminal, X } from "lucide-react";
-import { api, errText, type Agent, type McpOverview, type McpPreview, type McpRow, type SecretChoices, type SkillRow, type SkillShare } from "../api";
-import { AGENT_INFO, AGENTS, agentName } from "../agents";
+import { api, errText, type Agent, type McpAgent, type McpOverview, type McpPreview, type McpRow, type SecretChoices, type SkillRow, type SkillShare } from "../api";
+import { AGENT_INFO, MCP_AGENTS, agentName } from "../agents";
 import { liveFor, opencodeSkillsNote, parseMcp, scopeText, secretLabel, secretsAnswered } from "../mcpShare";
 
 export { parseMcp };
@@ -16,7 +16,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
   const [liveError, setLiveError] = useState<string | null>(null);
   const [all, setAll] = useState<McpOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [share, setShare] = useState<{ row: McpRow; target: Agent } | null>(null);
+  const [share, setShare] = useState<{ row: McpRow; target: McpAgent } | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const load = () => {
     setText(null); setLiveError(null); setError(null);
@@ -30,8 +30,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, share]);
   const live = text ? parseMcp(text) : [];
-  // Every agent id is also its CLI name.
-  const bin: Agent = AGENT_INFO[agent] ? agent : "claude";
+  const bin = AGENT_INFO[agent]?.cli ?? "claude";
   const term = (cmd: string) => { window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: cmd })); onClose(); };
   const finished = (msg: string) => { setShare(null); setDone(msg); load(); };
 
@@ -70,7 +69,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
                             {l && !l.ok && <span className="bad mcp-status">{agentName(agent)}: {l.status}</span>}
                           </div>
                           <div className="mcp-agents">
-                            {AGENTS.map((a) => {
+                            {MCP_AGENTS.map((a) => {
                               const has = row.has.filter((h) => h.agent === a);
                               if (has.length) {
                                 return <span key={a} className="agent-chip has" title={has.map((h) => `${agentName(a)} has it for ${scopeText(h.scope)} (${h.file})`).join("\n")}>{agentName(a)}</span>;
@@ -111,7 +110,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
 }
 
 /** Shows exactly what goes into the other agent's file, asks about secrets, then writes it. */
-function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId: string; row: McpRow; target: Agent; onBack: () => void; onDone: (msg: string) => void }) {
+function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId: string; row: McpRow; target: McpAgent; onBack: () => void; onDone: (msg: string) => void }) {
   const [choices, setChoices] = useState<SecretChoices>({});
   const [preview, setPreview] = useState<McpPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -214,7 +213,7 @@ function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencode
                 {k.description && <span className="muted mcp-desc" title={k.description}>{k.description}</span>}
               </div>
               <div className="mcp-agents">
-                {AGENTS.filter((a) => k.has.includes(a)).map((a) => <span key={a} className="agent-chip has">{agentName(a)}</span>)}
+                {MCP_AGENTS.filter((a) => k.has.includes(a)).map((a) => <span key={a} className="agent-chip has">{agentName(a)}</span>)}
                 {k.share.map((s) => (
                   <button key={s.target} className={s.ok ? "add-chip" : "add-chip off"} title={s.why ?? `Link ${s.link} to ${s.to}`} onClick={() => { setError(null); setAsk({ name: k.name, s }); }}>{s.label}</button>
                 ))}

