@@ -1038,19 +1038,32 @@ export default function App() {
           ...(job.base ? [["From", job.base] as [string, string]] : []),
           ["Agent", job.plan ? `${agent}, in plan mode` : agent],
         ];
+        // The editor extension asks the same question: you read the task, then start it here.
+        const editor = job.from === "editor";
+        const who = editor ? "Your editor" : "A link";
         const go = await ask({
-          title: `Start ${agent} from a link?`,
+          title: `Start ${agent} from ${editor ? "your editor" : "a link"}?`,
           body: job.adds_repo
-            ? "A link asks for a new workspace, and adds this repo to nekotrail first. The agent works on the task below."
-            : "A link asks for a new workspace. The agent works on the task below.",
+            ? `${who} asks for a new workspace, and adds this repo to nekotrail first. The agent works on the task below.`
+            : `${who} asks for a new workspace. The agent works on the task below.`,
           facts,
           quote: job.prompt,
-          footer: "Only start it if you opened this link yourself and you trust the task.",
+          footer: editor
+            ? "Check the task and the code in it. Nothing runs until you press Start agent."
+            : "Only start it if you opened this link yourself and you trust the task.",
           ok: "Start agent",
         });
         await api.linkConfirm(job.token, go).catch((e) => say(errText(e), true));
         return;
       }
+      case "draft":
+        // From the editor extension: the text waits in the message box until you press Send.
+        await refresh();
+        showWorkspace(job.workspace_id);
+        setTab("chat");
+        setAppend({ text: job.text, nonce: Date.now() });
+        say("Your selection is in the message box. Add anything else and send.");
+        return;
     }
   };
   useEffect(() => {

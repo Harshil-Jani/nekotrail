@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="24" height="24">
+  <!-- The nekotrail N-cat (brand/n-cat.svg) in one colour, for the activity bar. The eyes are cut out. -->
+  <path fill="#c5c5c5" fill-rule="evenodd" d="M22 40 L30 14 Q32 10 35 13 L46 32 L46 96 Q46 100 42 100 L26 100 Q22 100 22 96 Z M29 54 a5 6.5 0 1 0 10 0 a5 6.5 0 1 0 -10 0 Z"/>
+  <path fill="#c5c5c5" fill-rule="evenodd" d="M98 40 L90 14 Q88 10 85 13 L74 32 L74 96 Q74 100 78 100 L94 100 Q98 100 98 96 Z M81 54 a5 6.5 0 1 0 10 0 a5 6.5 0 1 0 -10 0 Z"/>
+  <path fill="#c5c5c5" d="M38 30 L54 30 L82 100 L66 100 Z"/>
+</svg>

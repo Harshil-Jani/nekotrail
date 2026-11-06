@@ -924,6 +924,10 @@ mockIPC(
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
       case "remote_take": if (linkMode === null || linkTaken) return [];
         linkTaken = true;
+        // ?link=editor: the editor extension's "New task from selection". ?link=draft: "Send selection to workspace chat".
+        if (linkMode === "draft") return [{ kind: "draft", workspace_id: workspaces[0].id, text: "From src/auth/session.ts:41-44:\n\n```ts\nif (token.expiresAt < Date.now()) {\n  return refresh(token);\n}\n```" }];
+        if (linkMode === "editor") return [{ kind: "confirm", token: "t1", from: "editor", repo: "pawprint-api", repo_path: "/code/pawprint-api", adds_repo: false, agent: "claude", base: null, plan: false,
+          prompt: "Make the session refresh retry once on a network error.\n\nFrom src/auth/session.ts:41-44:\n\n```ts\nif (token.expiresAt < Date.now()) {\n  return refresh(token);\n}\n```" }];
         return [{ kind: "confirm", token: "t1", repo: linkMode === "long" ? "pawprint-mobile" : "pawprint-api", repo_path: linkMode === "long" ? "~/code/pawprint-mobile" : "/code/pawprint-api", adds_repo: linkMode === "long", agent: linkMode === "long" ? "codex" : "claude", base: linkMode === "long" ? "release/2.4" : null, plan: linkMode === "long",
           prompt: linkMode === "long" ? "The iOS app crashes on launch for users upgrading from 2.3 when the keychain still holds the old token format.\n\n1. Reproduce it with the 2.3 fixture in test/fixtures/keychain-2.3.json.\n2. Migrate the token on first launch instead of reading it as the new format.\n3. Add a test that upgrades from 2.3 and launches twice.\n4. Don't touch the Android code.\n\nOpen a draft PR when the tests pass, and list anything you weren't sure about in its description so a reviewer can check it." : "Fix the flaky login test on CI" }];
       case "link_confirm": return null;
