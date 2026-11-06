@@ -146,6 +146,8 @@ mockIPC(
         { path: "internal/server/http.go", status: "M", additions: 3, deletions: 1 },
         { path: "internal/server/http_test.go", status: "A", additions: 35, deletions: 0 },
       ] : args.id === "w2" ? [
+        // ?manyfiles adds enough files for the filter box to appear (it shows from 8 files).
+        ...(location.search.includes("manyfiles") ? ["calendar.go", "calendar_test.go", "holidays.go", "metrics.go", "notify.go"].map((f) => ({ path: `internal/tickets/${f}`, status: "M", additions: 4, deletions: 1 })) : []),
         { path: "internal/tickets/sla.go", status: "M", additions: 61, deletions: 26 },
         { path: "internal/tickets/business_hours.go", status: "A", additions: 41, deletions: 0 },
         { path: "internal/tickets/sla_test.go", status: "M", additions: 15, deletions: 4 },
