@@ -67,7 +67,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 **Do anything from the keyboard.** ⌘K jumps to any workspace or action.
 <img src="docs/screenshots/palette.png" width="900" alt="Command palette">
 
-**Check your MCP servers.** Type `/mcp` in any chat. Copying a server or skill from one agent to another, as shown here, is in the next release (see the [changelog](CHANGELOG.md)).
+**Check your MCP servers.** Type `/mcp` in any chat to see every server Claude, Codex, Gemini and OpenCode have, and copy one from one agent to another in one click. Skills share the same way.
 <img src="docs/screenshots/mcp.png" width="900" alt="MCP servers and skills sheet with connection status and which agents have each one">
 
 **Light up the night sky.** Every workspace lights a star; every merged PR makes it shine.
@@ -119,7 +119,7 @@ The cat reflects the real state of your work, so its moods carry information:
 
 Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so on first launch right-click it and choose **Open**.
 
-**Updates.** nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the next release from the download link once by hand: those versions can't update themselves yet.
+**Updates.** nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the latest release from the download link once by hand: those versions can't update themselves yet.
 
 nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS, [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai).
 
@@ -185,7 +185,7 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 
 ## Status
 
-Early (0.12). Built and used daily on macOS. Feedback and PRs welcome.
+Early (0.12.1). Built and used daily on macOS. Feedback and PRs welcome.
 
 ## Sponsor
 
