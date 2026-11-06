@@ -115,22 +115,27 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
   const [preview, setPreview] = useState<McpPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A failed add (say the file changed underneath) fetches the preview again, so what's shown is current.
+  const [failed, setFailed] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
   useEffect(() => {
     let live = true;
     api.mcpSharePreview(workspaceId, row.name, target, choices).then((p) => { if (live) { setPreview(p); setError(null); } }).catch((e) => live && setError(errText(e)));
     return () => { live = false; };
-  }, [workspaceId, row.name, target, choices]);
+  }, [workspaceId, row.name, target, choices, rev]);
   const secrets = preview?.secrets ?? row.secrets;
   const answered = secretsAnswered(secrets, choices);
   const blockers = preview?.blockers ?? [];
   const add = async () => {
     if (!preview) return;
-    setBusy(true); setError(null);
+    setBusy(true); setFailed(null);
     try {
       const r = await api.mcpShareApply(workspaceId, row.name, target, choices, preview.token);
       onDone(`Added ${row.name} to ${agentName(target)} in ${r.file}.${r.backup ? ` Your old file is at ${r.backup}.` : ""}`);
     } catch (e) {
-      setError(errText(e));
+      setFailed(errText(e));
+      setPreview(null);
+      setRev((n) => n + 1);
       setBusy(false);
     }
   };
@@ -175,6 +180,7 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
         </>
       )}
       {!preview && !error && <p className="muted"><span className="spinner" /> Working out what to add…</p>}
+      {failed && <div className="mcp-note bad" role="alert">{failed}{preview ? " Here it is again, as the file is now." : ""}</div>}
       <div className="row">
         <span className="spacer" />
         <button onClick={onBack}>Back</button>
