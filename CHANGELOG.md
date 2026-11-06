@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.19.0 (2026-11-07)
 
 **Linear issues**
 - New Integrations pane in Settings: connect Linear with a personal API key. The key is kept in your Keychain (on Linux, your keyring), never in nekotrail's database, logs or exports. Test shows whose key it is.
