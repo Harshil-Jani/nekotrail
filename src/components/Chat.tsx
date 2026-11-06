@@ -789,7 +789,7 @@ export function Chat({
   // Slash commands: typed at the start of the composer.
   // Slash commands: nekotrail's own actions first, then the repo's and your own .claude/commands.
   const BASE_SLASH: [string, string][] = [
-    ["/mcp", "Show MCP servers this agent can use"],
+    ["/mcp", "MCP servers and skills, and share them across agents"],
     ["/model", "Pick the model and intelligence (⌘/)"],
     ["/intelligence", "Set how hard it thinks: /intelligence high"],
     ["/plan", "Switch to plan mode, no edits"], ["/auto", "Switch to auto-accept edits"],

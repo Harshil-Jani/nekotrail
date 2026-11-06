@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod agent;
 pub mod agentcfg;
+pub mod mcpshare;
 pub mod config;
 pub mod git;
 pub mod importer;
@@ -1323,6 +1324,39 @@ async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<Str
     Ok(text.trim().to_string())
 }
 
+/// Every MCP server and skill Claude, Codex and Gemini have (user config, and this workspace's
+/// project config), and which ones can be shared. Reads only.
+#[tauri::command]
+async fn mcp_share_overview(st: State<'_, AppState>, id: String) -> Res<mcpshare::Overview> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let homes = mcpshare::Homes::from_env()?;
+    Ok(mcpshare::overview(&homes, Some(Path::new(&ws.path))))
+}
+
+fn backup_stamp() -> String {
+    chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
+}
+
+/// Exactly what "Add to <agent>" would write, secrets hidden, and why it can't yet if it can't.
+#[tauri::command]
+async fn mcp_share_preview(st: State<'_, AppState>, id: String, name: String, target: mcpshare::AgentId, choices: HashMap<String, String>) -> Res<mcpshare::Preview> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    mcpshare::preview(&mcpshare::Homes::from_env()?, Some(Path::new(&ws.path)), &name, target, &choices, &backup_stamp())
+}
+
+/// Writes what the preview with `token` showed, after a backup. Refuses if the file moved since.
+#[tauri::command]
+async fn mcp_share_apply(st: State<'_, AppState>, id: String, name: String, target: mcpshare::AgentId, choices: HashMap<String, String>, token: String) -> Res<mcpshare::Applied> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    mcpshare::apply(&mcpshare::Homes::from_env()?, Some(Path::new(&ws.path)), &name, target, &choices, &token, &backup_stamp())
+}
+
+/// Links a skill folder for the other agents ("agents": Codex and Gemini, "claude": Claude).
+#[tauri::command]
+async fn skill_share(name: String, target: String) -> Res<String> {
+    mcpshare::share_skill(&mcpshare::Homes::from_env()?, &name, &target)
+}
+
 /// Custom slash commands: `.claude/commands/*.md` in the workspace and in ~/.claude, with their descriptions.
 #[tauri::command]
 async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String, String)>> {
@@ -2580,7 +2614,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts, pr_states,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work

@@ -194,6 +194,34 @@ mockIPC(
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
       case "model_catalog": return catalog;
       case "mcp_list": return "Checking MCP server health…\n\ngithub: https://api.githubcopilot.com/mcp - ✔ Connected\nlinear: https://mcp.linear.app/sse - ✔ Connected\npostgres: npx -y @modelcontextprotocol/server-postgres - ✗ Failed to connect";
+      // ?mcp opens the sheet (made-up servers and skills).
+      case "mcp_share_overview": return {
+        servers: [
+          { name: "github", transport: "http", summary: "https://api.githubcopilot.com/mcp", env: [], has: [{ agent: "claude", scope: "user", file: "~/.claude.json" }, { agent: "codex", scope: "user", file: "~/.codex/config.toml" }], from: { agent: "claude", scope: "user", file: "~/.claude.json" }, secrets: [], targets: [{ agent: "gemini", ok: true, why: null }], problem: null },
+          { name: "linear", transport: "sse", summary: "https://mcp.linear.app/sse", env: [], has: [{ agent: "claude", scope: "user", file: "~/.claude.json" }], from: { agent: "claude", scope: "user", file: "~/.claude.json" }, secrets: [], targets: [{ agent: "codex", ok: false, why: "Codex only connects to command servers and streamable HTTP servers. This one uses SSE, so Codex can't use it." }, { agent: "gemini", ok: true, why: null }], problem: null },
+          { name: "postgres", transport: "stdio", summary: "npx -y @modelcontextprotocol/server-postgres", env: ["PGHOST", "PGPASSWORD"], has: [{ agent: "claude", scope: "project", file: ".mcp.json" }], from: { agent: "claude", scope: "project", file: ".mcp.json" }, secrets: [{ id: "env:PGPASSWORD", kind: "env", key: "PGPASSWORD", can_ref: true }], targets: [{ agent: "codex", ok: true, why: null }, { agent: "gemini", ok: true, why: null }], problem: null },
+        ],
+        skills: [
+          { name: "release-notes", description: "Write release notes from merged PRs", has: ["claude", "codex", "gemini"], share: [] },
+          { name: "triage", description: "Label and prioritise new issues", has: ["claude"], share: [{ target: "agents", label: "Add to Codex and Gemini", link: "~/.agents/skills/triage", to: "~/.claude/skills/triage", ok: true, why: null }] },
+        ],
+        files: { claude: "~/.claude.json", codex: "~/.codex/config.toml", gemini: "~/.gemini/settings.json" }, problems: [],
+      };
+      case "mcp_share_preview": {
+        if (args.name !== "postgres") return {
+          file: "~/.codex/config.toml", creates: false, backup: null, snippet: `[mcp_servers.${args.name}]\nurl = "https://mcp.linear.app/sse"`, notes: [], asks: [], secrets: [], token: "t",
+          blockers: ["Codex only connects to command servers and streamable HTTP servers. This one uses SSE, so Codex can't use it."],
+        };
+        const ref = args.choices["env:PGPASSWORD"] === "ref";
+        const answered = !!args.choices["env:PGPASSWORD"];
+        return {
+          file: "~/.codex/config.toml", creates: false, backup: "~/.codex/config.toml.bak-nekotrail-20261106-142233",
+          snippet: `[mcp_servers.postgres]\ncommand = "npx"\nargs = ["-y", "@modelcontextprotocol/server-postgres"]${ref ? "\nenv_vars = [\"PGPASSWORD\"]" : ""}\n\n[mcp_servers.postgres.env]\nPGHOST = "localhost"${!ref && answered ? "\nPGPASSWORD = \"<hidden: your value, 18 characters>\"" : ""}`,
+          notes: ref ? ["Codex reads PGPASSWORD from the environment it starts in, so set it in your shell profile."] : [],
+          blockers: [], asks: answered ? [] : ["PGPASSWORD looks like a secret. Choose whether to bring it across as a variable or copy the value."],
+          secrets: [{ id: "env:PGPASSWORD", kind: "env", key: "PGPASSWORD", can_ref: true }], token: "t",
+        };
+      }
       case "slash_commands": return [["ship", "Run tests, bump the version and open the release PR"], ["triage", "Label and prioritise new issues"]];
       case "sections": return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
