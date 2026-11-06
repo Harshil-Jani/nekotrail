@@ -79,3 +79,81 @@ jobs:
           mv latest.next.json latest.json
           gh release upload "$tag" latest.json --clobber
           jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json
+
+  # Linux x86_64 (new, experimental): AppImage + .deb, both signed for the updater.
+  # Runs after the macOS job on purpose. tauri-action downloads the release's existing latest.json,
+  # keeps its platforms and adds linux-x86_64 (the AppImage), linux-x86_64-appimage and
+  # linux-x86_64-deb before re-uploading it (src/upload-version-json.ts in tauri-action). Two jobs
+  # doing that at the same time would race, and the last upload would drop the other's platforms.
+  linux:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: macos
+    # The oldest supported runner: the AppImage only runs on distros with this glibc or newer.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: WebKitGTK and the other Tauri build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+      # The release already exists (the macOS job made it), so tauri-action only adds the Linux
+      # assets and merges latest.json. Bundle targets (deb, appimage) come from tauri.linux.conf.json.
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: nekotrail ${{ github.ref_name }}
+          releaseDraft: false
+          includeUpdaterJson: true
+      - name: latest.json keeps macOS, gains Linux, and its notes are the changelog section only
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release download "$tag" -p latest.json -O latest.json --clobber
+          jq --rawfile notes notes.md '.notes = ($notes | sub("\\s+$"; ""))' latest.json > latest.next.json
+          for p in darwin-aarch64 darwin-x86_64 linux-x86_64 linux-x86_64-appimage linux-x86_64-deb; do
+            jq -e --arg p "$p" '.platforms[$p].url and (.platforms[$p].signature | length > 0)' latest.next.json >/dev/null \
+              || { echo "latest.json has no signed $p entry" >&2; cat latest.next.json; exit 1; }
+          done
+          # An AppImage install updates from the AppImage, a .deb install from the .deb.
+          jq -e '(.platforms["linux-x86_64"].url | endswith(".AppImage"))
+                 and (.platforms["linux-x86_64-appimage"].url | endswith(".AppImage"))
+                 and (.platforms["linux-x86_64-deb"].url | endswith(".deb"))' latest.next.json >/dev/null \
+            || { echo "latest.json points Linux at the wrong files" >&2; cat latest.next.json; exit 1; }
+          jq -e --arg v "${tag#v}" '.version == $v or .version == ("v" + $v)' latest.next.json >/dev/null \
+            || { echo "latest.json version does not match $tag" >&2; exit 1; }
+          mv latest.next.json latest.json
+          gh release upload "$tag" latest.json --clobber
+          jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json
+      - name: Linux install note in the release body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" --json body --jq .body > body.md
+          if ! grep -q '^### Linux (experimental)' body.md; then
+            {
+              echo ""
+              echo "### Linux (experimental)"
+              echo "x86_64 only. Debian or Ubuntu: download the \`.deb\` and run \`sudo apt install ./nekotrail_*_amd64.deb\`. Other distros: download the \`.AppImage\`, make it executable (\`chmod +x\`) and run it. Both update themselves from inside the app."
+            } >> body.md
+            gh release edit "$tag" --notes-file body.md
+          fi
