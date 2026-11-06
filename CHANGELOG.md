@@ -15,6 +15,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - A bad key, a rate limit or no network each show a plain message, and never hold up the app.
 - Linear API keys are hidden in exported sessions and away alerts, like other keys.
 
+**Design ship-gate fixes**
+- After you pick a Linear issue, New workspace says the branch is Linear's suggestion, and that the workspace gets the next free name if your repo already has that branch.
+- With no issues to show, the list offers the next step: Show anyone's issues, or Show any state.
+- Try again sits right after the error message, and the team and state menus keep their width while issues load.
+
 ## 0.18.0 (2026-11-07)
 
 **VS Code and Cursor extension**
