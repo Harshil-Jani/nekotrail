@@ -12,6 +12,12 @@
 //! - Codex: `mcp_servers` and `shell_environment_policy.set` (e.g. `ZDOTDIR`) in
 //!   `.codex/config.toml`, and allow rules in `.codex/rules/*.rules`, which run commands outside the
 //!   sandbox. Project hooks wait for Codex's own hook trust and `notify` is ignored for projects.
+//! - Gemini (`detect_gemini`, its own check and fingerprint): `hooks`, command `mcpServers` and
+//!   `tools.discoveryCommand` / `tools.callCommand` in `.gemini/settings.json`, and the risky
+//!   variables (`RISKY_ENV`) in `.gemini/.env` or `.env`, which a trusted folder copies into
+//!   Gemini's environment. Read from the Gemini CLI 0.65.0 source, not seen running: this Mac had
+//!   no Gemini sign-in. Gemini has no switch to load a folder without its config, so an untrusted
+//!   Gemini config stops the Gemini turn instead (`Agent::needs_trusted_config`).
 //!
 //! A file we cannot parse is listed whole: the CLI may still read it.
 
@@ -34,6 +40,9 @@ const CLAUDE_SETTINGS: [&str; 2] = [".claude/settings.json", ".claude/settings.l
 const MCP_JSON: &str = ".mcp.json";
 const CODEX_CONFIG: &str = ".codex/config.toml";
 const CODEX_RULES: &str = ".codex/rules";
+const GEMINI_SETTINGS: &str = ".gemini/settings.json";
+/// Gemini reads `.gemini/.env` first, then `.env`.
+const GEMINI_ENV: [&str; 2] = [".gemini/.env", ".env"];
 const SHOWN: usize = 4000;
 
 fn read(dir: &Path, rel: &str) -> Option<String> {
@@ -74,7 +83,26 @@ fn claude_settings(rel: &str, body: &str, out: &mut Vec<Item>) {
     let Ok(v) = serde_json::from_str::<Value>(body) else {
         return add("settings Claude may still load".into(), body.into());
     };
-    match &v["hooks"] {
+    hooks(&v["hooks"], &mut add);
+    if !v["apiKeyHelper"].is_null() {
+        add("apiKeyHelper".into(), text(&v["apiKeyHelper"]));
+    }
+    match &v["env"] {
+        Value::Null => {}
+        Value::Object(vars) if vars.is_empty() => {}
+        Value::Object(vars) => {
+            for (k, val) in vars {
+                add("env".into(), format!("{k}={}", text(val)));
+            }
+        }
+        other => add("env".into(), other.to_string()),
+    }
+}
+
+/// `{"<Event>": [{"matcher": "...", "hooks": [{"type": "command", "command": "..."}]}]}`, the
+/// shape Claude Code and Gemini CLI both use.
+fn hooks(v: &Value, add: &mut impl FnMut(String, String)) {
+    match v {
         Value::Null => {}
         Value::Object(events) => {
             for (event, groups) in events {
@@ -98,19 +126,6 @@ fn claude_settings(rel: &str, body: &str, out: &mut Vec<Item>) {
         }
         other => add("hooks".into(), other.to_string()),
     }
-    if !v["apiKeyHelper"].is_null() {
-        add("apiKeyHelper".into(), text(&v["apiKeyHelper"]));
-    }
-    match &v["env"] {
-        Value::Null => {}
-        Value::Object(vars) if vars.is_empty() => {}
-        Value::Object(vars) => {
-            for (k, val) in vars {
-                add("env".into(), format!("{k}={}", text(val)));
-            }
-        }
-        other => add("env".into(), other.to_string()),
-    }
 }
 
 fn mcp_json(body: &str, out: &mut Vec<Item>) {
@@ -118,7 +133,12 @@ fn mcp_json(body: &str, out: &mut Vec<Item>) {
     let Ok(v) = serde_json::from_str::<Value>(body) else {
         return add("MCP config Claude may still load".into(), body.into());
     };
-    for (name, s) in v["mcpServers"].as_object().into_iter().flatten() {
+    mcp_servers(&v["mcpServers"], &mut add);
+}
+
+/// `{"<name>": {"command": "...", "args": [...]}}`: servers that start a local command.
+fn mcp_servers(v: &Value, add: &mut impl FnMut(String, String)) {
+    for (name, s) in v.as_object().into_iter().flatten() {
         if let Some(cmd) = s["command"].as_str() {
             let args = s["args"].as_array().into_iter().flatten().map(text);
             add(format!("MCP server {name}"), std::iter::once(cmd.to_string()).chain(args).collect::<Vec<_>>().join(" "));
@@ -147,6 +167,49 @@ fn codex_config(body: &str, out: &mut Vec<Item>) {
             }
             None => add("shell env".into(), set.to_string()),
         }
+    }
+}
+
+fn gemini_settings(body: &str, out: &mut Vec<Item>) {
+    let mut add = |what: String, command: String| out.push(Item { agent: "gemini", file: GEMINI_SETTINGS.into(), what, command: shown(&command) });
+    let Ok(v) = serde_json::from_str::<Value>(body) else {
+        // Gemini also accepts comments in this file, which serde does not: list it whole.
+        return add("settings Gemini may still load".into(), body.into());
+    };
+    hooks(&v["hooks"], &mut add);
+    mcp_servers(&v["mcpServers"], &mut add);
+    for key in ["discoveryCommand", "callCommand"] {
+        if !v["tools"][key].is_null() {
+            add(format!("tool {key}"), text(&v["tools"][key]));
+        }
+    }
+}
+
+/// Variables that make a shell, Node, Python or git run something extra. Gemini copies a trusted
+/// folder's `.env` into its own environment (only names not already set), and from there into
+/// every command it runs. Other names are app config and stay unlisted, and so do their values.
+const RISKY_ENV: [&str; 15] = [
+    "BASH_ENV", "ENV", "ZDOTDIR", "PROMPT_COMMAND", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH",
+    "PERL5OPT", "RUBYOPT", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+    "GIT_SSH_COMMAND", "GIT_EXTERNAL_DIFF", "GIT_CONFIG_GLOBAL",
+];
+
+/// `KEY=value` lines of a dotenv file whose key is in `RISKY_ENV`, as written.
+fn risky_env(body: &str) -> Vec<String> {
+    body.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| {
+            let l = l.strip_prefix("export ").unwrap_or(l).trim_start();
+            let (k, _) = l.split_once('=')?;
+            RISKY_ENV.contains(&k.trim()).then(|| l.to_string())
+        })
+        .collect()
+}
+
+fn gemini_env(rel: &str, body: &str, out: &mut Vec<Item>) {
+    for line in risky_env(body) {
+        out.push(Item { agent: "gemini", file: rel.into(), what: "env".into(), command: shown(&line) });
     }
 }
 
@@ -192,6 +255,50 @@ pub fn fingerprint(dir: &Path) -> String {
         }
     }
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// What the repo's Gemini config would run. Kept apart from `detect`: Gemini reads none of the
+/// Claude or Codex files and they read none of its, so each agent is asked about its own config
+/// only, and repos trusted before Gemini was supported keep their fingerprint.
+pub fn detect_gemini(dir: &Path) -> Vec<Item> {
+    let mut out = vec![];
+    if let Some(body) = read(dir, GEMINI_SETTINGS) {
+        gemini_settings(&body, &mut out);
+    }
+    for rel in GEMINI_ENV {
+        if let Some(body) = read(dir, rel) {
+            gemini_env(rel, &body, &mut out);
+        }
+    }
+    out
+}
+
+/// Like `fingerprint`, for Gemini: `.gemini/settings.json` whole, and the risky lines of the
+/// `.env` files only, so rotating an API key in `.env` does not ask again.
+pub fn fingerprint_gemini(dir: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"nekotrail gemini config v1\0");
+    let env = GEMINI_ENV.iter().map(|rel| (rel.to_string(), std::fs::read_to_string(dir.join(rel)).ok().map(|b| risky_env(&b).join("\n").into_bytes())));
+    for (rel, body) in std::iter::once((GEMINI_SETTINGS.to_string(), std::fs::read(dir.join(GEMINI_SETTINGS)).ok())).chain(env) {
+        h.update((rel.len() as u64).to_le_bytes());
+        h.update(rel.as_bytes());
+        match body {
+            Some(body) => {
+                h.update([1u8]);
+                h.update((body.len() as u64).to_le_bytes());
+                h.update(&body);
+            }
+            None => h.update([0u8]),
+        }
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `check` for Gemini.
+pub fn check_gemini(dir: &Path) -> Option<(Vec<Item>, String)> {
+    let items = detect_gemini(dir);
+    (!items.is_empty()).then(|| (items, fingerprint_gemini(dir)))
 }
 
 /// What would run, and the fingerprint to approve. None when the repo's agent config runs nothing.
@@ -290,5 +397,48 @@ mod tests {
         put(e.path(), ".mcp.json", r#"{"mcpServers":{"evil":{"command":"sh"}}}"#);
         put(e.path(), ".codex/rules/a.rules", "y");
         assert_ne!(fingerprint(e.path()), fingerprint(r));
+    }
+
+    #[test]
+    fn gemini_config_is_its_own_check() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        put(r, ".mcp.json", r#"{"mcpServers":{"evil":{"command":"sh"}}}"#);
+        let (_, shared) = check(r).unwrap();
+        assert!(check_gemini(r).is_none(), "Claude config is not Gemini's business");
+        // Plain settings and app config in .env run nothing.
+        put(r, ".gemini/settings.json", r#"{"model":{"name":"pro"},"mcpServers":{"docs":{"httpUrl":"https://example.com"}}}"#);
+        put(r, ".env", "DATABASE_URL=postgres://x\nGEMINI_API_KEY=secret\n");
+        assert!(check_gemini(r).is_none(), "{:?}", detect_gemini(r));
+        put(r, ".gemini/settings.json", r#"{
+            "hooks": {"BeforeTool": [{"matcher": "run_shell_command", "hooks": [{"type": "command", "command": "./audit.sh"}]}]},
+            "mcpServers": {"evil": {"command": "node", "args": ["x.js"]}},
+            "tools": {"discoveryCommand": "./tools.sh", "callCommand": "./call.sh"}}"#);
+        put(r, ".gemini/.env", "export BASH_ENV=./evil.sh\nFOO=1\n");
+        put(r, ".env", "# NODE_OPTIONS=--require ./off.js\nDATABASE_URL=postgres://x\nPYTHONSTARTUP = ./py.py\n");
+        let mut got: Vec<(&str, String, String, String)> = detect_gemini(r).into_iter().map(|i| (i.agent, i.file, i.what, i.command)).collect();
+        got.sort();
+        let mut want = vec![
+            ("gemini", ".gemini/settings.json".to_string(), "hook BeforeTool (run_shell_command)".to_string(), "./audit.sh".to_string()),
+            ("gemini", ".gemini/settings.json".into(), "MCP server evil".into(), "node x.js".into()),
+            ("gemini", ".gemini/settings.json".into(), "tool discoveryCommand".into(), "./tools.sh".into()),
+            ("gemini", ".gemini/settings.json".into(), "tool callCommand".into(), "./call.sh".into()),
+            ("gemini", ".gemini/.env".into(), "env".into(), "BASH_ENV=./evil.sh".into()),
+            ("gemini", ".env".into(), "env".into(), "PYTHONSTARTUP = ./py.py".into()),
+        ];
+        want.sort();
+        assert_eq!(got, want);
+        // Repos trusted before Gemini existed keep their fingerprint: Gemini files are not in it.
+        assert_eq!(check(r).unwrap().1, shared);
+        let (_, g) = check_gemini(r).unwrap();
+        assert_ne!(g, shared);
+        // Rotating a secret in .env does not ask again; a risky line does.
+        put(r, ".env", "DATABASE_URL=postgres://y\nPYTHONSTARTUP = ./py.py\n");
+        assert_eq!(fingerprint_gemini(r), g);
+        put(r, ".env", "DATABASE_URL=postgres://y\nPYTHONSTARTUP = ./other.py\n");
+        assert_ne!(fingerprint_gemini(r), g);
+        // Settings Gemini can read but serde cannot (comments) are listed whole.
+        put(r, ".gemini/settings.json", "{ // hi\n }");
+        assert!(detect_gemini(r).iter().any(|i| i.what.contains("Gemini may still load")));
     }
 }

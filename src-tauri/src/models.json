@@ -317,5 +317,41 @@
     "new": false
    }
   ]
+ },
+ "gemini": {
+  "label": "Gemini CLI",
+  "effort_label": "Thinking",
+  "effort_names": {},
+  "default_model": "auto",
+  "models": [
+   {
+    "id": "auto",
+    "label": "Auto",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   },
+   {
+    "id": "pro",
+    "label": "Pro",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   },
+   {
+    "id": "flash",
+    "label": "Flash",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   },
+   {
+    "id": "flash-lite",
+    "label": "Flash-Lite",
+    "efforts": [],
+    "default_effort": null,
+    "new": false
+   }
+  ]
  }
 }
