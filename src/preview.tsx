@@ -4,6 +4,8 @@
  * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
  * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queue=cap (a spend cap reached, a runaway task), ?queueAdd (the Add form open), ?summary (the morning summary).
  * Usage: ?view=usage (a week of turns), ?usage=empty, ?usage=cap (caps set, today's reached). Chat stops: ?ws=w1&stop=loop or &stop=budget.
+ * Hand off: ?ws=w1&handoff=w1 opens the sheet on the Claude chat (&long: a 64-step chat; &limit: out of usage; &ask: Ask before changes,
+ * so Codex starts in Plan; &handoffTo=gemini). ?ws=w1&limit shows the out-of-usage card offering it; ?ws=w1&handedOff the two marker lines.
  * Export session: ?export=w1 opens the sheet (with a .env read and a token in a command, so the Hidden list has items); &exportChat=s1 for one chat.
  * First run (a fresh install): ?fresh (nothing found), &found=conductor or &found=terminal (what "Where's your code?"
  * leads with), &noagents (no agent CLI yet), &gh=0 (GitHub not signed in), &step=code or &step=try (open on that
@@ -24,6 +26,7 @@ import { getSettings } from "./settings";
 import { startAppearance } from "./appearance";
 import { AGENTS } from "./agents";
 import type { Agent } from "./api";
+import { handoffMode } from "./handoff";
 
 // A fresh install: no first-run marks, so the welcome flow and the clock start as they would.
 const fresh = new URLSearchParams(location.search).has("fresh");
@@ -134,7 +137,9 @@ const planEvents = [
 // ?opencode makes Comet's chat an OpenCode chat in "Ask before changes", mid-turn, waiting on an edit.
 const opencode = new URLSearchParams(location.search).has("opencode");
 const agentsParam = new URLSearchParams(location.search).get("agents");
-const installed: Agent[] = agentsParam === "all" ? AGENTS : ["claude", ...((agentsParam ?? "copilot").split(",").filter(Boolean) as Agent[])];
+// The hand-off previews need somebody to hand off to: Codex, Gemini and OpenCode are installed there too.
+const handoffAgents: Agent[] = ["codex", "gemini", "opencode"].filter(() => ["handoff", "handedOff", "limit", "long"].some((k) => new URLSearchParams(location.search).has(k))) as Agent[];
+const installed: Agent[] = agentsParam === "all" ? AGENTS : ["claude", ...handoffAgents, ...((agentsParam ?? "copilot").split(",").filter(Boolean) as Agent[])];
 if (opencode) planEvents.splice(planEvents.findIndex((e) => e.kind === "approval"), 1, { kind: "approval", request_id: "a2", tool: "Edit", input: "internal/tickets/sla.go", description: "Edit internal/tickets/sla.go", can_always: true });
 
 const workspaces = [
@@ -246,6 +251,88 @@ const archivedEvents = [
   { kind: "tool_result", id: "a2", output: "ok", is_error: false },
   { kind: "done", is_error: false, duration_ms: 52000, cost_usd: 0.31 },
 ];
+// Hand off to another agent, on Mochi's Claude chat (s1). ?handoff=w1 opens the sheet (&handoffTo=gemini picks
+// another agent). ?long gives the chat a long transcript (60 more steps, a todo list, commands that keep failing),
+// ?limit ends it out of usage (the card offers the hand-off, and the sheet says why), ?ask
+// puts it in Ask before changes (Codex can't ask, so the sheet says it starts in Plan). ?handedOff shows the two
+// marker lines: the Claude chat ends "Handed off to Codex", and the Codex tab starts "Continued from Claude".
+const hq = new URLSearchParams(location.search);
+const longChat = hq.has("long");
+const outOfUsage = hq.has("limit") || hq.has("handedOff");
+if (longChat) {
+  const steps: any[] = [
+    { kind: "user", text: "The NLB listener has a 350s idle timeout. Make the idle timeout configurable per listener, keep 75s for the ALB, and don't make the test sleep." },
+    { kind: "tool", id: "l0", name: "TodoWrite", input: JSON.stringify([
+      { content: "Read the listener config", status: "completed" },
+      { content: "Add IdleTimeout to Config with 75s as the default", status: "completed" },
+      { content: "Set 360s for the NLB listener in deploy/nlb.yaml", status: "in_progress", activeForm: "Setting 360s for the NLB listener" },
+      { content: "Inject a clock so http_test.go doesn't sleep 61s", status: "pending" },
+      { content: "Run go test ./... and golangci-lint", status: "pending" },
+    ]) },
+  ];
+  const files = ["internal/server/config.go", "internal/server/http.go", "internal/server/listener.go", "deploy/nlb.yaml", "deploy/alb.yaml", "internal/server/http_test.go"];
+  for (let i = 0; i < 60; i++) {
+    const id = `l${i + 1}`;
+    if (i % 5 === 4) {
+      steps.push({ kind: "tool", id, name: "Bash", input: "go test ./internal/server/... -run TestIdleTimeout -count=1" });
+      steps.push({ kind: "tool_result", id, output: "--- FAIL: TestIdleTimeout/behind_nlb (0.00s)\n    http_test.go:31: IdleTimeout = 75s, want at least 350s for the NLB listener\nFAIL", is_error: true });
+    } else {
+      steps.push({ kind: "tool", id, name: i % 3 ? "Read" : "Edit", input: files[i % files.length] });
+      steps.push({ kind: "tool_result", id, output: "", is_error: false });
+    }
+    if (i % 12 === 11) steps.push({ kind: "text", text: `Pass ${(i + 1) / 12}: the listener reads its own timeout now, but the NLB test still builds the server from the default Config, so it gets 75s.` });
+  }
+  steps.push({ kind: "text", text: "The config plumbing is done: `Config.IdleTimeout` defaults to 75s and each listener can set its own. The NLB test still fails because `deploy/nlb.yaml` isn't read in tests. Next I load the listener config in the test and inject a clock instead of sleeping." });
+  events.splice(events.length - 2, 0, ...steps);
+}
+if (outOfUsage) events.push({ kind: "text", text: "You've hit your limit · resets 3pm (Asia/Kolkata)", fix: "limit", agent: "claude" } as any);
+if (hq.has("handedOff")) events.push({ kind: "handoff", dir: "to", agent: "codex", session_id: "s3" } as any);
+const sessionsW1 = () => [
+  { id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" },
+  { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: hq.has("ask") ? "ask" : "acceptEdits", effort: "high" },
+  ...(handoffChat ? [handoffChat] : []),
+];
+/** The brief the backend would build for Mochi's Claude chat (src-tauri/src/handoff.rs), in its exact layout. */
+function sampleBrief(): string {
+  const task = "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.";
+  const parts = [
+    outOfUsage
+      ? "Claude ran out of usage partway through this task, so you're taking over. You work in the same folder and on the same branch: everything Claude changed is already there. Don't start over."
+      : "You're taking over this task from Claude, partway through. You work in the same folder and on the same branch: everything Claude changed is already there. Don't start over.",
+    `## The task\n> ${task}`,
+  ];
+  if (longChat) parts.push("## What the user said since\n- The NLB listener has a 350s idle timeout. Make the idle timeout configurable per listener, keep 75s for the ALB, and don't make the test sleep.");
+  const did = [
+    longChat
+      ? "Claude's last 2 messages:\n> Pass 5: the listener reads its own timeout now, but the NLB test still builds the server from the default Config, so it gets 75s.\n\n> The config plumbing is done: `Config.IdleTimeout` defaults to 75s and each listener can set its own. The NLB test still fails because `deploy/nlb.yaml` isn't read in tests. Next I load the listener config in the test and inject a clock instead of sleeping."
+      : "Claude's last 2 messages:\n> Found it. The server closes idle keep-alive connections after **30s**, but the load balancer keeps them for **60s**. After a quiet minute the balancer reuses a connection the server already closed, and the client gets a 502.\n>\n> I raised `IdleTimeout` to 75s so the server always outlives the balancer, and added a test that fails on the old value.\n\n> Review of the branch:\n> - internal/server/http.go:22: 75s is right for the ALB, but the gRPC port sits behind an NLB with a 350s timeout. Fix: make it configurable.\n> - internal/server/http_test.go:14: the test sleeps 61s. Fix: inject a clock.\n>\n> Otherwise ready to merge.",
+    "Files changed against `main`:\n- `internal/server/http.go` +3 -1\n- `internal/server/http_test.go` +35 -0 (new)\n2 files in all, +38 -1.",
+    "Last checks: test `go test ./...` failed (2 failing: TestIdleTimeout/behind_nlb, TestSLA/friday_evening); lint `golangci-lint run` passed; vet `go vet ./...` passed.",
+  ];
+  if (longChat) {
+    did.push("Commands that still fail (their last run failed):\n- `go test ./internal/server/... -run TestIdleTimeout -count=1`: --- FAIL: TestIdleTimeout/behind_nlb (0.00s)");
+    did.push(["Its last 12 steps (of 64):", "- Edited `internal/server/config.go`", "- Failed: Ran `go test ./internal/server/... -run TestIdleTimeout -count=1`", "- Read `internal/server/listener.go`", "- Edited `deploy/nlb.yaml`", "- Read `deploy/alb.yaml`", "- Read `internal/server/http_test.go`", "- Failed: Ran `go test ./internal/server/... -run TestIdleTimeout -count=1`", "- Read `internal/server/http.go`", "- Read `internal/server/listener.go`", "- Edited `deploy/nlb.yaml`", "- Read `deploy/alb.yaml`", "- Failed: Ran `go test ./internal/server/... -run TestIdleTimeout -count=1`"].join("\n"));
+  } else {
+    did.push("Its steps:\n- Ran `kubectl logs deploy/pawprint-api --since=30m | grep 502`\n- Read `internal/server/http.go`\n- Edited `internal/server/http.go`\n- Ran `go test ./internal/server/...`");
+  }
+  parts.push(`## What Claude did\n${did.join("\n\n")}`);
+  parts.push(longChat
+    ? "## What's left\nFrom Claude's todo list (2 of 5 done), still to do:\n- [ ] Set 360s for the NLB listener in deploy/nlb.yaml\n- [ ] Inject a clock so http_test.go doesn't sleep 61s\n- [ ] Run go test ./... and golangci-lint"
+    : "## What's left\nClaude left no todo list or plan. Work out what's left from the task and the changes.");
+  parts.push("## Your turn\n1. Start with `git status` and `git diff` to see the work as it is now. Don't redo what's done.\n2. Carry on with what's left, and get the failing checks and commands above passing.\n3. When you finish, say what you changed and how you checked it.");
+  return parts.join("\n\n");
+}
+let handoffChat: any = hq.has("handedOff") ? { id: "s3", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Fix 502 after deploy", model: "gpt-5.5", permission_mode: "acceptEdits", effort: null } : null;
+const handoffEvents: any[] = hq.has("handedOff") ? [
+  { kind: "handoff", dir: "from", agent: "claude", session_id: "s1", task: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", reason: "limit" },
+  { kind: "user", checkpoint: "h1", text: sampleBrief() },
+  { kind: "tool", id: "h2", name: "Bash", input: "git status --short && git diff --stat main" },
+  { kind: "tool_result", id: "h2", output: " M internal/server/http.go\n?? internal/server/http_test.go", is_error: false },
+  { kind: "tool", id: "h3", name: "Edit", input: "internal/server/config.go" },
+  { kind: "tool_result", id: "h3", output: "", is_error: false },
+  { kind: "text", text: "Picked up from Claude's change. `IdleTimeout` now comes from `Config`, 75s for the ALB listener and 360s for the NLB one, and the test injects a clock instead of sleeping 61s. `go test ./internal/server/...` passes." },
+  { kind: "done", is_error: false, duration_ms: 38400, cost_usd: 0.11 },
+] : [];
 const corpus = (() => {
   const day = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
   const out: { id: number; ws: string; session: string; index: number; total: number; ev: any; at: string; agent: string; chat: string }[] = [];
@@ -699,10 +786,10 @@ mockIPC(
         if (args.workspaceId === "w7") return [{ id: "s7", workspace_id: "w7", agent: "claude", agent_session_id: "4b1f0c2e-9d7a-4e55-a1c3-2f6d8e9b7a10", title: "Fix the flaky checkout test", model: null, permission_mode: "acceptEdits" }];
         if (args.workspaceId === "w9") return [{ id: "s7", workspace_id: "w9", agent: "codex", agent_session_id: null, title: "Webhook retries", model: null, permission_mode: "acceptEdits" }];
         return args.workspaceId === "w1"
-        ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
+        ? sessionsW1()
         : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
-      case "session_events_tail": { const all = fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
-      case "session_events": return fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
+      case "session_events_tail": { const all = fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s3" ? handoffEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
+      case "session_events": return fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s3" ? handoffEvents : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_cache": {
         return Object.fromEntries(["w1", "w2", "w3", "w4", "w5", ...(multi !== null ? ["g1", "g2", "g3"] : [])].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
@@ -797,6 +884,22 @@ mockIPC(
       }
       // ?agents=copilot,grok: the CLIs on PATH besides Claude (default: Copilot). ?agents=all: every one.
       case "installed_agents": return installed;
+      // Hand off: the brief Mochi's Claude chat would get, then a Codex tab that picks it up.
+      case "handoff_brief": {
+        const text = sampleBrief();
+        return { text, reason: outOfUsage ? "limit" : "asked", hidden: 0, cut: longChat, max: 6000 };
+      }
+      case "handoff_start": {
+        handoffChat = { id: "s3", workspace_id: "w1", agent: args.agent, agent_session_id: null, title: "Fix 502 after deploy", model: args.model ?? null, permission_mode: handoffMode(hq.has("ask") ? "ask" : "acceptEdits", args.agent), effort: args.effort ?? null };
+        handoffEvents.splice(0, handoffEvents.length,
+          { kind: "handoff", dir: "from", agent: "claude", session_id: "s1", task: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", reason: outOfUsage ? "limit" : "asked" },
+          { kind: "user", checkpoint: "h1", text: args.text });
+        const back = { kind: "handoff", dir: "to", agent: args.agent, session_id: "s3" };
+        events.push(back as any);
+        emit("agent", { session_id: "s1", event: back });
+        return handoffChat;
+      }
+      case "show_session": return sessionsW1().find((x) => x.id === args.id) ?? null;
       case "github_repos": return [
         { nameWithOwner: "pawprint/pawprint-web", description: "The help desk's web app", pushedAt: "2026-11-06T10:00:00Z", isPrivate: false },
         { nameWithOwner: "pawprint/pawprint-api", description: "Tickets, SLAs and on-call", pushedAt: "2026-11-05T10:00:00Z", isPrivate: true },
