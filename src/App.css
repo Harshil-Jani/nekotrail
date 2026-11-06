@@ -230,6 +230,8 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .import-card { border: 0.5px solid var(--line-strong); border-radius: var(--radius); padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); align-items: flex-start; background: var(--surface); }
 .import-card h2 { margin: 0; font-size: 17px; }
 .import-card p { margin: 0; color: var(--muted); }
+.import-head { align-self: stretch; }
+.import-head .icon { width: 24px; height: 24px; margin: -4px -8px 0 0; }
 
 /* ---------- chat ---------- */
 .chat { display: flex; flex-direction: column; height: 100%; }
@@ -292,7 +294,7 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .agent-badge { font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 var(--s1); }
 
 /* ---------- diff ---------- */
-.diff-view { display: grid; grid-template-columns: 280px 1fr; height: 100%; }
+.diff-view { display: grid; grid-template-columns: clamp(200px, 22vw, 280px) 1fr; height: 100%; }
 .file-list { border-right: 0.5px solid var(--line-strong); overflow-y: auto; }
 .file-list-head { padding: var(--s2) var(--s3); display: flex; gap: var(--s2); align-items: center; border-bottom: 0.5px solid var(--line-strong); font-weight: 700; }
 .file { display: flex; align-items: center; gap: 6px; padding-left: var(--s3); }
@@ -309,6 +311,10 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .code-edit:focus { border: none; }
 .gh-comment { display: flex; gap: var(--s2); align-items: flex-start; margin: var(--s1) var(--s4) var(--s2) 108px; max-width: 640px; border: 0.5px solid var(--line-strong); background: var(--surface); padding: var(--s2) var(--s3); font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; font-size: 13px; white-space: pre-wrap; }
 .gh-comment.reply { margin-left: 132px; }
+/* Comments fit the visible diff and stay in view while long lines scroll sideways. */
+.file-diff { container-type: inline-size; }
+.file-diff .gh-comment, .file-diff .review-comment, .file-diff .review-edit { max-width: min(640px, calc(100cqw - 124px)); position: sticky; left: 108px; }
+.file-diff .gh-comment.reply { left: 132px; max-width: min(616px, calc(100cqw - 148px)); }
 .gh-comment > div { flex: 1; display: flex; flex-direction: column; gap: 2px; line-height: 1.5; }
 .file.selected { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
 .file-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
@@ -451,7 +457,12 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 0.
 @keyframes rise { from { opacity: 0; transform: translateY(-6px) scale(0.99); } }
 
 /* ---------- settings (⌘,) ---------- */
-.modal.settings { width: 560px; max-height: 86vh; overflow-y: auto; border: 0.5px solid var(--line-strong); }
+.modal.settings { width: 560px; height: min(600px, 86vh); overflow: hidden; border: 0.5px solid var(--line-strong); }
+/* Four panes, Mac style: a centred segmented control on top, the pane scrolls, the footer stays. */
+.settings-head .icon { margin: -4px -8px 0 0; }
+.seg.settings-panes { align-self: center; }
+.settings-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s3); }
+.settings-body > section:first-child { border-top: none; padding-top: 0; }
 .settings section { display: flex; flex-direction: column; border-top: 0.5px solid var(--line-strong); padding-top: var(--s3); }
 .settings h3 { margin: 0 0 var(--s2); font-size: 12px; font-weight: 700; color: var(--muted); }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding: 6px 0; font-size: 13.5px; }
@@ -502,6 +513,12 @@ button.good-btn:hover { background: var(--good); }
 .status-select.st-in_review { color: var(--good); }
 .status-select.st-done { color: var(--purple); }
 .nw-source { padding: 0 var(--s3); }
+/* Inset the source control to the sheet's 16px content edge (as a margin: .seg owns its own padding). */
+.seg.nw-source { margin: var(--s3) var(--s4) 0; }
+/* Permissions in the sheet's footer: the same quiet pop-up as the model picker next to it. */
+.nw-foot select { height: 24px; padding: 0 var(--s6) 0 var(--s2); font-size: 12px; background-color: transparent; box-shadow: none; color: var(--muted); }
+.nw-foot select:hover { background-color: var(--hover); color: var(--text); }
+.nw-foot select:focus-visible { box-shadow: var(--ring); }
 .nw-prompt.short { min-height: 72px; font-size: 14px; }
 .nw-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; padding: var(--s1) 0; border-bottom: 0.5px solid var(--line-strong); }
 .nw-list p { padding: var(--s3) var(--s4); margin: 0; display: flex; gap: var(--s2); align-items: center; }
@@ -627,6 +644,8 @@ button.good-btn:hover { background: var(--good); }
 .compare-col dd { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
 .compare-col .win { color: var(--wait); }
 .compare-col .row button { flex: 1; justify-content: center; }
+/* Keep is a plain push button until you point at its column (or it is the recommended one). */
+.compare-col:hover .keep, .compare-col:focus-within .keep { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow-control); font-weight: 600; }
 .findings-btn { margin-top: var(--s2); font-size: 12px; color: var(--accent-text); border-color: var(--accent-ring); }
 .usage { font-size: 11.5px; color: var(--muted); padding: 2px 4px 4px; cursor: default; }
 
@@ -849,7 +868,7 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 .board-head { display: flex; align-items: center; gap: var(--s3); height: 52px; padding: 0 var(--s4) 0 var(--s5); border-bottom: 0.5px solid var(--line-strong); flex-shrink: 0; }
 .board-head h1 { font-size: 15px; font-weight: 700; margin: 0; }
 .board-head .muted { font-size: 12px; }
-.board-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: var(--s3); padding: var(--s4) var(--s5); overflow-x: auto; }
+.board-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: var(--s3); padding: var(--s4) var(--s5); overflow-x: auto; }
 .board-col { display: flex; flex-direction: column; min-height: 0; border-radius: var(--r-xl); background: var(--surface); padding: var(--s3) var(--s2) var(--s2); transition: background-color 0.15s var(--ease), box-shadow 0.15s var(--ease); }
 .board-col header { display: flex; align-items: center; gap: 6px; padding: 0 var(--s2); font-size: 13px; }
 .board-col header .status-dot { margin: 0 2px; }
@@ -864,7 +883,7 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 .card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11px; }
 .card-foot span { display: inline-flex; align-items: center; gap: 3px; }
 .manual { color: var(--accent-text); }
-.card-empty { padding: var(--s4) var(--s2); text-align: center; color: var(--faint); font-size: 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); }
+.card-empty { padding: var(--s4) var(--s2); text-align: center; color: var(--muted); font-size: 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); }
 .sidebar-head .icon { width: 26px; height: 26px; }
 
 /* Conductor-style single-line rows */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Crown, X } from "lucide-react";
 import { api, type Workspace } from "../api";
+import { ask } from "./Confirm";
 
 type Stats = Awaited<ReturnType<typeof api.workspaceStats>>;
 
@@ -35,12 +36,23 @@ export function Compare({
   const best = (f: (s: Stats) => number) => done.length > 1 ? done.reduce((a, b) => (f(stats[a.id]) <= f(stats[b.id]) ? a : b)).id : null;
   const cheapest = best((s) => s.cost_usd || Infinity);
   const fastest = best((s) => s.duration_ms || Infinity);
+  // Recommended only when one result is both the cheapest and the fastest; otherwise no button shouts.
+  const recommended = cheapest && cheapest === fastest ? cheapest : null;
+  const keep = async (w: Workspace) => {
+    const others = workspaces.filter((x) => x.id !== w.id).map(names).join(" and ");
+    const go = await ask({
+      title: `Keep ${names(w)}?`,
+      body: `${others} is archived. Its branch is kept, but uncommitted changes in its folder are lost.`,
+      ok: `Keep ${names(w)}`,
+    });
+    if (go) onKeep(w.id);
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal compare" role="dialog" aria-modal="true" aria-label="Compare agents" onClick={(e) => e.stopPropagation()}>
         <div className="row">
-          <h2>Bake-off</h2>
+          <h2>Compare agents</h2>
           <span className="spacer" />
           <button className="icon" aria-label="Close" onClick={onClose}><X size={16} /></button>
         </div>
@@ -63,7 +75,7 @@ export function Compare({
                 </dl>
                 <div className="row">
                   <button onClick={() => onOpen(w.id)}>Open changes</button>
-                  <button className="primary" onClick={() => onKeep(w.id)}>Keep this one</button>
+                  <button className={`keep ${recommended === w.id ? "primary" : ""}`} onClick={() => keep(w)} title={recommended === w.id ? "Cheapest and fastest of the two" : undefined}>Keep this one</button>
                 </div>
               </section>
             );

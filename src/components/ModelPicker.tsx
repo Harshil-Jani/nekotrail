@@ -12,6 +12,21 @@ export function useCatalog() {
   return cat;
 }
 
+const NEW_FOR_MS = 30 * 24 * 3600_000;
+/**
+ * "New" only for 30 days. A catalog `released` date (YYYY-MM-DD) wins; without one, the 30 days count
+ * from the first launch that saw the model flagged new, remembered in localStorage.
+ */
+function isNew(m: { id: string; new?: boolean; released?: string }) {
+  const now = Date.now();
+  if (m.released) return now - Date.parse(m.released) < NEW_FOR_MS;
+  if (!m.new) return false;
+  let seen: Record<string, number> = {};
+  try { seen = JSON.parse(localStorage.getItem("nekotrail.modelsSeen") || "{}"); } catch { /* reset below */ }
+  if (!seen[m.id]) { seen[m.id] = now; localStorage.setItem("nekotrail.modelsSeen", JSON.stringify(seen)); }
+  return now - seen[m.id] < NEW_FOR_MS;
+}
+
 /** Newest model of each family first; everything else folds under "Older versions". */
 function split(models: ModelCatalog[Agent]["models"]) {
   const seen = new Set<string>();
@@ -81,7 +96,7 @@ export function ModelPicker({
     <button key={m.id} role="menuitemradio" aria-checked={m.id === model} onClick={() => pick(m.id)}>
       {m.id === model ? <Check size={14} /> : <span className="check-space" />}
       <span className="pm-label">{m.label}</span>
-      {m.new && <span className="new-tag">New</span>}
+      {isNew(m) && <span className="new-tag">New</span>}
       {m.id === a?.default_model && <span className="muted">default</span>}
     </button>
   );

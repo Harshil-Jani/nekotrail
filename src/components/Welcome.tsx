@@ -29,10 +29,16 @@ function CheckRow({ ok, warn, title, detail, fix }: { ok: boolean; warn?: boolea
 }
 
 /** The setup checklist: what nekotrail needs on this Mac, and the command for anything missing. */
-export function SetupCheck({ compact = false }: { compact?: boolean }) {
+export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; onStatus?: (s: { allOk: boolean; ghOk: boolean }) => void }) {
   const [d, setD] = useState<Doctor | null>(null);
   const [busy, setBusy] = useState(false);
-  const run = () => { setBusy(true); api.doctor().then(setD).catch(() => {}).finally(() => setBusy(false)); };
+  const run = () => {
+    setBusy(true);
+    api.doctor()
+      .then((x) => { setD(x); onStatus?.({ allOk: x.git.ok && x.gh.ok && (x.claude.ok || x.codex.ok), ghOk: x.gh.ok }); })
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  };
   useEffect(run, []);
   if (!d) return <p className="muted"><span className="spinner" /> Checking your setup…</p>;
   const agentOk = d.claude.ok || d.codex.ok;
@@ -139,12 +145,22 @@ export function Welcome({
   useEffect(() => { api.importedOutside().then(setOutside).catch(() => {}); }, [repos.length]);
   useEffect(() => { if (canImport) api.importPreview().then(setPreview).catch(() => {}); }, [canImport, repos.length]);
   const fresh = repos.length === 0;
-  const hasImport = !!preview && preview.workspaces + preview.repos > 0;
+  // Setup state from the checklist: it goes first while anything is red, and the greeting waits for GitHub.
+  const [setup, setSetup] = useState<{ allOk: boolean; ghOk: boolean } | null>(null);
+  const setupRed = !setup || !setup.allOk;
+  // The import card shows only for Conductor work not brought over yet, and stays away once dismissed
+  // until there is something new.
+  const importKey = preview ? `${preview.repos}:${preview.workspaces}:${preview.sessions}` : "";
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem("nekotrail.importDismissed") ?? "");
+  const hasImport = !!preview && preview.workspaces + preview.repos > 0 && dismissed !== importKey;
+  const dismissImport = () => { localStorage.setItem("nekotrail.importDismissed", importKey); setDismissed(importKey); };
+  const setupCard = <SetupCheck compact={!fresh} onStatus={setSetup} />;
   return (
     <div className="welcome">
       <Mascot size={88} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={onPet} title="Pet the cat" />
-      <h1>{me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Hi there."}</h1>
+      <h1>{setup?.ghOk && me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Welcome to nekotrail."}</h1>
       <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
+      {setupRed && setupCard}
 
       {outside.length > 0 && (
         <div className="import-card hero">
@@ -153,7 +169,7 @@ export function Welcome({
             {outside.length} imported {outside.length === 1 ? "workspace still lives" : "workspaces still live"} in Conductor's folder. If Conductor cleans up or is uninstalled, that folder can be deleted with your uncommitted work.
             Moving them takes a few seconds; branches, chats and uncommitted changes come along.
           </p>
-          <button className="accent" disabled={moving} onClick={async () => {
+          <button disabled={moving} onClick={async () => {
             setMoving(true);
             try {
               const [n, problems] = await api.relocateImported();
@@ -169,23 +185,27 @@ export function Welcome({
       {moveResult && <p className="muted">{moveResult}</p>}
       {hasImport && (
         <div className="import-card hero">
-          <h2>{fresh ? "Pick up where you left off in Conductor" : "New work in Conductor"}</h2>
+          <div className="row import-head">
+            <h2>{fresh ? "Pick up where you left off in Conductor" : "New work in Conductor"}</h2>
+            <span className="spacer" />
+            <button className="icon" aria-label="Dismiss" title="Hide until there is new work in Conductor" onClick={dismissImport}><X size={14} /></button>
+          </div>
           <p>
             Bring over {preview.repos > 0 ? `${preview.repos} ${preview.repos === 1 ? "repo" : "repos"}, ` : ""}
             {preview.workspaces} {preview.workspaces === 1 ? "workspace" : "workspaces"} and {preview.sessions} {preview.sessions === 1 ? "chat" : "chats"} with their history.
             {preview.skipped > 0 ? ` ${preview.skipped} already here or gone from disk.` : ""} nekotrail only reads Conductor's data. Nothing is moved or deleted, and chats continue where they left off.
           </p>
-          <button className="accent" disabled={importing} onClick={async () => { setImporting(true); await onImport(); setImporting(false); setPreview(null); }}>
+          <button disabled={importing} onClick={async () => { setImporting(true); await onImport(); setImporting(false); setPreview(null); }}>
             {importing ? <span className="spinner" /> : <Download size={15} />}Import from Conductor
           </button>
         </div>
       )}
 
-      <SetupCheck compact={!fresh} />
+      {!setupRed && setupCard}
 
       <div className="start-actions">
         {!fresh && <button className="primary" onClick={onNew}><Plus size={15} />Create workspace <kbd>⌘N</kbd></button>}
-        <button className={fresh ? "primary" : ""} onClick={onAddRepo}><FolderOpen size={15} />Add local repo</button>
+        <button className={fresh && setup?.allOk ? "primary" : ""} onClick={onAddRepo}><FolderOpen size={15} />Add local repo</button>
         <button onClick={onClone}><GitFork size={15} />Clone repo from GitHub</button>
       </div>
       {!fresh && <p className="muted">⌘K finds any workspace or action. ⌘⌥L jumps to the next one with news.</p>}

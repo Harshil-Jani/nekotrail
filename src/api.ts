@@ -30,7 +30,7 @@ export type Doctor = {
 };
 export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number };
 
-export type CatalogModel = { id: string; label: string; efforts: string[]; default_effort?: string | null; new?: boolean };
+export type CatalogModel = { id: string; label: string; efforts: string[]; default_effort?: string | null; new?: boolean; released?: string };
 export type AgentCatalog = { label: string; effort_label: string; effort_names: Record<string, string>; default_model: string; models: CatalogModel[] };
 export type ModelCatalog = Record<Agent, AgentCatalog>;
 
@@ -128,7 +128,7 @@ export const displayName = (sky: Sky, w: Workspace) => w.title || starFor(sky, w
 
 /** Status set by hand, else derived: merged PR = done, open PR = in review, else in progress. */
 export const statusOf = (w: Workspace, prState?: string | null): Exclude<WsStatus, ""> =>
-  w.status || (prState === "MERGED" ? "done" : prState === "OPEN" ? "in_review" : "in_progress");
+  w.status || (prState === "MERGED" || prState === "CLOSED" ? "done" : prState === "OPEN" ? "in_review" : "in_progress");
 
 export const STATUS_LABEL: Record<Exclude<WsStatus, "">, string> = {
   backlog: "Backlog",
