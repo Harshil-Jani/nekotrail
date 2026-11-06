@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type PermissionMode, type Session } from "../api";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
@@ -8,7 +8,9 @@ import { ModelPicker } from "./ModelPicker";
 import { McpSheet } from "./McpSheet";
 import { ask } from "./Confirm";
 import { getSettings } from "../settings";
-import { AGENTS, AGENT_INFO, agentName, otherAgent } from "../agents";
+import { AGENT_INFO, agentName, otherAgent, splitAgents } from "../agents";
+import { useInstalledAgents } from "../useInstalledAgents";
+import { AgentMenuItems } from "./AgentMenuItems";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
 export function matchFiles(files: string[], q: string, max = 8): string[] {
@@ -427,11 +429,15 @@ export function Chat({
   const [queue, setQueue] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState(false);
+  const [moreAgents, setMoreAgents] = useState(false);
+  const installedAgents = useInstalledAgents();
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const session = sessions.find((s) => s.id === active) ?? null;
   const busy = !!active && running.has(active);
+  // The + menu: Claude, Codex and installed agents (and this chat's), the rest under "More agents".
+  const chatAgents = splitAgents(installedAgents, session?.agent, 6);
   const anyBusy = sessions.some((s) => running.has(s.id));
 
   // Which checkpoints in this chat can still be rewound to (workspaces keep their last 50).
@@ -865,9 +871,19 @@ export function Chat({
           <button className="icon" title="Start a chat (⌘T)" aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
-              {AGENTS.map((a) => (
+              {chatAgents.shown.map((a) => (
                 <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}><span className="menu-icon-space" aria-hidden />Start a {AGENT_INFO[a].name} chat</button>
               ))}
+              {(chatAgents.installed.length > 0 || chatAgents.missing.length > 0) && (
+                <button role="menuitem" aria-expanded={moreAgents} onClick={() => setMoreAgents((m) => !m)}>
+                  <ChevronRight size={13} style={{ transform: moreAgents ? "rotate(90deg)" : undefined }} />More agents
+                </button>
+              )}
+              {moreAgents && (
+                <span className="newchat-more" role="group" aria-label="More agents">
+                  <AgentMenuItems split={chatAgents} known={installedAgents !== null} pick={(a) => { setMenu(false); setMoreAgents(false); newChat(a); }} label={(a) => `Start a ${AGENT_INFO[a].name} chat`} />
+                </span>
+              )}
               <div className="menu-sep" />
               <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>

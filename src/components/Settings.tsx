@@ -3,6 +3,7 @@ import { Minus, Plus, Volume2, X } from "lucide-react";
 import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
 import { AGENTS, AGENT_INFO } from "../agents";
+import { useInstalledAgents } from "../useInstalledAgents";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
@@ -124,6 +125,9 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
   });
   const [s, setS] = useState<S>(getSettings);
   const [backend, setBackend] = useState<AppSettings | null>(null);
+  // New-chat defaults: the first four agents, every installed one, and any with a saved default.
+  const installed = useInstalledAgents();
+  const defaultsFor = AGENTS.filter((a, i) => i < 4 || installed?.includes(a) || [`${a}_model`, `${a}_effort`, `${a}_mode`].some((k) => backend?.[k as keyof AppSettings]));
   const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
   const [version, setVersion] = useState(pkg.version);
   useEffect(() => { getVersion().then((v) => v && setVersion(v)).catch(() => {}); }, []);
@@ -246,7 +250,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
         {pane === "agents" && <>
         <section>
           <h3>New chats start with</h3>
-          {AGENTS.map((a) => (
+          {defaultsFor.map((a) => (
             <div className="setting" key={a}>
               <span>{AGENT_INFO[a].name}</span>
               <span className="row">

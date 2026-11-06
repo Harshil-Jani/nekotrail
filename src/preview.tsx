@@ -13,6 +13,8 @@ import { highlights } from "./updateNotes";
 import type { UpdatePhase } from "./useUpdater";
 import { getSettings } from "./settings";
 import { startAppearance } from "./appearance";
+import { AGENTS } from "./agents";
+import type { Agent } from "./api";
 
 if (new URLSearchParams(location.search).get("filter")) localStorage.setItem("nekotrail.settings", JSON.stringify({ repoFilter: ["r1"], collapsed: [] }));
 localStorage.setItem("nekotrail.sidebarHidden", new URLSearchParams(location.search).has("nosidebar") ? "1" : "0");
@@ -93,6 +95,8 @@ const planEvents = [
 
 // ?opencode makes Comet's chat an OpenCode chat in "Ask before changes", mid-turn, waiting on an edit.
 const opencode = new URLSearchParams(location.search).has("opencode");
+const agentsParam = new URLSearchParams(location.search).get("agents");
+const installed: Agent[] = agentsParam === "all" ? AGENTS : ["claude", ...((agentsParam ?? "copilot").split(",").filter(Boolean) as Agent[])];
 if (opencode) planEvents.splice(planEvents.findIndex((e) => e.kind === "approval"), 1, { kind: "approval", request_id: "a2", tool: "Edit", input: "internal/tickets/sla.go", description: "Edit internal/tickets/sla.go", can_always: true });
 
 const workspaces = [
@@ -192,7 +196,10 @@ mockIPC(
       case "pty_attach": return String(args.id).endsWith(":run") ? "$ make dev\r\ngo run ./cmd/api\r\n2026/11/06 01:40:12 listening on http://localhost:41230\r\n" : null;
       case "line_counts": return { w1: [38, 1], w2: [120, 31], w4: [6, 2] };
       case "open_in_targets": return [{ id: "cursor", name: "Cursor" }, { id: "vscode", name: "Visual Studio Code" }, { id: "zed", name: "Zed" }, { id: "ghostty", name: "Ghostty" }, { id: "finder", name: "Finder" }];
-      case "doctor": return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: !location.search.includes("fresh"), login: location.search.includes("fresh") ? null : "Harshil-Jani" }, claude: { ok: true, version: "2.4.1 (Claude Code)" }, codex: { ok: false, version: "" }, gemini: { ok: false, version: "" }, opencode: { ok: false, version: "" } };
+      case "doctor": return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: !location.search.includes("fresh"), login: location.search.includes("fresh") ? null : "Harshil-Jani" }, claude: { ok: true, version: "2.4.1 (Claude Code)" },
+        ...Object.fromEntries(AGENTS.filter((a) => a !== "claude").map((a) => [a, installed.includes(a) ? { ok: true, version: `${a} 1.0.0` } : { ok: false, version: "" }])) };
+      // ?agents=copilot,grok: the CLIs on PATH besides Claude (default: Copilot). ?agents=all: every one.
+      case "installed_agents": return installed;
       case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
       case "usage_summary": return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
