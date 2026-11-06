@@ -10,6 +10,7 @@ pub mod multirepo;
 pub mod config;
 pub mod git;
 pub mod guard;
+pub mod handoff;
 pub mod importer;
 pub mod linear;
 #[cfg(unix)]
@@ -3469,6 +3470,134 @@ async fn fork_session(st: State<'_, AppState>, id: String) -> Res<Session> {
     Ok(s)
 }
 
+// ---------- hand off to another agent (see handoff.rs) ----------
+
+/// The brief for handing chat `id` to another agent: its events, the files changed in its
+/// workspace (and the other repos of a multi-repo task) against the target branch, and the last
+/// checks. Runs git, so call it off the async workers.
+fn handoff_build(st: &AppState, id: &str) -> Res<handoff::Brief> {
+    let (session, ws, repo, events) = {
+        let db = st.db();
+        let s = db.session(id).map_err(e)?;
+        let ws = db.workspace(&s.workspace_id).map_err(e)?;
+        let repo = db.repo(&ws.repo_id).map_err(e)?;
+        let events = db.events(id).map_err(e)?;
+        (s, ws, repo, events)
+    };
+    let changes = |w: &Workspace| git::changes(Path::new(&w.path), &w.target_branch).map_err(|x| x.to_string());
+    let mut repos = vec![handoff::RepoChanges { name: repo.name.clone(), folder: None, target: ws.target_branch.clone(), files: changes(&ws) }];
+    for w in linked_workspaces(st, &ws) {
+        let name = st.db().repo(&w.repo_id).map(|r| r.name).unwrap_or_else(|_| w.name.clone());
+        repos.push(handoff::RepoChanges { name, folder: Some(w.path.clone()), target: w.target_branch.clone(), files: changes(&w) });
+    }
+    let checks: Vec<handoff::CheckLine> = st.checks.results(&ws.id).iter().map(handoff::CheckLine::from_result).collect();
+    let home = dirs::home_dir().map(|h| h.to_string_lossy().into_owned());
+    Ok(handoff::build(&handoff::Input { from: &session.agent, events: &events, repos: &repos, checks: &checks, home: home.as_deref() }))
+}
+
+/// Why chat `id` can't go to `to` right now, if it can't: the agent isn't installed, the chat's
+/// agent is still working, or `to` can't open every repo of a multi-repo task.
+fn handoff_check(st: &AppState, id: &str, to: &str) -> Res<()> {
+    let target = agent::ALL.iter().find(|a| a.id() == to).ok_or_else(|| format!("There's no agent called \"{to}\"."))?;
+    let (src, ws) = {
+        let db = st.db();
+        let s = db.session(id).map_err(e)?;
+        let ws = db.workspace(&s.workspace_id).map_err(e)?;
+        (s, ws)
+    };
+    terminal::refuse_in_history(&ws)?;
+    if ws.state != "active" {
+        return Err("This workspace is archived. Restore it to hand its task on.".into());
+    }
+    let name = queue::agent_name(to);
+    if !installed_agents().contains(&target.id()) {
+        return Err(format!("{name} isn't installed. Install it, or pick another agent."));
+    }
+    if st.runs.lock().unwrap().running.contains_key(id) {
+        return Err(format!("{} is still working. Stop it first, so two agents don't change the same files at once.", queue::agent_name(&src.agent)));
+    }
+    let linked = linked_workspaces(st, &ws).len();
+    if linked > 0 && !target.extra_dirs() {
+        return Err(format!("{name} can only work in one folder, and this task spans {} repos. Pick Claude, Codex, Gemini or Copilot.", linked + 1));
+    }
+    Ok(())
+}
+
+/// Hand chat `id` to `to`: a new chat in the same workspace, in the same mode ("Ask before
+/// changes" becomes Plan for an agent that can't ask), whose first message is `text`. Each chat
+/// gets a line pointing at the other. Spend caps and protected files hold as for any turn here.
+fn handoff_begin(app: &AppHandle, st: &AppState, id: &str, to: &str, model: Option<String>, effort: Option<String>, text: &str) -> Res<Session> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("The brief is empty. Say what the next agent should do.".into());
+    }
+    if text.chars().count() > queue::MAX_PROMPT {
+        return Err(format!("The brief is too long (over {} characters).", queue::MAX_PROMPT));
+    }
+    handoff_check(st, id, to)?;
+    let (src, events) = {
+        let db = st.db();
+        (db.session(id).map_err(e)?, db.events(id).map_err(e)?)
+    };
+    let to = agent::get(to).id();
+    // The task and why, from the chat alone (no git): the new chat keeps them for a later hand-off.
+    let about = handoff::build(&handoff::Input { from: &src.agent, events: &events, repos: &[], checks: &[], home: None });
+    let pref = |k: &str| st.db().setting(&format!("{to}_{k}")).ok().flatten().filter(|v| !v.is_empty());
+    let given = |v: Option<String>| v.map(|x| x.trim().to_string()).filter(|x| !x.is_empty());
+    let s = Session {
+        id: new_id(),
+        workspace_id: src.workspace_id.clone(),
+        agent: to.into(),
+        agent_session_id: None,
+        title: if src.title == "New chat" { "Hand-off".into() } else { src.title.clone() },
+        model: given(model).or_else(|| pref("model")),
+        permission_mode: handoff::mode_for(&src.permission_mode, to).into(),
+        effort: given(effort).or_else(|| pref("effort")),
+    };
+    let from = handoff::marker_from(&src.agent, &src.id, &about.task, about.reason);
+    let back = handoff::marker_to(to, &s.id);
+    {
+        let db = st.db();
+        db.insert_session(&s).map_err(e)?;
+        // Folders added with /add-dir go along.
+        let dirs = db.extra_dirs(id).unwrap_or_default();
+        if !dirs.is_empty() {
+            db.set_extra_dirs(&s.id, &dirs).map_err(e)?;
+        }
+        db.append_event(&s.id, &from).map_err(e)?;
+        db.append_event(id, &back).map_err(e)?;
+    }
+    emit_event(app, id, &back);
+    let _ = app.emit("focus-session", json!({"workspace_id": s.workspace_id, "session_id": s.id}));
+    start_turn(app.clone(), st, s.id.clone(), text.to_string())?;
+    Ok(s)
+}
+
+/// The brief for handing chat `id` to another agent, to read and edit before it's sent.
+#[tauri::command]
+async fn handoff_brief(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let b = handoff_build(st, &id)?;
+        Ok(json!({"text": b.text, "reason": b.reason, "hidden": b.hidden, "cut": b.cut, "max": handoff::MAX_CHARS}))
+    })
+    .await
+}
+
+/// Start the hand-off with the brief as you left it. Returns the new chat.
+#[tauri::command]
+async fn handoff_start(app: AppHandle, id: String, agent: String, model: Option<String>, effort: Option<String>, text: String) -> Res<Session> {
+    let a = app.clone();
+    blocking(app, move |st| handoff_begin(&a, st, &id, &agent, model, effort, &text)).await
+}
+
+/// Show a chat's tab again (a hand-off line points at a chat you may have closed).
+#[tauri::command]
+async fn show_session(st: State<'_, AppState>, id: String) -> Res<Session> {
+    let db = st.db();
+    db.set_session_hidden(&id, false).map_err(e)?;
+    db.session(&id).map_err(e)
+}
+
 /// Send a prompt. If the agent is busy, the prompt waits in the queue and runs next.
 #[tauri::command]
 async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<()> {
@@ -4769,7 +4898,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, handoff_brief, handoff_start, show_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,

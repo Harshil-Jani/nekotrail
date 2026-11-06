@@ -1106,6 +1106,20 @@ impl Store {
         Ok(n > 0)
     }
 
+    /// The workspace's chat you last wrote in (an open tab), for `nekotrail handoff`.
+    pub fn latest_chat(&self, workspace_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT s.id FROM messages m JOIN sessions s ON s.id = m.session_id
+                 WHERE s.workspace_id=?1 AND s.hidden=0 AND json_extract(m.event, '$.kind')='user'
+                 ORDER BY m.id DESC LIMIT 1",
+                [workspace_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn events(&self, session_id: &str) -> Result<Vec<serde_json::Value>> {
         let mut st = self.conn.prepare("SELECT event FROM messages WHERE session_id=?1 ORDER BY id")?;
         let rows = st
@@ -1288,8 +1302,19 @@ mod tests {
         assert_eq!((tail.len(), tail[0]["is_error"].as_bool(), total), (1, Some(true), 3));
         // "Rules for this task" go with the first user message only.
         assert!(!s.has_user_message(&sess.id).unwrap());
+        assert_eq!(s.latest_chat(&w.id).unwrap(), None, "no chat has a message from you yet");
         s.append_event(&sess.id, &serde_json::json!({"kind": "user", "text": "go"})).unwrap();
         assert!(s.has_user_message(&sess.id).unwrap());
+
+        // `nekotrail handoff` takes the open chat you last wrote in.
+        let other = Session { id: new_id(), agent: "codex".into(), ..sess.clone() };
+        s.insert_session(&other).unwrap();
+        assert_eq!(s.latest_chat(&w.id).unwrap().as_deref(), Some(sess.id.as_str()));
+        s.append_event(&other.id, &serde_json::json!({"kind": "user", "text": "second opinion"})).unwrap();
+        s.append_event(&sess.id, &serde_json::json!({"kind": "text", "text": "an answer is not you writing"})).unwrap();
+        assert_eq!(s.latest_chat(&w.id).unwrap().as_deref(), Some(other.id.as_str()));
+        s.set_session_hidden(&other.id, true).unwrap();
+        assert_eq!(s.latest_chat(&w.id).unwrap().as_deref(), Some(sess.id.as_str()), "a closed chat is skipped");
     }
 
     /// A workspace with one chat whose user prompts are `prompts`.
