@@ -3,6 +3,9 @@
  * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
  * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
  * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queueAdd (the Add form open), ?summary (the morning summary).
+ * First run (a fresh install): ?fresh (nothing found), &found=conductor or &found=terminal (what "Where's your code?"
+ * leads with), &noagents (no agent CLI yet), &gh=0 (GitHub not signed in), &step=code or &step=try (open on that
+ * step; try comes with one repo). ?tour opens the coach-mark tour on any workspace.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -18,6 +21,20 @@ import { startAppearance } from "./appearance";
 import { AGENTS } from "./agents";
 import type { Agent } from "./api";
 
+// A fresh install: no first-run marks, so the welcome flow and the clock start as they would.
+const fresh = new URLSearchParams(location.search).has("fresh");
+const freshFound = new URLSearchParams(location.search).get("found");
+const freshStep = new URLSearchParams(location.search).get("step");
+const freshRepos: any[] = [];
+const freshWorkspaces: any[] = [];
+// Cleared once per tab, so a reload keeps them (that is how "never twice" can be checked here).
+if (!sessionStorage.getItem("nekotrail.previewStarted")) {
+  sessionStorage.setItem("nekotrail.previewStarted", "1");
+  for (const k of ["nekotrail.firstRun", "nekotrail.tour", "nekotrail.onboarding"]) localStorage.removeItem(k);
+  // A later step means this install already had its first look (and started its clock).
+  if (fresh && freshStep) { localStorage.setItem("nekotrail.onboarding", freshStep); localStorage.setItem("nekotrail.firstRun", JSON.stringify({ launch: Date.now() })); }
+}
+if (fresh && freshStep === "try") freshRepos.push({ id: "r2", name: "pawprint-web", root_path: "/code/pawprint-web", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null });
 if (new URLSearchParams(location.search).get("filter")) localStorage.setItem("nekotrail.settings", JSON.stringify({ repoFilter: ["r1"], collapsed: [] }));
 localStorage.setItem("nekotrail.sidebarHidden", new URLSearchParams(location.search).has("nosidebar") ? "1" : "0");
 if (new URLSearchParams(location.search).get("split")) localStorage.setItem("nekotrail.split", "1");
@@ -429,7 +446,7 @@ const qTask = (id: string, prompt: string, extra: Record<string, unknown>) => ({
   then: { checks: false, draft_pr: false, autopilot: false }, state: "queued", note: "", step: "", workspace_id: null, session_id: null,
   ran_with: null, resume: false, attempts: 0, added_at: qNow - 9 * 3600, started_at: null, ended_at: null, ...extra,
 });
-let queueTasks: any[] = queueMode === "empty" ? [] : [
+let queueTasks: any[] = queueMode === "empty" || fresh ? [] : [
   qTask("q1", "Fix the flaky login test on CI. It times out about one run in five.", { state: "running", ran_with: "claude", started_at: qNow - 14 * 60, workspace_id: "w1", session_id: "s1", then: { checks: true, draft_pr: true, autopilot: false } }),
   qTask("q2", "Add rate limiting to the tickets API, 100 requests a minute per token", { state: "running", ran_with: "claude", mode: "ask", started_at: qNow - 41 * 60, workspace_id: "w2", session_id: "s2" }),
   qTask("q3", "Bump Go to 1.25 and fix the deprecation warnings", { state: "then", step: "autopilot", agent: "codex", ran_with: "codex", started_at: qNow - 2 * 3600, workspace_id: "w3", note: "Autopilot is getting the PR green.", then: { checks: false, draft_pr: true, autopilot: true } }),
@@ -485,12 +502,22 @@ mockIPC(
       case "checks_statuses": return { w1: "failed", w2: "running", w3: "passed" };
       case "checks_output": return args.name === "test" ? checkOutput : "";
       case "checks_run": case "checks_stop": case "checks_trust": return null;
-      case "snapshot": if (location.search.includes("fresh")) return { repos: [], workspaces: [], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
+      case "snapshot": if (fresh) return { repos: [...freshRepos], workspaces: [...freshWorkspaces], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
         return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       case "repo_github": return { nameWithOwner: "pawprint/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "", isPrivate: false };
       case "sky": return SKY;
-      case "conductor_available": return true;
+      case "conductor_available": return !fresh || freshFound === "conductor";
+      case "repo_brief": return {
+        readme: "# Pawprint\n\nA help desk for vet clinics: tickets, SLAs and on-call.\n",
+        package_json: JSON.stringify({ name: "pawprint-web", scripts: { dev: "vite", test: "vitest" } }),
+        files: ["bun.lock", "docs/", "package.json", "public/", "README.md", "src/", "tests/"],
+      };
+      case "clone_repo": case "add_repo": {
+        const r = { ...repos[1], id: "r9", name: String(args.spec ?? args.path ?? "pawprint-web").split("/").pop() };
+        if (fresh) { freshRepos.push(r); setTimeout(() => emit("workspaces-changed", {}), 50); }
+        return r;
+      }
       case "search_chats": return previewSearch(args.query, args.filter);
       case "search_open": { const c = corpus.find((x) => x.id === args.messageId)!; return { session: { id: c.session, workspace_id: c.ws, agent: c.agent, agent_session_id: null, title: c.chat, model: null, permission_mode: "acceptEdits", effort: null }, workspace_id: c.ws, index: c.index, total: c.total }; }
       case "sessions": if (args.workspaceId === "w7") return [{ id: "s7", workspace_id: "w7", agent: "claude", agent_session_id: "4b1f0c2e-9d7a-4e55-a1c3-2f6d8e9b7a10", title: "Fix the flaky checkout test", model: null, permission_mode: "acceptEdits" }];
@@ -599,12 +626,21 @@ mockIPC(
         return steps;
       }
       case "open_in_targets": return [{ id: "cursor", name: "Cursor" }, { id: "vscode", name: "Visual Studio Code" }, { id: "zed", name: "Zed" }, { id: "ghostty", name: "Ghostty" }, { id: "finder", name: "Finder" }];
-      case "doctor": return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: !location.search.includes("fresh"), login: location.search.includes("fresh") ? null : "Harshil-Jani" }, claude: { ok: true, version: "2.4.1 (Claude Code)" },
-        ...Object.fromEntries(AGENTS.filter((a) => a !== "claude").map((a) => [a, installed.includes(a) ? { ok: true, version: `${a} 1.0.0` } : { ok: false, version: "" }])) };
+      case "doctor": {
+        const noAgents = location.search.includes("noagents");
+        const gh = new URLSearchParams(location.search).get("gh") !== "0";
+        return { git: { ok: true, version: "git version 2.50.1" }, gh: { installed: true, ok: gh, login: gh ? "Harshil-Jani" : null }, claude: noAgents ? { ok: false, version: "" } : { ok: true, version: "2.4.1 (Claude Code)" },
+          ...Object.fromEntries(AGENTS.filter((a) => a !== "claude").map((a) => [a, !noAgents && installed.includes(a) ? { ok: true, version: `${a} 1.0.0` } : { ok: false, version: "" }])) };
+      }
       // ?agents=copilot,grok: the CLIs on PATH besides Claude (default: Copilot). ?agents=all: every one.
       case "installed_agents": return installed;
+      case "github_repos": return [
+        { nameWithOwner: "pawprint/pawprint-web", description: "The help desk's web app", pushedAt: "2026-11-06T10:00:00Z", isPrivate: false },
+        { nameWithOwner: "pawprint/pawprint-api", description: "Tickets, SLAs and on-call", pushedAt: "2026-11-05T10:00:00Z", isPrivate: true },
+      ];
       case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
       case "terminal_scan": {
+        if (fresh && freshFound !== "terminal") return { repos: [], skipped: [], found: {}, sources: [], took_ms: 120 };
         const s = (agent: string, id: string, title: string, messages: number, last: string, extra = {}) => ({ agent, id, title, messages, first: last, last, bytes: messages * 9000, imported: false, resumable: true, ...extra });
         return {
           repos: [
@@ -621,7 +657,7 @@ mockIPC(
         };
       }
       case "terminal_import": return { repos: 1, workspaces: 1, chats: (args as { picks: unknown[] }).picks.length, messages: 400, skipped: 0, problems: [] };
-      case "usage_summary": return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
+      case "usage_summary": if (fresh) return { today: 0, week: 0, by_agent: {} }; return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
       case "model_catalog": return catalog;
       case "mcp_list": return "Checking MCP server health…\n\ngithub: https://api.githubcopilot.com/mcp - ✔ Connected\nlinear: https://mcp.linear.app/sse - ✔ Connected\npostgres: npx -y @modelcontextprotocol/server-postgres - ✗ Failed to connect";
@@ -692,7 +728,7 @@ mockIPC(
       case "prompts_export": return (personalPrompts ?? []).length;
       case "prompts_import": return { added: [], renamed: [], skipped: [] };
       case "prompt_context": return { branch: "harshil/fix-502-gateway", base: "main", files_changed: "internal/server/http.go\ninternal/server/http_test.go" };
-      case "sections": return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
+      case "sections": if (fresh) return []; return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
       case "imported_outside": return location.search.includes("moveimport") ? ["w1", "w2", "w3"] : [];
       case "autopilot_status": return { w2: 1 };
@@ -706,7 +742,7 @@ mockIPC(
         { agent: "codex", turns: 87, errors: 6, duration_ms: 87 * 71000, merged: 11, cost_usd: 39.6 },
       ];
       case "free_disk_mb": return 1430;
-      case "workspace_storage": return [
+      case "workspace_storage": if (fresh) return []; return [
         { workspace_id: "w1", total_kb: 2_400_000, cleanable_kb: 2_150_000, dirs: [{ path: ".venv", kb: 1_900_000 }, { path: "node_modules", kb: 250_000 }] },
         { workspace_id: "w2", total_kb: 940_000, cleanable_kb: 431_000, dirs: [{ path: "web/.next", kb: 431_000 }] },
         { workspace_id: "w3", total_kb: 120_000, cleanable_kb: 0, dirs: [] },
@@ -737,7 +773,21 @@ mockIPC(
       case "submit_review": { const n = (reviews[args.id] ?? []).length; reviews[args.id] = []; return { url: "https://github.com", inline: n, folded: 0, archived: true }; }
       case "add_review_comments": { const cur = reviews[args.id] ?? []; reviews[args.id] = [...cur, ...args.comments.filter((c: any) => !cur.some((x) => x.id === c.id))]; return null; }
       case "remove_review_comments": reviews[args.id] = (reviews[args.id] ?? []).filter((c) => !args.ids.includes(c.id)); return null;
-      case "send": (window as any).__sent = [...((window as any).__sent ?? []), args.text]; return null;
+      case "send":
+        (window as any).__sent = [...((window as any).__sent ?? []), args.text];
+        // A fresh install's first task: the agent works for a few seconds, then answers.
+        if (fresh) {
+          const w = freshWorkspaces[0]?.id;
+          emit("running", { running: true, workspace_id: w });
+          setTimeout(() => emit("running", { running: false, workspace_id: w, ok: true, title: "Explain the layout" }), 3000);
+        }
+        return null;
+      case "create_workspace": if (!fresh) return null; {
+        const w = { ...workspaces[4], id: "f1", repo_id: args.repoId, name: "mochi", branch: "harshil/mochi", title: "", created_at: new Date().toISOString() };
+        freshWorkspaces.push(w);
+        return w;
+      }
+      case "new_session": return fresh ? { id: "s9", workspace_id: args.workspaceId, agent: args.agent, agent_session_id: null, title: "New chat", model: null, permission_mode: "plan" } : null;
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
       case "remote_take": if (linkMode === null || linkTaken) return [];
         linkTaken = true;

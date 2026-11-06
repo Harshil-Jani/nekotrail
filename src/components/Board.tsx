@@ -40,6 +40,13 @@ export function Board({
         <span className="spacer" />
         <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>
       </div>
+      {live.length === 0 ? (
+        <div className="empty board-empty">
+          <h2>{repoFilter.length ? "No workspaces in this repo yet" : "No workspaces yet"}</h2>
+          <p>Each task you start becomes a card here, and moves along as its PR goes from draft to merged.</p>
+          <button className="primary" onClick={onNew}><Plus size={14} />Create workspace</button>
+        </div>
+      ) : (
       <div className="board-cols">
         {COLUMNS.map((col) => {
           const cards = live.filter((w) => statusOf(w, prStates[w.id]) === col);
@@ -98,6 +105,7 @@ export function Board({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

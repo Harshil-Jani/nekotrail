@@ -397,7 +397,7 @@ export function PrBar({
   };
 
   return (
-    <div className={["prbar", ...[1, 2, 3, 4, 5].filter((n) => fold >= n).map((n) => `pb-${n}`)].join(" ")} ref={barRef}>
+    <div data-tour="prbar" className={["prbar", ...[1, 2, 3, 4, 5].filter((n) => fold >= n).map((n) => `pb-${n}`)].join(" ")} ref={barRef}>
       {renaming !== null ? (
         <input
           className="branch-edit"

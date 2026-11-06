@@ -38,10 +38,11 @@ export function Storage({ names, onClose, onSay }: { names: (id: string) => stri
       <div className="modal storage" role="dialog" aria-modal="true" aria-label="Storage" onClick={(e) => e.stopPropagation()}>
         <div className="row"><HardDrive size={16} /><h2>Storage</h2><span className="spacer" /><button className="icon" aria-label="Close" onClick={onClose}><X size={15} /></button></div>
         <p className="muted">
-          {items ? `Workspaces use ${size(total)}.` : "Measuring…"} {free !== null ? `${size(free * 1024)} free on this disk.` : ""} Cleaning deletes only dependency and build folders that git ignores (like node_modules, .venv, target, .next). Code, commits and .env files are never touched.
+          {items ? (items.length ? `Workspaces use ${size(total)}.` : "") : "Measuring…"} {free !== null ? `${size(free * 1024)} free on this disk.` : ""} Cleaning deletes only dependency and build folders that git ignores (like node_modules, .venv, target, .next). Code, commits and .env files are never touched.
         </p>
         {items === null && <p className="muted"><span className="spinner" /> Measuring workspace folders…</p>}
-        {items && (
+        {items?.length === 0 && <p className="muted">No workspaces yet, so there is nothing to clean. Each workspace you create shows up here with its size.</p>}
+        {!!items?.length && (
           <ul className="storage-list">
             {items.map((i) => (
               <li key={i.workspace_id}>
@@ -57,12 +58,12 @@ export function Storage({ names, onClose, onSay }: { names: (id: string) => stri
             ))}
           </ul>
         )}
-        <div className="row end">
+        {!!items?.length && <div className="row end">
           <span className="spacer" />
           <button className="accent" disabled={!!busy || cleanable.length === 0} onClick={() => clean(cleanable.map((i) => i.workspace_id))}>
             {busy === "all" ? <span className="spinner" /> : null}Clean all · free {size(cleanableKb)}
           </button>
-        </div>
+        </div>}
       </div>
     </div>
   );

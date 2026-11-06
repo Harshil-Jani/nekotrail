@@ -3,6 +3,7 @@ import { Check, ChevronRight, CircleAlert, Copy, Download, FolderInput, FolderOp
 import { api, errText, type Agent, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
 import { IS_MAC, keyHint } from "../platform";
 import { AGENTS, AGENT_INFO } from "../agents";
+import { agentsReady } from "../onboarding";
 import { Mascot, type Mood } from "./Mascot";
 
 /** A command the user can copy, for anything that has to be installed or signed in. */
@@ -31,13 +32,21 @@ function CheckRow({ ok, warn, title, detail, fix }: { ok: boolean; warn?: boolea
 }
 
 /** The setup checklist: what nekotrail needs on this Mac, and the command for anything missing. */
-export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; onStatus?: (s: { allOk: boolean; ghOk: boolean }) => void }) {
+export function SetupCheck({ compact = false, heading, foldMissing = false, onStatus }: {
+  compact?: boolean;
+  /** With an agent working, the ones you could add all fold away (the first-run flow keeps it short). */
+  foldMissing?: boolean;
+  /** Replaces "Finish setup" / "All set" (the first-run flow says "Agents on this Mac"). */
+  heading?: string;
+  /** `ready`: git and these agents work, enough to start. */
+  onStatus?: (s: { allOk: boolean; ghOk: boolean; ready: Agent[] }) => void;
+}) {
   const [d, setD] = useState<Doctor | null>(null);
   const [busy, setBusy] = useState(false);
   const run = () => {
     setBusy(true);
     api.doctor()
-      .then((x) => { setD(x); onStatus?.({ allOk: x.git.ok && x.gh.ok && AGENTS.some((a) => x[a]?.ok), ghOk: x.gh.ok }); })
+      .then((x) => { setD(x); onStatus?.({ allOk: x.git.ok && x.gh.ok && AGENTS.some((a) => x[a]?.ok), ghOk: x.gh.ok, ready: agentsReady(x, AGENTS) }); })
       .catch(() => {})
       .finally(() => setBusy(false));
   };
@@ -50,7 +59,7 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
   if (allOk && compact) return null;
   // The first four agents and every installed one get a row; the rest fold away.
   // Installed ones lead, so what you have reads before what you could add.
-  const front = [...AGENTS.filter((a) => d[a]?.ok), ...AGENTS.filter((a, i) => i < 4 && !d[a]?.ok)];
+  const front = [...AGENTS.filter((a) => d[a]?.ok), ...AGENTS.filter((a, i) => i < 4 && !d[a]?.ok && !(foldMissing && agentOk))];
   const rest = AGENTS.filter((a) => !front.includes(a));
   const row = (a: Agent) => {
     const other = otherOk(a);
@@ -68,7 +77,7 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
   return (
     <section className="setup-check">
       <div className="row">
-        <h2>{allOk ? "All set" : "Finish setup (about 2 minutes)"}</h2>
+        <h2>{heading ?? (allOk ? "All set" : "Finish setup (about 2 minutes)")}</h2>
         <span className="spacer" />
         <button className="quiet" onClick={run} disabled={busy}>{busy ? <span className="spinner" /> : <RotateCw size={13} />}Check again</button>
       </div>

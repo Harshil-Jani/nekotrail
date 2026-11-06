@@ -20,6 +20,9 @@ import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
 import { SearchSheet } from "./components/SearchSheet";
 import { CloneSheet, Welcome } from "./components/Welcome";
+import { FirstRun, type StartRequest } from "./components/FirstRun";
+import { Tour } from "./components/Tour";
+import { describeFirstRun, firstLook, isAnswer, KEYS, markFirstRun, markTourSeen, readFirstRun, shouldAutoTour, startStep, stepAfterRepos, type Step } from "./onboarding";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
 import { Queue } from "./components/Queue";
@@ -138,6 +141,12 @@ export default function App() {
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
+  // First run: the welcome flow's step (null once done, or for people who had repos already), the
+  // coach-mark tour, and whether the first look at the database has happened (both wait for it).
+  const [onboardStep, setOnboardStep] = useState<Step | null>(null);
+  const [tourOpen, setTourOpen] = useState(params.has("tour"));
+  const [looked, setLooked] = useState(false);
+  const lookedRef = useRef(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [wsRefreshKey, setWsRefreshKey] = useState(0); // bumps only for the selected workspace's turns
   const [inject, setInject] = useState<{ text: string; nonce: number; send?: boolean } | undefined>();
@@ -460,6 +469,14 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     const s = await api.snapshot(showArchived);
+    if (!lookedRef.current) {
+      // Once per launch: a brand-new install starts the first-run clock and the welcome flow;
+      // someone who already has repos skips both, and the tour.
+      lookedRef.current = true;
+      firstLook(localStorage, { repos: s.repos.length, workspaces: s.workspaces.length }, Date.now());
+      setOnboardStep(startStep(localStorage.getItem(KEYS.onboarding), s.repos.length));
+      setLooked(true);
+    }
     setRepos(s.repos);
     setWorkspaces(s.workspaces);
     setCosts(s.costs ?? {});
@@ -495,6 +512,8 @@ export default function App() {
   useEffect(() => {
     const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
       refresh();
+      // The first answer of a new install stops the first-run clock (local only, see Copy diagnostics).
+      if (payload.workspace_id && isAnswer(payload)) markFirstRun(localStorage, "answer");
       setRefreshKey((k) => k + 1); // a turn ended: reload line counts and the collision radar
       // The agent may have pushed or opened a PR: have the poller look at that repo now.
       if (!payload.running && payload.workspace_id) api.prRefresh(payload.workspace_id, true).catch(() => {});
@@ -915,6 +934,7 @@ export default function App() {
       await refresh();
       const w = made[0];
       select(w.id);
+      if (prompt) markFirstRun(localStorage, "sent");
       // Celebrate the first star of each constellation only, so it stays special.
       const found = starFor(sky, w.name);
       if (found && !sky.stars.some((x) => x.constellation === found.constellation && lit.has(x.slug))) {
@@ -1156,9 +1176,52 @@ export default function App() {
       ...AGENTS.map((a) => `${a}: ${d?.[a]?.version || "missing"}`),
       `repos: ${repos.length}, workspaces: ${workspaces.filter((w) => w.state === "active").length} active, ${workspaces.filter((w) => w.state === "archived").length} archived`,
       `memory: ${ram ? `${ram.total_mb} MB` : "unknown"}`,
+      describeFirstRun(readFirstRun(localStorage)),
     ].join("\n");
     await navigator.clipboard.writeText(text);
     say("Copied diagnostics. Paste them into your GitHub issue.");
+  };
+
+  // ---------- first run ----------
+  const goStep = (s: Step | "done") => {
+    if (onboardStep === "agents" && s !== "agents") markFirstRun(localStorage, "agents");
+    localStorage.setItem(KEYS.onboarding, s);
+    setOnboardStep(s === "done" ? null : s);
+  };
+  // A repo came in (added, cloned, imported): the clock notes it, and "Your code" moves on to "Try it".
+  const repoCount = useRef<number | null>(null);
+  useEffect(() => {
+    if (!looked) return;
+    const before = repoCount.current;
+    repoCount.current = repos.length;
+    if (before === null || repos.length <= before) return;
+    markFirstRun(localStorage, "repo");
+    const next = stepAfterRepos(onboardStep, before, repos.length);
+    if (next !== onboardStep && next) goStep(next);
+  }, [repos.length, looked]);
+  /** "Try it": a workspace in Plan mode with the suggested task, then the flow is done. */
+  const startFirstTask = async ({ repoId, agent, prompt }: StartRequest) => {
+    goStep("done");
+    await newWorkspace({ repoId, prompt, agent, model: null, effort: null, mode: "plan" });
+  };
+  // The tour shows by itself once, when the first workspace is open and nothing else is on top.
+  // The "You lit a star" card plays first: the delight, then the tour.
+  const tourBusy = !!discovery || !!trustAsk || palette || !!newFor || settingsOpen || searchOpen || terminalImport || cloning || !!settingsFor;
+  const tourReady = view === "workspace" && !!ws && ws.state === "active" && !isHistory(ws);
+  useEffect(() => {
+    if (!looked || tourOpen || !shouldAutoTour(localStorage, { workspaceOpen: tourReady, busy: tourBusy })) return;
+    // Let the workspace paint first, so the coach marks find what they point at.
+    const t = setTimeout(() => { markTourSeen(localStorage); setTab("chat"); setTourOpen(true); }, 600);
+    return () => clearTimeout(t);
+  }, [looked, tourReady, tourBusy, tourOpen]);
+  const showTour = () => {
+    const open = ws && ws.state === "active" && !isHistory(ws) ? ws : listed.find((w) => w.state === "active" && !isHistory(w));
+    if (!open) return say(keyHint("The tour points at the parts of a workspace. Create one first, then ⌘K, Show the tour."));
+    if (open.id !== ws?.id) select(open.id);
+    setView("workspace");
+    setTab("chat");
+    markTourSeen(localStorage);
+    setTourOpen(true);
   };
 
   // Everything the palette can do. Built on open, so it always reflects the current state.
@@ -1247,6 +1310,7 @@ export default function App() {
     c.push(
       { id: "search", group: "Go", label: "Search every chat", hint: keyHint("⌘⇧F"), keywords: "find history messages prompts commands files grep", icon: <Search size={15} />, run: () => setSearchOpen(true) },
       { id: "next", group: "Go", label: "Go to next workspace with news", hint: keyHint("⌘⌥L"), icon: <Sparkles size={15} />, run: nextUnread },
+      { id: "tour", group: "App", label: "Show the tour", keywords: "help onboarding guide tips intro walkthrough", icon: <Sparkles size={15} />, run: showTour },
       { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
       { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
       { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex gemini success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
@@ -1340,6 +1404,7 @@ export default function App() {
         onSelect={select}
         onNewWorkspace={setNewFor}
         onAddRepo={addRepo}
+        onClone={() => setCloning(true)}
         onRepoSettings={setSettingsFor}
         onToggleArchived={() => setShowArchived((v) => !v)}
         onSky={() => setView("sky")}
@@ -1408,9 +1473,17 @@ export default function App() {
             onSay={(text, bad) => say(text, bad)}
           />
         )}
-        {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} />}
+        {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} onNew={() => openNew()} />}
 
-        {view === "workspace" && !ws && (
+        {view === "workspace" && !ws && onboardStep && (
+          <FirstRun
+            step={onboardStep} onStep={goStep} repos={repos} canImport={canImport}
+            mood={mood} purring={purring} onPet={pet}
+            onAddRepo={addRepo} onClone={() => setCloning(true)} onImportConductor={importConductor}
+            onImportTerminal={() => setTerminalImport(true)} onStart={startFirstTask}
+          />
+        )}
+        {view === "workspace" && !ws && looked && !onboardStep && (
           <Welcome
             me={me} repos={repos} mood={mood} purring={purring} onPet={pet}
             onAddRepo={addRepo} onClone={() => setCloning(true)} onNew={() => openNew()}
@@ -1451,7 +1524,7 @@ export default function App() {
               {ws.state === "active" && !isHistory(ws) && (
                 <nav className="tabs" role="tablist" aria-label="Workspace">
                   {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
-                    <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
+                    <button key={t.id} role="tab" data-tour={t.id === "changes" ? "changes" : undefined} aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
                       {t.label}
                       {t.id === "checks" && taskDot && taskDot !== "passed" && (
                         <span className={`ws-check ck-${taskDot}`} role="img" aria-label={taskDot === "failed" ? "failing" : "running"} />
@@ -1714,6 +1787,7 @@ export default function App() {
       {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => { setSettingsOpen(false); setSettingsPane(undefined); }} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)}
         workspaceId={ws && ws.state === "active" ? ws.id : undefined} repoName={repos.find((r) => r.id === ws?.repo_id)?.name} initialPane={settingsPane} />}
       <ConfirmHost />
+      {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
       {updater.open && updater.phase && (
         <UpdateSheet
           phase={updater.phase}
@@ -1762,7 +1836,13 @@ export default function App() {
       {cloning && (
         <CloneSheet
           onClose={() => setCloning(false)}
-          onDone={async (r) => { setCloning(false); await refresh(); say(`Cloned ${r.name}.`); setNewSource("task"); setNewFor(r.id); }}
+          onDone={async (r) => {
+            setCloning(false);
+            await refresh();
+            say(`Cloned ${r.name}.`);
+            // During the welcome flow, "Try it" is the next step; otherwise the new-workspace panel opens on it.
+            if (!onboardStep) { setNewSource("task"); setNewFor(r.id); }
+          }}
         />
       )}
       {discovery && (

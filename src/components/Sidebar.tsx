@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, FolderOpen, GitFork, Kanban, Layers, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
 import { api, displayName, isHistory, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
@@ -23,6 +23,8 @@ type Props = {
   onSelect: (id: string) => void;
   onNewWorkspace: (repoId: string) => void;
   onAddRepo: () => void;
+  /** Clone from GitHub, offered when there are no repos yet. */
+  onClone?: () => void;
   onRepoSettings: (repoId: string) => void;
   onToggleArchived: () => void;
   onSky: () => void;
@@ -92,7 +94,7 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
   const [gh, setGh] = useState<RepoGithub>(null);
   useEffect(() => { api.repoGithub(repo.id).then(setGh); }, [repo.id]);
   return (
-    <div className="repo-head">
+    <div className="repo-head" data-tour="new">
       <button className="fold" tabIndex={-1} onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${repo.name}` : `Collapse ${repo.name}`}>
         {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
       </button>
@@ -326,7 +328,7 @@ export function Sidebar(p: Props) {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" data-tour="sidebar">
       <div className="sidebar-head" data-tauri-drag-region>
         <button className="icon sidebar-toggle" onClick={p.onToggleSidebar} title={keyHint("Hide sidebar (⌘B)")} aria-label="Hide sidebar"><PanelLeft size={16} /></button>
         <Mascot size={22} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
@@ -390,7 +392,13 @@ export function Sidebar(p: Props) {
       </div>
       <div className="sidebar-scroll" role="listbox" aria-label="Workspaces" ref={list} onKeyDown={onListKey}
         onFocus={(e) => { const el = (e.target as HTMLElement).closest<HTMLElement>(ITEMS); if (el) kb.current = el; }}>
-        {p.repos.length === 0 && <p className="muted" style={{ padding: "0 16px" }}>No repos yet. Add one with +.</p>}
+        {p.repos.length === 0 && (
+          <div className="sidebar-empty">
+            <p className="muted">No repos yet. Add one to start your first workspace.</p>
+            <button className="ws-empty" onClick={p.onAddRepo}><FolderOpen size={13} />Add a local repo</button>
+            {p.onClone && <button className="ws-empty" onClick={p.onClone}><GitFork size={13} />Clone from GitHub</button>}
+          </div>
+        )}
         <ReviewRequests
           requests={p.reviewRequests.filter((r) => !filter.length || filter.includes(r.repo_id))}
           workspaces={p.workspaces} repos={p.repos} busy={p.reviewBusy} onReview={p.onReview} onOpen={p.onSelect}
