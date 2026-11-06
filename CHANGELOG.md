@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Spend you can trust**
+- New Usage view (sidebar, ⌘K): tokens, API-equivalent cost, turns and time per day, repo, agent and model, each agent's usage limit and when it resets, and Export CSV. Kept on your Mac only.
+- Costs say they are API-equivalent: on a subscription you pay a flat fee. Agents that report no cost show turns and tokens, never $0.
+- Spend caps, for every repo or one repo: a daily cap and a cap per task, in dollars, turns or tokens. When one is reached, the queue starts nothing new and autopilot stops, and nekotrail says so. A running turn always finishes, and your own messages always go through.
+- Runaway protection: when the queue or autopilot sees the same command fail 4 times in a row, a file go back and forth, or 3 turns that change nothing, it stops giving the agent turns. The task moves to Needs you with what it saw.
+
 **A first run that gets you to your first answer**
 - New first run, one screen at a time: the agents on your Mac, where your code is (Conductor, terminal chats or a local repo, whichever it finds), then a first task suggested from your repo, run in Plan mode so nothing changes.
 - A short tour of the main parts after your first workspace opens. It shows once; ⌘K, "Show the tour" brings it back.
