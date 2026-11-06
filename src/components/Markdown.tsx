@@ -1,6 +1,11 @@
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
+/** Hosts allowed by img-src in tauri.conf.json. */
+const SAFE_IMAGE = /^https:\/\/(github\.com|avatars\.githubusercontent\.com|user-images\.githubusercontent\.com|private-user-images\.githubusercontent\.com)\//i;
 
 let mermaidReady: Promise<typeof import("mermaid").default> | null = null;
 /** Mermaid is big, so it loads the first time a chat contains a diagram. */
@@ -61,6 +66,19 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
         code({ className, children, ...rest }) {
           if (/language-mermaid/.test(className ?? "")) return <Mermaid code={String(children).trim()} />;
           return <code className={className} {...rest}>{children}</code>;
+        },
+        // Agents write what a repo or an issue told them to, so a link must never take over the
+        // app window: web links open in your browser, anything else is plain text.
+        a({ href, children }) {
+          if (!href || !SAFE_LINK.test(href)) return <span>{children}</span>;
+          return <a href={href} title={href} onClick={(e) => { e.preventDefault(); openUrl(href).catch(() => {}); }}>{children}</a>;
+        },
+        // Loading an image is a request the agent chose, which can carry data out in its URL.
+        // Only GitHub-hosted images load (the CSP enforces the same); others show as a link.
+        img({ src, alt }) {
+          const url = typeof src === "string" ? src : "";
+          if (SAFE_IMAGE.test(url)) return <img src={url} alt={alt ?? ""} />;
+          return SAFE_LINK.test(url) ? <a href={url} onClick={(e) => { e.preventDefault(); openUrl(url).catch(() => {}); }}>{alt || "image"}</a> : <span>{alt}</span>;
         },
       }}
     >
