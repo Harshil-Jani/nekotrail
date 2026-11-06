@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Send, Trash2 } from "lucide-react";
+import { Lock, Send, Trash2 } from "lucide-react";
 import { api, errText } from "../api";
 import { IS_MAC } from "../platform";
 import { ask } from "./Confirm";
@@ -49,14 +49,14 @@ function DestinationCard({ d, view, onChange, onView }: {
         <input className="alert-dest-name" value={name} aria-label="Destination name" maxLength={40}
           onChange={(e) => setName(e.target.value)} onBlur={() => name !== d.name && onChange({ ...d, name })} />
         <span className="chip read-only">{info.name}</span>
-        {d.saved && !editing && <span className="muted alert-dest-host" title="Where it sends. The full address stays in the keychain.">{d.hint}</span>}
+        {d.saved && !editing && <span className="muted alert-dest-host" title={`Saved in ${KEYCHAIN}. Only the host shows here.`}><Lock size={11} aria-hidden />{d.hint}<span className="sr-only">, saved in {KEYCHAIN}</span></span>}
         <span className="spacer" />
-        <input type="checkbox" className="switch" checked={d.on} aria-label={`Send to ${d.name}`} onChange={(e) => onChange({ ...d, on: e.target.checked })} />
+        <input type="checkbox" className="switch" checked={d.on && d.saved} disabled={!d.saved} title={d.saved ? undefined : "Save its details first"} aria-label={`Send to ${d.name}`} onChange={(e) => onChange({ ...d, on: e.target.checked })} />
         <button className="icon quiet" aria-label={`Remove ${d.name}`} title="Remove" onClick={remove}><Trash2 size={14} /></button>
       </div>
 
       {editing ? <div className="alert-secret">
-        <p className="muted setting-note">{info.note} Kept in {KEYCHAIN}, never in nekotrail's database or logs.</p>
+        <p className="muted setting-note">{info.note}</p>
         {info.fields.map((f) => (
           <label key={f.key} className="alert-field">
             <span>{f.label}{f.optional && <span className="muted"> (optional)</span>}</span>
@@ -76,7 +76,7 @@ function DestinationCard({ d, view, onChange, onView }: {
           ))}
         </div>
         <label className="setting">
-          <span>Include the agent's last line<span className="muted setting-sub">Secrets in it are hidden, as in Export session.</span></span>
+          <span>Include the agent's last line<span className="muted setting-sub">Adds the last line of the agent's answer, which can mention your code. Anything that looks like a key or token is hidden.</span></span>
           <input type="checkbox" className="switch" checked={d.last_line} onChange={(e) => onChange({ ...d, last_line: e.target.checked })} />
         </label>
       </>}
@@ -123,7 +123,10 @@ export function AwayAlerts() {
         </select>
       </div>
       <p className="muted setting-note">
-        A short message on your phone or in a team chat. Off until you add a destination. Each message names the workspace, its repo and what happened, with a link that opens it on {IS_MAC ? "this Mac" : "this computer"}. Never your code, prompts, commands or diffs.
+        A short message on your phone or in a team chat, through ntfy, Slack, Discord, a webhook or Pushover. Off until you add a destination.
+      </p>
+      <p className="alert-privacy setting-note">
+        <Lock size={12} aria-hidden /><span>Each message names the workspace, its repo and what happened, with a link that opens it on {IS_MAC ? "this Mac" : "this computer"}. Never your code, prompts, commands or diffs; the agent's last line only where you turn it on. Addresses and tokens are kept in {KEYCHAIN}, never in nekotrail's database or logs.</span>
       </p>
       {error && <p className="bad setting-note" role="alert">{error}</p>}
       {cfg.destinations.map((d) => <DestinationCard key={d.id} d={d} view={view} onChange={setDest} onView={setView} />)}
@@ -131,7 +134,7 @@ export function AwayAlerts() {
     </section>
 
     {cfg.destinations.length > 0 && <section>
-      <h3>Quiet hours</h3>
+      <h3>When to send</h3>
       <label className="setting">
         <span>Hold messages overnight<span className="muted setting-sub">They arrive as one message when quiet hours end.</span></span>
         <input type="checkbox" className="switch" checked={cfg.quiet.on} onChange={(e) => save({ ...cfg, quiet: { ...cfg.quiet, on: e.target.checked } })} />

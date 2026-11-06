@@ -44,7 +44,7 @@ export type AlertSecret = { url: string; token: string; user: string };
 
 /** In the order the pane lists them. */
 export const EVENTS: { id: AlertEvent; label: string }[] = [
-  { id: "needs_you", label: "Needs you: a plan, a question, an OK" },
+  { id: "needs_you", label: "Needs you: plan, question, OK" },
   { id: "turn_finished", label: "A turn finished" },
   { id: "checks_failed", label: "PR checks failed" },
   { id: "checks_green", label: "PR checks are green" },

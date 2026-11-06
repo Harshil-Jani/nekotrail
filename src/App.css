@@ -2200,12 +2200,12 @@ select.alert-add { min-width: 0; }
 input.alert-dest-name { width: 150px; font-weight: 600; background: transparent; box-shadow: none; padding: 0 var(--s1); margin-left: calc(-1 * var(--s1)); }
 input.alert-dest-name:hover { background: var(--hover); }
 input.alert-dest-name:focus { background: var(--field); box-shadow: var(--ring); }
-.alert-dest-host { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.alert-dest-host { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .alert-dest-head button.icon { width: 24px; height: 24px; }
 .alert-secret { display: flex; flex-direction: column; gap: var(--s2); }
 .alert-field { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: var(--s3); font-size: 13px; }
 .alert-field input { width: 100%; min-width: 0; }
-.alert-events { display: grid; grid-template-columns: 1fr 1fr; gap: 6px var(--s4); font-size: 12.5px; }
+.alert-events { display: grid; grid-template-columns: 1fr 1fr; gap: 6px var(--s4); font-size: 13px; }
 .alert-events label { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .alert-events input { margin: 0; flex-shrink: 0; }
 .alert-dest > .setting { padding: 2px 0; font-size: 13px; }
@@ -2215,3 +2215,8 @@ input.alert-dest-name:focus { background: var(--field); box-shadow: var(--ring);
 .alert-status.bad { color: var(--bad); }
 .alert-times input, .setting > input[type="time"] { width: 124px; }
 .setting.dim > span:first-child { color: var(--muted); }
+/* The one privacy promise, where you add a destination: full text colour so it reads as a statement, not small print. */
+.alert-privacy { display: flex; gap: var(--s2); align-items: flex-start; margin: var(--s1) 0 var(--s2); color: var(--text); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06)); }
+input.switch:disabled { opacity: 0.4; cursor: default; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.alert-privacy svg { flex-shrink: 0; margin-top: 2px; color: var(--muted); }
