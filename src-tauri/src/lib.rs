@@ -3699,7 +3699,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         )});
         st.db().append_event(&id, &ev).map_err(e)?;
         emit_event(&app, &id, &ev);
-        return Ok(());
+        return Ok(false);
     }
     // Repo trust holds per repo. An agent that can't switch an untrusted repo's settings off
     // doesn't run until each repo it works in is trusted.
@@ -3709,7 +3709,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
             let ev = json!({"kind": "error", "text": format!("{name} has agent settings that run commands, and this agent can't run with them switched off. Send again and choose Trust for {name}, or use Claude or Codex for this task.")});
             st.db().append_event(&id, &ev).map_err(e)?;
             emit_event(&app, &id, &ev);
-            return Ok(());
+            return Ok(false);
         }
     let project_config = untrusted_agent_config(st, &ws, harness).is_none();
     if !project_config
@@ -4978,7 +4978,7 @@ mod tests {
         AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.join("checks")),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.join("checks")), queue: Default::default(),
         }
     }
 
