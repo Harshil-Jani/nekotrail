@@ -19,6 +19,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - A small "Made with nekotrail" line ends each export. Switch it off in Settings, General.
 - Fix: Export prompts in Settings can save its file again.
 
+**Design ship-gate fixes**
+- The first run's steps stay in one place from screen to screen, and every missing agent shows its install command with the sign-in line under it.
+- While the first run is open, the sidebar only says where your repos will show up, so the buttons to add code are in one place.
+- Try it: the note about the new workspace and the tour sits above Start in Plan mode, and the Plan mode label is easier to read in dark mode.
+- The tour's card has an arrow pointing at what it describes, and its ring stays inside the window.
+- With no repos yet, the empty board and night sky offer Add a repo, and the board has one button instead of two. Storage with no workspaces reads as one short note.
+- Export session: Add to PR description is off when no chat has a message yet.
+- The queue shows one Add task when it is empty and one Resume when it is paused. The repo switcher leaves out "-0", and a task across repos says "3 repos" in the sidebar.
+
 ## 0.16.0 (2026-11-07)
 
 **Tasks across repos**
