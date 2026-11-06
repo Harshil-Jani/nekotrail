@@ -647,7 +647,11 @@ button.good-btn:hover { background: var(--good); }
 .setup-check h2 { margin: 0; font-size: 15px; }
 .setup-check ul { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
 .setup-more { margin-top: var(--s2); }
-.setup-more summary { cursor: pointer; font-size: 12px; }
+/* The fold sits in the check icons' column, and its text wraps under itself, not under the chevron. */
+.setup-more summary { cursor: pointer; font-size: 12px; list-style: none; display: flex; gap: var(--s2); align-items: flex-start; line-height: 18px; }
+.setup-more summary::-webkit-details-marker { display: none; }
+.setup-more summary > svg { flex-shrink: 0; margin-top: 1px; color: var(--muted); transition: transform 0.15s var(--ease); }
+.setup-more[open] summary > svg { transform: rotate(90deg); }
 .check-row { display: flex; gap: var(--s2); align-items: flex-start; font-size: 13px; }
 .check-row > svg { margin-top: 2px; flex-shrink: 0; }
 .check-row.ok > svg { color: var(--good); }

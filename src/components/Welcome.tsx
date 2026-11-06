@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
+import { Check, ChevronRight, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, X } from "lucide-react";
 import { api, errText, type Agent, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
 import { AGENTS, AGENT_INFO } from "../agents";
 import { Mascot, type Mood } from "./Mascot";
@@ -48,7 +48,8 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
   const allOk = d.git.ok && d.gh.ok && agentOk;
   if (allOk && compact) return null;
   // The first four agents and every installed one get a row; the rest fold away.
-  const front = AGENTS.filter((a, i) => i < 4 || d[a]?.ok);
+  // Installed ones lead, so what you have reads before what you could add.
+  const front = [...AGENTS.filter((a) => d[a]?.ok), ...AGENTS.filter((a, i) => i < 4 && !d[a]?.ok)];
   const rest = AGENTS.filter((a) => !front.includes(a));
   const row = (a: Agent) => {
     const other = otherOk(a);
@@ -82,7 +83,7 @@ export function SetupCheck({ compact = false, onStatus }: { compact?: boolean; o
       </ul>
       {rest.length > 0 && (
         <details className="setup-more">
-          <summary className="muted">More agents, not on this Mac: {rest.map((a) => AGENT_INFO[a].name).join(", ")}</summary>
+          <summary><ChevronRight size={15} aria-hidden /><span className="muted">{rest.length} more agents you can add: {rest.map((a) => AGENT_INFO[a].name).join(", ")}</span></summary>
           <ul>{rest.map(row)}</ul>
         </details>
       )}
