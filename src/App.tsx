@@ -1353,7 +1353,7 @@ export default function App() {
               ) : (
                 <>
                   <div className="pane" hidden={tab !== "chat"}>
-                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} />
+                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
                     {tab === "changes" && (

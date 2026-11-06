@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { Mascot } from "./Mascot";
@@ -491,6 +491,7 @@ export function Chat({
   append,
   jump,
   readOnly = false,
+  reviewPr = 0,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -507,6 +508,8 @@ export function Chat({
   jump?: JumpTo;
   /** Archived workspaces: read the chats, but nothing can be sent, started or changed. */
   readOnly?: boolean;
+  /** A review workspace for this PR: the agent only reads (the backend sends every turn in plan mode). */
+  reviewPr?: number;
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -1136,9 +1139,11 @@ export function Chat({
         {rows.length === 0 && !readOnly && (
           <div className="empty">
             <Mascot size={64} mood="sleep" />
-            <h2>{session?.agent_session_id ? "Pick up where you left off" : "What should we build?"}</h2>
+            <h2>{reviewPr ? `Ask about #${reviewPr}` : session?.agent_session_id ? "Pick up where you left off" : "What should we build?"}</h2>
             <p>
-              {session?.agent_session_id
+              {reviewPr
+                ? `${agentName(session?.agent)} reads this PR's code and can't change it. Ask it to explain a change or look for a bug. Findings go to Changes as drafts, and nothing reaches GitHub until you submit.`
+                : session?.agent_session_id
                 ? "This chat came over from Conductor. New messages continue the same agent session."
                 : `Describe a change, a bug or a plan. ${agentName(session?.agent)} works in this workspace's own branch, so nothing touches your main checkout.`}
             </p>
@@ -1242,7 +1247,7 @@ export function Chat({
             ref={input}
             value={draft}
             aria-label="Message"
-            placeholder={busy ? "Agent is working. Messages you send now run next." : "Ask for a change, fix or plan. Type @ to mention a file, or paste a screenshot."}
+            placeholder={busy ? "Agent is working. Messages you send now run next." : reviewPr ? "Ask about this PR. Type @ to mention a file." : "Ask for a change, fix or plan. Type @ to mention a file, or paste a screenshot."}
             onChange={(e) => { setDraft(e.target.value); updateMention(e.target.value, e.target.selectionStart); updateSlash(e.target.value); }}
             onBlur={() => { setMention(null); setSlash(null); }}
             onPaste={(e) => {
@@ -1304,14 +1309,16 @@ export function Chat({
                   effort={session.effort}
                   onChange={(next) => update(next)}
                 />
-                <select
+                {reviewPr ? (
+                  <span className="chip read-only composer-ro" title="A review workspace only reads: the agent can't edit files or push."><Lock size={11} />Read only</span>
+                ) : <select
                   value={session.permission_mode}
                   onChange={async (e) => { const m = e.target.value as PermissionMode; if (await okFullAuto(m)) await update({ permission_mode: m }); }}
                   aria-label="Permissions"
                   title="What the agent may do without asking"
                 >
                   {MODES.filter((m) => m.value !== "ask" || AGENT_INFO[session.agent]?.ask).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
+                </select>}
                 {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>
             )}

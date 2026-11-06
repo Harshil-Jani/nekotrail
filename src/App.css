@@ -1533,6 +1533,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .review-with-menu .menu-icon-space { flex: none; }
 .review-with-menu { top: 30px; right: 4px; min-width: 200px; max-height: 60vh; overflow-y: auto; }
 .chip.read-only { display: inline-flex; align-items: center; color: var(--muted); background: var(--hover); }
+.composer-bar .composer-ro { align-self: center; height: 20px; }
 .review-bar-top b { font-weight: 600; }
 .modal.submit-review { width: min(520px, calc(100vw - 48px)); }
 .modal.submit-review > p { margin: 0; }
