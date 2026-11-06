@@ -14,7 +14,7 @@
 
 <p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="nekotrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
 
-<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a></p>
+<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a> · <a href="https://github.com/sponsors/Harshil-Jani">Sponsor</a></p>
 
 ---
 
@@ -186,6 +186,10 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 ## Status
 
 Early (0.12). Built and used daily on macOS. Feedback and PRs welcome.
+
+## Sponsor
+
+nekotrail is free, open source and local-first, with no account and no paid tier. If it saves you time, you can support its development on [GitHub Sponsors](https://github.com/sponsors/Harshil-Jani). In the app: Settings, next to the version, or "Sponsor nekotrail" in ⌘K.
 
 ## License
 

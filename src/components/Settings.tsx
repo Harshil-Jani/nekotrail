@@ -307,6 +307,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
         <div className="row end">
           <span className="muted version num">nekotrail v{version}</span>
           <button className="link" onClick={() => openUrl("https://github.com/Harshil-Jani/nekotrail/blob/main/CHANGELOG.md").catch(() => {})}>What's new</button>
+          <button className="link" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="nekotrail is free and open source. Sponsoring keeps it that way.">Sponsor</button>
           {update?.kind === "checking" ? (
             <span className="muted update-status" role="status">Checking for updates…</span>
           ) : update?.kind === "latest" ? (
