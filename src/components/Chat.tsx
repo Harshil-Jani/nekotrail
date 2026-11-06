@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -12,7 +12,9 @@ import { McpSheet } from "./McpSheet";
 import { ask } from "./Confirm";
 import { getSettings } from "../settings";
 import { keyHint, mod, modKey } from "../platform";
-import { AGENT_INFO, agentName, otherAgent, splitAgents } from "../agents";
+import { AGENT_INFO, agentName, splitAgents } from "../agents";
+import { handoffOffer, markerText, reasonLine } from "../handoff";
+import { HandoffSheet } from "./HandoffSheet";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
@@ -84,7 +86,8 @@ type Row =
   | { type: "blocked"; text: string; files: string[] }
   | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[]; workspace_id?: string; repo?: string }
   | { type: "checks"; results: Extract<ChatEvent, { kind: "checks" }>["results"] }
-  | { type: "stop"; reason: "budget" | "loop"; text: string; evidence: string[] };
+  | { type: "stop"; reason: "budget" | "loop"; text: string; evidence: string[] }
+  | { type: "handoff"; ev: Extract<ChatEvent, { kind: "handoff" }> };
 
 /**
  * Pair each tool call with its result so one row shows both. With `rowOf`, also note for each event
@@ -142,6 +145,9 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
       case "stop":
         rows.push({ type: "stop", reason: ev.reason, text: ev.text, evidence: ev.evidence ?? [] });
         break;
+      case "handoff":
+        rows.push({ type: "handoff", ev });
+        break;
       case "guard_restored": {
         const i = guardIdx.get(ev.checkpoint);
         if (i !== undefined) {
@@ -180,8 +186,10 @@ type ChatCtxValue = {
   expandAll: boolean;
   /** Row index of the current search match, and the query to highlight. */
   query: string;
-  /** Start a fresh chat with the other agent (when one is missing or out of quota). */
-  switchAgent: (to: Agent) => void | Promise<void>;
+  /** Open the hand-off sheet for this chat (when its agent is missing, out of usage or stuck). */
+  handoff: () => void;
+  /** Show another chat of this workspace (a hand-off line points at it). */
+  openChat: (id: string) => void;
   /** Start one workspace per plan step, in parallel. */
   fanOut: (plan: string, steps: string[]) => void;
   /** Put `file:line` findings from a reply into the Changes tab as review comments. */
@@ -202,7 +210,7 @@ export function parseFindings(text: string): Finding[] {
   }
   return out;
 }
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {}, savePrompt: () => {} });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", handoff: () => {}, openChat: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {}, savePrompt: () => {} });
 
 const CHANGE: Record<GuardHit["change"], string> = { added: "new", changed: "changed", deleted: "deleted" };
 
@@ -260,9 +268,8 @@ function FindingsButton({ text }: { text: string }) {
 
 /** An agent problem with the way out: install it, sign in, or switch agents. */
 function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; agent: Agent; text: string }) {
-  const { switchAgent } = useContext(RewindCtx);
+  const { handoff, disabled } = useContext(RewindCtx);
   const name = AGENT_INFO[agent]?.full ?? "Claude Code";
-  const other = otherAgent(agent);
   const install = AGENT_INFO[agent]?.install ?? AGENT_INFO.claude.install;
   const [copied, setCopied] = useState(false);
   const runInTerminal = (cmd: string) => window.dispatchEvent(new CustomEvent("nekotrail-terminal", { detail: cmd }));
@@ -283,7 +290,7 @@ function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; age
         {fix === "login" && <button className="accent" onClick={() => runInTerminal((AGENT_INFO[agent] ?? AGENT_INFO.claude).login)}><SquareTerminal size={13} />Sign in from terminal</button>}
         {fix === "limit" && <span className="muted">The limit resets on its own. Your chat is kept.</span>}
         <span className="spacer" />
-        <button className={fix === "limit" ? "accent" : "quiet"} onClick={() => switchAgent(other)}>Continue in {agentName(other)}</button>
+        <button className={fix === "limit" ? "accent" : "quiet"} onClick={handoff} disabled={disabled} title="Another agent carries on in this workspace, with a brief of what was done"><ArrowRightLeft size={13} />Hand off to another agent…</button>
       </div>
     </div>
   );
@@ -409,6 +416,23 @@ function MessageMenu({ text }: { text: string }) {
   );
 }
 
+/** "Hand off to another agent…", for cards that offer it. */
+function HandoffButton() {
+  const { handoff, disabled } = useContext(RewindCtx);
+  return <button onClick={handoff} disabled={disabled}><ArrowRightLeft size={13} />Hand off…</button>;
+}
+
+/** "Handed off to Codex" or "Continued from Claude", opening the other chat. */
+function HandoffMark({ ev }: { ev: Extract<ChatEvent, { kind: "handoff" }> }) {
+  const { openChat } = useContext(RewindCtx);
+  return (
+    <div className="msg note handoff-mark" role="note">
+      <ArrowRightLeft size={14} aria-hidden />
+      <button className="link" onClick={() => openChat(ev.session_id)} title={ev.dir === "to" ? "Open the chat that carries on" : "Open the chat this one continues"}>{markerText(ev)}</button>
+    </div>
+  );
+}
+
 /** One chat row. Memoized: a new message renders only the new row, not the whole history. */
 const RowView = memo(function RowView({ r, pendingSpin, latestPlan }: { r: Row; pendingSpin: boolean; latestPlan: boolean }) {
   const { expandAll, query } = useContext(RewindCtx);
@@ -459,7 +483,11 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
             <ul className="stop-evidence" aria-label="What nekotrail saw">{r.evidence.map((line, i) => <li key={i}>{line}</li>)}</ul>
           )}
           {r.reason === "loop" ? (
-            <span className="muted stop-foot">The queue and autopilot give it no more turns. Look at what it did, then send a message to carry on yourself.</span>
+            <div className="stop-foot row">
+              <span className="muted">The queue and autopilot give it no more turns. Look at what it did, then send a message to carry on yourself, or let another agent take a fresh look.</span>
+              <span className="spacer" />
+              <HandoffButton />
+            </div>
           ) : (
             <div className="stop-foot row">
               <span className="muted">Raise the cap to let it carry on, or send a message yourself.</span>
@@ -469,6 +497,8 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
           )}
         </div>
       );
+    case "handoff":
+      return <HandoffMark ev={r.ev} />;
     case "checks": {
       // The turn summary for "Run checks after every agent turn".
       const bad = r.results.some((x) => x.status !== "passed");
@@ -564,6 +594,7 @@ export function Chat({
   reviewPr = 0,
   history,
   taskRepos,
+  handoff,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -586,6 +617,8 @@ export function Chat({
   history?: string;
   /** A multi-repo task: its repos, the main one (where this chat runs) first. */
   taskRepos?: string[];
+  /** Open the hand-off sheet (⌘K, `nekotrail handoff`): for `sessionId`, or the chat showing. */
+  handoff?: { nonce: number; sessionId?: string; agent?: Agent | null; model?: string | null };
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -676,22 +709,10 @@ export function Chat({
   };
   // The handlers below read the latest chat through this ref, so the context value (and with it
   // every memoized row) only changes when busy, expand-all or search change, not on each new event.
-  const live = useRef({ session, events, active, workspaceId, approvePlan, newChat: async (_: Agent) => {} });
+  const live = useRef({ session, events, active, workspaceId, approvePlan, openHandoff: () => {}, openChat: (_: string) => {} });
   const rewindCtx = useMemo(() => ({
-    // Hand the task to the other agent with the conversation so far, ready to send.
-    switchAgent: async (to: Agent) => {
-      const { session, events, newChat } = live.current;
-      const from = agentName(session?.agent);
-      const lines: string[] = [];
-      for (const ev of events) {
-        if (ev.kind === "user") lines.push(`User: ${ev.text}`);
-        else if (ev.kind === "text" && !("fix" in ev && ev.fix)) lines.push(`${from}: ${ev.text}`);
-        else if (ev.kind === "tool" && ["Edit", "Write", "MultiEdit"].includes(ev.name)) lines.push(`(${from} edited ${ev.input})`);
-      }
-      const transcript = lines.join("\n\n").slice(-8000);
-      await newChat(to);
-      setDraft(`You're taking over this task from ${from}, which had to stop. The conversation so far (latest part):\n\n${transcript}\n\nContinue from where it stopped. Check \`git status\` and \`git diff\` first to see what is already done.`);
-    },
+    handoff: () => live.current.openHandoff(),
+    openChat: (id: string) => live.current.openChat(id),
     fanOut: (plan: string, steps: string[]) => {
       const { session, workspaceId } = live.current;
       window.dispatchEvent(new CustomEvent("nekotrail-fanout", { detail: { workspaceId, agent: session?.agent ?? "claude", model: session?.model ?? null, effort: session?.effort ?? null, plan, steps } }));
@@ -992,6 +1013,7 @@ export function Chat({
       case "/plan": await update({ permission_mode: "plan" }); return true;
       case "/auto": await update({ permission_mode: "acceptEdits" }); return true;
       case "/fork": await fork(); return true;
+      case "/handoff": openHandoff(); return true;
       case "/model":
         if (arg) await update({ model: arg });
         else window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", ...modKey() }));
@@ -1055,7 +1077,32 @@ export function Chat({
     const s = await api.newSession(workspaceId, agent);
     await loadSessions(s.id);
   };
-  live.current = { session, events, active, workspaceId, approvePlan, newChat };
+  // The hand-off sheet: which chat, and the agent and model asked for (⌘K, `nekotrail handoff`).
+  const [handingOff, setHandingOff] = useState<{ sessionId: string; agent?: Agent | null; model?: string | null } | null>(null);
+  const openHandoff = (sessionId = active, agent?: Agent | null, model?: string | null) => {
+    if (!sessionId || readOnly) return;
+    setHandingOff({ sessionId, agent, model });
+  };
+  useEffect(() => {
+    if (!handoff) return;
+    const sid = handoff.sessionId ?? active;
+    if (sid && sid !== active && sessions.some((s) => s.id === sid)) setActive(sid);
+    openHandoff(sid ?? undefined, handoff.agent, handoff.model);
+  }, [handoff?.nonce]);
+  // A hand-off line points at the other chat: show its tab again if it was closed.
+  const openChat = async (id: string) => {
+    if (sessions.some((s) => s.id === id)) { setActive(id); return; }
+    try {
+      const s = await api.showSession(id);
+      setSessions((list) => (list.some((x) => x.id === s.id) ? list : [...list, s]));
+      setActive(s.id);
+    } catch (e) {
+      setError(errText(e));
+    }
+  };
+  live.current = { session, events, active, workspaceId, approvePlan, openHandoff: () => openHandoff(), openChat };
+  const offer = useMemo(() => (readOnly ? null : handoffOffer(events)), [events, readOnly]);
+  const hasTask = events.some((e) => e.kind === "user");
 
   const fork = async () => {
     if (!active) return;
@@ -1091,7 +1138,7 @@ export function Chat({
     ["/run", keyHint("Run or stop the app (⌘R), or /run test for a named action")], ["/diff", keyHint("Show the changes (⌘⇧D)")], ["/terminal", keyHint("Open the terminal (⌘J)")],
     ["/preview", keyHint("Show the running app (⌘4)")],
     ["/checks", keyHint("Show tests, lint and typecheck results (⌘5)")],
-    ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
+    ["/fork", "Fork this chat into a new tab"], ["/handoff", "Hand this task to another agent, with a brief of what was done"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
     ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];
   // Saved prompts: yours and the repo's, plus Claude Code's own commands in a Claude chat (Claude
@@ -1214,6 +1261,7 @@ export function Chat({
                 </span>
               )}
               <div className="menu-sep" />
+              <button role="menuitem" onClick={() => { setMenu(false); openHandoff(); }} disabled={!hasTask}><ArrowRightLeft size={13} />Hand off to…</button>
               <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
               <button role="menuitem" onClick={() => { setMenu(false); window.dispatchEvent(new CustomEvent("nekotrail-export", { detail: { id: workspaceId, chat: active } })); }} disabled={!events.length}><Share size={13} />Export this chat…</button>
@@ -1331,9 +1379,38 @@ export function Chat({
         </div>
       )}
       </div>}
+      {offer && !busy && session && (
+        <div className="handoff-offer" role="note">
+          <ArrowRightLeft size={14} aria-hidden />
+          <span>{reasonLine(offer, session.agent)}</span>
+          <span className="spacer" />
+          <button className="accent" onClick={() => openHandoff()}>Hand off…</button>
+        </div>
+      )}
       {error && <div className="banner error">{error}</div>}
       {note && <div className="banner">{note}</div>}
       {saving !== null && <SavePromptSheet text={saving} where={{ id: workspaceId }} onClose={() => setSaving(null)} onSaved={(n) => setNote(`Saved. Type /${n} to use it.`)} />}
+      {handingOff && (() => {
+        const s = sessions.find((x) => x.id === handingOff.sessionId);
+        if (!s) return null;
+        return (
+          <HandoffSheet
+            session={s}
+            title={s.title}
+            multiRepo={(taskRepos?.length ?? 0) > 1}
+            busy={running.has(s.id)}
+            initialAgent={handingOff.agent}
+            initialModel={handingOff.model}
+            onClose={() => setHandingOff(null)}
+            onStarted={(next) => {
+              setHandingOff(null);
+              setSessions((list) => (list.some((x) => x.id === next.id) ? list : [...list, next]));
+              setActive(next.id);
+              onRunningChange();
+            }}
+          />
+        );
+      })()}
       {mcpOpen && session && <McpSheet workspaceId={workspaceId} agent={session.agent} onClose={() => setMcpOpen(false)} />}
 
       {readOnly ? (

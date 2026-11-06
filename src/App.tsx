@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
+import { ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
 import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
@@ -164,6 +164,9 @@ export default function App() {
   const [wsRefreshKey, setWsRefreshKey] = useState(0); // bumps only for the selected workspace's turns
   const [inject, setInject] = useState<{ text: string; nonce: number; send?: boolean } | undefined>();
   const [append, setAppend] = useState<{ text: string; nonce: number } | undefined>();
+  // Hand off to another agent (⌘K, `nekotrail handoff`): the workspace, and the chat and agent when they were named.
+  const [handoffReq, setHandoffReq] = useState<{ workspaceId: string; nonce: number; sessionId?: string; agent?: Agent | null; model?: string | null } | undefined>(
+    params.get("handoff") ? { workspaceId: params.get("handoff")!, nonce: 1, sessionId: params.get("handoffChat") ?? undefined, agent: (params.get("handoffTo") as Agent | null) ?? null } : undefined);
   // Run and setup scripts that are alive (pty ids), the terminal tab to show, and dev-server URLs.
   const [livePtys, setLivePtys] = useState<Set<string>>(new Set());
   const [termFocus, setTermFocus] = useState<{ tab: string; nonce: number } | undefined>();
@@ -1058,6 +1061,13 @@ export default function App() {
         await api.linkConfirm(job.token, go).catch((e) => say(errText(e), true));
         return;
       }
+      case "handoff":
+        // `nekotrail handoff`: the brief is shown first; nothing is sent until you press Hand off.
+        await refresh();
+        showWorkspace(job.workspace_id);
+        setTab("chat");
+        setHandoffReq({ workspaceId: job.workspace_id, nonce: Date.now(), sessionId: job.session_id, agent: job.agent, model: job.model });
+        return;
       case "draft":
         // From the editor extension: the text waits in the message box until you press Send.
         await refresh();
@@ -1296,6 +1306,7 @@ export default function App() {
         { id: "rules", group: here, label: "Project rules", keywords: "agents.md claude.md gemini.md copilot instructions cursor rules sync", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "files" }) },
         { id: "rules-edit", group: here, label: "Edit rules", keywords: "agents.md claude.md markdown", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "edit" }) },
         { id: "rules-task", group: here, label: "Rules for this task", keywords: "workspace note first prompt instructions", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "task" }) },
+        { id: "handoff", group: here, label: "Hand off to another agent", keywords: "handoff switch agent codex gemini claude continue take over usage limit stuck brief", icon: <ArrowRightLeft size={15} />, run: () => { setTab("chat"); setHandoffReq({ workspaceId: ws.id, nonce: Date.now() }); } },
         { id: "export", group: here, label: "Export session", keywords: "share report markdown html transcript summary pr description", icon: <Share size={15} />, run: () => setExportFor({ id: ws.id }) },
         { id: "commands", group: here, label: "Show commands the agent ran", keywords: "log history shell bash terminal audit", icon: <SquareTerminal size={15} />, run: () => setCommandsFor(ws.id) },
         { id: "open-finder", group: here, label: IS_MAC ? "Show in Finder" : "Show in Files", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
@@ -1724,7 +1735,7 @@ export default function App() {
               ) : (
                 <>
                   <div className="pane" hidden={tab !== "chat"}>
-                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} taskRepos={isTask ? members.map((m) => repoNameOf(m.repo_id)) : undefined} />
+                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} taskRepos={isTask ? members.map((m) => repoNameOf(m.repo_id)) : undefined} handoff={handoffReq?.workspaceId === ws.id ? handoffReq : undefined} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
                     {tab === "changes" && viewWs && perRepo(
