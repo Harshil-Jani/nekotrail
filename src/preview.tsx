@@ -1,6 +1,7 @@
 /**
  * Sample data for rendering the real UI in a plain browser (no Tauri backend).
- * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, notes; ?view=sky).
+ * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
+ * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -140,6 +141,7 @@ const events = [
   { kind: "tool_result", id: "t4", output: "ok  \tpawprint/internal/server\t0.412s", is_error: false },
   { kind: "text", text: "Review of the branch:\n- internal/server/http.go:22: 75s is right for the ALB, but the gRPC port sits behind an NLB with a 350s timeout. Fix: make it configurable.\n- internal/server/http_test.go:14: the test sleeps 61s. Fix: inject a clock.\n\nOtherwise ready to merge." },
   { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18, context_tokens: 128000, context_window: 200000 },
+  { kind: "checks", results: [{ name: "test", status: "failed", passed: 41, failed: 2, regressed: true }, { name: "lint", status: "passed", passed: null, failed: 0 , regressed: false }, { name: "typecheck", status: "passed", passed: null, failed: 0, regressed: false }] },
 ];
 // ?rewound shows the marker a rewind leaves, with its Undo.
 if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Rewound to before: The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", undo: "def456", files: 2 } as any);
@@ -230,9 +232,44 @@ const diff = `diff --git a/internal/server/http.go b/internal/server/http.go
 +		IdleTimeout: 75 * time.Second,
  	}`;
 
+// The Checks tab. Mochi (w1): test fails after passing before, lint and vet pass. Comet (w2): a run going.
+// pawprint-web (w4, w5): no checks yet, so suggestions. ?checks=trust: nekotrail.json checks wait for an OK.
+const checksMode = new URLSearchParams(location.search).get("checks");
+const goChecks = [
+  { name: "test", command: "go test ./...", source: "app" },
+  { name: "lint", command: "golangci-lint run", source: "app" },
+  { name: "vet", command: "go vet ./...", source: "app" },
+];
+const checkResults = [
+  {
+    name: "test", command: "go test ./...", status: "failed", passed: 41, failed: 2, formats: ["go test"], exit_code: 1, duration_ms: 8412, finished_at: "2026-11-06T14:02:11Z", regressed: true,
+    failures: [
+      { title: "TestIdleTimeout/behind_nlb", file: "internal/server/http_test.go", line: 31, message: "IdleTimeout = 75s, want at least 350s for the NLB listener",
+        snippet: "  28 | \tt.Run(\"behind_nlb\", func(t *testing.T) {\n  29 | \t\tsrv := New(Config{Listener: NLB})\n  30 | \t\tif srv.IdleTimeout < 350*time.Second {\n> 31 | \t\t\tt.Errorf(\"IdleTimeout = %s, want at least 350s for the NLB listener\", srv.IdleTimeout)\n  32 | \t\t}\n  33 | \t})" },
+      { title: "TestSLA/friday_evening", file: "internal/tickets/sla_test.go", line: 42, message: "deadline = 2026-11-06 21:00, want 2026-11-09 12:00\nbusiness hours skipped the weekend" },
+    ],
+  },
+  { name: "lint", command: "golangci-lint run", status: "passed", passed: null, failed: 0, failures: [], formats: [], exit_code: 0, duration_ms: 3120, finished_at: "2026-11-06T14:02:14Z", regressed: false },
+  { name: "vet", command: "go vet ./...", status: "passed", passed: null, failed: 0, failures: [], formats: [], exit_code: 0, duration_ms: 1840, finished_at: "2026-11-06T14:02:16Z", regressed: false },
+];
+const checksFor = (id: string) => {
+  const base = { trust: null, suggestions: [], after_turn: true, results: [], active: false, current: null, queued: [] };
+  if (checksMode === "trust") return { ...base, checks: [], after_turn: false, trust: { fingerprint: "f", checks: [["lint", "golangci-lint run ./..."], ["test", "go test -race ./..."]] } };
+  if (checksMode === "none") return { ...base, checks: [], after_turn: false };
+  if (id === "w1") return { ...base, checks: goChecks, results: checkResults };
+  if (id === "w2") return { ...base, checks: goChecks, results: checkResults.slice(1), active: true, current: "test", queued: ["vet"] };
+  if (id === "w3") return { ...base, checks: goChecks, after_turn: false };
+  return { ...base, checks: [], after_turn: false, suggestions: [["test", "pnpm test"], ["lint", "pnpm lint"], ["typecheck", "pnpm exec tsc --noEmit"]] };
+};
+const checkOutput = "--- FAIL: TestIdleTimeout (0.00s)\n    --- FAIL: TestIdleTimeout/behind_nlb (0.00s)\n        http_test.go:31: IdleTimeout = 75s, want at least 350s for the NLB listener\nFAIL\nFAIL\tpawprint/internal/server\t0.412s\n--- FAIL: TestSLA (0.00s)\n    --- FAIL: TestSLA/friday_evening (0.00s)\n        sla_test.go:42: deadline = 2026-11-06 21:00, want 2026-11-09 12:00\n            business hours skipped the weekend\nFAIL\nFAIL\tpawprint/internal/tickets\t0.012s\nok  \tpawprint/internal/billing\t0.220s\nFAIL";
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
+      case "checks_list": return checksFor(args.id);
+      case "checks_statuses": return { w1: "failed", w2: "running", w3: "passed" };
+      case "checks_output": return args.name === "test" ? checkOutput : "";
+      case "checks_run": case "checks_stop": case "checks_trust": return null;
       case "snapshot": if (location.search.includes("fresh")) return { repos: [], workspaces: [], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
         return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };

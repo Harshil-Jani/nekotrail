@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod agent;
 pub mod agentcfg;
+pub mod checks;
 pub mod cli;
 pub mod mcpshare;
 pub mod config;
@@ -20,6 +21,7 @@ pub mod review;
 pub mod safe;
 pub mod search;
 pub mod store;
+pub mod testparse;
 pub mod title;
 
 use serde::Serialize;
@@ -107,6 +109,8 @@ pub struct AppState {
     /// Workspaces whose Run script stopped on "address already in use", and the port it named
     /// (None when it didn't say). Cleared when Run starts again.
     port_failures: Mutex<HashMap<String, Option<u16>>>,
+    /// Each workspace's test, lint and typecheck results, and the run going now.
+    checks: checks::Checks,
 }
 
 /// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
@@ -627,7 +631,7 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
             let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
                 .args(["-lc", &script])
                 .current_dir(path)
-                .envs(env_for(&st, &repo, &ws))
+                .envs(env_for(st, &repo, &ws))
                 .status();
         }
         git::remove_worktree(Path::new(&repo.root_path), path).map_err(e)?;
@@ -641,6 +645,8 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
         let _ = git::git(root, &["update-ref", "-d", &git::legacy_checkpoint_ref(&id)]);
     }
     st.ptys.close(&format!("{id}:term"));
+    st.checks.stop(&id);
+    st.checks.forget(&id);
     st.db().set_workspace_state(&id, "archived").map_err(e)
 }
 
@@ -3125,6 +3131,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             next
         };
         let title = guard_hit.clone().unwrap_or_else(|| st.db().session(&id).map(|s| s.title).unwrap_or_default());
+        // A turn that ended well, with nothing queued and nothing to ask: run the checks if the repo wants that.
+        let run_checks = ok && !user_stopped && guard_hit.is_none() && needs.is_none() && next.is_none()
+            && st.db().workspace(&workspace_id).and_then(|w| st.db().repo(&w.repo_id)).is_ok_and(|r| r.prefs.checks_after_turn);
         let _ = app.emit("running", json!({
             "session_id": id, "running": false, "workspace_id": workspace_id,
             "ok": ok, "title": title, "more_queued": next.is_some(),
@@ -3132,6 +3141,156 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }));
         if let Some(text) = next {
             let _ = start_turn(app.clone(), &st, id, text);
+        } else if run_checks {
+            let _ = start_checks(&app, &st, &workspace_id, None, Some(id));
+        }
+    });
+    Ok(())
+}
+
+// ---------- checks ----------
+
+/// A workspace's checks that can run, and its `nekotrail.json` checks with their fingerprint
+/// when the user hasn't approved those exact commands yet (they don't run until then).
+type Untrusted = Option<(Vec<(String, String)>, String)>;
+
+fn checks_for(st: &AppState, ws: &Workspace, repo: &Repo) -> (Vec<checks::Defined>, Untrusted) {
+    let file = config::checks_from_file(Path::new(&ws.path));
+    let print = config::checks_fingerprint(&file);
+    let trusted = file.is_empty() || st.db().setting(&config::trust_key(&ws.repo_id, &print)).ok().flatten().is_some();
+    let list = checks::defined(if trusted { &file } else { &[] }, &repo.prefs.actions);
+    (list, (!trusted).then_some((file, print)))
+}
+
+/// Everything the Checks tab shows: the checks, approval or suggestions, the last results
+/// (without their output, see `checks_output`) and the run going now.
+#[tauri::command]
+async fn checks_list(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+    let (list, untrusted) = checks_for(&st, &ws, &repo);
+    let suggestions = if list.is_empty() && untrusted.is_none() {
+        let path = ws.path.clone();
+        tauri::async_runtime::spawn_blocking(move || checks::suggest(Path::new(&path))).await.unwrap_or_default()
+    } else {
+        vec![]
+    };
+    let results: Vec<Value> = st
+        .checks
+        .results(&id)
+        .into_iter()
+        .filter(|r| list.iter().any(|d| d.name == r.name))
+        .map(|r| {
+            let mut v = json!(r);
+            if let Some(o) = v.as_object_mut() {
+                o.remove("output");
+            }
+            v
+        })
+        .collect();
+    let progress = st.checks.progress(&id);
+    Ok(json!({
+        "checks": list,
+        "trust": untrusted.map(|(c, print)| json!({"fingerprint": print, "checks": c})),
+        "suggestions": suggestions,
+        "after_turn": repo.prefs.checks_after_turn,
+        "results": results,
+        "active": progress.is_some(),
+        "current": progress.as_ref().and_then(|p| p.0.clone()),
+        "queued": progress.map(|p| p.1).unwrap_or_default(),
+    }))
+}
+
+/// What one check printed the last time it ran.
+#[tauri::command]
+async fn checks_output(st: State<'_, AppState>, id: String, name: String) -> Res<String> {
+    Ok(st.checks.result(&id, &name).map(|r| r.output).unwrap_or_default())
+}
+
+/// Run the workspace's checks (all, or the ones named) in the background. `checks` events report
+/// progress; results land in `checks_list`.
+#[tauri::command]
+async fn checks_run(app: AppHandle, st: State<'_, AppState>, id: String, names: Option<Vec<String>>) -> Res<()> {
+    start_checks(&app, &st, &id, names, None)
+}
+
+#[tauri::command]
+async fn checks_stop(st: State<'_, AppState>, id: String) -> Res<()> {
+    st.checks.stop(&id);
+    Ok(())
+}
+
+/// The user approved the repo file's checks they were shown, for this repo, until they change.
+#[tauri::command]
+async fn checks_trust(st: State<'_, AppState>, id: String, fingerprint: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let file = config::checks_from_file(Path::new(&ws.path));
+    if file.is_empty() || config::checks_fingerprint(&file) != fingerprint {
+        return Err("nekotrail.json changed since you looked at it. Check the commands again.".into());
+    }
+    st.db().set_setting(&config::trust_key(&ws.repo_id, &fingerprint), &store::now()).map_err(e)
+}
+
+/// Each workspace's dot: "running", "failed" or "passed" (missing before the first run).
+#[tauri::command]
+async fn checks_statuses(st: State<'_, AppState>) -> Res<HashMap<String, String>> {
+    Ok(st.checks.statuses())
+}
+
+/// Start a run. `turn` is the chat whose turn just ended: the result goes into that chat, and a
+/// check that passed before and fails now moves the workspace to Needs you.
+fn start_checks(app: &AppHandle, st: &AppState, ws_id: &str, names: Option<Vec<String>>, turn: Option<String>) -> Res<()> {
+    let ws = st.db().workspace(ws_id).map_err(e)?;
+    let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+    let (list, _) = checks_for(st, &ws, &repo);
+    st.checks.retain(ws_id, &list.iter().map(|d| d.name.clone()).collect::<Vec<_>>());
+    let chosen: Vec<checks::Defined> = list.into_iter().filter(|d| names.as_ref().is_none_or(|n| n.contains(&d.name))).collect();
+    if chosen.is_empty() {
+        return Err("This repo has no checks to run yet. Add them in the Checks tab.".into());
+    }
+    let order: Vec<String> = chosen.iter().map(|d| d.name.clone()).collect();
+    let stop = st.checks.begin(ws_id, &order).ok_or("Checks are already running in this workspace.")?;
+    let env = env_for(st, &repo, &ws);
+    let (app, ws_id, root) = (app.clone(), ws_id.to_string(), PathBuf::from(&ws.path));
+    let trigger = if turn.is_some() { "turn" } else { "manual" };
+    let _ = app.emit("checks", json!({"workspace_id": ws_id, "state": "running", "trigger": trigger}));
+    std::thread::spawn(move || {
+        let st = app.state::<AppState>();
+        let mut done: Vec<checks::CheckResult> = vec![];
+        for d in chosen {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            st.checks.starting(&ws_id, &d.name);
+            let _ = app.emit("checks", json!({"workspace_id": ws_id, "state": "running", "trigger": trigger}));
+            let prev = st.checks.result(&ws_id, &d.name);
+            let ex = checks::exec(&d.command, &root, &env, &stop, checks::TIMEOUT, |_| {});
+            if ex.stopped {
+                break; // Stop keeps the last result rather than a half run.
+            }
+            let parsed = checks::read_results(&root, &d.command, &ex);
+            let r = checks::outcome(&d.name, &d.command, &ex, parsed, prev.as_ref(), checks::TIMEOUT);
+            st.checks.put(&ws_id, r.clone());
+            done.push(r);
+        }
+        st.checks.end(&ws_id);
+        let stopped = stop.load(std::sync::atomic::Ordering::Relaxed);
+        let regressed = checks::regressions(&done);
+        let _ = app.emit("checks", json!({"workspace_id": ws_id, "state": "done", "trigger": trigger, "stopped": stopped, "regressed": regressed}));
+        let Some(session) = turn else { return };
+        if stopped || done.is_empty() {
+            return;
+        }
+        let ev = json!({"kind": "checks", "results": done.iter().map(|r| json!({
+            "name": r.name, "status": r.status, "passed": r.passed, "failed": r.failed, "regressed": r.regressed,
+        })).collect::<Vec<_>>()});
+        let _ = st.db().append_event(&session, &ev);
+        emit_event(&app, &session, &ev);
+        if !regressed.is_empty() {
+            let _ = st.db().set_unread(&ws_id, true);
+            let title = format!("{} passed before and {} now", regressed.join(" and "), if regressed.len() == 1 { "fails" } else { "fail" });
+            let _ = app.emit("needs", json!({"workspace_id": ws_id, "session_id": session, "needs": "checks", "title": title}));
+            let _ = app.emit("workspaces-changed", json!({}));
         }
     });
     Ok(())
@@ -3469,7 +3628,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default() })
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")) })
         .setup(move |app| {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
@@ -3504,7 +3663,8 @@ pub fn run() {
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
-            remote_take, link_confirm, cli_install, cli_status
+            remote_take, link_confirm, cli_install, cli_status,
+            checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");
@@ -3675,7 +3835,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
@@ -3717,7 +3877,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
@@ -3793,7 +3953,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let repo = |id: &str, remote: Option<&str>| Repo {
             id: id.into(), name: id.into(), root_path: dir.path().join(id).to_string_lossy().into(), default_branch: "main".into(),
@@ -3844,7 +4004,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let repo = Repo {
             id: "r1".into(), name: "app".into(), root_path: dir.path().join("app").to_string_lossy().into(), default_branch: "main".into(),
@@ -3862,7 +4022,7 @@ mod tests {
         assert_eq!(st.db().workspace("theirs").unwrap().review_pr, 7, "stored and read back");
 
         // Agent, terminal and scripts in a review workspace get the no-push git settings; others don't.
-        let has_block = |w: &Workspace| workspace_env(&repo, w).iter().any(|(k, v)| k == "GIT_CONFIG_KEY_0" && v.ends_with(".pushInsteadOf"));
+        let has_block = |w: &Workspace| workspace_env(&repo, w, None).iter().any(|(k, v)| k == "GIT_CONFIG_KEY_0" && v.ends_with(".pushInsteadOf"));
         assert!(has_block(&theirs));
         assert!(!has_block(&mine));
 

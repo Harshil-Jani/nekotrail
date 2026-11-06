@@ -1,8 +1,9 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X, CircleX, ListChecks } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
+import { turnLine } from "../checks";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
@@ -78,7 +79,8 @@ type Row =
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> }
   | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" }
   | { type: "blocked"; text: string; files: string[] }
-  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] };
+  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] }
+  | { type: "checks"; results: Extract<ChatEvent, { kind: "checks" }>["results"] };
 
 /**
  * Pair each tool call with its result so one row shows both. With `rowOf`, also note for each event
@@ -129,6 +131,9 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
       case "guard":
         guardIdx.set(ev.checkpoint ?? "", rows.length);
         rows.push({ type: "guard", files: ev.files, checkpoint: ev.checkpoint, ignored: ev.ignored, level: ev.level });
+        break;
+      case "checks":
+        rows.push({ type: "checks", results: ev.results });
         break;
       case "guard_restored": {
         const i = guardIdx.get(ev.checkpoint);
@@ -412,6 +417,19 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       );
     case "guard":
       return <GuardCard r={r} />;
+    case "checks": {
+      // The turn summary for "Run checks after every agent turn".
+      const bad = r.results.some((x) => x.status !== "passed");
+      const back = r.results.filter((x) => x.regressed).map((x) => x.name);
+      return (
+        <div className="msg done checks-note">
+          {bad ? <CircleX size={14} className="bad" /> : <ListChecks size={14} className="ok" />}
+          <span>Checks: {turnLine(r.results)}</span>
+          {back.length > 0 && <span className="bad-text">{back.join(" and ")} passed before and {back.length === 1 ? "fails" : "fail"} now.</span>}
+          {bad && <button className="link" onClick={() => window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: "checks" }))}>Open Checks</button>}
+        </div>
+      );
+    }
     case "rewind":
       return (
         <div className="msg note rewound">
@@ -920,7 +938,7 @@ export function Chat({
       case "/run":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: arg ? `run:${arg}` : "run" }));
         return true;
-      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal": case "/preview":
+      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal": case "/preview": case "/checks":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: cmd.slice(1) }));
         return true;
       case "/add-dir": {
@@ -1006,6 +1024,7 @@ export function Chat({
     ["/fix-ci", keyHint("Fix failing checks from their logs (⌘⇧X)")],
     ["/run", keyHint("Run or stop the app (⌘R), or /run test for a named action")], ["/diff", keyHint("Show the changes (⌘⇧D)")], ["/terminal", keyHint("Open the terminal (⌘J)")],
     ["/preview", keyHint("Show the running app (⌘4)")],
+    ["/checks", keyHint("Show tests, lint and typecheck results (⌘5)")],
     ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
     ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];

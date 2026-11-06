@@ -214,6 +214,8 @@ pub struct RepoPrefs {
     /// Paths agents should leave alone, as gitignore-style globs (`.env*`, `migrations/**`).
     /// A repo's `nekotrail.json` can add more but never remove these (see `guard`).
     pub protected: Vec<String>,
+    /// Run the Checks tab's checks after every agent turn that ends well.
+    pub checks_after_turn: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

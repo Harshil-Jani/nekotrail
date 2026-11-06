@@ -1,0 +1,30 @@
+ PASS  src/utils/format.test.ts
+ FAIL  src/pricing/annual.test.ts (5.21 s)
+  ● pricing › annual toggle › shows the yearly price
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "$96/yr"
+    Received: "$120/yr"
+
+      12 |     render(<Pricing annual />);
+      13 |     const price = screen.getByTestId("price");
+    > 14 |     expect(price.textContent).toBe("$96/yr");
+         |                               ^
+      15 |   });
+      16 | });
+
+      at Object.toBe (src/pricing/annual.test.ts:14:31)
+
+  ● pricing › rounds cents
+
+    TypeError: Cannot read properties of undefined (reading 'cents')
+
+      at round (src/pricing/round.ts:3:15)
+      at Object.<anonymous> (src/pricing/annual.test.ts:20:12)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       2 failed, 7 passed, 9 total
+Snapshots:   0 total
+Time:        1.204 s
+Ran all test suites.

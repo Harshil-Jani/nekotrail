@@ -1,0 +1,32 @@
+
+ RUN  v3.2.4 /code/pawprint-web
+
+ ❯ src/pricing/annual.test.ts (3 tests | 1 failed) 12ms
+   × pricing > annual toggle > shows the yearly price 8ms
+     → expected '$120/yr' to be '$96/yr' // Object.is equality
+ ✓ src/utils/format.test.ts (4 tests) 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pricing/annual.test.ts > pricing > annual toggle > shows the yearly price
+AssertionError: expected '$120/yr' to be '$96/yr' // Object.is equality
+
+- Expected
++ Received
+
+- $96/yr
++ $120/yr
+
+ ❯ src/pricing/annual.test.ts:14:31
+     12|     render(<Pricing annual />);
+     13|     const price = screen.getByTestId("price");
+     14|     expect(price.textContent).toBe("$96/yr");
+       |                               ^
+     15|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 6 passed (7)
+   Start at  14:02:11
+   Duration  412ms (transform 30ms, setup 0ms, collect 41ms, tests 15ms)

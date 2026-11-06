@@ -1582,3 +1582,70 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .preview-problem svg { flex: none; margin-top: 2px; color: var(--wait); }
 .preview-problem p { margin: 0; }
 .preview-problem p + p { margin-top: var(--s1); }
+
+/* ---------- checks: tests, lint and typecheck per workspace ---------- */
+.checks { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.checks pre { tab-size: 4; }
+.checks-bar { display: flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 0 var(--s2) 0 var(--s4); border-bottom: 0.5px solid var(--line-strong); }
+.checks-headline { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.checks-auto { display: inline-flex; align-items: center; gap: var(--s2); font-size: 12px; color: var(--muted); white-space: nowrap; margin-right: var(--s2); }
+.checks-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.checks-body > * { width: 100%; max-width: 920px; margin-left: auto; margin-right: auto; }
+.checks-empty { padding: var(--s6); }
+.checks-empty p { margin: 0; }
+.checks svg.ok { color: var(--good); }
+.checks svg.bad { color: var(--bad); }
+.checks svg.warn { color: var(--wait); }
+.checks svg.faint { color: var(--faint); }
+.checks .bad-text { color: var(--bad-text); }
+.checks-card { border-radius: var(--r-lg); background: var(--surface); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.checks-card p { margin: 0; font-size: 12.5px; }
+.checks-card.trust { background: var(--wait-soft); }
+.checks-card-head { display: flex; align-items: center; gap: var(--s2); }
+.checks-name { font-weight: 600; white-space: nowrap; }
+.checks-cmds, .checks-suggest { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.checks-cmds li, .checks-suggest label { display: grid; grid-template-columns: minmax(80px, max-content) 1fr; align-items: baseline; column-gap: var(--s3); font-size: 12.5px; }
+.checks-suggest label { grid-template-columns: auto minmax(80px, max-content) 1fr; }
+.checks-suggest input { margin: 0; align-self: center; }
+.checks-cmds code, .checks-suggest code { word-break: break-all; }
+.checks-foot { font-size: 12px; margin: var(--s1) auto 0; }
+
+.checks-card.one { gap: 0; padding: var(--s2) var(--s2) var(--s2) var(--s3); }
+.checks-card.one.failed, .checks-card.one.error { box-shadow: inset 0 0 0 1px var(--bad-soft); }
+.check-head { display: flex; align-items: center; gap: var(--s2); min-height: 28px; min-width: 0; }
+.check-head > svg, .check-head > .spinner { flex: none; }
+.check-cmd { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 40px; flex: 0 1 auto; }
+.check-meta { font-size: 12px; white-space: nowrap; }
+.check-tag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: var(--r-xs); white-space: nowrap; }
+.check-tag.bad { color: var(--bad-text); background: var(--bad-soft); }
+.check-output-btn { height: 24px; padding: 0 6px; gap: 2px; font-size: 12px; }
+.check-output-btn svg { transition: transform 0.15s var(--ease); }
+.check-output-btn svg.open { transform: rotate(90deg); }
+.check-more { align-self: flex-start; margin: var(--s2) 0 var(--s1) 23px; font-size: 12px; }
+.check-output { margin: var(--s2) 0 var(--s1); padding: var(--s3); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; border-radius: var(--r-md); background: var(--bg); box-shadow: inset 0 0 0 0.5px var(--line); }
+
+.failures { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; }
+.failure { display: flex; flex-direction: column; gap: 2px; padding: var(--s2) 0 var(--s2) 23px; border-top: 0.5px solid var(--line); min-width: 0; }
+.failure-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.failure-title { font-weight: 500; overflow-wrap: anywhere; }
+.failure-fix { height: 24px; padding: 0 var(--s2); font-size: 12px; flex: none; }
+.failure-at { color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+.failure-msg { margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; max-height: 9.5em; overflow: auto; color: var(--text); }
+.failure-code summary { font-size: 12px; color: var(--muted); cursor: default; width: max-content; }
+.failure-code summary:hover { color: var(--text); }
+.failure-code pre { margin: var(--s1) 0 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); box-shadow: inset 0 0 0 0.5px var(--line); overflow-x: auto; }
+
+/* The sidebar dot and the tab's dot: green passing, red failing, a ring while they run. */
+.ws-check { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ws-check.ck-passed { background: var(--good); }
+.ws-check.ck-failed { background: var(--bad); }
+.ws-check.ck-running { box-shadow: inset 0 0 0 1.5px var(--muted); animation: ck-pulse 1.2s ease-in-out infinite; }
+@keyframes ck-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .ws-check.ck-running { animation: none; } }
+.tab .ws-check { margin-left: 5px; }
+
+/* A turn's checks in the chat. */
+.msg.done.checks-note .bad-text { color: var(--bad-text); }
+.msg.done.checks-note svg.bad { color: var(--bad); }
+.msg.done.checks-note svg.ok { color: var(--good); }
+.msg.done.checks-note .link { font-size: 12px; }
