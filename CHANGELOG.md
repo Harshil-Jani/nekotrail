@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Workspaces named after their task**
+- The first message names a workspace (no AI call, stays on your Mac), then the PR's title replaces it. A name you type is never replaced; clear it to go back to automatic.
+- The star moves under the title in the sidebar, the toolbar and ⌘K, and you can still search by it. Existing workspaces keep their names; untitled ones with a chat are named once.
+
+**MCP sheet polish**
+- The sheet fades at the bottom when there's more to scroll, clears an old error when you change how a secret comes across, and its Skills note is shorter.
+
 ## 0.12.1 (2026-11-06)
 
 **Sponsor**
