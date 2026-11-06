@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Task queue**
+- New Queue (sidebar, ⌘K, `nekotrail queue add "task"`): line up tasks and nekotrail runs 3 at a time, each in its own workspace, starting the next when one finishes or needs you. Set how many run at once overall and per repo.
+- Each task picks its repo, branch, agent, model and permissions, and what happens after: run checks, open a draft PR, or autopilot to green.
+- When an agent says it is out of usage, its tasks wait until the reset time it gave, or switch to the fallback agent you picked. With no time given, nekotrail waits 30 minutes and longer each time, and only one task tries again first.
+- Tasks set to Ask before changes wait for you to start them. Drag to reorder, pause and resume, retry failed tasks. The queue survives a restart.
+- Coming back after a while shows what the queue did: "8 done, 2 need you, 1 failed".
+
 ## 0.15.0 (2026-11-07)
 
 **Import terminal sessions**
