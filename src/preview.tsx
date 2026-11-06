@@ -48,10 +48,13 @@ if (new URLSearchParams(location.search).get("group") === "status") localStorage
   if (want && phases[want]) window.__nekotrailUpdatePreview = phases[want];
 }
 
-// Sample review comments so the Changes tab shows them.
-localStorage.setItem("nekotrail.review.w1", JSON.stringify([
-  { id: "c1", file: "internal/server/http.go", line: 21, side: "new", code: "IdleTimeout: 75 * time.Second,", text: "Read this from config instead, so ops can tune it per environment." },
-]));
+// Sample review comments so the Changes tab shows them: a two-line range, one line, and one whose
+// lines the agent has since changed (outdated). ?noreview starts with none. Kept in memory like the app's database.
+const reviews: Record<string, any[]> = new URLSearchParams(location.search).has("noreview") ? {} : { w1: [
+  { id: "c1", file: "internal/server/http.go", side: "new", line: 20, end_line: 21, code: "+\t\t// Must outlive the ALB idle timeout (60s), or the ALB reuses\n+\t\t// connections we already closed and clients see 502s.", text: "Link the AWS doc for the 60s default here." },
+  { id: "c2", file: "internal/server/http.go", side: "new", line: 22, end_line: 22, code: "+\t\tIdleTimeout: 75 * time.Second,", text: "Read this from config instead, so ops can tune it per environment." },
+  { id: "c3", file: "internal/server/http.go", side: "new", line: 24, end_line: 24, code: "+\t\tReadHeaderTimeout: 5 * time.Second,", text: "Is 5s enough for slow mobile clients?" },
+] };
 
 const repos = [
   { id: "r1", name: "pawprint-api", root_path: "/code/pawprint-api", default_branch: "main", remote_url: null, setup_script: "go mod download", run_script: "make dev", archive_script: null },
@@ -207,6 +210,10 @@ mockIPC(
       case "preview_snapshot": return fakeSnapshot();
       case "live_checkpoints": return args.checkpoints;
       case "checkpoint_preview": return { files: 2, commits: 1 };
+      case "review_comments": return reviews[args.id] ?? [];
+      case "add_review_comments": { const cur = reviews[args.id] ?? []; reviews[args.id] = [...cur, ...args.comments.filter((c: any) => !cur.some((x) => x.id === c.id))]; return null; }
+      case "remove_review_comments": reviews[args.id] = (reviews[args.id] ?? []).filter((c) => !args.ids.includes(c.id)); return null;
+      case "send": (window as any).__sent = [...((window as any).__sent ?? []), args.text]; return null;
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
       default: return null;
     }

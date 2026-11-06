@@ -5,6 +5,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Review the agent like a pull request**
+- Click a line number in Changes (shift-click or drag for more lines) to leave a comment. Drafts stay with the workspace, even after a restart.
+- "Send review" sends all your comments to the agent in one message, with each file and line, the code and your note. If the agent is busy, it waits in the chat box for Queue.
+- Comments on lines the agent has since changed are marked Outdated, with the old code shown, and can be cleared in one click.
+
 **Checkpoints**
 - Rewind to here: every message you send saves your files first. Rewind puts them back as they were, including untracked files and what you had staged, and tells you how many files change before it does anything.
 - Rewinds can be undone: the chat shows "Rewound to before: ..." with an Undo button, and nothing in the chat is deleted. `.env`, `node_modules` and other ignored files are never touched.

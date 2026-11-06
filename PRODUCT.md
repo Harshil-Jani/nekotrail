@@ -36,7 +36,7 @@ nekotrail runs many coding agents in parallel on your own Mac. Every task gets i
 - v0.1 shipped: repos, workspaces as git worktrees, Claude/Codex chat with queueing and stop, plan / auto-accept / full-auto permission modes, diff view incl. untracked files, terminal per workspace, notes, pin, unread, archive (keeps branch) and restore, setup/run/archive scripts (`nekotrail.json` overrides app settings), PR creation and status via `gh`, "fix failing CI" and "resolve conflicts" prompts, Conductor importer, notifications and Dock badge, night-sky quest.
 - GitHub details come from the user's `gh` login: avatar, name, login, PR authors and reviewers.
 - Headless agent turns cannot ask for permission mid-turn, so there is no "ask before each edit" mode yet.
-- Not built yet: inline review comments, Linear, port forwarding (the Preview tab shows localhost only), cloud, mobile, multiplayer.
+- Not built yet: Linear, port forwarding (the Preview tab shows localhost only), cloud, mobile, multiplayer.
 
 ## Brand Commitments
 
