@@ -3,6 +3,15 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Commit composer**
+- New Commit view in Changes: stage or unstage whole files, single hunks, or the lines you tick. Your files on disk never change, only what's staged.
+- The message box counts your subject line against 72 characters. Draft message asks the workspace's agent for a conventional message from the staged changes, outside your chat. If the agent is busy, the draft comes from the file list instead.
+- Split into commits: the agent groups your uncommitted changes into commits. Check each message, move changes between commits, then commit them in order.
+- Amend last commit, and Undo last commit (its changes come back staged). Both are off once the commit is pushed.
+- Staging or committing a protected file asks first.
+
 ## 0.14.0 (2026-11-06)
 
 **Checks: tests, lint and typecheck**
