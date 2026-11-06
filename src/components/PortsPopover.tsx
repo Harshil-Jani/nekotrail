@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AppWindow, ExternalLink, TriangleAlert, X } from "lucide-react";
+import { AppWindow, CircleStop, ExternalLink, TriangleAlert } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errText, type PortRow, type WsPorts } from "../api";
 import { ask } from "./Confirm";
@@ -122,15 +122,18 @@ export function PortsPopover({
                       <span className="ports-label">{portLabel(r)}</span>
                       <span className={r.holder ? "ports-holder" : "ports-holder faint"}>{holderText(r, ws.id, label)}</span>
                     </span>
-                    <span className="ports-actions">
-                      <button className="icon" disabled={!r.holder} aria-label={`Open ${r.port} in your browser`} title="Open in browser" onClick={() => open(r.port)}><ExternalLink size={14} /></button>
-                      <button className="icon" disabled={!r.holder} aria-label={`Show ${r.port} in Preview`} title="Open in Preview" onClick={() => { onPreview(ws.id, url(r.port)); onClose(); }}><AppWindow size={14} /></button>
-                      {r.holder?.can_free && (
-                        <button className="icon" aria-label={`Free port ${r.port}`} title="Free this port" disabled={busy} onClick={() => free(ws, r)}>
-                          {busy ? <span className="spinner" /> : <X size={14} />}
-                        </button>
-                      )}
-                    </span>
+                    {/* Nothing to open on a free port, so no dead buttons there. */}
+                    {r.holder && (
+                      <span className="ports-actions">
+                        <button className="icon" aria-label={`Open ${r.port} in your browser`} title="Open in browser" onClick={() => open(r.port)}><ExternalLink size={14} /></button>
+                        <button className="icon" aria-label={`Show ${r.port} in Preview`} title="Open in Preview" onClick={() => { onPreview(ws.id, url(r.port)); onClose(); }}><AppWindow size={14} /></button>
+                        {r.holder.can_free ? (
+                          <button className="icon" aria-label={`Free port ${r.port}`} title={`Stop ${r.holder.command} to free this port`} disabled={busy} onClick={() => free(ws, r)}>
+                            {busy ? <span className="spinner" /> : <CircleStop size={14} />}
+                          </button>
+                        ) : <span className="ports-noop" aria-hidden />}
+                      </span>
+                    )}
                   </div>
                 );
               })}

@@ -1580,6 +1580,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .ports-actions { display: flex; gap: 2px; flex: none; }
 .ports-actions button.icon { width: 24px; height: 24px; }
 .ports-actions button.icon:disabled { opacity: 0.35; }
+.ports-noop { width: 24px; }
 .ports-problem { display: flex; gap: var(--s2); margin: var(--s1) 0 var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--wait-soft); }
 .ports-problem svg { flex: none; margin-top: 2px; color: var(--wait); }
 .ports-problem p { margin: 0; }
