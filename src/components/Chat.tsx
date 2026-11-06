@@ -181,7 +181,8 @@ function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
   const [busy, setBusy] = useState(false);
   const left = r.files.filter((f) => !r.restored?.includes(f.path));
   const names = r.files.map((f) => f.path);
-  const title = names.length === 1 ? `Changed a protected file: ${names[0]}` : `Changed ${names.length} protected files`;
+  // The list below names the files, so the title only counts them.
+  const title = names.length === 1 ? "Changed a protected file" : `Changed ${names.length} protected files`;
   return (
     <div className={`guard-card ${left.length ? "" : "settled"}`}>
       <div className="fix-head"><ShieldAlert size={15} /><b>{title}</b></div>
@@ -189,7 +190,8 @@ function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
         {r.files.map((f) => (
           <li key={f.path}>
             <code>{f.path}</code>
-            <span className="muted">{r.restored?.includes(f.path) ? "put back" : CHANGE[f.change]}</span>
+            {/* A file the agent created isn't put back: it goes to the Trash. */}
+            <span className="muted">{r.restored?.includes(f.path) ? (f.change === "added" ? "removed" : "put back") : CHANGE[f.change]}</span>
           </li>
         ))}
       </ul>
@@ -205,7 +207,7 @@ function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
           )}
         </div>
       ) : (
-        <p className="muted">Put back. The agent's copies are in the Trash.</p>
+        <p className="muted">{r.files.length === 1 ? "The agent's version is in the Trash." : "The agent's versions are in the Trash."}</p>
       )}
     </div>
   );
@@ -384,7 +386,13 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
     case "note":
       return <div className="msg note"><History size={14} />{r.text}</div>;
     case "blocked":
-      return <div className="msg note blocked"><ShieldX size={14} /><span>{r.text} <code>{r.files.join(", ")}</code> is protected in this repo.</span></div>;
+      return (
+        <div className="msg note blocked">
+          <ShieldX size={14} />
+          <span>{r.text}</span>
+          <span className="guard-file">{r.files.map((f) => <code key={f}>{f}</code>)}</span>
+        </div>
+      );
     case "guard":
       return <GuardCard r={r} />;
     case "rewind":
@@ -598,17 +606,18 @@ export function Chat({
       const { active } = live.current;
       if (!active) return;
       setError(null);
-      const gone = files.filter((f) => f.change === "added").length;
-      const back = files.length - gone;
-      const list = files.map((f) => f.path).join(", ");
+      // Say what happens to each file, by name, once: restored, or (new files) moved to the Trash.
+      const gone = files.filter((f) => f.change === "added").map((f) => f.path);
+      const back = files.filter((f) => f.change !== "added").map((f) => f.path);
+      const one = files.length === 1;
       const ok = await ask({
-        title: files.length === 1 ? `Put ${files[0].path} back?` : `Put ${files.length} protected files back?`,
+        title: one ? (gone.length ? "Remove the protected file the agent created?" : "Put the protected file back?") : `Put ${files.length} protected files back?`,
         body: [
-          back ? `${back === 1 ? "It goes" : `${back} go`} back to how ${back === 1 ? "it was" : "they were"} before this turn.` : "",
-          gone ? `${gone === 1 ? "A file" : `${gone} files`} the agent created ${gone === 1 ? "goes" : "go"} to the Trash.` : "",
-          `Only ${list} ${files.length === 1 ? "is" : "are"} touched. The agent's copies go to the Trash, so you can get them back.`,
+          back.length ? `${back.length === 1 ? "Goes" : "Go"} back to how ${back.length === 1 ? "it was" : "they were"} before this turn: ${back.join(", ")}.` : "",
+          gone.length ? `New, so ${gone.length === 1 ? "it goes" : "they go"} to the Trash: ${gone.join(", ")}.` : "",
+          `Nothing else in the workspace changes. The agent's ${one ? "version goes" : "versions go"} to the Trash, so you can get ${one ? "it" : "them"} back.`,
         ].filter(Boolean).join("\n"),
-        ok: "Put back",
+        ok: one && gone.length ? "Remove" : "Put back",
       });
       if (!ok) return;
       try { await api.putBackProtected(active, checkpoint, ignored, files.map((f) => f.path)); } catch (e) { setError(errText(e)); }

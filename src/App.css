@@ -1430,7 +1430,7 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .guard-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
 .guard-files li { display: flex; align-items: baseline; gap: var(--s2); font-size: 12.5px; }
 .guard-files code { font-family: var(--mono); }
-.msg.note.blocked { color: var(--text); background: var(--wait-soft); }
+.msg.note.blocked { color: var(--text); background: var(--wait-soft); flex-wrap: wrap; }
 .msg.note.blocked svg { color: var(--wait); flex: none; }
 .guard-file { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .guard-file code { font-family: var(--mono); font-size: 12px; padding: 1px 6px; border-radius: var(--r-xs); background: var(--hover); }
