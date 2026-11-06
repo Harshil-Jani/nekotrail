@@ -731,7 +731,8 @@ export default function App() {
 
   // ⌘N: the current workspace's repo, else the filtered project, else the first repo.
   const openNew = (source: NewSource = "task", stackOn?: string) => {
-    setNewStack(stackOn);
+    // "On a workspace" starts with the open workspace picked: stacking on what you're looking at is the common case.
+    setNewStack(stackOn ?? ws?.id);
     const f = getSettings().repoFilter;
     const repoId = ws?.repo_id ?? (f.length === 1 ? f[0] : repos[0]?.id);
     if (!repoId) return addRepo();
