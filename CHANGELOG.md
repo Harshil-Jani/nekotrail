@@ -5,6 +5,19 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Checks: tests, lint and typecheck**
+- New Checks tab (⌘5): runs your test, lint and typecheck commands in the background and lists each failure with its file, line and the code around it. The raw output is one click away.
+- "Fix with agent" sends one failure to the agent with its code; "Fix all" sends them all in one message.
+- No checks yet? nekotrail suggests them from the repo (npm, bun, pnpm, yarn, cargo, go, pytest, ruff, mypy, make) and saves the ones you tick.
+- A `checks` section in `nekotrail.json` shares checks with the team. Like its scripts, they ask before they run.
+- "Run after every agent turn" puts the result in the chat. If a check that passed before now fails, the workspace moves to Needs you. A dot on each sidebar row shows passing, failing or running.
+
+**Prompt library**
+- Save a prompt from the chat box or from any message you sent (⋯, Save as prompt), with a name, a description and blanks like `{{ticket}}` or `{{env:staging}}`.
+- Type `/name` to insert one, or use ⌘K or New workspace. Tab moves between blanks, and `{{branch}}`, `{{base}}`, `{{files_changed}}` and `{{selection}}` fill themselves.
+- Share prompts through git in `.nekotrail/prompts/*.md` or a `prompts` list in `nekotrail.json`. They're read-only in the app and marked Repo.
+- Your Claude Code commands show in the `/` menu of Claude chats, and Claude runs them itself. New Prompts pane in Settings: edit, duplicate, delete, export and import. Your old snippets move over by themselves.
+
 **Review your teammates' PRs with an agent**
 - New "Review requests" in the sidebar and ⌘K: open PRs where someone asked for your review, in the same GitHub check as your own PRs.
 - One click starts a review: the PR's code in a read-only workspace, and the agent you pick reviews it. Its findings land in Changes as draft comments, with a suggested change when it knows the exact fix.
