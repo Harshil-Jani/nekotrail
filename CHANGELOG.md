@@ -5,6 +5,13 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Changes, overlaps and stacks**
+- Discard one file in Changes. Only that file's uncommitted edits go, and the old copy lands in the Trash, so you can get it back.
+- Filter the changed-file list when a workspace touches lots of files.
+- The sidebar quietly marks workspaces that change the same files, and the PR bar suggests which one to merge first. The check no longer runs git in every workspace after each turn.
+- Stack a workspace on another one: its PR builds on unmerged work and the PR bar links the parent.
+- When the parent PR merges, one click moves the stacked workspace onto main, rebases it and points its PR there.
+
 **Preview**
 - New Preview tab (⌘4): see your running app inside the workspace, with reload, open in browser and a localhost-only address bar.
 - Annotate: freeze the page, draw boxes and arrows, add a note, and it lands in your chat draft as a screenshot the agent can see.
