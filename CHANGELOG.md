@@ -20,6 +20,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Tasks set to Ask before changes wait for you to start them. Drag to reorder, pause and resume, retry failed tasks. The queue survives a restart.
 - Coming back after a while shows what the queue did: "8 done, 2 need you, 1 failed".
 
+**Design ship-gate fixes**
+- The queue's "while you were away" summary is a toast with Open queue, not a window you have to dismiss.
+- Tasks that wait for you to start them keep their place number in the line, and Start no longer turns every one of them orange. Retry shows only on failed tasks.
+- A new task across repos says in its empty chat which repo the agent works in and that it can change the others.
+- Ports heads each repo of the open task "This task, pawprint-web".
+- When Merge all stops part way, the PRs it did merge say Merged. Create PRs and Merge all stay plain while their form is open, so there is one button to press.
+- The Several repos picker marks picked repos with the tick only.
+- Commit says why Amend and Undo are off when the last commit is pushed, the unsaved-rules prompt names the file, and protected-file prompts show paths in the code font.
+
 ## 0.15.0 (2026-11-07)
 
 **Import terminal sessions**
