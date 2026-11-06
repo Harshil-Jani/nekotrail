@@ -5,6 +5,18 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Review your teammates' PRs with an agent**
+- New "Review requests" in the sidebar and ⌘K: open PRs where someone asked for your review, in the same GitHub check as your own PRs.
+- One click starts a review: the PR's code in a read-only workspace, and the agent you pick reviews it. Its findings land in Changes as draft comments, with a suggested change when it knows the exact fix.
+- Edit or delete any draft, then Submit review posts them to GitHub as one review: Comment, Approve or Request changes. Nothing is posted until you press it, and the workspace is archived after.
+- A review workspace can't push: every chat only reads, `git push` fails for the agent and the terminal, and push, merge and autopilot are switched off there.
+
+**Ports for each workspace**
+- Each workspace gets 10 ports of its own (4100 to 4109, 4110 to 4119, ...), kept across restarts and given back when you archive it. Five workspaces can run the same app without fighting over 3000.
+- Terminals, scripts and agents get `NEKOTRAIL_PORT`, `NEKOTRAIL_PORT_1` to `_9`, and `PORT`. A `PORT` you set yourself is never replaced. Name ports in `nekotrail.json`: `"ports": {"web": "PORT", "api": "API_PORT"}`.
+- The new Ports button shows what listens on every workspace's ports, opens one in your browser or Preview, and frees a port by stopping a server that workspace started.
+- If your dev server ignores `PORT` and lands on its default, or finds another workspace already there, nekotrail says so and shows the fix. Preview opens the workspace's port until your app prints an address.
+
 **Drive nekotrail from your terminal**
 - New `nekotrail` command: `nekotrail .` opens a repo, `nekotrail new "fix the login bug" --agent codex` starts an agent in a new workspace, and `nekotrail ls`, `open` and `status` show your workspaces and what needs you. Install it from Settings, General. nekotrail starts if it isn't running.
 - `nekotrail://open?workspace=...` links jump to a workspace. `nekotrail://new?repo=...&prompt=...` links ask first and show the full task, so a web page can never start an agent on its own.
