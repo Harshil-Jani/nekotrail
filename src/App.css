@@ -36,11 +36,17 @@
   --good-soft: light-dark(rgba(26, 127, 55, 0.1), rgba(50, 215, 75, 0.14));
   --bad: light-dark(#d70015, #ff6961);
   --bad-soft: light-dark(rgba(215, 0, 21, 0.08), rgba(255, 105, 97, 0.14));
-  --wait: light-dark(#9a6700, #ffd60a);
+  --wait: light-dark(#8a5a00, #ffd60a);
   --wait-soft: light-dark(rgba(154, 103, 0, 0.1), rgba(255, 214, 10, 0.12));
   --purple: light-dark(#8944ab, #bf5af2);
   --purple-soft: light-dark(rgba(137, 68, 171, 0.1), rgba(191, 90, 242, 0.16));
   --add-bg: light-dark(rgba(26, 127, 55, 0.1), rgba(50, 215, 75, 0.12));
+  /* Small +/- numbers and diff text: one step darker (lighter in dark) than the state colour, so they
+     clear 4.5:1 on the grey sidebar, a selected row, a raised card and the tinted diff lines. */
+  --good-text: light-dark(#116329, #32d74b);
+  --bad-text: light-dark(#c0000f, #ff8a80);
+  /* Orange text on orange-tinted chips (counts, New, Clean up). */
+  --accent-chip-text: light-dark(#8a4200, #ffad6e);
   --del-bg: light-dark(rgba(215, 0, 21, 0.08), rgba(255, 105, 97, 0.13));
 
   /* shape and depth */
@@ -320,21 +326,21 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .file-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .status { width: 14px; font-weight: 800; font-family: var(--mono); font-size: 12px; }
 .s-A { color: var(--good); } .s-D { color: var(--bad); } .s-M { color: var(--wait); } .s-R { color: var(--accent-text); }
-.add { color: var(--good); font-variant-numeric: tabular-nums; } .del { color: var(--bad); font-variant-numeric: tabular-nums; }
+.add { color: var(--good-text); font-variant-numeric: tabular-nums; } .del { color: var(--bad-text); font-variant-numeric: tabular-nums; }
 .file-diff { overflow: auto; }
 .file-list { display: flex; flex-direction: column; }
-.comment-count { background: var(--accent-soft); color: var(--accent-text); font-size: 11px; font-weight: 700; padding: 0 5px; }
+.comment-count { background: var(--accent-soft); color: var(--accent-chip-text); font-size: 11px; font-weight: 700; padding: 0 4px; }
 .review-bar { margin-top: auto; padding: var(--s3); border-top: 0.5px solid var(--line-strong); display: flex; flex-direction: column; gap: var(--s2); }
 .review-bar p { margin: 0; font-size: 12px; line-height: 1.5; }
 .review-bar button { justify-content: center; }
 .diff { padding: var(--s2) 0; font-family: var(--mono); font-size: 12px; line-height: 1.65; min-width: max-content; }
 .dl { display: grid; grid-template-columns: 44px 44px 20px 1fr; align-items: center; }
-.dl .ln { color: var(--faint); text-align: right; padding-right: var(--s2); user-select: none; font-variant-numeric: tabular-nums; font-size: 11px; }
+.dl .ln { color: var(--muted); text-align: right; padding-right: var(--s2); user-select: none; font-variant-numeric: tabular-nums; font-size: 11px; }
 .dl code { white-space: pre; padding-right: var(--s4); font-size: 12px; }
 .dl.add { background: var(--good-soft); }
-.dl.add .ln { color: var(--good); }
+.dl.add .ln { color: var(--good-text); }
 .dl.del { background: var(--bad-soft); }
-.dl.del .ln { color: var(--bad); }
+.dl.del .ln { color: var(--bad-text); }
 .dl.hunk { grid-template-columns: 44px 44px 1fr; color: var(--muted); background: var(--surface); margin: var(--s2) 0; padding: 2px 0; }
 .dl.hunk code { padding-left: var(--s2); color: var(--muted); }
 .add-comment { opacity: 0; border: none; padding: 0; width: 18px; height: 18px; justify-content: center; background: var(--accent); color: var(--accent-ink); }
@@ -575,14 +581,14 @@ button.good-btn:hover { background: var(--good); }
 .status-dot.st-in_review { background: var(--good); }
 .status-dot.st-backlog { background: var(--muted); }
 .status-dot.st-done { background: var(--purple); }
-.ws-lines { display: inline-flex; gap: 4px; font-size: 11px; opacity: 0.85; }
+.ws-lines { display: inline-flex; gap: 4px; font-size: 11px; }
 .diff.split { min-width: 0; }
 .split-row { display: grid; grid-template-columns: 1fr 1fr; }
 .split-row.full { grid-template-columns: 1fr; }
 .sl { display: grid; grid-template-columns: 44px 1fr; min-width: 0; overflow: hidden; }
 .sl + .sl { border-left: 0.5px solid var(--line-strong); }
 .sl code { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-size: 12px; padding-right: var(--s3); }
-.sl .ln { color: var(--faint); text-align: right; padding-right: var(--s2); font-size: 11px; user-select: none; }
+.sl .ln { color: var(--muted); text-align: right; padding-right: var(--s2); font-size: 11px; user-select: none; }
 .sl.add { background: var(--good-soft); }
 .sl.del { background: var(--bad-soft); }
 .sl.hunk { grid-template-columns: 1fr; color: var(--muted); background: var(--surface); margin: var(--s2) 0; padding: 2px var(--s3); }
@@ -815,7 +821,7 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .picker-label { overflow: hidden; text-overflow: ellipsis; }
 .picker-menu { bottom: calc(100% + 6px); top: auto; left: 0; right: auto; min-width: 300px; max-height: 70vh; overflow-y: auto; }
 .picker-menu .menu-label { display: flex; align-items: center; gap: 4px; }
-.new-tag { font-size: 10px; font-weight: 700; color: var(--accent-text); background: var(--accent-soft); padding: 0 5px; border-radius: 4px; }
+.new-tag { font-size: 11px; font-weight: 700; color: var(--accent-chip-text); background: var(--accent-soft); padding: 0 4px; border-radius: 4px; }
 .menu button:hover:not(:disabled) .new-tag { background: rgba(0, 0, 0, 0.12); color: inherit; }
 .older-toggle { color: var(--muted); }
 .custom-model { padding: 4px var(--s2) 2px; }
@@ -847,7 +853,9 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .picker-menu button > span.pm-label { flex: 1; text-align: left; }
 .palette-input input:focus-visible, .composer textarea:focus-visible, .chat-search input:focus-visible,
 .nw-prompt:focus-visible, .code-edit:focus-visible, .title-edit:focus-visible { box-shadow: none !important; }
-kbd { background: transparent !important; border: none !important; padding: 0 !important; color: inherit; opacity: 0.6; }
+kbd { background: transparent !important; border: none !important; padding: 0 !important; color: var(--muted); opacity: 1; }
+/* On an accent fill (a hovered menu row, the selected palette row, a primary button) kbd follows the ink. */
+.menu button:hover kbd, .palette-list button.on kbd, button.primary kbd, button.accent kbd { color: inherit; }
 .nw-repo select { box-shadow: none; background-color: transparent; font-weight: 700; font-size: 15px; }
 .nw-repo select:hover { background-color: var(--hover); }
 
@@ -1000,7 +1008,10 @@ html.native .repo-actions { background: none; }
 .mermaid-loading { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: var(--s3); }
 .approval-card { border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
 .approval-input { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
-.approval-done code { font-size: 11.5px; color: var(--muted); }
+.approval-done code { font-size: 12px; color: var(--muted); }
+/* The turn ended before it was answered: no accent ring, quiet text. */
+.approval-card.stale { box-shadow: none !important; color: var(--muted); }
+.approval-card.stale .plan-head, .approval-card.stale .plan-head svg { color: var(--muted); }
 .approval-done.denied { color: var(--bad); }
 .modal.storage { width: 620px; }
 .storage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface); max-height: 52vh; overflow-y: auto; }
@@ -1033,8 +1044,8 @@ html.native .repo-actions { background: none; }
 .prbar button.link.num:hover { color: var(--text); }
 .prbar button.branch, .prbar .git-actions > button, .prbar .icon-btn { height: 24px; }
 /* 3. Merge is calmer; autopilot is neutral. */
-button.good-btn { background: color-mix(in srgb, var(--good) 72%, black); color: #fff; }
-button.good-btn:hover { background: color-mix(in srgb, var(--good) 82%, black); }
+button.good-btn { background: #1a7f37; color: #fff; }
+button.good-btn:hover { background: #1f8f3f; }
 .pill.autopilot { background: var(--hover) !important; color: var(--muted) !important; }
 /* 4. Less orange: user bubble neutral, plan title in text colour, agent labels muted. */
 .msg.user { background: var(--hover); max-width: 75%; }
@@ -1060,15 +1071,16 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 /* 8. Footer: one quiet row for low disk. */
 .low-disk { height: 24px !important; padding: 0 6px !important; background: transparent !important; color: var(--wait) !important; gap: 6px; }
 .low-disk .muted { font-size: 12px; }
-.low-disk .clean-link { color: var(--accent-text); font-weight: 600; font-size: 12px; }
+.low-disk .clean-link { color: var(--accent-chip-text); font-weight: 600; font-size: 12px; }
 .low-disk:hover { background: var(--hover) !important; filter: none; }
 /* 9. Letter avatars get a disc; repo headers sit under section rank. */
-.avatar-fallback { background: var(--press); color: var(--muted); font-weight: 600; }
+.avatar-fallback { background: var(--press); color: var(--text); font-weight: 600; }
 .repo-head .repo-name { font-size: 12px; font-weight: 600; color: var(--muted); }
 /* 10. Quieter empty states. */
 .section-empty { margin: 0 0 4px 36px; font-size: 11.5px; }
-.new-section { opacity: 0.6; }
-.sidebar-scroll:hover .new-section { opacity: 1; }
+/* Add section appears when you point at or tab into the list; full contrast when it does. */
+.new-section { visibility: hidden; }
+.sidebar-scroll:hover .new-section, .sidebar-scroll:focus-within .new-section { visibility: visible; }
 .board-col { background: transparent; }
 .board-col.drop { background: var(--accent-soft); }
 /* 11. Sheets: title close to body. */
