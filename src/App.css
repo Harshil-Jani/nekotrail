@@ -797,6 +797,10 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .trust-list > div { display: flex; gap: var(--s3); align-items: baseline; }
 .trust-list dt { width: 56px; flex-shrink: 0; font-weight: 600; text-transform: capitalize; }
 .trust-list dd { margin: 0; flex: 1; min-width: 0; }
+.trust-list.stacked { max-height: 50vh; overflow: auto; }
+.trust-list.stacked > div { flex-direction: column; gap: var(--s1); align-items: stretch; }
+.trust-list.stacked dt { width: auto; text-transform: none; }
+.trust-list.stacked dd { width: 100%; }
 .trust-list pre { margin: 0; background: var(--surface); border-radius: var(--r-md); padding: var(--s2) var(--s3); max-height: 30vh; overflow: auto; white-space: pre-wrap; word-break: break-all; }
 .mcp-list { list-style: none; margin: 0; padding: 0; border-radius: var(--r-lg); background: var(--surface); max-height: 50vh; overflow-y: auto; }
 .mcp-list li { display: flex; align-items: center; gap: var(--s3); padding: 8px var(--s3); border-bottom: 0.5px solid var(--line); }

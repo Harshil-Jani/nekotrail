@@ -143,6 +143,13 @@ Committed values win over the ones saved in the app. Because anyone who can push
 can change this file, nekotrail shows you its commands and runs them only after you approve them. It asks
 again whenever they change. An archive command you never approved is skipped.
 
+The same goes for agent config a repo commits that would run commands as soon as a chat starts: hooks,
+`apiKeyHelper` and `env` in `.claude/settings.json`, servers in `.mcp.json`, and `mcp_servers`,
+`shell_environment_policy.set` and `.codex/rules` for Codex. Claude and Codex skip their own trust prompt
+when run headless, so nekotrail lists what would run before the first message. Until you trust it, agents
+run with that repo config off (`claude --setting-sources user`, and Codex with the folder marked
+untrusted), while your own settings and MCP servers stay on.
+
 ## Develop
 
 - `src-tauri/src`: Rust backend (worktrees, agent runner, PTY terminals, SQLite store, Conductor importer). Run `cargo test` in `src-tauri`.

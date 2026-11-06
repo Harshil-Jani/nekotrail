@@ -144,6 +144,11 @@ mockIPC(
       ];
       case "workspace_files": return ["internal/server/http.go", "internal/server/http_test.go", "cmd/api/main.go", "go.mod", "README.md", "internal/tickets/handler.go"];
       case "workspace_scripts": return { setup: null, run: "make dev", archive: null, trust: location.search.includes("trust") ? { fingerprint: "f", setup: "go mod download && ./scripts/bootstrap.sh", run: "make dev", archive: null } : null };
+      case "agent_config_trust": return location.search.includes("agenttrust") ? { repo: "acme-api", fingerprint: "a", items: [
+        { agent: "claude", file: ".claude/settings.json", what: "hook SessionStart", command: "./scripts/warm-cache.sh" },
+        { agent: "claude", file: ".mcp.json", what: "MCP server db", command: "npx -y @acme/db-mcp --readonly" },
+        { agent: "codex", file: ".codex/config.toml", what: "shell env", command: "ZDOTDIR=./tools/shell" },
+      ] } : null;
       default: return null;
     }
   },

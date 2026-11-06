@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type WsStatus } from "./api";
+import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, setBeforeTurn } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -97,7 +97,7 @@ export default function App() {
   const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
-  const [trustAsk, setTrustAsk] = useState<{ repo: string; trust: ScriptTrust; answer: (run: boolean) => void } | null>(null);
+  const [trustAsk, setTrustAsk] = useState<{ repo: string; trust?: ScriptTrust; agent?: AgentConfigTrust; answer: (run: boolean) => void } | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
@@ -210,6 +210,31 @@ export default function App() {
       return false;
     }
   };
+  /**
+   * Before a message goes out: if the repo commits agent config that would run commands (hooks, MCP
+   * servers, env) and you haven't trusted those exact files, ask once. "Not now" is remembered until
+   * the app restarts; the backend runs the agent with that config off either way until it's trusted.
+   */
+  const agentAsks = useRef(new Map<string, Promise<void>>());
+  useEffect(() => {
+    setBeforeTurn(async (id) => {
+      const t = await api.agentConfigTrust(id).catch(() => null);
+      if (!t) return;
+      let asking = agentAsks.current.get(t.fingerprint);
+      if (!asking) {
+        // One sheet at a time, and parallel sends for the same config share it.
+        const before = Promise.all(agentAsks.current.values()).then(() => {});
+        asking = before.then(async () => {
+          const run = await new Promise<boolean>((answer) => setTrustAsk({ repo: t.repo || "this repo", agent: t, answer }));
+          setTrustAsk(null);
+          if (run) await api.trustAgentConfig(id, t.fingerprint).catch((e) => say(errText(e), true));
+        });
+        agentAsks.current.set(t.fingerprint, asking);
+      }
+      await asking;
+    });
+    return () => setBeforeTurn(async () => {});
+  }, []);
   const startPty = async (id: string, script: "setup" | "run", tabName: string) => {
     await api.ptyRun(id, script);
     setLivePtys((s) => new Set(s).add(id));
@@ -1025,7 +1050,7 @@ export default function App() {
       {newFor && repos.length > 0 && (
         <NewWorkspace repos={repos} initialRepo={newFor} initialSource={newSource} onCreate={newWorkspace} onClose={() => { setNewFor(null); setNewSource("task"); }} />
       )}
-      {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} onAnswer={trustAsk.answer} />}
+      {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} agent={trustAsk.agent} onAnswer={trustAsk.answer} />}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
       {quickOpen && (
