@@ -281,6 +281,8 @@ pub struct TurnSpec<'a> {
     /// Load the agent config the repo commits (`.claude/settings.json`, `.mcp.json`, `.codex/`).
     /// False until the user trusted what it runs (see `agentcfg`).
     pub project_config: bool,
+    /// Protected paths for this workspace (see `guard`). None or empty: nothing is protected.
+    pub guard: Option<&'a crate::guard::Rules>,
 }
 
 /// Values from a `TurnSpec` that land on a command line, already checked. The prompt can carry
@@ -382,6 +384,26 @@ pub trait Agent: Sync {
     fn stopped_by_user(&self, status: Option<&ExitStatus>, stderr: &str) -> bool {
         status.map(|s| !s.success()).unwrap_or(true) && stderr.is_empty()
     }
+    /// How protected paths hold for this agent: "blocked" (the agent is stopped before it writes
+    /// one, and every turn is checked after too) or "after" (only checked after each turn).
+    fn guard_level(&self) -> &'static str {
+        "after"
+    }
+}
+
+/// The protected paths of a turn, when there are any.
+pub fn active_guard<'a>(spec: &TurnSpec<'a>) -> Option<&'a crate::guard::Rules> {
+    spec.guard.filter(|g| !g.is_empty())
+}
+
+/// The workspace folder as written and with symlinks resolved, when that differs.
+pub fn roots(cwd: &Path) -> Vec<String> {
+    let mut v = vec![cwd.to_string_lossy().to_string()];
+    if let Ok(real) = cwd.canonicalize()
+        && real != cwd {
+            v.push(real.to_string_lossy().to_string());
+        }
+    v
 }
 
 pub struct Claude;
@@ -446,7 +468,19 @@ impl Agent for Claude {
         for d in spec.dirs {
             c.args(["--add-dir", d]);
         }
+        if let Some(g) = active_guard(spec) {
+            // Deny rules hold in every permission mode, Full auto included, and add to the user's
+            // own. `--settings` takes JSON, so paths with spaces or commas stay one rule each, and
+            // nothing is written into the worktree. It still applies with `--setting-sources user`.
+            let deny = g.claude_deny(&roots(spec.cwd));
+            if !deny.is_empty() {
+                c.args(["--settings", &json!({"permissions": {"deny": deny}}).to_string()]);
+            }
+        }
         c
+    }
+    fn guard_level(&self) -> &'static str {
+        "blocked"
     }
 }
 
@@ -570,7 +604,7 @@ pub fn parser(spec: &TurnSpec) -> Box<dyn Parser> {
 
 /// A reader for a stream recorded elsewhere (Conductor's chat history), outside any turn.
 pub fn replay_parser(agent: &str) -> Box<dyn Parser> {
-    let spec = TurnSpec { fork: false, agent, prompt: "", agent_session_id: None, model: None, permission_mode: "default", cwd: Path::new("."), effort: None, instructions: None, env: &[], dirs: &[], project_config: false };
+    let spec = TurnSpec { fork: false, agent, prompt: "", agent_session_id: None, model: None, permission_mode: "default", cwd: Path::new("."), effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard: None };
     parser(&spec)
 }
 
@@ -662,7 +696,7 @@ mod tests {
     #[test]
     fn ask_mode_uses_the_control_channel() {
         let cwd = Path::new("/tmp");
-        let spec = TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: None, model: None, permission_mode: "ask", cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
+        let spec = TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: None, model: None, permission_mode: "ask", cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard: None };
         assert!(interactive(&spec));
         let args: Vec<_> = command(&spec).get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert!(args.windows(2).any(|w| w == ["--permission-prompt-tool", "stdio"]));
@@ -679,7 +713,7 @@ mod tests {
     #[test]
     fn commands() {
         let cwd = Path::new("/tmp");
-        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &["/code/shared".into()], project_config: true });
+        let c = command(&TurnSpec { fork: false, agent: "claude", prompt: "hi", agent_session_id: Some("s1"), model: Some("opus"), permission_mode: "plan", cwd, effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &["/code/shared".into()], project_config: true, guard: None });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert!(args.windows(2).any(|w| w == ["--add-dir", "/code/shared"]));
         assert!(args.windows(2).any(|w| w == ["--effort", "high"]));
@@ -687,7 +721,7 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--resume", "s1"]));
         assert!(args.windows(2).any(|w| w == ["--permission-mode", "plan"]));
 
-        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true });
+        let c = command(&TurnSpec { fork: false, agent: "codex", prompt: "hi", agent_session_id: Some("t1"), model: None, permission_mode: "plan", cwd, effort: None, instructions: Some("Use pnpm."), env: &[], dirs: &[], project_config: true, guard: None });
         let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().to_string()).collect();
         assert_eq!(&args[..3], ["exec", "resume", "t1"]);
         assert!(args.contains(&"sandbox_mode=\"read-only\"".to_string()));
@@ -699,7 +733,7 @@ mod tests {
     fn untrusted_repo_config_is_switched_off() {
         let d = tempfile::tempdir().unwrap();
         let cwd = d.path();
-        let spec = |agent, mode, project_config| TurnSpec { fork: false, agent, prompt: "hi", agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config };
+        let spec = |agent, mode, project_config| TurnSpec { fork: false, agent, prompt: "hi", agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config, guard: None };
         let args = |s: &TurnSpec| command(s).get_args().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>();
         for mode in ["default", "ask", "bypassPermissions"] {
             assert!(args(&spec("claude", mode, false)).windows(2).any(|w| w == ["--setting-sources", "user"]), "{mode}");
@@ -722,6 +756,37 @@ mod tests {
         assert_eq!(t["projects"].as_table().unwrap().keys().collect::<Vec<_>>(), ["/tmp/a\"b\\c]}"]);
     }
 
+    #[test]
+    fn protected_paths_reach_claude_as_deny_rules() {
+        let cwd = Path::new("/tmp/ws one");
+        let g = crate::guard::Rules::new(&[".env*".into(), "migrations/**".into()], &[]);
+        let none = crate::guard::Rules::new(&["!x".into()], &[]);
+        let args = |agent, mode, guard| {
+            let s = TurnSpec { fork: false, agent, prompt: "hi", agent_session_id: None, model: None, permission_mode: mode, cwd, effort: None, instructions: None, env: &[], dirs: &[], project_config: false, guard };
+            command(&s).get_args().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>()
+        };
+        for mode in ["default", "ask", "acceptEdits", "bypassPermissions", "plan"] {
+            let a = args("claude", mode, Some(&g));
+            let i = a.iter().position(|x| x == "--settings").expect(mode);
+            let v: Value = serde_json::from_str(&a[i + 1]).unwrap();
+            let deny: Vec<&str> = v["permissions"]["deny"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
+            assert!(deny.contains(&"Edit(.env*)"), "{mode}");
+            // /tmp is /private/tmp on macOS: both spellings, the space kept inside one rule.
+            assert!(deny.contains(&"Edit(//tmp/ws one/migrations/**)"), "{deny:?}");
+            // Repo config stays off as before.
+            assert!(a.windows(2).any(|w| w == ["--setting-sources", "user"]));
+        }
+        assert!(!args("claude", "default", Some(&none)).contains(&"--settings".to_string()), "only exceptions: nothing to deny");
+        assert!(!args("claude", "default", None).contains(&"--settings".to_string()));
+        // Codex and Gemini have nothing to pass: they are checked after the turn.
+        for agent in ["codex", "gemini"] {
+            assert_eq!(args(agent, "default", Some(&g)), args(agent, "default", None), "{agent}");
+            assert_eq!(get(agent).guard_level(), "after");
+        }
+        assert_eq!(get("claude").guard_level(), "blocked");
+        assert_eq!(get("opencode").guard_level(), "blocked");
+    }
+
     // ---------- agent harness ----------
 
     fn run(p: &mut dyn Parser, text: &str) -> Vec<Value> {
@@ -732,7 +797,7 @@ mod tests {
 
     fn spec_args(agent: &str, mode: &str, session: Option<&str>, prompt: &str) -> Vec<String> {
         let dirs = ["/code/shared".to_string()];
-        let s = TurnSpec { fork: true, agent, prompt, agent_session_id: session, model: Some("flash"), permission_mode: mode, cwd: Path::new("/tmp"), effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &dirs, project_config: true };
+        let s = TurnSpec { fork: true, agent, prompt, agent_session_id: session, model: Some("flash"), permission_mode: mode, cwd: Path::new("/tmp"), effort: Some("high"), instructions: Some("Use pnpm."), env: &[], dirs: &dirs, project_config: true, guard: None };
         command(&s).get_args().map(|a| a.to_string_lossy().to_string()).collect()
     }
 
@@ -852,7 +917,7 @@ mod tests {
         }
         // A session id that looks like a flag is dropped, as for the others.
         assert!(!spec_args("gemini", "plan", Some("--yolo"), "x").contains(&"--yolo".to_string()));
-        let s = TurnSpec { fork: false, agent: "gemini", prompt: "x", agent_session_id: None, model: None, permission_mode: "ask", cwd: Path::new("/tmp"), effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
+        let s = TurnSpec { fork: false, agent: "gemini", prompt: "x", agent_session_id: None, model: None, permission_mode: "ask", cwd: Path::new("/tmp"), effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard: None };
         assert!(!interactive(&s), "no stdin channel for Gemini");
         assert_eq!(command(&s).get_program(), "gemini");
     }

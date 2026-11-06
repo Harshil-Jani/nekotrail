@@ -20,6 +20,8 @@ export type RepoPrefs = {
   env: [string, string][];
   merge_method: string;
   actions: [string, string][];
+  /** Paths agents should leave alone, gitignore-style (`.env*`, `migrations/**`). */
+  protected: string[];
 };
 
 export type Doctor = {
@@ -103,7 +105,18 @@ export type ChatEvent =
   | { kind: "tool"; id: string; name: string; input: string }
   | { kind: "tool_result"; id: string; output: string; is_error: boolean }
   | { kind: "done"; is_error: boolean; cost_usd?: number; duration_ms?: number; stopped?: boolean; context_tokens?: number; context_window?: number }
-  | { kind: "error"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent };
+  | { kind: "error"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
+  /** The agent tried to edit a protected file and nekotrail refused (OpenCode and other ACP agents). */
+  | { kind: "blocked"; text: string; files: string[] }
+  /** After a turn: protected files it changed. `checkpoint` and `ignored` are what Put it back restores from. */
+  | { kind: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel }
+  /** Put it back ran: these files are as they were before the turn. */
+  | { kind: "guard_restored"; files: string[]; checkpoint: string };
+
+/** One protected file a turn changed. */
+export type GuardHit = { path: string; change: "added" | "changed" | "deleted" };
+/** "blocked": the agent is stopped before it writes a protected file. "after": checked after each turn only. */
+export type GuardLevel = "blocked" | "asks" | "after";
 
 export type FileChange = { path: string; status: string; additions: number; deletions: number };
 /** Workspaces in one repo changing the same files; `order` is the suggested merge order. */
@@ -329,6 +342,11 @@ export const api = {
   checkpointPreview: (id: string, checkpoint: string) => invoke<{ files: number; commits: number }>("checkpoint_preview", { id, checkpoint }),
   /** Which of these checkpoints can still be rewound to, for a workspace. */
   liveCheckpoints: (id: string, checkpoints: string[]) => invoke<string[]>("live_checkpoints", { id, checkpoints }),
+  /** Protected paths for a repo: the app's list and what its nekotrail.json adds. */
+  repoGuard: (id: string) => invoke<{ app: string[]; file: string[] }>("repo_guard", { id }),
+  /** Put back the protected files a turn changed (`id` is the chat). Returns the paths put back. */
+  putBackProtected: (id: string, checkpoint: string, ignored: string | null, paths: string[]) =>
+    invoke<string[]>("put_back_protected", { id, checkpoint, ignored, paths }),
   workspaceFiles: (id: string) => invoke<string[]>("workspace_files", { id }),
   saveAttachment: async (id: string, file: File) =>
     invoke<string>("save_attachment", { id, name: file.name || "pasted.png", bytes: Array.from(new Uint8Array(await file.arrayBuffer())) }),

@@ -21,6 +21,7 @@ import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
+import { CommandsLog } from "./components/CommandsLog";
 import { Settings } from "./components/Settings";
 import { TrustSheet } from "./components/TrustSheet";
 import { UpdateSheet } from "./components/UpdateSheet";
@@ -354,6 +355,7 @@ export default function App() {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
+  const [commandsFor, setCommandsFor] = useState<string | null>(null);
   // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
   const [freeMb, setFreeMb] = useState<number | null>(null);
   useEffect(() => {
@@ -425,6 +427,7 @@ export default function App() {
           install: "can't find its agent CLI",
           error: "stopped with an error",
           approval: "wants your OK",
+          protected: "changed a protected file",
         };
         if (prefs.needsSound) ting();
         if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, chatLine(w, payload.title) || "Open nekotrail to continue.");
@@ -828,6 +831,7 @@ export default function App() {
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: () => runScript() },
         { id: "open-editor", group: here, label: "Open in editor", hint: "⌘O", keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
+        { id: "commands", group: here, label: "Show commands the agent ran", keywords: "log history shell bash terminal audit", icon: <SquareTerminal size={15} />, run: () => setCommandsFor(ws.id) },
         { id: "open-finder", group: here, label: "Show in Finder", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
         { id: "pr", group: here, label: "Go to PR actions", keywords: "github pull request create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
         { id: "pin", group: here, label: ws.pinned ? "Unpin workspace" : "Pin workspace to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
@@ -1096,6 +1100,7 @@ export default function App() {
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setCommandsFor(ws.id); }}><SquareTerminal size={15} /><span>Commands the agent ran</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); const pr = prs[ws.id]?.pr; if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); openNew("stack", ws.id); }}><SquareStack size={15} /><span>Stack a new workspace on this one</span></button>
@@ -1241,6 +1246,10 @@ export default function App() {
         </div>
       )}
       {scorecard && <Scorecard onClose={() => setScorecard(false)} />}
+      {commandsFor && (() => {
+        const w = workspaces.find((x) => x.id === commandsFor);
+        return <CommandsLog workspaceId={commandsFor} name={w ? displayName(sky, w) : "this workspace"} onClose={() => setCommandsFor(null)} />;
+      })()}
       {storage && <Storage names={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : id; }} onClose={() => setStorage(false)} onSay={say} />}
       {comparing && (
         <Compare

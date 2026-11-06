@@ -3,7 +3,7 @@ use nekotrail_lib::agent;
 use std::io::{BufRead, BufReader, Write};
 fn main() -> anyhow::Result<()> {
     let dir = std::env::args().nth(1).unwrap();
-    let spec = agent::TurnSpec { fork: false, agent: "claude", prompt: "Create a file named note.txt containing the single word purr, using the Write tool. Nothing else.", agent_session_id: None, model: Some("haiku"), permission_mode: "ask", cwd: std::path::Path::new(&dir), effort: None, instructions: None, env: &[], dirs: &[], project_config: true };
+    let spec = agent::TurnSpec { fork: false, agent: "claude", prompt: "Create a file named note.txt containing the single word purr, using the Write tool. Nothing else.", agent_session_id: None, model: Some("haiku"), permission_mode: "ask", cwd: std::path::Path::new(&dir), effort: None, instructions: None, env: &[], dirs: &[], project_config: true, guard: None };
     let mut child = agent::command(&spec).stdout(std::process::Stdio::piped()).spawn()?;
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(agent::user_message(spec.prompt).as_bytes())?;

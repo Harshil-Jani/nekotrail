@@ -214,7 +214,7 @@ pub fn branches(repo: &Path) -> Result<Vec<String>> {
 }
 
 /// Run git with a private index file, so snapshots never touch the user's staging area.
-fn git_idx(dir: &Path, index: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn git_idx(dir: &Path, index: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -228,9 +228,9 @@ fn git_idx(dir: &Path, index: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
 }
 
-struct TempIndex(PathBuf);
+pub(crate) struct TempIndex(pub(crate) PathBuf);
 impl TempIndex {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         TempIndex(std::env::temp_dir().join(format!("nekotrail-index-{}", uuid::Uuid::new_v4())))
     }
 }
@@ -242,7 +242,7 @@ impl Drop for TempIndex {
 
 /// Run git and return raw stdout, optionally with its own index and `stdin`. Paths from `-z`
 /// output are bytes, not UTF-8, so file names with any characters round-trip exactly.
-fn git_bytes(dir: &Path, index: Option<&Path>, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
+pub(crate) fn git_bytes(dir: &Path, index: Option<&Path>, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
     use std::io::Write;
     use std::process::Stdio;
     let mut cmd = Command::new("git");
@@ -304,7 +304,13 @@ fn snapshot(ws: &Path) -> Result<(String, Option<String>, String)> {
     Ok((tree, staged, head))
 }
 
-fn commit_tree(ws: &Path, args: &[&str]) -> Result<String> {
+/// The tree of every tracked and untracked (not ignored) file as it is right now, without
+/// touching the user's staging area. What a checkpoint would save, without saving one.
+pub fn worktree_tree(ws: &Path) -> Result<String> {
+    Ok(snapshot(ws)?.0)
+}
+
+pub(crate) fn commit_tree(ws: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(ws)
@@ -395,7 +401,7 @@ pub fn existing_commits(ws: &Path, ids: &[String]) -> Result<Vec<String>> {
 
 /// Paths that differ between two trees as (status letter, path). With `renames`, a rename
 /// counts once (its new path).
-fn tree_changes(ws: &Path, from: &str, to: &str, renames: bool) -> Result<Vec<(u8, Vec<u8>)>> {
+pub(crate) fn tree_changes(ws: &Path, from: &str, to: &str, renames: bool) -> Result<Vec<(u8, Vec<u8>)>> {
     let args = ["diff-tree", "-r", "-z", "--name-status", if renames { "-M" } else { "--no-renames" }, from, to];
     let out = git_bytes(ws, None, &args, None)?;
     let mut parts = out.split(|b| *b == 0).filter(|p| !p.is_empty());

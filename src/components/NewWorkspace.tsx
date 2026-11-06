@@ -6,6 +6,7 @@ import type { Agent, PermissionMode, Repo } from "../api";
 import { AGENTS, AGENT_INFO, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
+import { okFullAuto } from "../fullAuto";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
@@ -250,7 +251,7 @@ export function NewWorkspace({
             onChange={(n) => { setModel(n.model ?? ""); setEffort(n.effort); }}
             compact
           />
-          <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)} aria-label="Permissions">
+          <select value={mode} onChange={async (e) => { const m = e.target.value as PermissionMode; if (await okFullAuto(m)) setMode(m); }} aria-label="Permissions">
             {MODES.filter((m) => m.value !== "ask" || (agent !== "both" && AGENT_INFO[agent].ask)).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <span className="spacer" />
