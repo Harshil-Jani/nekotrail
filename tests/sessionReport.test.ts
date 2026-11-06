@@ -99,6 +99,9 @@ describe("report builder", () => {
     expect(r.title).toBe("Mochi");
     expect(toMarkdown(r)).toContain("_No messages yet._");
     expect(toMarkdown(r)).toContain("No PR yet.");
+    // The summary says "none", not "0s" or "0 files, +0 −0".
+    expect(toMarkdown(r)).toContain("| none | 0 | not reported | none |");
+    expect(toHtml(r)).not.toContain("0 files");
   });
 
   test(".env paths", () => {

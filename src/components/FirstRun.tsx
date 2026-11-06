@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FocusEvent } from "react";
 import { ArrowLeft, Check, Download, FolderOpen, GitFork, Play, SquareTerminal } from "lucide-react";
 import { api, errText, type Agent, type ImportReport, type Repo } from "../api";
 import { AGENTS, AGENT_INFO } from "../agents";
@@ -6,6 +6,20 @@ import { IS_MAC, keyHint, mod } from "../platform";
 import { codeActions, newTerminalChats, STEPS, suggestTasks, type CodeAction, type Found, type RepoBrief, type Step } from "../onboarding";
 import { Mascot, type Mood } from "./Mascot";
 import { SetupCheck } from "./Welcome";
+
+/**
+ * Focus the step's primary button on load, so Return goes on, without the keyboard focus ring:
+ * the ring would read as "already pressed". It shows again once you Tab away and back.
+ */
+const quietFocus = {
+  ref: (el: HTMLButtonElement | null) => {
+    if (!el || el.dataset.focused) return;
+    el.dataset.focused = "1";
+    el.dataset.quietFocus = "1";
+    el.focus({ preventScroll: true });
+  },
+  onBlur: (e: FocusEvent<HTMLButtonElement>) => { delete e.currentTarget.dataset.quietFocus; },
+};
 
 /** Step 1 of 3 and where you are, as a list a screen reader can read. */
 function Progress({ step }: { step: Step }) {
@@ -71,7 +85,7 @@ function AgentsStep({ mood, purring, onPet, ready, onReady, onNext, onSkip }: {
       <div className="fr-actions">
         <button className="quiet" onClick={onSkip}>Skip setup</button>
         <span className="spacer" />
-        <button className="primary" autoFocus disabled={!can} onClick={onNext}>Continue</button>
+        <button className="primary" {...quietFocus} disabled={!can} onClick={onNext}>Continue</button>
       </div>
     </>
   );
@@ -126,7 +140,7 @@ function CodeStep({ repos, canImport, onAddRepo, onClone, onImportConductor, onI
         <div className="import-card hero fr-hero">
           <h2>{hero.title}</h2>
           <p>{hero.body}</p>
-          <button className="primary" autoFocus disabled={busy} onClick={() => run(primary)}>
+          <button className="primary" {...quietFocus} disabled={busy} onClick={() => run(primary)}>
             {busy ? <span className="spinner" /> : ACTION[primary].icon}{ACTION[primary].label}
           </button>
         </div>

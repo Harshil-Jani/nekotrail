@@ -806,7 +806,7 @@ export function Diff({
           <span className="spacer" /><button className="icon" onClick={load} title="Refresh changes" aria-label="Refresh changes"><RefreshCw size={15} /></button>
         </div>
         <div className="file-list-sum num">
-          {files.length} {files.length === 1 ? "file" : "files"} <span className="add">+{add}</span> <span className="del">-{del}</span>
+          {files.length} {files.length === 1 ? "file" : "files"}{add > 0 && <> <span className="add">+{add}</span></>}{del > 0 && <> <span className="del">-{del}</span></>}
           {files.length > 0 && <span className="muted"> · {seen} viewed</span>}
         </div>
         {notice && <div className="banner error file-notice" role="alert">{notice}</div>}
@@ -841,8 +841,8 @@ export function Diff({
                   {f.path.includes("/") && <span className="file-dir">{f.path.slice(0, f.path.lastIndexOf("/"))}</span>}
                 </span>
                 {n > 0 && <span className="comment-count num" title={`${n} ${n === 1 ? "comment" : "comments"}`}>{n}</span>}
-                <span className="add">+{f.additions}</span>
-                <span className="del">-{f.deletions}</span>
+                {f.additions > 0 && <span className="add">+{f.additions}</span>}
+                {f.deletions > 0 && <span className="del">-{f.deletions}</span>}
               </button>
             </div>
           );

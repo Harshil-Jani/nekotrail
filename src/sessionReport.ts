@@ -307,6 +307,10 @@ export function formatDuration(ms: number): string {
   if (m < 60) return `${m}m ${s % 60}s`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
+/** The summary's Changes cell: "none" rather than "0 files, +0 −0". */
+const changesCell = (r: Report) => (r.files.length ? `${plural(r.files.length, "file")}, +${r.additions} −${r.deletions}` : "none");
+/** The summary's Agent time cell: "none" when no turn finished, rather than "0s". */
+const timeCell = (r: Report) => (r.stats.turns ? formatDuration(r.stats.durationMs) : "none");
 export const formatCost = (r: Report) => (r.stats.costKnown ? `$${r.stats.costUsd.toFixed(2)}` : "not reported");
 const formatDate = (iso: string) => {
   const d = new Date(iso);
@@ -352,7 +356,7 @@ export function toMarkdown(r: Report): string {
   out.push([
     "| Agent time | Turns | Cost | Changes | Checks | PR |",
     "|---|---|---|---|---|---|",
-    `| ${formatDuration(r.stats.durationMs)} | ${r.stats.turns}${r.stats.errors ? ` (${r.stats.errors} with errors)` : ""} | ${formatCost(r)} | ${plural(r.files.length, "file")}, +${r.additions} −${r.deletions} | ${checksSummary(r)} | ${r.pr ? `#${r.pr.number} (${prState(r.pr)})` : "none yet"} |`,
+    `| ${timeCell(r)} | ${r.stats.turns}${r.stats.errors ? ` (${r.stats.errors} with errors)` : ""} | ${formatCost(r)} | ${changesCell(r)} | ${checksSummary(r)} | ${r.pr ? `#${r.pr.number} (${prState(r.pr)})` : "none yet"} |`,
   ].join("\n"));
 
   if (r.task) out.push("## Task", quote(r.task));
@@ -485,10 +489,10 @@ export function toHtml(r: Report, md: MdToHtml): string {
   b.push(`<p class="meta">${[esc(r.repo), `<code>${esc(r.branch)}</code> into <code>${esc(r.target)}</code>`, esc(r.agents.join(", ")), `exported ${esc(formatDate(r.exportedAt))}`].filter(Boolean).join(" · ")}</p>`);
   const stat = (k: string, v: string) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`;
   b.push(`<dl class="stats">${[
-    stat("Agent time", formatDuration(r.stats.durationMs)),
+    stat("Agent time", timeCell(r)),
     stat("Turns", `${r.stats.turns}${r.stats.errors ? ` (${r.stats.errors} with errors)` : ""}`),
     stat("Cost", formatCost(r)),
-    stat("Changes", `${plural(r.files.length, "file")}, +${r.additions} −${r.deletions}`),
+    stat("Changes", changesCell(r)),
     stat("Checks", checksSummary(r)),
     stat("PR", r.pr ? `#${r.pr.number} (${prState(r.pr)})` : "none yet"),
   ].join("")}</dl>`);

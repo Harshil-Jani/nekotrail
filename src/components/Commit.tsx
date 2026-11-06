@@ -179,7 +179,7 @@ export function CommitView({ workspaceId, refreshKey, scope }: { workspaceId: st
                 {f.path.includes("/") && <span className="file-dir">{f.path.slice(0, f.path.lastIndexOf("/"))}</span>}
               </span>
               {f.protected && <Lock size={12} className="stage-lock" aria-label="Protected" />}
-              {!f.binary && <><span className="add">+{f.additions}</span><span className="del">-{f.deletions}</span></>}
+              {!f.binary && <>{f.additions > 0 && <span className="add">+{f.additions}</span>}{f.deletions > 0 && <span className="del">-{f.deletions}</span>}</>}
             </button>
             <button
               className="icon stage-toggle"
@@ -463,7 +463,7 @@ function SplitSheet({ workspaceId, plan, onClose }: { workspaceId: string; plan:
                             <span className={`muted${x.whole ? " prose" : ""}`}>{x.whole ? x.header : x.header.replace(/^@@ .*? @@\s*/, "") || `line ${x.header.match(/\+(\d+)/)?.[1] ?? ""}`}</span>
                           </button>
                           {x.protected && <Lock size={12} className="stage-lock" aria-label="Protected" />}
-                          {!x.whole && <span className="num"><span className="add">+{x.additions}</span> <span className="del">-{x.deletions}</span></span>}
+                          {!x.whole && <span className="num">{x.additions > 0 && <span className="add">+{x.additions}</span>}{x.additions > 0 && x.deletions > 0 && " "}{x.deletions > 0 && <span className="del">-{x.deletions}</span>}</span>}
                           <span className="spacer" />
                           <select
                             aria-label={`Move ${x.path} change to commit`}

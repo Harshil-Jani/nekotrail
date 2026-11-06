@@ -96,6 +96,7 @@ button:disabled { opacity: 0.45; pointer-events: none; }
 button.primary, button.accent { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow-control); font-weight: 600; }
 button.primary:hover, button.accent:hover { background: #ffa863; }
 button.primary:active, button.accent:active { background: #f28b3c; }
+button.primary[data-quiet-focus]:focus-visible { box-shadow: var(--shadow-control) !important; }
 button.danger { color: var(--bad); }
 button.quiet, button.icon, button.link { background: transparent; box-shadow: none; }
 button.quiet { color: var(--muted); }
@@ -836,6 +837,8 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .switch:checked::after { transform: translateX(14px); background: #fff; }
 .toast { border-radius: var(--r-lg); box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong); }
 .discovery { border-radius: var(--r-xl); border: none; box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong); }
+/* Clear of the composer, so Send stays reachable while the card shows. */
+.app:has(.composer) .discovery { bottom: 152px; }
 .chip { height: 20px; border-radius: 10px; box-shadow: none; }
 .chip-clear { height: 20px; }
 .agent-tag { font-size: 11px; font-weight: 600; }
@@ -2143,11 +2146,11 @@ body:has(.tour) .repo-head .repo-actions { opacity: 1; }
 .usage-field input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
 .usage-field:has(.usage-prefix) input { padding-left: 20px; }
 .usage-field:has(.usage-suffix) input { padding-right: 52px; }
+.usage-field.bad input, .usage-field.bad input:focus, .usage-field.bad input:focus-visible { box-shadow: 0 0 0 1.5px var(--bad) !important; }
+.usage-field-error { margin: -4px 0 0; padding-left: 84px; font-size: 12px; color: var(--bad-text); }
 .usage-prefix, .usage-suffix { position: absolute; font-size: 12px; color: var(--muted); pointer-events: none; }
 .usage-prefix { left: 9px; }
 .usage-suffix { right: 9px; }
-.usage-field.bad input, .usage-field.bad input:focus, .usage-field.bad input:focus-visible { box-shadow: 0 0 0 1.5px var(--bad) !important; }
-.usage-field-error { margin: -4px 0 0; padding-left: 84px; font-size: 12px; color: var(--bad-text); }
 .usage-meters { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); padding-left: 84px; font-size: 12px; color: var(--muted); }
 .usage-meter { display: inline-flex; align-items: center; gap: var(--s2); }
 .usage-meter.hit { color: var(--wait); font-weight: 600; }
