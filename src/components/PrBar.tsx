@@ -203,6 +203,17 @@ export function PrBar({
     load();
   }, [ws.id, refreshKey]);
   useEffect(() => { setParent(undefined); }, [ws.id, ws.parent_id]);
+  // "Add to PR description" from Export session: the summary goes into the draft, under what's there.
+  // Nothing is pushed or posted until you press Push and create PR.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { workspaceId, body } = (e as CustomEvent<{ workspaceId: string; body: string }>).detail;
+      if (workspaceId !== ws.id) return;
+      setForm((f) => f ? { ...f, body: f.body.trim() ? `${f.body.trim()}\n\n${body}` : body } : { title: ws.title, body, draft: false });
+    };
+    window.addEventListener("nekotrail-pr-draft", on);
+    return () => window.removeEventListener("nekotrail-pr-draft", on);
+  }, [ws.id, ws.title]);
   useEffect(() => {
     if (ws.parent_id) api.stackParent(ws.id).then(setParent).catch(() => setParent(null));
   }, [ws.id, ws.parent_id, parentPr?.state, parentPr?.number, parentPr?.baseRefName]);

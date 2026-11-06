@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -1186,6 +1186,7 @@ export function Chat({
               <div className="menu-sep" />
               <button role="menuitem" onClick={() => { setMenu(false); fork(); }} disabled={!events.length}><GitFork size={13} />Fork this chat</button>
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
+              <button role="menuitem" onClick={() => { setMenu(false); window.dispatchEvent(new CustomEvent("nekotrail-export", { detail: { id: workspaceId, chat: active } })); }} disabled={!events.length}><Share size={13} />Export this chat…</button>
             </span>
           )}
         </span>}

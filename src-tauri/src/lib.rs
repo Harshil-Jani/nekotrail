@@ -2117,6 +2117,27 @@ async fn prompts_duplicate(app: AppHandle, id: Option<String>, repo: Option<Stri
     .await
 }
 
+/// Where "Export session" may write: a Markdown or HTML file the user picked in the save dialog.
+/// Anything else (a path with no such extension, a folder) is refused, so this can't overwrite code or config.
+fn export_path_ok(path: &Path) -> Res<()> {
+    let ext = path.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !matches!(ext.as_str(), "md" | "markdown" | "html" | "htm") {
+        return Err("Exports are saved as .md or .html files.".into());
+    }
+    if !path.is_absolute() || path.is_dir() {
+        return Err("Pick a file to save the export to.".into());
+    }
+    Ok(())
+}
+
+/// Saves a session export ("Export session") to the file the user picked. Nothing leaves the machine.
+#[tauri::command]
+async fn export_save(path: String, text: String) -> Res<()> {
+    let p = PathBuf::from(&path);
+    export_path_ok(&p)?;
+    std::fs::write(&p, text).map_err(e)
+}
+
 /// Writes the personal list to a JSON file the user picked.
 #[tauri::command]
 async fn prompts_export(st: State<'_, AppState>, path: String) -> Res<usize> {
@@ -4238,7 +4259,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
@@ -4657,5 +4678,19 @@ mod tests {
         assert_eq!(st.db().review_comments("theirs").unwrap()[0].text, "Off by one at the end.");
         assert!(st.db().update_review_comment("theirs", "f1", " ").is_err());
         assert!(st.db().update_review_comment("mine", "f1", "x").is_err(), "only in its own workspace");
+    }
+
+    #[test]
+    fn exports_only_write_markdown_or_html_files() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(export_path_ok(&dir.path().join("report.md")).is_ok());
+        assert!(export_path_ok(&dir.path().join("Report.HTML")).is_ok());
+        assert!(export_path_ok(&dir.path().join("notes.markdown")).is_ok());
+        assert!(export_path_ok(&dir.path().join(".zshrc")).is_err());
+        assert!(export_path_ok(&dir.path().join("main.rs")).is_err());
+        assert!(export_path_ok(Path::new("relative.md")).is_err());
+        let folder = dir.path().join("looks.md");
+        std::fs::create_dir(&folder).unwrap();
+        assert!(export_path_ok(&folder).is_err());
     }
 }

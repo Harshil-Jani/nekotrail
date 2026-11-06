@@ -439,6 +439,8 @@ export const api = {
     invoke<string>("prompts_duplicate", { id: where.id ?? null, repo: where.repo ?? null, name, scope }),
   promptsExport: (path: string) => invoke<number>("prompts_export", { path }),
   promptsImport: (path: string) => invoke<{ added: string[]; renamed: [string, string][]; skipped: string[] }>("prompts_import", { path }),
+  /** Saves a session export to a .md or .html file the user picked. */
+  exportSave: (path: string, text: string) => invoke<void>("export_save", { path, text }),
   promptContext: (id: string) => invoke<{ branch: string; base: string; files_changed: string }>("prompt_context", { id }),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),

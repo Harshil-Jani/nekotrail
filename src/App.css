@@ -1958,3 +1958,49 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .tq-then input { margin: 0; }
 .tq-form-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px var(--s2); border-radius: var(--r); background: var(--wait-soft); color: var(--text); font-size: 12px; }
 .tq-form-note svg { color: var(--wait); flex-shrink: 0; }
+
+/* Export session: what goes in on the left, the report as it will read on the right. */
+.modal-backdrop:has(> .modal.export) { align-items: flex-start; padding-top: 6vh; }
+.modal.export { width: min(980px, calc(100vw - 48px)); height: min(760px, 88vh); }
+.export-where { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.export-loading { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+.export-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: var(--s4); }
+.export-side { display: flex; flex-direction: column; gap: var(--s2); min-height: 0; overflow-y: auto; padding-right: var(--s1); }
+.export-side .mcp-h { margin: var(--s2) 0 0; display: flex; align-items: center; gap: 6px; }
+.export-side .mcp-h:first-child { margin-top: 0; }
+.export-scope { display: flex; flex-direction: column; gap: 6px; }
+.export-scope select { width: 100%; }
+.export-toggles { display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface); }
+.export-toggle { display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s2) var(--s3); cursor: pointer; }
+.export-toggle + .export-toggle { border-top: 0.5px solid var(--line); }
+.export-toggle .switch { flex-shrink: 0; margin: 1px 0 0; }
+.export-toggle > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.export-toggle b { font-weight: 500; }
+.export-toggle small, .export-small { font-size: 12px; line-height: 1.4; }
+.export-small { margin: 0; }
+.export-small svg { vertical-align: -2px; margin-right: 2px; }
+.export-small .ok { color: var(--good-text); }
+.export-count { min-width: 18px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--hover); color: var(--text); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.export-secrets { list-style: none; margin: 0; padding: 0; border-radius: var(--r-lg); background: var(--surface); }
+.export-secrets li { display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s3); }
+.export-secrets li + li { border-top: 0.5px solid var(--line); }
+.export-secret-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.export-secret-text b { font-weight: 500; font-size: 12.5px; }
+.export-secret-text code { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.export-secret-text small { font-size: 11px; }
+.export-show { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; flex-shrink: 0; }
+.export-show input { margin: 0; }
+.export-preview { display: flex; flex-direction: column; gap: var(--s2); min-height: 0; min-width: 0; }
+.export-doc { flex: 1; min-height: 0; overflow-y: auto; border-radius: var(--r-lg); box-shadow: inset 0 0 0 0.5px var(--line-strong); padding: var(--s4) var(--s5); }
+.export-doc:focus-visible { outline: none; box-shadow: inset 0 0 0 0.5px var(--line-strong), var(--ring); }
+.export-doc > pre { margin: 0; font-family: var(--mono); font-size: var(--code-size); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.export-md h1 { font-size: 20px; margin: 0 0 var(--s1); }
+.export-md h2 { font-size: 15px; margin: var(--s5) 0 var(--s2); padding-bottom: var(--s1); border-bottom: 0.5px solid var(--line); }
+.export-md h3 { font-size: 13.5px; margin: var(--s4) 0 var(--s2); }
+.export-md table { border-collapse: collapse; font-size: 12.5px; margin: var(--s2) 0 var(--s3); }
+.export-md th, .export-md td { text-align: left; padding: 4px var(--s2); border-bottom: 0.5px solid var(--line); }
+.export-md blockquote { margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-lg); background: var(--surface); }
+.export-md blockquote p { margin: 0; }
+.export-md ul { margin: 0 0 var(--s3); padding-left: var(--s5); }
+.export-md hr { border: none; border-top: 0.5px solid var(--line); margin: var(--s5) 0 var(--s2); }
+.export-foot { flex-wrap: wrap; }

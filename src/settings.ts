@@ -30,6 +30,8 @@ export type Settings = {
   /** Font for the terminal ("" is SF Mono) and its size in px. */
   termFont: string;
   termSize: number;
+  /** The "Made with nekotrail" line at the end of session exports. */
+  exportFooter: boolean;
 };
 
 const KEY = "nekotrail.settings";
@@ -38,7 +40,7 @@ const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sen
     { name: "tests", text: "Write tests for what you just changed. Cover the edge cases, run them, and fix anything that fails." },
     { name: "tidy", text: "Before I review: remove debug code and dead code, make names clear, and keep the diff as small as it can be." },
   ], repoFilter: [], collapsed: [],
-  theme: "system", codeFont: "", codeSize: 12, termFont: "", termSize: 13 };
+  theme: "system", codeFont: "", codeSize: 12, termFont: "", termSize: 13, exportFooter: true };
 
 export function getSettings(): Settings {
   try {
