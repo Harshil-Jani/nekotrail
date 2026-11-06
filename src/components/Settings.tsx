@@ -285,6 +285,13 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
             <code className="muted">{backend?.home ? `${backend.home}/workspaces` : home}</code>
           </div>
         </section>
+        <section>
+          <h3>Exports</h3>
+          <label className="setting">
+            <span>Add “Made with nekotrail” to exported sessions</span>
+            <input type="checkbox" className="switch" checked={s.exportFooter} onChange={(e) => set("exportFooter", e.target.checked)} />
+          </label>
+        </section>
         <CommandLine />
         </>}
 

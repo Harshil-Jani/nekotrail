@@ -3,6 +3,7 @@
  * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
  * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
  * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queueAdd (the Add form open), ?summary (the morning summary).
+ * Export session: ?export=w1 opens the sheet (with a .env read and a token in a command, so the Hidden list has items); &exportChat=s1 for one chat.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -184,6 +185,20 @@ const codexEvents = [
   { kind: "tool_result", id: "c3", output: "", is_error: false },
   { kind: "tool", id: "c4", name: "Bash", input: "go test -race ./internal/server/..." },
 ];
+// ?export: Mochi's chats also read a .env file and send a token, so Export session has things to hide.
+// The values are made up in the shape of real ones.
+if (new URLSearchParams(location.search).has("export")) {
+  events.splice(3, 0,
+    { kind: "tool", id: "e1", name: "Read", input: "/Users/sam/code/ws/mochi/.env" },
+    { kind: "tool_result", id: "e1", output: "PORT=8080\nALB_NAME=pawprint-api-prod-7781\nSENTRY_DSN=https://4f1c2a9b77e04d0f@o4504.ingest.sentry.io/45", is_error: false } as any,
+  );
+  codexEvents.push(
+    { kind: "tool", id: "c5", name: "Bash", input: "curl -s -H \"Authorization: Bearer ghp_" + "Zq81Lm02Xc93Vb47Nn56Aa19Ss28Dd37Ff46\" https://api.github.com/repos/pawprint/pawprint-api/pulls/482" },
+    { kind: "tool_result", id: "c5", output: "{\"number\": 482, \"user\": {\"email\": \"sam.lee@pawprint.io\"}}", is_error: false } as any,
+    { kind: "text", text: "Both reviews agree on the NLB. Ask sam.lee@pawprint.io whether 350s is still the listener's idle timeout." } as any,
+    { kind: "done", is_error: false, duration_ms: 23800, cost_usd: 0.07 } as any,
+  );
+}
 // ⌘⇧F: an archived workspace (Bean) with a chat of its own, and a search over every sample chat.
 // ?search opens the sheet; ?q=retry types a query; ?indexing shows the one-time indexing of older chats.
 if (new URLSearchParams(location.search).get("q")) sessionStorage.setItem("nekotrail.search", new URLSearchParams(location.search).get("q")!);
@@ -478,6 +493,8 @@ const prFor = (id: string) => {
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
+      case "export_save": return null;
+      case "plugin:path|resolve_directory": return "/Users/sam";
       case "queue_view": return queueView();
       case "queue_add": {
         const t = qTask(`q${Date.now()}`, args.task.prompt, { ...args.task, state: args.task.mode === "ask" ? "waiting" : "queued", added_at: Math.floor(Date.now() / 1000) });

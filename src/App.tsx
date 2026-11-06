@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share } from "lucide-react";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
@@ -28,6 +28,7 @@ import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
 import { RulesSheet } from "./components/RulesSheet";
+import { ExportSheet } from "./components/ExportSheet";
 import { TerminalImport } from "./components/TerminalImport";
 import { Settings, type Pane as SettingsPane } from "./components/Settings";
 import { loadPrompts, type PromptEntry } from "./prompts";
@@ -441,6 +442,13 @@ export default function App() {
   // The Rules sheet: workspace id and the pane it opens on.
   const [rulesFor, setRulesFor] = useState<{ id: string; pane: "files" | "edit" | "task" } | null>(params.get("rules") ? { id: params.get("rules")!, pane: (params.get("rulesPane") as "files" | "edit" | "task") ?? "files" } : null);
   const [terminalImport, setTerminalImport] = useState(params.has("terminalImport"));
+  // Export session: the workspace, and the chat when it was opened from a chat's menu.
+  const [exportFor, setExportFor] = useState<{ id: string; chat?: string } | null>(params.get("export") ? { id: params.get("export")!, chat: params.get("exportChat") ?? undefined } : null);
+  useEffect(() => {
+    const on = (e: Event) => setExportFor((e as CustomEvent<{ id: string; chat?: string }>).detail);
+    window.addEventListener("nekotrail-export", on);
+    return () => window.removeEventListener("nekotrail-export", on);
+  }, []);
   // Warn when the disk runs low: agents and builds fail in confusing ways on a full disk.
   const [freeMb, setFreeMb] = useState<number | null>(null);
   useEffect(() => {
@@ -1198,6 +1206,7 @@ export default function App() {
         { id: "rules", group: here, label: "Project rules", keywords: "agents.md claude.md gemini.md copilot instructions cursor rules sync", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "files" }) },
         { id: "rules-edit", group: here, label: "Edit rules", keywords: "agents.md claude.md markdown", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "edit" }) },
         { id: "rules-task", group: here, label: "Rules for this task", keywords: "workspace note first prompt instructions", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "task" }) },
+        { id: "export", group: here, label: "Export session", keywords: "share report markdown html transcript summary pr description", icon: <Share size={15} />, run: () => setExportFor({ id: ws.id }) },
         { id: "commands", group: here, label: "Show commands the agent ran", keywords: "log history shell bash terminal audit", icon: <SquareTerminal size={15} />, run: () => setCommandsFor(ws.id) },
         { id: "open-finder", group: here, label: IS_MAC ? "Show in Finder" : "Show in Files", icon: <FolderOpen size={15} />, run: () => openInEditor("finder") },
         { id: "pr", group: here, label: "Go to PR actions", keywords: "github pull request create review", icon: <GitPullRequest size={15} />, run: () => document.querySelector<HTMLElement>(".prbar button, .prbar a")?.focus() },
@@ -1532,6 +1541,7 @@ export default function App() {
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setRulesFor({ id: ws.id, pane: "files" }); }}><ScrollText size={15} /><span>Rules</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setCommandsFor(ws.id); }}><SquareTerminal size={15} /><span>Commands the agent ran</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setExportFor({ id: ws.id }); }}><Share size={15} /><span>Export session…</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); const pr = prs[ws.id]?.pr; if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); openNew("stack", ws.id); }}><SquareStack size={15} /><span>Stack a new workspace on this one</span></button>
@@ -1736,6 +1746,12 @@ export default function App() {
       {rulesFor && (() => {
         const w = workspaces.find((x) => x.id === rulesFor.id);
         return <RulesSheet workspaceId={rulesFor.id} initialPane={rulesFor.pane} name={w ? displayName(sky, w) : "this workspace"} readOnly={!w || w.state !== "active" || w.review_pr > 0 || isHistory(w)} onClose={() => setRulesFor(null)} />;
+      })()}
+      {exportFor && (() => {
+        const w = workspaces.find((x) => x.id === exportFor.id);
+        if (!w) return null;
+        return <ExportSheet ws={w} repoName={repos.find((r) => r.id === w.repo_id)?.name ?? ""} star={starName(sky, w)} initialChat={exportFor.chat}
+          pr={prs[w.id]?.pr ?? undefined} onSay={say} onClose={() => setExportFor(null)} />;
       })()}
       {terminalImport && <TerminalImport onClose={() => setTerminalImport(false)} onImported={terminalImported} />}
       {storage && <Storage names={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : id; }} onClose={() => setStorage(false)} onSay={say} />}

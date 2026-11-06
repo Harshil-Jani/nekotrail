@@ -10,6 +10,7 @@
     "opener:allow-open-url",
     "opener:allow-default-urls",
     "dialog:allow-open",
+    "dialog:allow-save",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-permission-state",
