@@ -417,6 +417,32 @@ pub(crate) fn tree_changes(ws: &Path, from: &str, to: &str, renames: bool) -> Re
     Ok(v)
 }
 
+/// (path, blob before, blob after) per file, and whether more files changed than were listed.
+pub type BlobChanges = (Vec<(String, String, String)>, bool);
+
+/// Each file that differs between two trees, with its blob in each ("" where it doesn't exist),
+/// at most `max` of them, plus whether there were more. For telling when an agent puts a file
+/// back the way it was (runaway.rs).
+pub fn changed_blobs(ws: &Path, from: &str, to: &str, max: usize) -> Result<BlobChanges> {
+    let out = git_bytes(ws, None, &["diff-tree", "-r", "-z", "--no-renames", from, to], None)?;
+    // Raw format: ":<mode> <mode> <blob> <blob> <status>\0<path>\0" per file.
+    let mut parts = out.split(|b| *b == 0).filter(|p| !p.is_empty());
+    let mut v = vec![];
+    let mut more = false;
+    while let Some(meta) = parts.next() {
+        let Some(path) = parts.next() else { break };
+        if v.len() == max {
+            more = true;
+            break;
+        }
+        let meta = String::from_utf8_lossy(meta);
+        let f: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let blob = |s: Option<&&str>| s.filter(|b| !b.chars().all(|c| c == '0')).map(|b| b.to_string()).unwrap_or_default();
+        v.push((String::from_utf8_lossy(path).into_owned(), blob(f.get(2)), blob(f.get(3))));
+    }
+    Ok((v, more))
+}
+
 /// What rewinding to `checkpoint` would do: (files that change, commits taken off the branch).
 pub fn checkpoint_preview(ws: &Path, checkpoint: &str) -> Result<(usize, usize)> {
     let (now, _, head) = snapshot(ws)?;
@@ -1052,6 +1078,33 @@ pub mod tests {
         time("checkpoint", &mut || { checkpoint(r, &prefix).unwrap(); });
         let cp = checkpoint_refs(r, &prefix).unwrap()[0].1.clone();
         time("preview", &mut || { checkpoint_preview(r, &cp).unwrap(); });
+        prune_checkpoints(r, &prefix, 0).unwrap();
+    }
+
+    #[test]
+    fn changed_blobs_between_turns() {
+        let repo = init_repo();
+        let r = repo.path();
+        let prefix = checkpoint_prefix("ws-blobs");
+        let cp = checkpoint(r, &prefix).unwrap();
+        let start = format!("{cp}^{{tree}}");
+        assert_eq!(changed_blobs(r, &start, &worktree_tree(r).unwrap(), 10).unwrap(), (vec![], false));
+        std::fs::write(r.join("a.txt"), "two\n").unwrap();
+        std::fs::write(r.join("new file.txt"), "n\n").unwrap();
+        let end = worktree_tree(r).unwrap();
+        let (files, more) = changed_blobs(r, &start, &end, 10).unwrap();
+        assert!(!more);
+        assert_eq!(files.len(), 2);
+        let a = files.iter().find(|f| f.0 == "a.txt").unwrap();
+        assert_eq!(a.1, git(r, &["rev-parse", "HEAD:a.txt"]).unwrap());
+        assert_eq!(a.2, git(r, &["hash-object", "a.txt"]).unwrap());
+        let n = files.iter().find(|f| f.0 == "new file.txt").unwrap();
+        assert_eq!(n.1, "", "it didn't exist before");
+        // Back as it was: the same blob as before the turn.
+        std::fs::write(r.join("a.txt"), "one\n").unwrap();
+        let back = changed_blobs(r, &end, &worktree_tree(r).unwrap(), 10).unwrap().0;
+        assert_eq!(back.iter().find(|f| f.0 == "a.txt").unwrap().2, a.1);
+        assert!(changed_blobs(r, &start, &end, 1).unwrap().1, "more than it keeps");
         prune_checkpoints(r, &prefix, 0).unwrap();
     }
 

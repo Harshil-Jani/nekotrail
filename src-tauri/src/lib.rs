@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod agent;
 pub mod agentcfg;
+pub mod budget;
 pub mod checks;
 pub mod cli;
 pub mod mcpshare;
@@ -22,6 +23,7 @@ pub mod queuerun;
 pub mod radar;
 pub mod remote;
 pub mod rules;
+pub mod runaway;
 pub mod review;
 pub mod safe;
 pub mod search;
@@ -30,6 +32,7 @@ pub mod store;
 pub mod terminal;
 pub mod testparse;
 pub mod title;
+pub mod usage;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -2096,13 +2099,13 @@ async fn agent_scorecard(st: State<'_, AppState>) -> Res<Vec<Value>> {
     })).collect())
 }
 
-/// Spend per day and agent over the last 7 days (API-equivalent prices from the CLIs).
+/// Spend per day and agent over the last 7 days (API-equivalent prices from the CLIs). "Today"
+/// is your local day, the same day the daily caps count.
 #[tauri::command]
 async fn usage_summary(st: State<'_, AppState>) -> Res<Value> {
     let rows = st.db().daily_costs(7).map_err(e)?;
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let total: f64 = rows.iter().map(|r| r.2).sum();
-    let today_total: f64 = rows.iter().filter(|r| r.0 == today).map(|r| r.2).sum();
+    let today_total = st.db().spend_since(&usage::local_midnight(chrono::Local::now().fixed_offset())).map_err(e)?.all.usd;
     let mut by_agent: HashMap<String, f64> = HashMap::new();
     for (_, a, c) in &rows {
         *by_agent.entry(a.clone()).or_default() += c;
@@ -2439,6 +2442,57 @@ async fn clean_workspace(app: AppHandle, id: String) -> Res<u64> {
     .map_err(e)?
 }
 
+/// The turns of the last `days` local days, grouped by day, repo, agent and model.
+fn usage_lines(st: &AppState, days: u32) -> Res<(Vec<usage::Line>, String)> {
+    let now = chrono::Local::now().fixed_offset();
+    let first = now.date_naive() - chrono::Duration::days(i64::from(days.clamp(1, 366)) - 1);
+    let since = usage::day_start(first, *now.offset());
+    let rows = st.db().usage_rows(&since).map_err(e)?;
+    Ok((usage::aggregate(&rows, *now.offset()), first.format("%Y-%m-%d").to_string()))
+}
+
+/// Everything the Usage view shows: the lines, today's spend against the caps, the caps, and
+/// each agent's usage limit as the queue last heard it. All from this Mac; nothing is sent.
+#[tauri::command]
+async fn usage_report(st: State<'_, AppState>, days: u32) -> Res<Value> {
+    let (lines, from) = usage_lines(&st, days)?;
+    let budgets = budget::Budgets::from_json(st.db().setting(budget::SETTING).ok().flatten().as_deref());
+    let today = st.db().spend_since(&usage::local_midnight(chrono::Local::now().fixed_offset())).map_err(e)?;
+    let limits: serde_json::Map<String, Value> = st.queue.lock().unwrap().limits.iter()
+        .map(|(a, l)| (a.clone(), json!({"until": l.until, "reported": l.reported, "text": l.text})))
+        .collect();
+    Ok(json!({
+        "lines": lines, "from": from, "budgets": budgets, "today": today.all, "today_repos": today.repos,
+        "limits": limits, "now": chrono::Utc::now().timestamp(),
+    }))
+}
+
+/// The Usage view's lines as a CSV file you picked. Nothing leaves the machine.
+#[tauri::command]
+async fn usage_export(st: State<'_, AppState>, path: String, days: u32) -> Res<usize> {
+    let p = PathBuf::from(&path);
+    let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+    if ext != "csv" || !p.is_absolute() || p.is_dir() {
+        return Err("Usage is saved as a .csv file.".into());
+    }
+    let (lines, _) = usage_lines(&st, days)?;
+    let names: HashMap<String, String> = st.db().repos().map_err(e)?.into_iter().map(|r| (r.id, r.name)).collect();
+    let csv = usage::to_csv(&lines, |id| names.get(id).cloned().unwrap_or_else(|| "Removed repo".into()), |a| a.to_string());
+    std::fs::write(&p, csv).map_err(e)?;
+    Ok(lines.len())
+}
+
+/// Save the spend caps and runaway thresholds. The queue looks again right away: a raised cap
+/// lets held tasks start.
+#[tauri::command]
+async fn budgets_set(app: AppHandle, st: State<'_, AppState>, budgets: budget::Budgets) -> Res<budget::Budgets> {
+    let b = budgets.validate()?;
+    st.db().set_setting(budget::SETTING, &b.to_json()).map_err(e)?;
+    queuerun::poke(&app);
+    let _ = app.emit("task-queue", ());
+    Ok(b)
+}
+
 // ---------- autopilot: drive a PR to green without you ----------
 
 const AUTOPILOT_TRIES: u64 = 3;
@@ -2469,7 +2523,7 @@ fn autopilot_next(pr: &Value) -> (&'static str, String) {
     }
 }
 
-fn autopilot_key(id: &str) -> String {
+pub(crate) fn autopilot_key(id: &str) -> String {
     format!("autopilot:{id}")
 }
 
@@ -2482,7 +2536,7 @@ async fn set_autopilot(app: AppHandle, st: State<'_, AppState>, id: String, on: 
         autopilot_on(&st, &id)?;
     } else {
         st.db().delete_setting(&key).map_err(e)?;
-        queuerun::autopilot_ended(&app, &id, "stopped");
+        queuerun::autopilot_ended(&app, &id, "stopped", None);
     }
     let _ = app.emit("autopilot", json!({"workspace_id": key.trim_start_matches("autopilot:"), "state": if on { "on" } else { "off" }}));
     Ok(())
@@ -2534,7 +2588,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
             } else {
                 say("off", "The PR is closed or merged.");
             }
-            queuerun::autopilot_ended(app, id, if kind == "ready" { "ready" } else { "off" });
+            queuerun::autopilot_ended(app, id, if kind == "ready" { "ready" } else { "off" }, None);
             return;
         }
         _ => {}
@@ -2546,10 +2600,23 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     if tries >= AUTOPILOT_TRIES {
         let _ = st.db().delete_setting(&key);
         say("gave_up", &format!("Still not green after {AUTOPILOT_TRIES} tries. Take a look."));
-        queuerun::autopilot_ended(app, id, "gave_up");
+        queuerun::autopilot_ended(app, id, "gave_up", None);
         return;
     }
     let Ok(ws) = st.db().workspace(id) else { return };
+    // A spend cap is reached: no new turn. Autopilot stops and says so, in the chat too.
+    if let Some(text) = queuerun::autopilot_cap(&st, &ws) {
+        let _ = st.db().delete_setting(&key);
+        let note = format!("Autopilot stopped. {text}");
+        if let Some(sid) = st.db().sessions(id).ok().and_then(|mut s| s.pop()) {
+            let ev = json!({"kind": "stop", "reason": "budget", "text": note});
+            let _ = st.db().append_event(&sid.id, &ev);
+            emit_event(app, &sid.id, &ev);
+        }
+        say("budget", &note);
+        queuerun::autopilot_ended(app, id, "budget", Some(queue::Halt { note, evidence: vec![] }));
+        return;
+    }
     let prompt = match kind {
         "fix" => {
             let logs = failing_logs_blocking(&st, id).unwrap_or_default();
@@ -3874,6 +3941,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
     let pid = child.id();
     let reviewing = ws.review_pr > 0;
     let linked_ids: Vec<String> = linked.iter().map(|w| w.id.clone()).collect();
+    let turn_started = std::time::Instant::now();
     std::thread::spawn(move || {
         let st = app.state::<AppState>();
         // In a review workspace, what the agent wrote this turn: its findings become draft comments.
@@ -3881,6 +3949,8 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         let mut saw_done = false;
         let mut ok = true;
         let mut context_tokens: Option<u64> = None;
+        // This turn's row in the turns table, for its file snapshot (runaway.rs).
+        let mut turn_id: Option<i64> = None;
         // Why the user is needed when this turn ends, if they are: plan, question, login, limit, install, error.
         let mut needs: Option<String> = None;
         // What the agent said when it hit its usage limit, for the reset time in it (the queue).
@@ -3954,9 +4024,11 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
                 }
                 if ev["kind"] == "done" {
                     saw_done = true;
-                    if let Some(c) = ev["cost_usd"].as_f64() {
-                        let _ = st.db().record_cost(&id, c);
-                    }
+                    // Every finished turn: cost when the agent reports one, tokens, model and time.
+                    if !ev["imported"].as_bool().unwrap_or(false)
+                        && let Ok(Some(t)) = st.db().record_turn(&id, &ev, turn_started.elapsed().as_millis() as u64) {
+                            turn_id = Some(t);
+                        }
                     ok = !ev["is_error"].as_bool().unwrap_or(false);
                     // Agents that report the interrupt themselves (Gemini) mark it, so it reads as a stop.
                     if ev["stopped"] == true {
@@ -4064,6 +4136,14 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         let run_checks = ok && !user_stopped && guard_hit.is_none() && needs.is_none() && next.is_none()
             && st.db().workspace(&workspace_id).and_then(|w| st.db().repo(&w.repo_id)).is_ok_and(|r| r.prefs.checks_after_turn);
         let needs = if guard_hit.is_some() { Some("protected".to_string()) } else if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs };
+        // Nobody there (a queue task, autopilot): keep what this turn changed and stop an agent
+        // going in circles. Not when you queued another message: then you are there.
+        let halt = if next.is_none() && !user_stopped {
+            queuerun::watch_turn(&app, &st, &id, &workspace_id, &ws_dir, guard_base.checkpoint.as_deref(), turn_id, ok && needs.is_none())
+        } else {
+            None
+        };
+        let needs = if halt.is_some() && needs.is_none() { Some("loop".to_string()) } else { needs };
         let _ = app.emit("running", json!({
             "session_id": id, "running": false, "workspace_id": workspace_id,
             "ok": ok, "title": title, "more_queued": next.is_some(), "needs": needs,
@@ -4077,7 +4157,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         // The task queue: limits, the task's next step, the next task. After the checks started,
         // so its own checks step waits for that run instead of starting another.
         if !more {
-            queuerun::turn_ended(&app, &st, &id, &agent_name, ok, user_stopped, needs.as_deref(), limit_text.as_deref());
+            queuerun::turn_ended(&app, &st, &id, &agent_name, ok, user_stopped, needs.as_deref(), limit_text.as_deref(), halt);
         }
     });
     Ok(true)
@@ -4626,7 +4706,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
@@ -5150,6 +5230,61 @@ mod tests {
         let out = git::git(Path::new(&api.root_path), &["branch", "--list", "me/*"]).unwrap();
         assert!(out.trim().is_empty(), "and its branch: {out}");
         assert!(std::fs::read_dir(dir.path().join("workspaces").join("api")).map(|mut d| d.next().is_none()).unwrap_or(true));
+    }
+
+    #[test]
+    fn spend_caps_stop_autopilot_and_hold_queue_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state(dir.path());
+        let api = git_repo(&st, dir.path(), "api");
+        let web = git_repo(&st, dir.path(), "web");
+        let mk = |repo: &Repo, name: &str| {
+            let w = Workspace {
+                id: format!("w-{name}"), repo_id: repo.id.clone(), name: name.into(), branch: format!("me/{name}"), path: dir.path().join(name).to_string_lossy().into(),
+                target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(), imported_from: None, created_at: store::now(),
+                title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
+            };
+            st.db().insert_workspace(&w).unwrap();
+            let s = Session { id: format!("s-{name}"), workspace_id: w.id.clone(), agent: "claude".into(), agent_session_id: None, title: "t".into(), model: None, permission_mode: "acceptEdits".into(), effort: None };
+            st.db().insert_session(&s).unwrap();
+            (w, s)
+        };
+        let (wa, sa) = mk(&api, "tabby");
+        let (wb, _) = mk(&web, "mochi");
+        for _ in 0..3 {
+            st.db().record_turn(&sa.id, &json!({"kind": "done", "cost_usd": 2.0}), 0).unwrap();
+        }
+        // No caps: nothing stops, whatever was spent.
+        assert_eq!(queuerun::autopilot_cap(&st, &wa), None);
+
+        // $5 a task: tabby spent $6, so autopilot stops there; mochi spent nothing.
+        let mut b = budget::Budgets::default();
+        b.all.task.usd = Some(5.0);
+        st.db().set_setting(budget::SETTING, &b.to_json()).unwrap();
+        assert_eq!(queuerun::autopilot_cap(&st, &wa).as_deref(), Some("This task reached its cap: $6.00 of $5.00 (API-equivalent)."));
+        assert_eq!(queuerun::autopilot_cap(&st, &wb), None);
+
+        // A daily cap for api only, in turns: it holds api's queued tasks, not web's.
+        b.all.task.usd = None;
+        b.repos.insert(api.id.clone(), budget::Caps { day: budget::Cap { turns: Some(3), ..Default::default() }, ..Default::default() });
+        st.db().set_setting(budget::SETTING, &b.to_json()).unwrap();
+        {
+            let mut q = st.queue.lock().unwrap();
+            for (id, repo) in [("t1", &api.id), ("t2", &web.id)] {
+                q.add(queue::NewTask { prompt: "x".into(), repo_id: repo.clone(), agent: "claude".into(), mode: "acceptEdits".into(), ..Default::default() }, id.into(), 0);
+            }
+        }
+        let caps = queuerun::Caps::load(&st, &[]);
+        let gate = |t: &queue::Task| caps.stop(t).map(|s| caps.text(&s));
+        let starts = queuerun::update_in(&st, |q| q.claim_with(&std::collections::HashSet::new(), 0, &gate));
+        assert_eq!(starts.iter().map(|s| s.0.as_str()).collect::<Vec<_>>(), ["t2"]);
+        let view = queuerun::view(&st);
+        assert_eq!(view["waits"]["t1"]["text"], "Today's cap for api is reached: 3 of 3 turns. Nothing new starts there until midnight.");
+        assert!(view["cap"].is_null(), "no cap on every repo, so no banner");
+        assert_eq!(queuerun::autopilot_cap(&st, &wa).as_deref(), Some("Today's cap for api is reached: 3 of 3 turns. Nothing new starts there until midnight."));
+        // The saved queue keeps the held task in line, not failed.
+        let saved = queue::Queue::from_json(st.db().setting(queue::SETTING).unwrap().as_deref());
+        assert_eq!(saved.get("t1").unwrap().state, queue::State::Queued);
     }
 
     #[test]

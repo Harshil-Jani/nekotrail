@@ -108,12 +108,24 @@ pub fn parse_claude_value(j: &Value) -> Vec<Value> {
             let window = j["modelUsage"]
                 .as_object()
                 .and_then(|m| m.values().filter_map(|v| v["contextWindow"].as_u64()).max());
+            // The model that did most of the turn (by cost, then tokens): Claude also bills a small
+            // model for side jobs, which shouldn't name the turn.
+            let model = j["modelUsage"].as_object().and_then(|m| {
+                m.iter()
+                    .max_by(|a, b| {
+                        let key = |v: &Value| (v["costUSD"].as_f64().unwrap_or(0.0), v["outputTokens"].as_u64().unwrap_or(0));
+                        key(a.1).partial_cmp(&key(b.1)).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|(k, _)| k.clone())
+            });
             out.push(json!({
                 "kind": "done",
                 "is_error": j["is_error"].as_bool().unwrap_or(false),
                 "cost_usd": j["total_cost_usd"],
                 "duration_ms": j["duration_ms"],
                 "context_window": window,
+                "usage": j["usage"],
+                "model": model,
             }))
         }
         _ => {}
