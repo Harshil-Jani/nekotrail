@@ -177,6 +177,17 @@ pub fn no_change(snaps: &[Snap], k: u32) -> Option<Finding> {
     })
 }
 
+/// What the chat and the queue say: "Stopped because the same command failed 4 times in a row:
+/// cargo test". No full stop after a command, where it would read as part of it.
+pub fn note(f: &Finding) -> String {
+    let mut text = f.text.clone();
+    if let Some(first) = text.get(..1) {
+        text = format!("{}{}", first.to_lowercase(), &text[1..]);
+    }
+    let end = if f.kind == Kind::SameFailure { "" } else { "." };
+    format!("Stopped because {text}{end}")
+}
+
 /// Every check, the first sign found. `snaps` are oldest first.
 pub fn check(events: &[Value], snaps: &[Snap], cfg: &crate::budget::Runaway) -> Option<Finding> {
     if !cfg.on {
@@ -213,6 +224,7 @@ mod tests {
         let f = same_failure(&ev, 4).unwrap();
         assert_eq!(f.kind, Kind::SameFailure);
         assert_eq!(f.text, "The same command failed 4 times in a row: cargo test");
+        assert_eq!(note(&f), "Stopped because the same command failed 4 times in a row: cargo test");
         assert_eq!(f.evidence.len(), 4);
         assert_eq!(f.evidence[0], "Run 1: error: test failed, to rerun pass `--lib`");
         assert_eq!(same_failure(&ev, 5), None, "below the threshold");
@@ -303,6 +315,7 @@ mod tests {
         ];
         let f = no_change(&snaps, 3).unwrap();
         assert_eq!(f.text, "The last 3 turns changed no files");
+        assert_eq!(note(&f), "Stopped because the last 3 turns changed no files.");
         // A turn that hit its usage limit (not ok) isn't counted either way.
         assert_eq!(f.evidence, ["Turn 2: no file changed", "Turn 4: no file changed", "Turn 5: no file changed"]);
         assert_eq!(no_change(&snaps, 4), None);

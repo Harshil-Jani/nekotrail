@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
@@ -26,6 +26,7 @@ import { describeFirstRun, firstLook, isAnswer, KEYS, markFirstRun, markTourSeen
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
 import { Queue } from "./components/Queue";
+import { Usage } from "./components/Usage";
 import { counts as queueCounts } from "./queue";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
@@ -99,7 +100,7 @@ export default function App() {
   // Deep link: ?ws=<id>&tab=<tab>&view=sky (used by workspace links and the preview page).
   const params = new URLSearchParams(window.location.search);
   const [selected, setSelected] = useState<string | null>(params.get("ws"));
-  const [view, setView] = useState<"workspace" | "sky" | "board" | "queue">((params.get("view") as "sky" | "board" | "queue") || "workspace");
+  const [view, setView] = useState<"workspace" | "sky" | "board" | "queue" | "usage">((params.get("view") as "sky" | "board" | "queue" | "usage") || "workspace");
   // The task queue: counts for the sidebar, and a nudge that opens its Add form.
   const [queueInfo, setQueueInfo] = useState<{ running: number; next: number; needs: number; paused: boolean }>({ running: 0, next: 0, needs: 0, paused: false });
   const [queueAdd, setQueueAdd] = useState(params.has("queueAdd") ? 1 : 0);
@@ -113,15 +114,22 @@ export default function App() {
       load();
       const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
       const name = w ? nameInText(skyRef.current, w) : "A workspace";
-      if (payload.state === "ready" || payload.state === "gave_up") {
+      if (payload.state === "ready" || payload.state === "gave_up" || payload.state === "budget" || payload.state === "loop") {
         const prefs = getSettings();
-        const title = payload.state === "ready" ? `${name} is ready to merge` : `Autopilot needs you on ${name}`;
+        const title = payload.state === "ready" ? `${name} is ready to merge` : payload.state === "gave_up" ? `Autopilot needs you on ${name}` : `Autopilot stopped on ${name}`;
         if (prefs.needsSound) ting();
         if (prefs.needsNotify) notify(title, payload.detail ?? "");
         say(`${title}. ${payload.detail ?? ""}`);
       }
     });
-    return () => { un.then((f) => f()); };
+    // A spend cap held the queue back: said once per cap and day, with a way to the caps.
+    const unBudget = listen<{ text: string }>("budget", ({ payload }) => {
+      const prefs = getSettings();
+      if (prefs.needsSound) ting();
+      if (prefs.needsNotify) notify("The queue stopped at a spend cap", payload.text);
+      say(payload.text, false, { label: "Open usage", run: () => setView("usage") });
+    });
+    return () => { un.then((f) => f()); unBudget.then((f) => f()); };
   }, []);
   const [ram, setRam] = useState<Awaited<ReturnType<typeof api.resourceUsage>> | null>(null);
   useEffect(() => {
@@ -133,7 +141,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
   const navRef = useRef<(d: -1 | 1) => void>(() => {});
   // Back / forward through places you've been (workspace, view, tab), like a browser. ⌘[ and ⌘].
-  type Place = { view: "workspace" | "sky" | "board" | "queue"; selected: string | null; tab: Tab };
+  type Place = { view: "workspace" | "sky" | "board" | "queue" | "usage"; selected: string | null; tab: Tab };
   const history = useRef<{ stack: Place[]; at: number; moving: boolean }>({ stack: [], at: -1, moving: false });
   const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
@@ -543,6 +551,7 @@ export default function App() {
           error: "stopped with an error",
           approval: "wants your OK",
           protected: "changed a protected file",
+          loop: "was stopped: it was going in circles",
         };
         if (prefs.needsSound) ting();
         if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, chatLine(w, payload.title) || "Open nekotrail to continue.");
@@ -1324,6 +1333,7 @@ export default function App() {
       { id: "scorecard", group: "Go", label: "Open agent scorecard", keywords: "stats compare claude codex gemini success cost", icon: <Crown size={15} />, run: () => setScorecard(true) },
       { id: "board", group: "Go", label: "Open board", hint: keyHint("⌘⇧K"), keywords: "kanban dashboard status columns", icon: <Kanban size={15} />, run: () => setView("board") },
       { id: "queue", group: "Go", label: "Open queue", keywords: "task queue overnight later batch line up sleep", icon: <ListOrdered size={15} />, run: () => setView("queue") },
+      { id: "usage", group: "Go", label: "Open usage", keywords: "spend cost tokens budget cap limit money dollars csv export", icon: <Gauge size={15} />, run: () => setView("usage") },
       { id: "queue-add", group: "Create", label: "Add task to queue", keywords: "queue later overnight batch line up sleep", icon: <ListPlus size={15} />, run: () => { setView("queue"); setQueueAdd((n) => n + 1); } },
       queueInfo.paused
         ? { id: "queue-resume", group: "App", label: "Resume the queue", keywords: "task queue start", icon: <Play size={15} />, run: () => api.queueSetPaused(false).catch((e) => say(errText(e), true)) }
@@ -1435,6 +1445,8 @@ export default function App() {
         queue={queueInfo}
         queueOpen={view === "queue"}
         onQueue={() => setView("queue")}
+        usageOpen={view === "usage"}
+        onUsage={() => setView("usage")}
         ram={ram}
         lowDiskMb={freeMb !== null && freeMb < 3072 ? freeMb : null}
         onStorage={() => setStorage(true)}
@@ -1479,8 +1491,10 @@ export default function App() {
             addNonce={queueAdd}
             onOpen={select}
             onSay={(text, bad) => say(text, bad)}
+            onUsage={() => setView("usage")}
           />
         )}
+        {view === "usage" && <Usage repos={repos} onSay={(text, bad) => say(text, bad)} />}
         {view === "sky" && <NightSky sky={sky} lit={lit} shining={shining} workspaces={workspaces} onOpen={select} onNew={() => openNew()} />}
 
         {view === "workspace" && !ws && onboardStep && (

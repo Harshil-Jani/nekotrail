@@ -333,7 +333,7 @@ pub fn watch_turn(app: &AppHandle, st: &AppState, session_id: &str, workspace_id
     let snaps: Vec<Snap> = st.db().turn_snaps(workspace_id, runaway::SNAP_TURNS as i64).unwrap_or_default()
         .into_iter().map(|(mut s, at)| { s.label = turn_label(&at); s }).collect();
     let found = runaway::check(&events, &snaps, &cfg)?;
-    let note = format!("Stopped: {}.", found.text);
+    let note = runaway::note(&found);
     let ev = json!({"kind": "stop", "reason": "loop", "text": note, "evidence": found.evidence});
     let _ = st.db().append_event(session_id, &ev);
     crate::emit_event(app, session_id, &ev);

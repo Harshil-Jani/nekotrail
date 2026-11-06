@@ -2,7 +2,8 @@
  * Sample data for rendering the real UI in a plain browser (no Tauri backend).
  * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
  * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
- * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queueAdd (the Add form open), ?summary (the morning summary).
+ * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queue=cap (a spend cap reached, a runaway task), ?queueAdd (the Add form open), ?summary (the morning summary).
+ * Usage: ?view=usage (a week of turns), ?usage=empty, ?usage=cap (caps set, today's reached). Chat stops: ?ws=w1&stop=loop or &stop=budget.
  * Export session: ?export=w1 opens the sheet (with a .env read and a token in a command, so the Hidden list has items); &exportChat=s1 for one chat.
  * First run (a fresh install): ?fresh (nothing found), &found=conductor or &found=terminal (what "Where's your code?"
  * leads with), &noagents (no agent CLI yet), &gh=0 (GitHub not signed in), &step=code or &step=try (open on that
@@ -190,6 +191,17 @@ if (guard) {
     { kind: "guard", files: [{ path: "infra/terraform/alb.tf", change: "changed" }], checkpoint: "g3", ignored: null, level: "after" } as any,
     { kind: "guard_restored", files: ["infra/terraform/alb.tf"], checkpoint: "g3" } as any,
   );
+}
+// ?stop=loop: nekotrail stopped an agent going in circles, with what it saw. ?stop=budget: autopilot stopped at a cap.
+{
+  const stop = new URLSearchParams(location.search).get("stop");
+  if (stop === "loop") events.push({ kind: "stop", reason: "loop", text: "Stopped because the same command failed 4 times in a row: go test ./internal/tickets/...", evidence: [
+    "Run 1: --- FAIL: TestSLABreach (0.02s) sla_test.go:41: got 4h0m0s, want 4h0m0s business",
+    "Run 2: --- FAIL: TestSLABreach (0.02s) sla_test.go:41: got 4h0m0s, want 4h0m0s business",
+    "Run 3: --- FAIL: TestSLABreach (0.01s) sla_test.go:41: got 4h0m0s, want 4h0m0s business",
+    "Run 4: --- FAIL: TestSLABreach (0.02s) sla_test.go:41: got 4h0m0s, want 4h0m0s business",
+  ] } as any);
+  if (stop === "budget") events.push({ kind: "stop", reason: "budget", text: "Autopilot stopped. This task reached its cap: $5.12 of $5.00 (API-equivalent)." } as any);
 }
 // Shell commands for the "Commands the agent ran" sheet (?commands=w1): a long one, a failed one, one cut off mid-turn.
 const codexEvents = [
@@ -474,6 +486,15 @@ let queueTasks: any[] = queueMode === "empty" || fresh ? [] : [
   qTask("q10", "Upgrade React Native to 0.79", { repo_id: "r2", agent: "gemini", state: "failed", ran_with: "gemini", ended_at: qNow - 5 * 3600, note: "Gemini isn't installed." }),
   qTask("q11", "Fix the 502s after deploy", { state: "done", ran_with: "claude", workspace_id: "w1", ended_at: qNow - 6 * 3600, note: "Autopilot got the PR green. It's ready for you to merge.", then: { checks: true, draft_pr: true, autopilot: true } }),
 ];
+// ?queue=cap: today's cap on every repo is reached, so nothing new starts; one task was stopped going in circles.
+const capText = "Today's cap is reached: $20.40 of $20.00 (API-equivalent). Nothing new starts until midnight.";
+if (queueMode === "cap") {
+  queueTasks.push(qTask("q12", "Make SLA breaches count business hours only", {
+    state: "needs_you", ran_with: "claude", workspace_id: "w1", ended_at: qNow - 2 * 3600,
+    note: "Stopped because the same command failed 4 times in a row: go test ./internal/tickets/...",
+    evidence: ["Run 1: --- FAIL: TestSLABreach (0.02s) sla_test.go:41: got 4h0m0s, want 4h0m0s business", "Run 2: --- FAIL: TestSLABreach (0.02s)", "Run 3: --- FAIL: TestSLABreach (0.01s)", "Run 4: --- FAIL: TestSLABreach (0.02s)"],
+  }));
+}
 let queuePaused = queueMode === "paused";
 let queueMax = [3, 3];
 const claudeBack = qNow + 2 * 3600 + 40 * 60;
@@ -481,15 +502,48 @@ const queueView = () => {
   const waits: Record<string, any> = {};
   for (const t of queueTasks.filter((x) => x.state === "queued")) {
     waits[t.id] = queuePaused ? { kind: "paused" }
+      : queueMode === "cap" ? { kind: "budget", text: capText }
       : t.agent === "claude" && t.fallback !== "codex" ? { kind: "limit", agent: "claude", until: claudeBack, reported: true }
       : { kind: "slots" };
   }
   return {
     tasks: queueTasks, paused: queuePaused, max_total: queueMax[0], max_per_repo: queueMax[1], now: Math.floor(Date.now() / 1000),
-    limits: queueMode === "empty" ? {} : { claude: { until: claudeBack, reported: true, text: "Claude AI usage limit reached" } }, waits, asking: ["q2"],
+    limits: queueMode === "empty" || queueMode === "cap" ? {} : { claude: { until: claudeBack, reported: true, text: "Claude AI usage limit reached" } }, waits, asking: ["q2"],
+    cap: queueMode === "cap" ? capText : null,
   };
 };
 const queueChanged = () => setTimeout(() => emit("task-queue", {}), 0);
+
+// The Usage view (?view=usage): a week of made-up turns across two repos and three agents. Codex and
+// Gemini report no cost, so their cost reads "Not reported". ?usage=empty has no turns; ?usage=cap
+// has caps set and today's daily cap reached.
+const usageMode = new URLSearchParams(location.search).get("usage");
+const noCap = { usd: null, turns: null, tokens: null };
+let usageBudgets: any = usageMode === "cap"
+  ? { all: { day: { usd: 20, turns: null, tokens: null }, task: { usd: 5, turns: 40, tokens: null } }, repos: { r2: { day: { usd: null, turns: 30, tokens: null }, task: noCap } }, runaway: { on: true, same_failure: 4, back_and_forth: 2, no_change: 3 } }
+  : { all: { day: noCap, task: noCap }, repos: {}, runaway: { on: true, same_failure: 4, back_and_forth: 2, no_change: 3 } };
+const usageReport = (days: number) => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dayAgo = (n: number) => { const d = new Date(Date.now() - n * 86_400_000); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const lines: any[] = [];
+  if (usageMode !== "empty" && !fresh) {
+    for (let i = 0; i < Math.min(days, 7); i++) {
+      const k = 7 - i;
+      lines.push({ day: dayAgo(i), repo_id: "r1", agent: "claude", model: "claude-opus-4-5", turns: 3 + k, priced_turns: 3 + k, cost: usageMode === "cap" && i === 0 ? 20.4 : 1.15 * (3 + k), token_turns: 3 + k, input: 41_000 * k, cached: 1_200_000 * k, output: 9_500 * k, duration_ms: (3 + k) * 4 * 60_000 });
+      if (i % 2 === 0) lines.push({ day: dayAgo(i), repo_id: "r2", agent: "codex", model: "gpt-5-codex", turns: 2 + (k % 3), priced_turns: 0, cost: 0, token_turns: 2 + (k % 3), input: 88_000, cached: 640_000, output: 12_000, duration_ms: 19 * 60_000 });
+      if (i === 1) lines.push({ day: dayAgo(i), repo_id: "r2", agent: "gemini", model: "", turns: 2, priced_turns: 0, cost: 0, token_turns: 0, input: 0, cached: 0, output: 0, duration_ms: 7 * 60_000 });
+      if (i === 2) lines.push({ day: dayAgo(i), repo_id: "r1", agent: "claude", model: "claude-sonnet-4-5", turns: 4, priced_turns: 4, cost: 0.92, token_turns: 4, input: 30_000, cached: 410_000, output: 6_000, duration_ms: 9 * 60_000 });
+    }
+  }
+  const todays = lines.filter((l) => l.day === dayAgo(0));
+  const sum = (ls: any[]) => ({ usd: ls.reduce((a, l) => a + l.cost, 0), turns: ls.reduce((a, l) => a + l.turns, 0), tokens: ls.reduce((a, l) => a + l.input + l.output, 0) });
+  return {
+    lines, from: dayAgo(days - 1), budgets: usageBudgets, today: sum(todays),
+    today_repos: { r1: sum(todays.filter((l) => l.repo_id === "r1")), r2: sum(todays.filter((l) => l.repo_id === "r2")) },
+    limits: usageMode === "empty" ? {} : { claude: { until: claudeBack, reported: true, text: "Claude AI usage limit reached" }, codex: { until: qNow + 25 * 60, reported: false, text: "You've hit your usage limit." } },
+    now: qNow,
+  };
+};
 
 // What the PR poller would have pushed by now: one view per workspace.
 const prFor = (id: string) => {
@@ -678,6 +732,9 @@ mockIPC(
       }
       case "terminal_import": return { repos: 1, workspaces: 1, chats: (args as { picks: unknown[] }).picks.length, messages: 400, skipped: 0, problems: [] };
       case "usage_summary": if (fresh) return { today: 0, week: 0, by_agent: {} }; return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
+      case "usage_report": return usageReport(args.days);
+      case "usage_export": return usageReport(args.days).lines.length;
+      case "budgets_set": usageBudgets = args.budgets; return usageBudgets;
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
       case "model_catalog": return catalog;
       case "mcp_list": return "Checking MCP server health…\n\ngithub: https://api.githubcopilot.com/mcp - ✔ Connected\nlinear: https://mcp.linear.app/sse - ✔ Connected\npostgres: npx -y @modelcontextprotocol/server-postgres - ✗ Failed to connect";

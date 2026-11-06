@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { PersonalPrompt, PromptEntry, PromptScope } from "./prompts";
 import type { NewQueueTask, QueueSummary, QueueTask, QueueView } from "./queue";
+import type { Budgets, UsageReport } from "./usage";
 
 export type Repo = {
   id: string;
@@ -171,6 +172,8 @@ export type ChatEvent =
   | { kind: "tool_result"; id: string; output: string; is_error: boolean }
   | { kind: "done"; is_error: boolean; cost_usd?: number; duration_ms?: number; stopped?: boolean; context_tokens?: number; context_window?: number }
   | { kind: "error"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
+  /** nekotrail stopped giving turns to this chat: a spend cap ("budget") or an agent going in circles ("loop"), with what it saw. */
+  | { kind: "stop"; reason: "budget" | "loop"; text: string; evidence?: string[] }
   /** The agent tried to edit a protected file and nekotrail refused (OpenCode and other ACP agents). */
   | { kind: "blocked"; text: string; files: string[] }
   /** After a turn: protected files it changed. `checkpoint` and `ignored` are what Put it back restores from. */
@@ -401,6 +404,9 @@ export const api = {
   setPair: (ids: string[]) => invoke<string>("set_pair", { ids }),
   workspaceStats: (id: string) => invoke<{ agent: Agent | ""; turns: number; errors: number; duration_ms: number; cost_usd: number }>("workspace_stats", { id }),
   usageSummary: () => invoke<{ today: number; week: number; by_agent: Record<string, number> }>("usage_summary"),
+  usageReport: (days: number) => invoke<UsageReport>("usage_report", { days }),
+  usageExport: (path: string, days: number) => invoke<number>("usage_export", { path, days }),
+  budgetsSet: (budgets: Budgets) => invoke<Budgets>("budgets_set", { budgets }),
   resourceUsage: () => invoke<{ total_mb: number; top: { name: string; mb: number }[] }>("resource_usage"),
   workspaceStorage: () => invoke<{ workspace_id: string; total_kb: number; cleanable_kb: number; dirs: { path: string; kb: number }[] }[]>("workspace_storage"),
   cleanWorkspace: (id: string) => invoke<number>("clean_workspace", { id }),
