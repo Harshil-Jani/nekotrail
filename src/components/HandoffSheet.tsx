@@ -104,10 +104,12 @@ export function HandoffSheet({ session, title, multiRepo, busy, initialAgent, in
             </div>
           )}
           {agent && (
-            <div className="handoff-model row">
-              <ModelPicker agent={agent} model={model.model} effort={model.effort} onChange={setModel} compact />
-              <span className="muted export-small">{modeNote(session.permission_mode, agent)}</span>
-            </div>
+            <>
+              <div className="handoff-model row">
+                <ModelPicker agent={agent} model={model.model} effort={model.effort} onChange={setModel} compact />
+              </div>
+              <p className="handoff-mode" role="note"><ShieldCheck size={14} aria-hidden />{modeNote(session.permission_mode, agent)}</p>
+            </>
           )}
         </div>
 
