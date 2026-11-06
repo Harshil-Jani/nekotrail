@@ -1,0 +1,11 @@
+{"sessionId":"g1-session","projectHash":"h","startTime":"2026-11-05T10:00:00Z","lastUpdated":"2026-11-05T10:00:00Z","kind":"main"}
+{"id":"m1","timestamp":"2026-11-05T10:00:01Z","type":"user","content":[{"text":"Rename the config loader"}]}
+{"id":"m2","timestamp":"2026-11-05T10:00:02Z","type":"gemini","content":"Renaming it now.","thoughts":[{"subject":"Plan","description":"rename the file","timestamp":"2026-11-05T10:00:02Z"}],"toolCalls":[{"id":"t1","name":"run_shell_command","args":{"command":"git mv a.ts b.ts"},"status":"success","result":null}]}
+{"$set":{"lastUpdated":"2026-11-05T10:00:03Z"}}
+{"$patch":{"id":"m2","toolCalls":[{"id":"t1","result":[{"functionResponse":{"id":"t1","name":"run_shell_command","response":{"output":"renamed"}}}]}]}}
+{"id":"m3","timestamp":"2026-11-05T10:01:00Z","type":"user","content":"oops, wrong idea"}
+{"id":"m4","timestamp":"2026-11-05T10:01:01Z","type":"gemini","content":"Sure."}
+{"$rewindTo":"m3"}
+{"id":"m5","timestamp":"2026-11-05T10:02:00Z","type":"user","content":"Now update the imports"}
+{"id":"m6","timestamp":"2026-11-05T10:02:30Z","type":"gemini","content":"Updated 3 imports."}
+{"$set":{"lastUpdated":"2026-11-05T10:02:30Z","summary":"Rename the config loader"}}

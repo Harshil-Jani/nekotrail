@@ -1,0 +1,14 @@
+{"timestamp":"2026-01-02T10:00:00Z","type":"session_meta","payload":{"id":"x-old","timestamp":"2026-01-02T10:00:00Z","cwd":"/REPO","originator":"codex_cli_rs","cli_version":"0.40.0","source":"cli"}}
+{"timestamp":"2026-01-02T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>x</environment_context>"}]}}
+{"timestamp":"2026-01-02T10:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"List the source files","images":[]}}
+{"timestamp":"2026-01-02T10:00:02Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Listing"}}
+{"timestamp":"2026-01-02T10:00:03Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"bash\",\"-lc\",\"ls src\"]}","call_id":"c1"}}
+{"timestamp":"2026-01-02T10:00:04Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"{\"output\":\"a.ts\\n\",\"metadata\":{\"exit_code\":0}}"}}
+{"timestamp":"2026-01-02T10:00:05Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+b\n*** End Patch","call_id":"c2"}}
+{"timestamp":"2026-01-02T10:00:06Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c2","output":"Done"}}
+{"timestamp":"2026-01-02T10:00:07Z","type":"event_msg","payload":{"type":"agent_message","message":"There is one file, a.ts."}}
+{"timestamp":"2026-01-02T10:00:07Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"There is one file, a.ts."}]}}
+{"timestamp":"2026-01-02T10:01:00Z","type":"event_msg","payload":{"type":"user_message","message":"Now delete it"}}
+{"timestamp":"2026-01-02T10:01:01Z","type":"event_msg","payload":{"type":"agent_message","message":"Stopping."}}
+{"timestamp":"2026-01-02T10:01:02Z","type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}
+{"timestamp":"2026-01-02T10:01:03Z","type":"some_future_type","payload":{"type":"whatever"}}

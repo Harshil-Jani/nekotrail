@@ -131,6 +131,12 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Each active workspace's block of 10 ports (see ports.rs). A row lives only while its
     // workspace is active; `base` is unique so two workspaces can never hold the same block.
     conn.execute_batch("CREATE TABLE IF NOT EXISTS port_blocks (workspace_id TEXT PRIMARY KEY, base INTEGER NOT NULL UNIQUE);")?;
+    // Sessions brought in from the CLIs' own folders (see terminal.rs), so importing again only adds
+    // new ones, even after a chat's agent session id changes.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS terminal_imports (agent TEXT NOT NULL, source_id TEXT NOT NULL, session_id TEXT NOT NULL,
+            file TEXT NOT NULL, imported_at TEXT NOT NULL, PRIMARY KEY (agent, source_id));",
+    )?;
     // Global search: new messages are indexed as they arrive, older ones in the background.
     crate::search::ensure(conn)?;
     Ok(())
@@ -789,6 +795,44 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    // ---- terminal import (see terminal.rs) ----
+
+    /// (agent, CLI session id) of every chat nekotrail has: imported from a terminal, or run here.
+    pub fn terminal_known(&self) -> Result<std::collections::HashSet<(String, String)>> {
+        let mut st = self.conn.prepare(
+            "SELECT agent, source_id FROM terminal_imports
+             UNION SELECT agent, agent_session_id FROM sessions WHERE agent_session_id IS NOT NULL",
+        )?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    /// One imported chat in one transaction: the chat, its events (each with its own time, and
+    /// indexed for search), and the record that it came in. False when it was already imported.
+    pub fn import_terminal_chat(&self, s: &Session, agent: &str, source_id: &str, file: &str, created_at: &str, events: &[(serde_json::Value, String)]) -> Result<bool> {
+        let tx = self.conn.unchecked_transaction()?;
+        let n = tx.execute(
+            "INSERT OR IGNORE INTO terminal_imports (agent, source_id, session_id, file, imported_at) VALUES (?1,?2,?3,?4,?5)",
+            params![agent, source_id, s.id, file, now()],
+        )?;
+        if n == 0 {
+            return Ok(false);
+        }
+        tx.execute(
+            &format!("INSERT INTO sessions ({SESSION_COLS}, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"),
+            params![s.id, s.workspace_id, s.agent, s.agent_session_id, s.title, s.model, s.permission_mode, s.effort, created_at],
+        )?;
+        {
+            let mut st = tx.prepare("INSERT INTO messages (session_id, event, created_at) VALUES (?1,?2,?3)")?;
+            for (ev, at) in events {
+                st.execute(params![s.id, ev.to_string(), if at.is_empty() { created_at } else { at.as_str() }])?;
+                crate::search::index(&tx, tx.last_insert_rowid(), ev)?;
+            }
+        }
+        tx.commit()?;
+        Ok(true)
     }
 
     // ---- review comments ----

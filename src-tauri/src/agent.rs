@@ -43,6 +43,12 @@ pub fn summarize_input(name: &str, input: &Value) -> String {
 /// Claude Code `--output-format stream-json` line -> zero or more events.
 pub fn parse_claude(line: &str) -> Vec<Value> {
     let Ok(j) = serde_json::from_str::<Value>(line) else { return vec![] };
+    parse_claude_value(&j)
+}
+
+/// One parsed Claude Code line -> zero or more events. The same shapes appear in Claude's own
+/// session files (`~/.claude/projects`), which the terminal import reads.
+pub fn parse_claude_value(j: &Value) -> Vec<Value> {
     let mut out = vec![];
     match j["type"].as_str() {
         Some("system") if j["subtype"] == "init" => {
@@ -170,7 +176,7 @@ impl GeminiParser {
 }
 
 /// Gemini's built-in tools under the names the chat already draws (icons, todo list).
-fn gemini_tool(name: &str, input: &Value) -> (String, String) {
+pub(crate) fn gemini_tool(name: &str, input: &Value) -> (String, String) {
     let mapped = match name {
         "run_shell_command" => "Bash",
         "read_file" => "Read",

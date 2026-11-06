@@ -122,6 +122,8 @@ const workspaces = [
   ws("w5", "r2", "pip", "harshil/blog-rss"),
 ];
 if (new URLSearchParams(location.search).has("review")) workspaces.push(ws("w6", "r1", "biscuit", "review/pr-731", { title: "Retry webhook deliveries with backoff", title_source: "pr", review_pr: 731 }));
+// ?history&ws=w7: a repo's History workspace (terminal chats from the main checkout, read-only).
+if (new URLSearchParams(location.search).has("history")) workspaces.push(ws("w7", "r1", "history", "main", { path: "/code/pawprint-api", title: "History", title_source: "user", imported_from: "terminal-history" }));
 // ?many adds 20 more workspaces (most titled, a few not yet) to judge the sidebar's density.
 if (new URLSearchParams(location.search).has("many")) {
   const tasks = ["Retry webhooks with backoff", "Move the SLA timer to the worker", "", "Dark mode for the ticket view", "Paginate /v1/tickets with cursors", "Fix flaky login test on CI", "", "Add audit log for admin actions", "Upgrade to Go 1.24", "CSV export for reports", "Stop double-sending reminder emails", "Rate limit password resets", "", "Search tickets by customer email", "Bump Next to 16 and fix the build", "Explain the billing retry logic", "Cache the pricing API for 5 minutes", "Add Sentry to the worker", "Translate onboarding into Hindi", "Remove the old v0 endpoints"];
@@ -350,7 +352,8 @@ mockIPC(
       case "conductor_available": return true;
       case "search_chats": return previewSearch(args.query, args.filter);
       case "search_open": { const c = corpus.find((x) => x.id === args.messageId)!; return { session: { id: c.session, workspace_id: c.ws, agent: c.agent, agent_session_id: null, title: c.chat, model: null, permission_mode: "acceptEdits", effort: null }, workspace_id: c.ws, index: c.index, total: c.total }; }
-      case "sessions": if (args.workspaceId === "w9") return [{ id: "s7", workspace_id: "w9", agent: "codex", agent_session_id: null, title: "Webhook retries", model: null, permission_mode: "acceptEdits" }];
+      case "sessions": if (args.workspaceId === "w7") return [{ id: "s7", workspace_id: "w7", agent: "claude", agent_session_id: "4b1f0c2e-9d7a-4e55-a1c3-2f6d8e9b7a10", title: "Fix the flaky checkout test", model: null, permission_mode: "acceptEdits" }];
+        if (args.workspaceId === "w9") return [{ id: "s7", workspace_id: "w9", agent: "codex", agent_session_id: null, title: "Webhook retries", model: null, permission_mode: "acceptEdits" }];
         return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
@@ -402,6 +405,23 @@ mockIPC(
       // ?agents=copilot,grok: the CLIs on PATH besides Claude (default: Copilot). ?agents=all: every one.
       case "installed_agents": return installed;
       case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
+      case "terminal_scan": {
+        const s = (agent: string, id: string, title: string, messages: number, last: string, extra = {}) => ({ agent, id, title, messages, first: last, last, bytes: messages * 9000, imported: false, resumable: true, ...extra });
+        return {
+          repos: [
+            { root: "/code/storefront", name: "storefront", repo_id: "r1", folders: [
+              { path: "/code/storefront", kind: "history", branch: "main", workspace_id: null, sessions: [s("claude", "c1", "Fix the flaky checkout test", 42, "2026-11-04T10:00:00Z"), s("codex", "x1", "Add retries to the webhook sender", 18, "2026-10-28T09:00:00Z"), s("claude", "c2", "Explain the cart reducer", 6, "2026-10-12T09:00:00Z", { imported: true })] },
+              { path: "/code/storefront-search", kind: "worktree", branch: "me/search", workspace_id: null, sessions: [s("claude", "c3", "Search by SKU", 77, "2026-11-05T15:00:00Z"), s("gemini", "g1", "Rename the config loader", 9, "2026-11-01T11:00:00Z")] },
+            ] },
+            { root: "/code/infra", name: "infra", repo_id: null, folders: [
+              { path: "/code/infra", kind: "history", branch: "main", workspace_id: null, sessions: [s("claude", "c4", "Bump the Postgres version", 23, "2026-10-30T08:00:00Z")] },
+            ] },
+          ],
+          skipped: [{ folder: "/Users/me/conductor/workspaces/storefront/tunis", reason: "The folder is gone.", sessions: 4, messages: 120 }, { folder: "/Users/me", reason: "Not in a git repo.", sessions: 2, messages: 9 }],
+          found: { claude: 9, codex: 1, gemini: 1 }, sources: ["/Users/me/.claude/projects", "/Users/me/.codex/sessions", "/Users/me/.gemini/tmp"], took_ms: 861,
+        };
+      }
+      case "terminal_import": return { repos: 1, workspaces: 1, chats: (args as { picks: unknown[] }).picks.length, messages: 400, skipped: 0, problems: [] };
       case "usage_summary": return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
       case "workspace_stats": return args.id === "w1" ? { agent: "claude", turns: 4, errors: 0, duration_ms: 182000, cost_usd: 1.92 } : { agent: "codex", turns: 3, errors: 1, duration_ms: 141000, cost_usd: 0.88 };
       case "model_catalog": return catalog;

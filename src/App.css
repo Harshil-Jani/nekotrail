@@ -1481,6 +1481,30 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .commands-list details.failed summary code { color: var(--text); }
 .commands-list details p { margin: var(--s1) 0 var(--s2) var(--s5); font-size: 12px; }
 
+/* ---------- import terminal sessions ---------- */
+.modal.terminal-import { width: 720px; max-width: calc(100vw - 48px); max-height: 84vh; }
+.modal.terminal-import > p { margin: 0; line-height: 1.5; }
+.ti-found { font-size: 13px; }
+.ti-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; border: 0.5px solid var(--line); border-radius: var(--radius); }
+.ti-repo + .ti-repo { border-top: 0.5px solid var(--line); }
+.ti-repo > summary { display: flex; align-items: center; gap: var(--s2); min-height: 36px; padding: var(--s1) var(--s3); cursor: default; }
+.ti-name { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.ti-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-sum { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.ti-note { margin: 0 var(--s3) var(--s2) calc(var(--s3) + 22px); font-size: 12px; }
+.ti-folder { display: flex; flex-direction: column; padding: 0 var(--s3) var(--s2) calc(var(--s3) + 22px); }
+.ti-folder-head { gap: var(--s2); font-size: 12px; font-weight: 600; min-height: 28px; }
+.ti-path { font-size: 11.5px; font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-session { gap: var(--s2); min-height: 26px; font-size: 12px; padding-left: 22px; }
+.ti-session.done { opacity: 0.6; }
+.ti-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-session > .muted { white-space: nowrap; }
+.ti-skipped summary { font-size: 12px; cursor: default; }
+.ti-skipped ul { max-height: 140px; overflow-y: auto; margin: var(--s2) 0 0; padding-left: var(--s5); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.ti-skipped li { display: flex; gap: var(--s2); }
+.chat-readonly.row { justify-content: center; gap: var(--s3); flex-wrap: wrap; }
+.ti-sources { font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Repo settings: the sheet keeps its top edge when tabs change height, and Save stays in view on long tabs. */
 .modal-backdrop:has(> .modal.repo-settings) { align-items: flex-start; padding-top: 7vh; }
 .modal.repo-settings { max-height: 86vh; }

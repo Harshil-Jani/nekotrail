@@ -22,6 +22,7 @@ pub mod review;
 pub mod safe;
 pub mod search;
 pub mod store;
+pub mod terminal;
 pub mod testparse;
 pub mod title;
 
@@ -622,6 +623,13 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
     let id = id.to_string();
     let ws = st.db().workspace(&id).map_err(e)?;
     let path = Path::new(&ws.path);
+    // History points at your main checkout: archiving only hides its chats, the folder stays as it is.
+    let main_checkout = ws.imported_from.as_deref() == Some(terminal::FROM_HISTORY)
+        || st.db().repo(&ws.repo_id).is_ok_and(|r| Path::new(&r.root_path) == path);
+    if main_checkout {
+        st.ptys.close(&format!("{id}:term"));
+        return st.db().set_workspace_state(&id, "archived").map_err(e);
+    }
     if path.exists() {
         if !force && git::is_dirty(path).unwrap_or(false) {
             return Err("DIRTY".into());
@@ -655,7 +663,11 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
 async fn restore_workspace(st: State<'_, AppState>, id: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     let repo = st.db().repo(&ws.repo_id).map_err(e)?;
-    if !Path::new(&ws.path).exists() {
+    if ws.imported_from.as_deref() == Some(terminal::FROM_HISTORY) {
+        if !Path::new(&ws.path).exists() {
+            return Err("This repo's folder is gone, so its history can't open. Its chats are still searchable.".into());
+        }
+    } else if !Path::new(&ws.path).exists() {
         git::restore_worktree(Path::new(&repo.root_path), Path::new(&ws.path), &ws.branch).map_err(e)?;
     }
     st.db().set_workspace_state(&id, "active").map_err(e)
@@ -712,6 +724,7 @@ async fn set_workspace_status(st: State<'_, AppState>, id: String, status: Strin
 async fn rename_branch(st: State<'_, AppState>, id: String, branch: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     review::refuse_in_review(ws.review_pr)?;
+    terminal::refuse_in_history(&ws)?;
     let dir = Path::new(&ws.path);
     let branch = branch.trim().to_string();
     if branch.is_empty() || branch == ws.branch {
@@ -846,6 +859,7 @@ async fn read_file(st: State<'_, AppState>, id: String, path: String) -> Res<Str
 #[tauri::command]
 async fn write_file(st: State<'_, AppState>, id: String, path: String, content: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
+    terminal::refuse_in_history(&ws)?;
     std::fs::write(inside(&ws, &path)?, content).map_err(e)
 }
 
@@ -935,6 +949,7 @@ async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, igno
 async fn discard_file(app: AppHandle, id: String, path: String) -> Res<String> {
     blocking(app, move |st| {
         let ws = st.db().workspace(&id).map_err(e)?;
+        terminal::refuse_in_history(&ws)?;
         let root = Path::new(&ws.path);
         // A file that still exists must resolve inside the workspace (no symlink out of it). A
         // deleted one only needs a plain relative path: git itself refuses paths through links.
@@ -1266,7 +1281,8 @@ fn pr_targets(st: &AppState, wss: &[Workspace]) -> Vec<PrTarget> {
             }
             let mut branches: Vec<String> = vec![];
             // A review workspace's branch is local (review/pr-N): its PR comes from the review requests.
-            for w in mine.iter().filter(|w| w.review_pr == 0) {
+            // History's branch is whatever your main checkout has out; it is not a task with a PR.
+            for w in mine.iter().filter(|w| w.review_pr == 0 && w.imported_from.as_deref() != Some(terminal::FROM_HISTORY)) {
                 if !branches.contains(&w.branch) { branches.push(w.branch.clone()); }
             }
             Some(PrTarget {
@@ -1602,6 +1618,7 @@ async fn restack_workspace(app: AppHandle, id: String) -> Res<Value> {
     blocking(app, move |st| {
         let ws = st.db().workspace(&id).map_err(e)?;
         review::refuse_in_review(ws.review_pr)?;
+        terminal::refuse_in_history(&ws)?;
         if ws.parent_id.is_empty() {
             return Err("This workspace isn't stacked on another one.".into());
         }
@@ -1678,6 +1695,7 @@ async fn repo_issues(st: State<'_, AppState>, id: String) -> Res<Value> {
 /// Start a new chat in a workspace with a chosen agent and mode, send it a prompt, and show it.
 #[tauri::command]
 async fn start_chat(app: AppHandle, st: State<'_, AppState>, id: String, agent: String, mode: String, title: String, text: String) -> Res<String> {
+    terminal::refuse_in_history(&st.db().workspace(&id).map_err(e)?)?;
     let s = Session {
         id: new_id(), workspace_id: id.clone(), agent: agent::get(&agent).id().into(),
         agent_session_id: None, title, model: None, permission_mode: mode, effort: None,
@@ -1778,7 +1796,8 @@ fn tree_usage(root: u32, rows: &[(u32, u32, u64, String)]) -> Value {
 async fn imported_outside(st: State<'_, AppState>) -> Res<Vec<String>> {
     let root = st.home.join("workspaces");
     Ok(st.db().workspaces(false).map_err(e)?.into_iter()
-        .filter(|w| w.imported_from.is_some() && !Path::new(&w.path).starts_with(&root) && Path::new(&w.path).exists())
+        // Only Conductor's: a folder imported from your terminal is yours and stays where it is.
+        .filter(|w| w.imported_from.as_deref() == Some("conductor") && !Path::new(&w.path).starts_with(&root) && Path::new(&w.path).exists())
         .map(|w| w.id).collect())
 }
 
@@ -2119,6 +2138,7 @@ async fn clean_workspace(app: AppHandle, id: String) -> Res<u64> {
             return Err("An agent is working in this workspace. Clean it when it's done.".to_string());
         }
         let ws = st.db().workspace(&id).map_err(e)?;
+        terminal::refuse_in_history(&ws)?;
         Ok(git::clean(Path::new(&ws.path)))
     })
     .await
@@ -2166,7 +2186,9 @@ async fn set_autopilot(app: AppHandle, st: State<'_, AppState>, id: String, on: 
     let key = autopilot_key(&id);
     if on {
         // Autopilot fixes CI and merges: nothing it may do on someone else's PR.
-        review::refuse_in_review(st.db().workspace(&id).map_err(e)?.review_pr)?;
+        let ws = st.db().workspace(&id).map_err(e)?;
+        review::refuse_in_review(ws.review_pr)?;
+        terminal::refuse_in_history(&ws)?;
         st.db().set_setting(&key, &json!({"tries": 0, "last": ""}).to_string()).map_err(e)?;
         // The poller looks right away (and every 20 s from now on) and runs autopilot after.
         pr_poke_workspace(&st, &id, true);
@@ -2259,6 +2281,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
 async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     review::refuse_in_review(ws.review_pr)?;
+    terminal::refuse_in_history(&ws)?;
     mark_changed(&st, &ws.id);
     let dir = Path::new(&ws.path);
     let msg = if message.trim().is_empty() {
@@ -2282,6 +2305,7 @@ async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     // A review stays on the PR's own code: merging the base in would change what is reviewed.
     review::refuse_in_review(ws.review_pr)?;
+    terminal::refuse_in_history(&ws)?;
     mark_changed(&st, &ws.id);
     let dir = Path::new(&ws.path);
     git::merge_target(dir, &ws.target_branch).map(str::to_string).map_err(e)
@@ -2292,6 +2316,7 @@ async fn pull_target(st: State<'_, AppState>, id: String) -> Res<String> {
 async fn merge_pr(st: State<'_, AppState>, id: String, auto: Option<bool>) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
     review::refuse_in_review(ws.review_pr)?;
+    terminal::refuse_in_history(&ws)?;
     let method = st.db().repo(&ws.repo_id).map(|r| r.prefs.merge_method).unwrap_or_default();
     let flag = match method.as_str() { "merge" => "--merge", "rebase" => "--rebase", _ => "--squash" };
     if auto.unwrap_or(false) {
@@ -2347,6 +2372,7 @@ fn failing_logs_blocking(st: &AppState, id: &str) -> Res<String> {
 /// Send a prompt to a workspace's most recent chat (making one if needed) and say which chat.
 #[tauri::command]
 async fn send_to_workspace(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<String> {
+    terminal::refuse_in_history(&st.db().workspace(&id).map_err(e)?)?;
     let sid = match st.db().sessions(&id).map_err(e)?.pop() {
         Some(s) => s.id,
         None => {
@@ -2367,6 +2393,7 @@ async fn send_to_workspace(app: AppHandle, st: State<'_, AppState>, id: String, 
 async fn create_pr(st: State<'_, AppState>, id: String, title: String, body: String, draft: bool) -> Res<String> {
     let ws = st.db().workspace(&id).map_err(e)?;
     review::refuse_in_review(ws.review_pr)?;
+    terminal::refuse_in_history(&ws)?;
     git::git(Path::new(&ws.path), &["push", "-u", "origin", &ws.branch]).map_err(e)?;
     let mut args = vec!["pr", "create", "--head", &ws.branch, "--base", &ws.target_branch, "--title", &title, "--body", &body];
     if draft {
@@ -2442,6 +2469,7 @@ async fn sessions(st: State<'_, AppState>, workspace_id: String) -> Res<Vec<Sess
 #[tauri::command]
 async fn new_session(st: State<'_, AppState>, workspace_id: String, agent: String) -> Res<Session> {
     let agent = agent::get(&agent).id();
+    terminal::refuse_in_history(&st.db().workspace(&workspace_id).map_err(e)?)?;
     let pref = |k: &str| st.db().setting(&format!("{agent}_{k}")).ok().flatten().filter(|v| !v.is_empty());
     let reviewing = st.db().workspace(&workspace_id).map(|w| w.review_pr > 0).unwrap_or(false);
     let s = Session {
@@ -2592,7 +2620,9 @@ async fn remove_queued(app: AppHandle, st: State<'_, AppState>, id: String, inde
 async fn fork_session(st: State<'_, AppState>, id: String) -> Res<Session> {
     let (src, events) = {
         let db = st.db();
-        (db.session(&id).map_err(e)?, db.events(&id).map_err(e)?)
+        let src = db.session(&id).map_err(e)?;
+        terminal::refuse_in_history(&db.workspace(&src.workspace_id).map_err(e)?)?;
+        (src, db.events(&id).map_err(e)?)
     };
     let s = Session {
         id: new_id(),
@@ -2660,6 +2690,7 @@ fn idle_workspace(st: &AppState, session_id: &str, checkpoint: &str, claim: bool
         let s = db.session(session_id).map_err(e)?;
         db.workspace(&s.workspace_id).map_err(e)?
     };
+    terminal::refuse_in_history(&ws)?;
     if !Path::new(&ws.path).exists() {
         return Err("This workspace is archived. Restore it first.".into());
     }
@@ -2895,6 +2926,8 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
         let ws = db.workspace(&s.workspace_id).map_err(e)?;
+        // An agent turn in History would edit your main checkout.
+        terminal::refuse_in_history(&ws)?;
         let repo = db.repo(&ws.repo_id).map_err(e)?;
         if s.title == "New chat" {
             let t: String = text.lines().next().unwrap_or("").chars().take(48).collect();
@@ -3625,6 +3658,34 @@ async fn import_conductor(st: State<'_, AppState>) -> Res<importer::Report> {
     importer::import(&st.db(), &db).map_err(e)
 }
 
+/// Sessions you ran in a terminal (Claude Code, Codex, Gemini), grouped by repo and folder, with
+/// what is already here marked. Only reads the CLIs' folders.
+#[tauri::command]
+async fn terminal_scan(app: AppHandle) -> Res<terminal::Preview> {
+    blocking(app, |st| {
+        let roots = terminal::Roots::from_env();
+        let scan = terminal::scan(&roots);
+        let preview = terminal::preview(&st.db(), &scan, &roots).map_err(e)?;
+        *terminal::LAST.lock().unwrap() = Some(scan);
+        Ok(preview)
+    })
+    .await
+}
+
+/// Import the sessions you picked in the preview. Adding the same ones again adds nothing.
+#[tauri::command]
+async fn terminal_import(app: AppHandle, picks: Vec<terminal::Pick>) -> Res<terminal::Report> {
+    let events = app.clone();
+    let report = blocking(app, move |st| {
+        let last = terminal::LAST.lock().unwrap().clone();
+        let scan = last.unwrap_or_else(|| terminal::scan(&terminal::Roots::from_env()));
+        terminal::import(|| st.db(), &scan, &picks).map_err(e)
+    })
+    .await?;
+    let _ = events.emit("workspaces-changed", json!({}));
+    Ok(report)
+}
+
 // ---------- the nekotrail command and links ----------
 
 /// What the `nekotrail` command and links queued for the window (see `remote::Job`).
@@ -3728,7 +3789,7 @@ pub fn run() {
             remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
-            pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
+            pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
             github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
             remote_take, link_confirm, cli_install, cli_status,
             checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output
@@ -4063,6 +4124,38 @@ mod tests {
         let local = wss.iter().find(|w| w.id == "local").unwrap();
         st.prs.lock().unwrap().sched.record("r2", std::time::Instant::now(), false, Err(prpoll::Problem::NotGithub));
         assert_eq!(pr_view(&st.prs.lock().unwrap(), local), Some(json!({"workspace_id": "local", "problem": {"code": "not_github", "message": "This repo has no GitHub remote"}})));
+    }
+
+    #[test]
+    fn history_workspace_never_touches_the_main_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = AppState {
+            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
+        };
+        let root = dir.path().join("app");
+        std::fs::create_dir_all(&root).unwrap();
+        git::git(&root, &["init", "-q", "-b", "main"]).unwrap();
+        std::fs::write(root.join("a.txt"), "mine, uncommitted\n").unwrap();
+        let repo = Repo {
+            id: "r1".into(), name: "app".into(), root_path: root.to_string_lossy().into(), default_branch: "main".into(),
+            remote_url: Some("git@github.com:me/app.git".into()), setup_script: None, run_script: None, archive_script: Some("rm a.txt".into()), prefs: Default::default(),
+        };
+        st.db().insert_repo(&repo).unwrap();
+        let hist = Workspace {
+            id: "h".into(), repo_id: "r1".into(), name: "history".into(), branch: "main".into(), path: root.to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: Some(terminal::FROM_HISTORY.into()), created_at: String::new(), title: "History".into(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: "user".into(), review_pr: 0,
+        };
+        st.db().insert_workspace(&hist).unwrap();
+        // Its branch is not polled as a PR head.
+        assert!(pr_targets(&st, &pr_workspaces(&st))[0].branches.is_empty());
+        // Archiving hides it and runs nothing: the folder and its uncommitted file stay.
+        archive_blocking(&st, "h", false).unwrap();
+        assert_eq!(st.db().workspace("h").unwrap().state, "archived");
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "mine, uncommitted\n");
+        assert!(terminal::refuse_in_history(&hist).unwrap_err().contains("read-only"));
     }
 
     #[test]
