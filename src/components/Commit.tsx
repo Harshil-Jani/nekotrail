@@ -16,7 +16,8 @@ async function okToStage(paths: string[]): Promise<boolean> {
   if (!paths.length) return true;
   return ask({
     title: paths.length === 1 ? "Stage a protected file?" : `Stage ${paths.length} protected files?`,
-    body: `${paths.join(", ")} ${paths.length === 1 ? "is" : "are"} protected in this repo, so agents may not change ${paths.length === 1 ? "it" : "them"}. Check the change is one you want before it goes into a commit.`,
+    body: `${paths.length === 1 ? "It's" : "They're"} protected in this repo, so agents may not change ${paths.length === 1 ? "it" : "them"}. Check the change is one you want before it goes into a commit.`,
+    paths,
     ok: "Stage anyway",
   });
 }
@@ -87,7 +88,8 @@ export function CommitView({ workspaceId, refreshKey, scope }: { workspaceId: st
     if (!canCommit) return;
     if (stagedProtected.length && !(await ask({
       title: `Commit ${stagedProtected.length === 1 ? "a protected file" : `${stagedProtected.length} protected files`}?`,
-      body: `${stagedProtected.join(", ")} ${stagedProtected.length === 1 ? "is" : "are"} protected in this repo.`,
+      body: `${stagedProtected.length === 1 ? "It's" : "They're"} protected in this repo, so agents may not change ${stagedProtected.length === 1 ? "it" : "them"}.`,
+      paths: stagedProtected,
       ok: "Commit anyway",
     }))) return;
     setBusy("commit");
@@ -240,6 +242,7 @@ export function CommitView({ workspaceId, refreshKey, scope }: { workspaceId: st
             <input type="checkbox" checked={amend} disabled={!head || !!head.block} onChange={(e) => toggleAmend(e.target.checked)} />
             Amend last commit
           </label>
+          {head?.block && <p className="commit-note muted commit-block">{head.block}</p>}
           <div className="commit-actions">
             <button className="primary" onClick={commit} disabled={!canCommit} title={keyHint(amend ? "Amend the last commit (⌘↵)" : "Commit the staged changes (⌘↵)")}>
               {busy === "commit" ? <span className="spinner" /> : <GitCommitHorizontal size={15} />}

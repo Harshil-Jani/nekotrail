@@ -1397,6 +1397,9 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .confirm-facts div { display: grid; grid-template-columns: 56px 1fr; gap: var(--s2); }
 .confirm-facts dt { color: var(--muted); }
 .confirm-facts dd { margin: 0; color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.confirm-paths { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; }
+.confirm-paths + .confirm-body { margin-top: calc(-1 * var(--s1)); }
+.confirm-paths code { font-family: var(--mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
 .confirm-quote-wrap { margin-top: var(--s3); position: relative; }
 .confirm-quote-wrap.more .confirm-quote { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
 .confirm-more { margin: 4px 0 0 !important; font-size: 11px; color: var(--accent-text); }

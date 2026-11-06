@@ -65,7 +65,7 @@ export function RulesSheet({ workspaceId, name, readOnly, initialPane = "files",
         )}
         {ask && (
           <div className="mcp-note warn rules-ask" role="alert">
-            <span>You have changes that aren't saved.</span>
+            <span>{pane === "task" ? "Your rules for this task aren't saved." : <>Your changes to <code>{editPath ?? src}</code> aren't saved.</>}</span>
             <span className="spacer" />
             <button onClick={() => setAsk(null)}>Keep editing</button>
             <button onClick={() => { const fn = ask; setAsk(null); setDirty(false); fn(); }}>Discard</button>
