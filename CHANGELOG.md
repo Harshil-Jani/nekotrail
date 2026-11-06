@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## 0.11.0 (2026-11-06)
+## 0.12.0 (2026-11-06)
 
 **OpenCode, and any ACP agent**
 - OpenCode joins Claude, Codex and Gemini. Pick it for a workspace or chat; it uses your own OpenCode setup, and setup shows its install command if it's missing.
@@ -44,6 +44,25 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Nothing running? Start the Run script from Preview in one click. It shows your app as soon as the server answers.
 - Preview only ever loads local addresses, even if you click a link inside your app.
 
+**Design ship-gate fixes**
+- Side by side in Changes wraps long lines instead of cutting off the code, so it stays readable in a 1100 px window.
+- In small windows the PR bar keeps the name in "Same files as ..." and shortens the branch first. The bar keeps its height above the "Move onto main" and merged banners.
+- Gemini's model picker lists Default once, the agent choice "Both" now reads "Claude + Codex", and "On a workspace" starts with the workspace you have open.
+- Agent defaults in Settings line up in columns, and the comment box in Changes has one focus ring instead of two.
+- The toolbar and the PR bar never clip at 120% or 150% zoom or in narrow windows: labels turn into icons first, then Open in, Run and Compare move into the ⋯ menu. The PR bar drops the branch (the toolbar shows it) before cutting it to a few letters, so "Dash builds on this" reads in full.
+- The + menu in the chat tabs shows all four agents again instead of being cut off under the tab strip.
+- OpenCode's model picker lists Default once and says the model comes from OpenCode's own config.
+- Preview in a repo without a Run script says how to set one, with a button to the repo settings, instead of offering to start a script that doesn't exist. Its buttons are plain, so the PR bar keeps the one orange button.
+- Changed files show the file name first with its folder dimmed after it, instead of cutting the path from the left.
+- When the file filter hides the open file, the first match opens; with no match the diff pane says so and offers Clear filter.
+- The rewind sheet puts "1 commit comes off the branch" on its own line.
+- Disabled orange and green buttons are a quiet grey in both appearances instead of muddy brown in dark mode.
+- Mermaid diagrams are flat (no node shadows) with larger labels, and very wide ones scroll instead of shrinking past readable.
+- At high zoom the chat box's controls wrap to a second line, so Send and Stop never go out of view, even in the smallest window at 150%.
+- The status dots in the workspace ⋯ menu are dots again, not long coloured bars.
+
+## 0.11.0 (2026-11-06)
+
 **Updates**
 - nekotrail now tells you when a new version is out: a small card with the cat, what's new, and Update or Not now. "Not now" waits a day before asking about that version again; a newer one asks right away.
 - Update downloads in the background while you keep working. If agents or terminal commands are running, it says how many and lets you restart now or once everything is idle.
@@ -61,21 +80,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Welcome puts setup first while something is missing and has one main button. The Conductor import card can be dismissed.
 - Compare agents, the board and Changes fit 1100 px windows; a closed PR counts as Done on the board.
 - Higher contrast for diff line numbers, +/- counts, shortcut hints, the merge button, warnings and orange labels (all 4.5:1 or more). The terminal background matches its frame. "New" on a model lasts 30 days.
-- Side by side in Changes wraps long lines instead of cutting off the code, so it stays readable in a 1100 px window.
-- In small windows the PR bar keeps the name in "Same files as ..." and shortens the branch first. The bar keeps its height above the "Move onto main" and merged banners.
-- Gemini's model picker lists Default once, the agent choice "Both" now reads "Claude + Codex", and "On a workspace" starts with the workspace you have open.
-- Agent defaults in Settings line up in columns, and the comment box in Changes has one focus ring instead of two.
-- The toolbar and the PR bar never clip at 120% or 150% zoom or in narrow windows: labels turn into icons first, then Open in, Run and Compare move into the ⋯ menu. The PR bar drops the branch (the toolbar shows it) before cutting it to a few letters, so "Dash builds on this" reads in full.
-- The + menu in the chat tabs shows all four agents again instead of being cut off under the tab strip.
-- OpenCode's model picker lists Default once and says the model comes from OpenCode's own config.
-- Preview in a repo without a Run script says how to set one, with a button to the repo settings, instead of offering to start a script that doesn't exist. Its buttons are plain, so the PR bar keeps the one orange button.
-- Changed files show the file name first with its folder dimmed after it, instead of cutting the path from the left.
-- When the file filter hides the open file, the first match opens; with no match the diff pane says so and offers Clear filter.
-- The rewind sheet puts "1 commit comes off the branch" on its own line.
-- Disabled orange and green buttons are a quiet grey in both appearances instead of muddy brown in dark mode.
-- Mermaid diagrams are flat (no node shadows) with larger labels, and very wide ones scroll instead of shrinking past readable.
-- At high zoom the chat box's controls wrap to a second line, so Send and Stop never go out of view, even in the smallest window at 150%.
-- The status dots in the workspace ⋯ menu are dots again, not long coloured bars.
+
 
 ## 0.10.1 (2026-11-06)
 
