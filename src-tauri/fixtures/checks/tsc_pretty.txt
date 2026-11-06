@@ -1,0 +1,8 @@
+src/x.ts:5:1 - error TS1005: ';' expected.
+
+5 foo bar
+  ~~~
+
+
+Found 1 error in src/x.ts:5
+

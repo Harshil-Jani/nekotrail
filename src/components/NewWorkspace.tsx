@@ -8,6 +8,8 @@ import { AGENTS, AGENT_INFO, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
+import { fuzzy, loadPrompts, type PromptEntry } from "../prompts";
+import { FillBar, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
 
 const MODES: { value: PermissionMode; label: string }[] = [
   { value: "plan", label: "Plan (read only)" },
@@ -122,6 +124,24 @@ export function NewWorkspace({
   const onPointerUp = () => { drag.current = null; };
 
   const repo = repos.find((r) => r.id === repoId);
+  // `/name` inserts a saved prompt (yours or this repo's), blanks first, like the chat box.
+  const area = useRef<HTMLTextAreaElement>(null);
+  const [prompts, setPrompts] = useState<PromptEntry[]>([]);
+  useEffect(() => { loadPrompts({ repo: repoId }).then((l) => setPrompts(l.filter((x) => x.scope !== "claude"))).catch(() => setPrompts([])); }, [repoId]);
+  const [slash, setSlash] = useState<{ items: SlashItem[]; sel: number } | null>(null);
+  const [blankNote, setBlankNote] = useState<string | null>(null);
+  const pf = usePromptFill(area, prompt, setPrompt);
+  const updateSlash = (text: string) => {
+    const m = /^\/(\S*)$/.exec(text);
+    if (!m) return setSlash(null);
+    const items = prompts.map((p, i) => ({ it: { cmd: `/${p.name}`, desc: p.description || p.text.split("\n")[0].slice(0, 80), prompt: p }, s: fuzzy(p.name, m[1], m[1].length >= 3 ? p.description : ""), i }))
+      .filter((x) => x.s >= 0).sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.it);
+    setSlash(items.length ? { items, sel: 0 } : null);
+  };
+  const pick = (it: SlashItem) => {
+    setSlash(null);
+    if (it.prompt) pf.start(it.prompt.segs, { base: repo?.default_branch });
+  };
   const installed = useInstalledAgents();
   const split = splitAgents(installed, agent === "both" ? null : agent);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -230,20 +250,42 @@ export function NewWorkspace({
             <datalist id="nw-branches">{(branches ?? []).map((b) => <option key={b} value={b} />)}</datalist>
           </div>
         )}
+        <div className="nw-prompt-wrap">
+        {slash && <SlashList items={slash.items} sel={slash.sel} onPick={pick} onHover={(i) => setSlash({ ...slash, sel: i })} label="Prompts" />}
+        {pf.fill && !slash && <FillBar fill={pf.fill} onGo={pf.go} />}
         <textarea
+          ref={area}
           className={`nw-prompt ${source === "pr" || source === "branch" || source === "stack" ? "short" : ""}`}
           autoFocus
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => { const v = pf.change(e.target.value); setPrompt(v); setBlankNote(null); if (!pf.fill) updateSlash(v); }}
+          onBlur={() => setSlash(null)}
           onKeyDown={(e) => {
+            if (slash) {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const d = e.key === "ArrowDown" ? 1 : -1;
+                setSlash({ ...slash, sel: (slash.sel + d + slash.items.length) % slash.items.length });
+                return;
+              }
+              if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); pick(slash.items[slash.sel]); return; }
+              if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setSlash(null); return; }
+            }
+            if (e.key === "Escape" && pf.fill) { e.stopPropagation(); }
+            if (pf.key(e)) return;
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
+              const blank = pf.missing();
+              if (blank) { setBlankNote(`Fill in "${blank}" first, or press Esc to keep the text as it is.`); return; }
+              pf.stop();
               submit();
             }
           }}
-          placeholder={source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
+          placeholder={source === "task" || source === "issue" ? `What should the agent do in ${repo?.name ?? "this repo"}? Type / for a saved prompt. Leave empty for an empty workspace.` : "Optional first task, e.g. address the review comments"}
           aria-label="What the agent should do"
         />
+        {blankNote && <p className="muted nw-note" role="status">{blankNote}</p>}
+        </div>
         <div className="nw-foot">
           <ModelPicker
             agent={agent === "both" ? "claude" : agent}

@@ -1,0 +1,23 @@
+bun test v1.3.2 (b131639c)
+
+src/agents.test.ts:
+(pass) agents > lists sixteen [0.12ms]
+
+src/names.test.ts:
+1 | import { expect, test } from "bun:test";
+2 | test("names", () => {
+3 |   expect(slug("Fix 502")).toBe("fix-502");
+                               ^
+error: expect(received).toBe(expected)
+
+Expected: "fix-502"
+Received: "fix502"
+
+      at <anonymous> (/code/nekotrail/src/names.test.ts:3:27)
+(fail) names > slugs keep digits [0.40ms]
+(pass) names > empty [0.02ms]
+
+ 2 pass
+ 1 fail
+ 3 expect() calls
+Ran 3 tests across 2 files. [41.00ms]

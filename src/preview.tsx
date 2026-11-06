@@ -1,6 +1,7 @@
 /**
  * Sample data for rendering the real UI in a plain browser (no Tauri backend).
- * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, notes; ?view=sky).
+ * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
+ * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -140,6 +141,7 @@ const events = [
   { kind: "tool_result", id: "t4", output: "ok  \tpawprint/internal/server\t0.412s", is_error: false },
   { kind: "text", text: "Review of the branch:\n- internal/server/http.go:22: 75s is right for the ALB, but the gRPC port sits behind an NLB with a 350s timeout. Fix: make it configurable.\n- internal/server/http_test.go:14: the test sleeps 61s. Fix: inject a clock.\n\nOtherwise ready to merge." },
   { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18, context_tokens: 128000, context_window: 200000 },
+  { kind: "checks", results: [{ name: "test", status: "failed", passed: 41, failed: 2, regressed: true }, { name: "lint", status: "passed", passed: null, failed: 0 , regressed: false }, { name: "typecheck", status: "passed", passed: null, failed: 0, regressed: false }] },
 ];
 // ?rewound shows the marker a rewind leaves, with its Undo.
 if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Rewound to before: The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", undo: "def456", files: 2 } as any);
@@ -254,10 +256,92 @@ if (new URLSearchParams(location.search).has("portclash")) setTimeout(() => emit
 // ?link: a nekotrail://new link waiting for "Start this task?". ?link=long has a long prompt and adds the repo.
 const linkMode = new URLSearchParams(location.search).get("link");
 let linkTaken = false;
+// The Checks tab. Mochi (w1): test fails after passing before, lint and vet pass. Comet (w2): a run going.
+// pawprint-web (w4, w5): no checks yet, so suggestions. ?checks=trust: nekotrail.json checks wait for an OK.
+const checksMode = new URLSearchParams(location.search).get("checks");
+const goChecks = [
+  { name: "test", command: "go test ./...", source: "app" },
+  { name: "lint", command: "golangci-lint run", source: "app" },
+  { name: "vet", command: "go vet ./...", source: "app" },
+];
+const checkResults = [
+  {
+    name: "test", command: "go test ./...", status: "failed", passed: 41, failed: 2, formats: ["go test"], exit_code: 1, duration_ms: 8412, finished_at: "2026-11-06T14:02:11Z", regressed: true,
+    failures: [
+      { title: "TestIdleTimeout/behind_nlb", file: "internal/server/http_test.go", line: 31, message: "IdleTimeout = 75s, want at least 350s for the NLB listener",
+        snippet: "  28 | \tt.Run(\"behind_nlb\", func(t *testing.T) {\n  29 | \t\tsrv := New(Config{Listener: NLB})\n  30 | \t\tif srv.IdleTimeout < 350*time.Second {\n> 31 | \t\t\tt.Errorf(\"IdleTimeout = %s, want at least 350s for the NLB listener\", srv.IdleTimeout)\n  32 | \t\t}\n  33 | \t})" },
+      { title: "TestSLA/friday_evening", file: "internal/tickets/sla_test.go", line: 42, message: "deadline = 2026-11-06 21:00, want 2026-11-09 12:00\nbusiness hours skipped the weekend" },
+    ],
+  },
+  { name: "lint", command: "golangci-lint run", status: "passed", passed: null, failed: 0, failures: [], formats: [], exit_code: 0, duration_ms: 3120, finished_at: "2026-11-06T14:02:14Z", regressed: false },
+  { name: "vet", command: "go vet ./...", status: "passed", passed: null, failed: 0, failures: [], formats: [], exit_code: 0, duration_ms: 1840, finished_at: "2026-11-06T14:02:16Z", regressed: false },
+];
+const checksFor = (id: string) => {
+  const base = { trust: null, suggestions: [], after_turn: true, results: [], active: false, current: null, queued: [] };
+  if (checksMode === "trust") return { ...base, checks: [], after_turn: false, trust: { fingerprint: "f", checks: [["lint", "golangci-lint run ./..."], ["test", "go test -race ./..."]] } };
+  if (checksMode === "none") return { ...base, checks: [], after_turn: false };
+  if (id === "w1") return { ...base, checks: goChecks, results: checkResults };
+  if (id === "w2") return { ...base, checks: goChecks, results: checkResults.slice(1), active: true, current: "test", queued: ["vet"] };
+  if (id === "w3") return { ...base, checks: goChecks, after_turn: false };
+  return { ...base, checks: [], after_turn: false, suggestions: [["test", "pnpm test"], ["lint", "pnpm lint"], ["typecheck", "pnpm exec tsc --noEmit"]] };
+};
+const checkOutput = "--- FAIL: TestIdleTimeout (0.00s)\n    --- FAIL: TestIdleTimeout/behind_nlb (0.00s)\n        http_test.go:31: IdleTimeout = 75s, want at least 350s for the NLB listener\nFAIL\nFAIL\tpawprint/internal/server\t0.412s\n--- FAIL: TestSLA (0.00s)\n    --- FAIL: TestSLA/friday_evening (0.00s)\n        sla_test.go:42: deadline = 2026-11-06 21:00, want 2026-11-09 12:00\n            business hours skipped the weekend\nFAIL\nFAIL\tpawprint/internal/tickets\t0.012s\nok  \tpawprint/internal/billing\t0.220s\nFAIL";
+
+// The prompt library. A small stand-in for the backend's parser (src-tauri/src/prompts.rs), enough
+// for screenshots: blanks, defaults, built-ins and \{{ escapes. ?noprompts starts with none of yours.
+const BUILTIN = ["branch", "base", "files_changed", "selection"];
+function segsOf(text: string) {
+  const out: any[] = [];
+  let buf = "";
+  for (let i = 0; i < text.length;) {
+    if (text.startsWith("\\{{", i)) { buf += "{{"; i += 3; continue; }
+    if (text.startsWith("{{", i)) {
+      const end = text.indexOf("}}", i + 2);
+      const m = end > 0 ? /^\s*([\w-]+)\s*(?::(.*))?$/.exec(text.slice(i + 2, end)) : null;
+      if (m && !text.slice(i + 2, end).includes("\n")) {
+        if (buf) { out.push({ t: "text", text: buf }); buf = ""; }
+        out.push({ t: "field", name: m[1], default: m[2]?.trim() || null, builtin: BUILTIN.includes(m[1]) });
+        i = end + 2;
+        continue;
+      }
+    }
+    buf += text[i++];
+  }
+  if (buf) out.push({ t: "text", text: buf });
+  return out;
+}
+let personalPrompts: { name: string; description: string; text: string }[] | null = new URLSearchParams(location.search).has("noprompts") ? null : [
+  { name: "tests", description: "Tests for the last change", text: "Write tests for what you just changed. Cover the edge cases, run them, and fix anything that fails." },
+  { name: "fix-ticket", description: "Fix a ticket on this branch", text: "Fix {{ticket}} on {{branch}}. Keep the change small, add a test that fails before the fix, and target {{env:staging}} first." },
+  { name: "explain", description: "Explain the selected code", text: "Explain this code from the diff, and what could break if we change it:\n\n{{selection}}" },
+  { name: "release", description: "My release checklist", text: "Bump the version and write the changelog." },
+];
+const repoPrompts = [
+  { name: "release", description: "Cut a release the team's way", text: "Bump the version in {{file:package.json}}, update CHANGELOG.md for {{version}}, and open the release PR against {{base}}.", source: ".nekotrail/prompts/release.md" },
+  { name: "migration", description: "Write a safe database migration", text: "Write a migration for {{change}}. It must be reversible and safe to run while the old code is still serving traffic.", source: "nekotrail.json" },
+];
+const claudeCommands = [
+  { name: "ship", description: "Run tests, bump the version and open the release PR", text: "Run the tests, bump the version and open the release PR for $ARGUMENTS", source: "~/.claude/commands/ship.md" },
+  { name: "triage", description: "Label and prioritise new issues", text: "Label and prioritise the new issues.", source: ".claude/commands/triage.md" },
+  { name: "tests", description: "Claude's own tests command", text: "Write tests.", source: "~/.claude/commands/tests.md" },
+];
+function promptEntries() {
+  const all: any[] = [];
+  const tiers: [string, any[]][] = [["repo", repoPrompts], ["personal", (personalPrompts ?? []).map((x) => ({ ...x, source: "" }))], ["claude", claudeCommands]];
+  for (const [scope, list] of tiers) for (const x of list) {
+    const top = all.find((e) => e.name === x.name && !e.hidden_by);
+    all.push({ ...x, segs: scope === "claude" ? [{ t: "text", text: x.text }] : segsOf(x.text), scope, read_only: scope !== "personal", hidden_by: top ? top.scope : null });
+  }
+  return all.sort((a, b) => a.name.localeCompare(b.name) || Number(!!a.hidden_by) - Number(!!b.hidden_by));
+}
 
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
+      case "checks_list": return checksFor(args.id);
+      case "checks_statuses": return { w1: "failed", w2: "running", w3: "passed" };
+      case "checks_output": return args.name === "test" ? checkOutput : "";
+      case "checks_run": case "checks_stop": case "checks_trust": return null;
       case "snapshot": if (location.search.includes("fresh")) return { repos: [], workspaces: [], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
         return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
@@ -376,7 +460,12 @@ mockIPC(
       // ?dirty: archiving asks first, as if the workspace had uncommitted changes.
       case "archive_workspace": if (location.search.includes("dirty") && !args.force) throw "DIRTY"; return null;
       case "skill_share": return "~/.agents/skills/triage";
-      case "slash_commands": return [["ship", "Run tests, bump the version and open the release PR"], ["triage", "Label and prioritise new issues"]];
+      case "prompts_list": return { entries: promptEntries(), saved: personalPrompts !== null };
+      case "prompts_save": personalPrompts = args.list; return null;
+      case "prompts_duplicate": { const name = `${args.name}-copy`; const e = promptEntries().find((x) => x.name === args.name && x.scope === args.scope); personalPrompts = [...(personalPrompts ?? []), { name, description: e.description, text: e.text.replace("$ARGUMENTS", "{{arguments}}") }]; return name; }
+      case "prompts_export": return (personalPrompts ?? []).length;
+      case "prompts_import": return { added: [], renamed: [], skipped: [] };
+      case "prompt_context": return { branch: "harshil/fix-502-gateway", base: "main", files_changed: "internal/server/http.go\ninternal/server/http_test.go" };
       case "sections": return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
       case "imported_outside": return location.search.includes("moveimport") ? ["w1", "w2", "w3"] : [];

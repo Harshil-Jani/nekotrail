@@ -88,7 +88,12 @@ export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => voi
                 </div>
               ))}
               <button className="quiet add-env" onClick={() => setP({ ...p, actions: [...(p.actions ?? []), ["", ""]] })}><Plus size={14} />Add action</button>
+              <small className="muted">Actions named test, lint, typecheck or similar also show up in the Checks tab ({keyHint("⌘5")}), which reads their results.</small>
             </div>
+            <label className="setting">
+              <span>Run checks after every agent turn</span>
+              <input type="checkbox" className="switch" checked={!!p.checks_after_turn} onChange={(e) => setP({ ...p, checks_after_turn: e.target.checked })} />
+            </label>
           </>
         )}
 

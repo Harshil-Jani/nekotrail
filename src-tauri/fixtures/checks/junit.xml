@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="tests" tests="4" failures="1" errors="1">
+  <testsuite name="src/pricing/annual.test.ts" tests="3" failures="1" skipped="1">
+    <testcase classname="src/pricing/annual.test.ts" name="pricing &gt; shows the yearly price" file="src/pricing/annual.test.ts" line="14">
+      <failure message="expected '$120/yr' to be '$96/yr'" type="AssertionError">AssertionError: expected '$120/yr' to be '$96/yr' &amp; more
+ ❯ src/pricing/annual.test.ts:14:31</failure>
+    </testcase>
+    <testcase classname="src/pricing/annual.test.ts" name="pricing &gt; monthly"/>
+    <testcase classname="src/pricing/annual.test.ts" name="pricing &gt; later"><skipped/></testcase>
+  </testsuite>
+  <testsuite name="tests.test_billing">
+    <testcase classname="tests.test_billing.TestRetry" name="test_gives_up" time="0.01">
+      <error message="ZeroDivisionError: division by zero"><![CDATA[tests/test_billing.py:30: in test_gives_up
+    1/0
+E   ZeroDivisionError: division by zero]]></error>
+    </testcase>
+  </testsuite>
+</testsuites>

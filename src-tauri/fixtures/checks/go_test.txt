@@ -1,0 +1,14 @@
+--- FAIL: TestSLA (0.00s)
+    --- FAIL: TestSLA/friday_evening (0.00s)
+        sla_test.go:42: deadline = 2026-11-06 21:00, want 2026-11-09 12:00
+    --- PASS: TestSLA/monday (0.00s)
+--- FAIL: TestHolidays (0.00s)
+    holidays_test.go:18: holiday list is empty
+        expected 3 entries
+FAIL
+FAIL	pawprint/internal/tickets	0.012s
+ok  	pawprint/internal/server	0.410s
+# pawprint/internal/billing
+internal/billing/retry.go:27:9: undefined: backoff
+FAIL	pawprint/internal/billing [build failed]
+FAIL

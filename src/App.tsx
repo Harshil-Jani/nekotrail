@@ -3,8 +3,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network } from "lucide-react";
-import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText } from "lucide-react";
+import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
@@ -25,7 +25,8 @@ import { Board } from "./components/Board";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
-import { Settings } from "./components/Settings";
+import { Settings, type Pane as SettingsPane } from "./components/Settings";
+import { loadPrompts, type PromptEntry } from "./prompts";
 import { TrustSheet } from "./components/TrustSheet";
 import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
@@ -37,6 +38,7 @@ import { IS_MAC, isOpenIn, isWorkspaceDigit, keyHint, mod } from "./platform";
 import { AGENTS, agentName } from "./agents";
 // Loaded the first time someone opens the Preview tab, so it costs nothing at startup.
 const Preview = lazy(() => import("./components/Preview").then((m) => ({ default: m.Preview })));
+const Checks = lazy(() => import("./components/Checks").then((m) => ({ default: m.Checks })));
 import { UserAttentionType } from "@tauri-apps/api/window";
 
 const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
@@ -64,13 +66,14 @@ function chatLine(w: Workspace | undefined, chat?: string): string {
 }
 import "./App.css";
 
-type Tab = "chat" | "changes" | "terminal" | "preview" | "notes";
-const TAB_KEYS: Record<Tab, string> = { chat: keyHint("⌘1"), changes: keyHint("⌘2"), terminal: keyHint("⌘3"), preview: keyHint("⌘4"), notes: "" };
+type Tab = "chat" | "changes" | "terminal" | "preview" | "checks" | "notes";
+const TAB_KEYS: Record<Tab, string> = { chat: keyHint("⌘1"), changes: keyHint("⌘2"), terminal: keyHint("⌘3"), preview: keyHint("⌘4"), checks: keyHint("⌘5"), notes: "" };
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "changes", label: "Changes" },
   { id: "terminal", label: "Terminal" },
   { id: "preview", label: "Preview" },
+  { id: "checks", label: "Checks" },
   { id: "notes", label: "Notes" },
 ];
 
@@ -182,6 +185,7 @@ export default function App() {
     else if (a === "diff") setTab("changes");
     else if (a === "terminal") setTab("terminal");
     else if (a === "preview") setTab("preview");
+    else if (a === "checks") setTab("checks");
   };
   useEffect(() => {
     const on = (e: Event) => actionRef.current((e as CustomEvent<string>).detail);
@@ -318,6 +322,14 @@ export default function App() {
   const [groupBy, setGroupBy] = useState<"repo" | "status">(() => getSettings().groupBy);
   // Every workspace's PR, pushed by the one poller in the backend (`pr` events). Nothing here polls GitHub.
   const [prs, setPrs] = useState<Record<string, PrView>>({});
+  // Each workspace's checks dot (sidebar and the Checks tab), kept current by `checks` events.
+  const [checkDots, setCheckDots] = useState<Record<string, CheckDot>>({});
+  useEffect(() => {
+    const load = () => api.checksStatuses().then((d) => setCheckDots(d ?? {})).catch(() => {});
+    load();
+    const un = listen("checks", load);
+    return () => { un.then((f) => f()); };
+  }, []);
   const [lines, setLines] = useState<Record<string, [number, number]>>({});
   const [openTargets, setOpenTargets] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.openInTargets().then(setOpenTargets).catch(() => {}); }, []);
@@ -390,6 +402,9 @@ export default function App() {
   const [comparing, setComparing] = useState<string | null>(params.get("compare")); // pair id
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
+  const [settingsPane, setSettingsPane] = useState<SettingsPane | undefined>(undefined);
+  // Prompts for ⌘K, loaded when it opens so repo prompts are current.
+  const [palettePrompts, setPalettePrompts] = useState<PromptEntry[]>([]);
   const updater = useUpdater();
 
   const refresh = useCallback(async () => {
@@ -476,7 +491,10 @@ export default function App() {
       refresh();
       if (prefs.needsSound) ting();
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
-      if (prefs.needsNotify && away) notify(`${name} wants your OK`, payload.title || "Open nekotrail to allow or deny.");
+      if (payload.needs === "checks") {
+        // A check that passed before fails after the agent's turn.
+        if (prefs.needsNotify) notify(`${name}: a check fails now`, payload.title || "Open the Checks tab to see what broke.");
+      } else if (prefs.needsNotify && away) notify(`${name} wants your OK`, payload.title || "Open nekotrail to allow or deny.");
       if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
         try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
       }
@@ -1005,6 +1023,8 @@ export default function App() {
         { id: "tab-term", group: here, label: "Show terminal", hint: keyHint("⌘3"), icon: <SquareTerminal size={15} />, run: () => setTab("terminal") },
         { id: "ports", group: here, label: "Show ports", keywords: "port localhost listening free kill server clash", icon: <Network size={15} />, run: () => setPortsOpen(true) },
         { id: "tab-preview", group: here, label: "Show preview", hint: keyHint("⌘4"), keywords: "browser localhost app web annotate screenshot", icon: <AppWindow size={15} />, run: () => setTab("preview") },
+        { id: "tab-checks", group: here, label: "Show checks", hint: keyHint("⌘5"), keywords: "tests lint typecheck tsc failing ci", icon: <ListChecks size={15} />, run: () => setTab("checks") },
+        { id: "run-checks", group: here, label: "Run checks", keywords: "tests lint typecheck", icon: <ListChecks size={15} />, run: () => { setTab("checks"); api.checksRun(ws.id).catch((e) => say(errText(e), true)); } },
         { id: "tab-notes", group: here, label: "Show notes", icon: <NotebookPen size={15} />, run: () => setTab("notes") },
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: () => runScript() },
@@ -1015,6 +1035,15 @@ export default function App() {
         { id: "pin", group: here, label: ws.pinned ? "Unpin workspace" : "Pin workspace to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
         { id: "archive", group: here, label: "Archive workspace", hint: keyHint("⌘⇧A"), keywords: "close done remove", icon: <Archive size={15} />, run: () => archive() },
       );
+      // Saved prompts go into this workspace's chat box, blanks first. Claude Code's own commands
+      // stay in the / menu of Claude chats.
+      for (const p of palettePrompts.filter((x) => x.scope !== "claude")) {
+        c.push({
+          id: `prompt-${p.name}`, group: "Prompts", label: `Insert /${p.name}`, hint: p.description || (p.scope === "repo" ? "Repo prompt" : undefined),
+          keywords: `prompt snippet template ${p.text.slice(0, 120)}`, icon: <BookText size={15} />,
+          run: () => { setTab("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("nekotrail-insert-prompt", { detail: p.name }))); },
+        });
+      }
     }
     c.push(
       { id: "new", group: "Create", label: "Create workspace", hint: keyHint("⌘N"), keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
@@ -1055,7 +1084,8 @@ export default function App() {
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
-      { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
+      { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => { setSettingsPane(undefined); setSettingsOpen(true); } },
+      { id: "prompts", group: "App", label: "Manage prompts", keywords: "prompt library snippets saved templates import export", icon: <BookText size={15} />, run: () => { setSettingsPane("prompts"); setSettingsOpen(true); } },
 
     );
     for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
@@ -1097,7 +1127,7 @@ export default function App() {
       });
       if (e.altKey && e.code === "KeyA") return go(addRepo);
       if (!ws) return;
-      if (/^[1-4]$/.test(e.key) && !e.altKey && !e.shiftKey && ws.state === "active") return go(() => setTab((["chat", "changes", "terminal", "preview"] as const)[Number(e.key) - 1]));
+      if (/^[1-5]$/.test(e.key) && !e.altKey && !e.shiftKey && ws.state === "active") return go(() => setTab((["chat", "changes", "terminal", "preview", "checks"] as const)[Number(e.key) - 1]));
       if (k === "j" && !e.shiftKey) return go(() => setTab((t) => (t === "terminal" ? "chat" : "terminal")));
       if (k === "d" && e.shiftKey) return go(() => setTab("changes"));
       if (e.altKey && !e.shiftKey && e.code === "KeyP") return go(() => setTab((t) => (t === "preview" ? "chat" : "preview")));
@@ -1114,6 +1144,10 @@ export default function App() {
   }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls, runningSessions, tab]);
 
   const settingsRepo = repos.find((r) => r.id === settingsFor);
+  useEffect(() => {
+    if (!palette || !ws || ws.state !== "active") return setPalettePrompts([]);
+    loadPrompts({ id: ws.id }).then(setPalettePrompts).catch(() => setPalettePrompts([]));
+  }, [palette, ws?.id]);
 
   return (
     <div className={`app ${resizing ? "resizing" : ""} ${sidebarHidden ? "no-sidebar" : ""}`}>
@@ -1140,6 +1174,7 @@ export default function App() {
         onGroupBy={(g) => { setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); }}
         prStates={prStates}
         lines={lines}
+        checks={checkDots}
         collisions={collisions}
         usage={usage}
         sections={sections}
@@ -1228,6 +1263,9 @@ export default function App() {
                   {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
                     <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
                       {t.label}
+                      {t.id === "checks" && checkDots[ws.id] && checkDots[ws.id] !== "passed" && (
+                        <span className={`ws-check ck-${checkDots[ws.id]}`} role="img" aria-label={checkDots[ws.id] === "failed" ? "failing" : "running"} />
+                      )}
                     </button>
                   ))}
                 </nav>
@@ -1401,6 +1439,22 @@ export default function App() {
                       </Suspense>
                     )}
                   </div>
+                  <div className="pane" hidden={tab !== "checks"}>
+                    {tab === "checks" && (
+                      <Suspense fallback={null}>
+                        <Checks
+                          key={ws.id}
+                          workspaceId={ws.id}
+                          repo={repo ?? undefined}
+                          active={tab === "checks"}
+                          onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
+                          onRepoSettings={() => setSettingsFor(ws.repo_id)}
+                          onRepoChanged={refresh}
+                          onSay={say}
+                        />
+                      </Suspense>
+                    )}
+                  </div>
                   <div className="pane" hidden={tab !== "notes"}>
                     <textarea
                       className="notes"
@@ -1448,7 +1502,8 @@ export default function App() {
           onClose={() => setQuickOpen(null)}
         />
       )}
-      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)} />}
+      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => { setSettingsOpen(false); setSettingsPane(undefined); }} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)}
+        workspaceId={ws && ws.state === "active" ? ws.id : undefined} repoName={repos.find((r) => r.id === ws?.repo_id)?.name} initialPane={settingsPane} />}
       <ConfirmHost />
       {updater.open && updater.phase && (
         <UpdateSheet

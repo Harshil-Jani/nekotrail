@@ -16,7 +16,7 @@ export type Settings = {
   needsSound: boolean;
   needsNotify: boolean;
   needsBounce: boolean;
-  /** Saved prompts you insert with /name in the chat box. */
+  /** The old saved prompts. Moved into the prompt library (Settings, Prompts) the first time it loads. */
   snippets: { name: string; text: string }[];
   /** Repo ids to show in the sidebar; empty shows every repo. */
   repoFilter: string[];

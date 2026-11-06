@@ -1,8 +1,9 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
+import { turnLine } from "../checks";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
@@ -14,6 +15,8 @@ import { AGENT_INFO, agentName, otherAgent, splitAgents } from "../agents";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
+import { fuzzy, getChangesSelection, loadPrompts, type Builtins, type PromptEntry } from "../prompts";
+import { FillBar, SavePromptSheet, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
 export function matchFiles(files: string[], q: string, max = 8): string[] {
@@ -78,7 +81,8 @@ type Row =
   | { type: "done"; ev: Extract<ChatEvent, { kind: "done" }> }
   | { type: "approval"; request_id: string; tool: string; input: string; description?: string; can_always: boolean; answer?: "allow" | "always" | "deny" }
   | { type: "blocked"; text: string; files: string[] }
-  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] };
+  | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] }
+  | { type: "checks"; results: Extract<ChatEvent, { kind: "checks" }>["results"] };
 
 /**
  * Pair each tool call with its result so one row shows both. With `rowOf`, also note for each event
@@ -130,6 +134,9 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
         guardIdx.set(ev.checkpoint ?? "", rows.length);
         rows.push({ type: "guard", files: ev.files, checkpoint: ev.checkpoint, ignored: ev.ignored, level: ev.level });
         break;
+      case "checks":
+        rows.push({ type: "checks", results: ev.results });
+        break;
       case "guard_restored": {
         const i = guardIdx.get(ev.checkpoint);
         if (i !== undefined) {
@@ -176,6 +183,8 @@ type ChatCtxValue = {
   addFindings: (f: Finding[]) => void;
   /** Put back the protected files a turn changed, after the confirm sheet. */
   putBack: (checkpoint: string, ignored: string | null, files: GuardHit[]) => Promise<void>;
+  /** Open the save sheet with a past message's text. */
+  savePrompt: (text: string) => void;
 };
 
 export type Finding = { file: string; line: number; text: string };
@@ -188,7 +197,7 @@ export function parseFindings(text: string): Finding[] {
   }
   return out;
 }
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {} });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", switchAgent: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {}, savePrompt: () => {} });
 
 const CHANGE: Record<GuardHit["change"], string> = { added: "new", changed: "changed", deleted: "deleted" };
 
@@ -377,6 +386,23 @@ function RewindButton({ checkpoint, prompt, label = "Rewind to here" }: { checkp
   );
 }
 
+/** "⋯" under your own message: save it as a prompt, or copy it. */
+function MessageMenu({ text }: { text: string }) {
+  const { savePrompt } = useContext(RewindCtx);
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="msg-menu">
+      <button className="rewind" aria-label="More for this message" title="More" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} onBlur={() => setOpen(false)}><Ellipsis size={13} /></button>
+      {open && (
+        <span className="menu msg-menu-list" role="menu">
+          <button role="menuitem" onMouseDown={(e) => { e.preventDefault(); setOpen(false); savePrompt(text); }}><BookmarkPlus size={13} />Save as prompt…</button>
+          <button role="menuitem" onMouseDown={(e) => { e.preventDefault(); setOpen(false); navigator.clipboard.writeText(text).catch(() => {}); }}><Copy size={13} />Copy text</button>
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** One chat row. Memoized: a new message renders only the new row, not the whole history. */
 const RowView = memo(function RowView({ r, pendingSpin, latestPlan }: { r: Row; pendingSpin: boolean; latestPlan: boolean }) {
   const { expandAll, query } = useContext(RewindCtx);
@@ -397,7 +423,10 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       return (
         <div className="msg-user-wrap">
           <div className="msg user">{r.text}</div>
-          {r.checkpoint && <RewindButton checkpoint={r.checkpoint} prompt={r.text} />}
+          <span className="msg-user-actions">
+            {r.checkpoint && <RewindButton checkpoint={r.checkpoint} prompt={r.text} />}
+            <MessageMenu text={r.text} />
+          </span>
         </div>
       );
     case "note":
@@ -412,6 +441,19 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       );
     case "guard":
       return <GuardCard r={r} />;
+    case "checks": {
+      // The turn summary for "Run checks after every agent turn".
+      const bad = r.results.some((x) => x.status !== "passed");
+      const back = r.results.filter((x) => x.regressed).map((x) => x.name);
+      return (
+        <div className="msg done checks-note">
+          {bad ? <CircleX size={14} className="bad" /> : <ListChecks size={14} className="ok" />}
+          <span>Checks: {turnLine(r.results)}</span>
+          {back.length > 0 && <span className="bad-text">{back.join(" and ")} passed before and {back.length === 1 ? "fails" : "fail"} now.</span>}
+          {bad && <button className="link" onClick={() => window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: "checks" }))}>Open Checks</button>}
+        </div>
+      );
+    }
     case "rewind":
       return (
         <div className="msg note rewound">
@@ -525,6 +567,7 @@ export function Chat({
   };
   const [queue, setQueue] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState<string | null>(null); // text for the "Save as prompt" sheet
   const [menu, setMenu] = useState(false);
   const [moreAgents, setMoreAgents] = useState(false);
   const installedAgents = useInstalledAgents();
@@ -628,6 +671,7 @@ export function Chat({
         .catch((e) => setError(errText(e)));
     },
     approvePlan: () => live.current.approvePlan(),
+    savePrompt: (text: string) => setSaving(text),
     putBack: async (checkpoint: string, ignored: string | null, files: GuardHit[]) => {
       const { active } = live.current;
       if (!active) return;
@@ -906,9 +950,9 @@ export function Chat({
   const runSlash = async (text: string): Promise<boolean> => {
     const [cmd, ...rest] = text.split(/\s+/);
     const arg = rest.join(" ");
-    // Snippets expand into the chat box so you can edit before sending.
-    const sn = snippetFor(cmd);
-    if (sn) { setDraft(arg ? `${sn.text}\n\n${arg}` : sn.text); return true; }
+    // Saved prompts expand into the chat box, blanks first, so you can edit before sending.
+    const sn = promptFor(cmd);
+    if (sn) { await insertPrompt(sn, arg); return true; }
     switch (cmd) {
       case "/clear": await newChat(session?.agent ?? "claude"); return true;
       case "/plan": await update({ permission_mode: "plan" }); return true;
@@ -923,7 +967,7 @@ export function Chat({
       case "/run":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: arg ? `run:${arg}` : "run" }));
         return true;
-      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal": case "/preview":
+      case "/review": case "/second-opinion": case "/pr": case "/merge": case "/pull": case "/fix-ci": case "/diff": case "/terminal": case "/preview": case "/checks":
         window.dispatchEvent(new CustomEvent("nekotrail-action", { detail: cmd.slice(1) }));
         return true;
       case "/add-dir": {
@@ -941,6 +985,9 @@ export function Chat({
   const submit = async () => {
     const text = draft.trim();
     if (!text || !active) return;
+    const blank = pf.missing();
+    if (blank) { setNote(`Fill in "${blank}" first, or press Esc to send the text as it is.`); return; }
+    pf.stop();
     setDraft("");
     setError(null);
     setSlash(null);
@@ -1009,22 +1056,65 @@ export function Chat({
     ["/fix-ci", keyHint("Fix failing checks from their logs (⌘⇧X)")],
     ["/run", keyHint("Run or stop the app (⌘R), or /run test for a named action")], ["/diff", keyHint("Show the changes (⌘⇧D)")], ["/terminal", keyHint("Open the terminal (⌘J)")],
     ["/preview", keyHint("Show the running app (⌘4)")],
+    ["/checks", keyHint("Show tests, lint and typecheck results (⌘5)")],
     ["/fork", "Fork this chat into a new tab"], ["/clear", "Start a new chat"], ["/compact", "Summarise the chat to free up context"],
     ["/add-dir", "Give the agent another folder: /add-dir ~/code/api"],
   ];
-  const [custom, setCustom] = useState<[string, string][]>([]);
-  useEffect(() => { api.slashCommands(workspaceId).then((c) => setCustom(c.map(([n, d]) => [`/${n}`, d || "Your command"]))).catch(() => {}); }, [workspaceId]);
-  const snippets = getSettings().snippets;
-  const SNIP: [string, string][] = snippets.map((sn) => [`/${sn.name}`, `Snippet: ${sn.text.slice(0, 60)}${sn.text.length > 60 ? "…" : ""}`]);
-  const SLASH = [...BASE_SLASH, ...SNIP.filter(([c]) => !BASE_SLASH.some(([b]) => b === c)), ...custom.filter(([c]) => !BASE_SLASH.some(([b]) => b === c) && !SNIP.some(([n]) => n === c))];
-  const snippetFor = (cmd: string) => snippets.find((sn) => `/${sn.name}` === cmd);
+  // Saved prompts: yours and the repo's, plus Claude Code's own commands in a Claude chat (Claude
+  // runs those itself, so they go through as typed and are never expanded here).
+  const [prompts, setPrompts] = useState<PromptEntry[]>([]);
+  const reloadPrompts = () => { if (!readOnly) loadPrompts({ id: workspaceId }).then(setPrompts).catch(() => {}); };
+  useEffect(reloadPrompts, [workspaceId, readOnly]);
+  useEffect(() => {
+    window.addEventListener("nekotrail-prompts", reloadPrompts);
+    return () => window.removeEventListener("nekotrail-prompts", reloadPrompts);
+  }, [workspaceId, readOnly]);
+  const isBase = (c: string) => BASE_SLASH.some(([b]) => b === c);
+  const usable = prompts.filter((p) => !isBase(`/${p.name}`) && (p.scope !== "claude" || (session?.agent ?? "claude") === "claude"));
+  // Your and the repo's prompts first (what you saved is what you reach for), then Claude's commands, then the app's.
+  const SLASH: SlashItem[] = [
+    ...[...usable].sort((a, b) => Number(a.scope === "claude") - Number(b.scope === "claude"))
+      .map((p) => ({ cmd: `/${p.name}`, desc: p.description || (p.scope === "claude" ? "Claude Code command" : p.text.split("\n")[0].slice(0, 80)), prompt: p })),
+    ...BASE_SLASH.map(([cmd, desc]) => ({ cmd, desc })),
+  ];
+  const promptFor = (cmd: string) => usable.find((p) => p.scope !== "claude" && `/${p.name}` === cmd);
+  const pf = usePromptFill(input, draft, setDraft);
+  const insertPrompt = async (p: PromptEntry, after = "") => {
+    if (p.scope === "claude") { setDraft(`/${p.name} ${after}`.trimEnd() + " "); input.current?.focus(); return; }
+    const known: Builtins = {};
+    if (p.segs.some((x) => x.t === "field" && x.builtin && x.name !== "selection")) {
+      Object.assign(known, await api.promptContext(workspaceId).catch(() => ({})));
+    }
+    const sel = getChangesSelection();
+    if (sel) known.selection = sel;
+    pf.start(p.segs, known, after ? `\n\n${after}` : "");
+  };
+  const pickSlash = (it: SlashItem) => {
+    setSlash(null);
+    if (it.prompt) insertPrompt(it.prompt);
+    else { setDraft(it.cmd + " "); input.current?.focus(); }
+  };
+  // ⌘K "Insert /name" lands here.
+  const insertRef = useRef<(name: string) => void>(() => {});
+  insertRef.current = (name: string) => {
+    const p = usable.find((x) => x.name === name);
+    if (p) insertPrompt(p);
+  };
+  useEffect(() => {
+    const on = (e: Event) => insertRef.current((e as CustomEvent<string>).detail);
+    window.addEventListener("nekotrail-insert-prompt", on);
+    return () => window.removeEventListener("nekotrail-insert-prompt", on);
+  }, []);
   const [mcpOpen, setMcpOpen] = useState(() => new URLSearchParams(location.search).has("mcp"));
 
-  const [slash, setSlash] = useState<{ items: [string, string][]; sel: number } | null>(null);
+  const [slash, setSlash] = useState<{ items: SlashItem[]; sel: number } | null>(null);
   const updateSlash = (text: string) => {
     const m = /^\/(\S*)$/.exec(text);
     if (!m) return setSlash(null);
-    const items = SLASH.filter(([c]) => c.startsWith(`/${m[1]}`));
+    if (text === "/") reloadPrompts(); // repo prompts may have changed on disk
+    const q = m[1];
+    const items = SLASH.map((it, i) => ({ it, s: fuzzy(it.cmd, q, q.length >= 3 ? it.desc : ""), i }))
+      .filter((x) => x.s >= 0).sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.it);
     setSlash(items.length ? { items, sel: 0 } : null);
   };
 
@@ -1206,6 +1296,7 @@ export function Chat({
       </div>}
       {error && <div className="banner error">{error}</div>}
       {note && <div className="banner">{note}</div>}
+      {saving !== null && <SavePromptSheet text={saving} where={{ id: workspaceId }} onClose={() => setSaving(null)} onSaved={(n) => setNote(`Saved. Type /${n} to use it.`)} />}
       {mcpOpen && session && <McpSheet workspaceId={workspaceId} agent={session.agent} onClose={() => setMcpOpen(false)} />}
 
       {readOnly ? (
@@ -1213,16 +1304,8 @@ export function Chat({
       ) : (
       <div className="composer">
         <div className="composer-box">
-          {slash && (
-            <div className="mention" role="listbox" aria-label="Commands">
-              {slash.items.map(([c, d], i) => (
-                <button key={c} role="option" aria-selected={i === slash.sel} className={i === slash.sel ? "on" : ""}
-                  onMouseDown={(e) => { e.preventDefault(); setDraft(snippetFor(c)?.text ?? c + " "); setSlash(null); input.current?.focus(); }}>
-                  <b>{c}</b><span className="muted">{d}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {slash && <SlashList items={slash.items} sel={slash.sel} onPick={pickSlash} onHover={(i) => setSlash({ ...slash, sel: i })} />}
+          {pf.fill && !slash && !mention && <FillBar fill={pf.fill} onGo={pf.go} />}
           {mention && (
             <div className="mention" role="listbox" aria-label="Files">
               {mention.items.map((f, i) => {
@@ -1248,7 +1331,7 @@ export function Chat({
             value={draft}
             aria-label="Message"
             placeholder={busy ? "Agent is working. Messages you send now run next." : reviewPr ? "Ask about this PR. Type @ to mention a file." : "Ask for a change, fix or plan. Type @ to mention a file, or paste a screenshot."}
-            onChange={(e) => { setDraft(e.target.value); updateMention(e.target.value, e.target.selectionStart); updateSlash(e.target.value); }}
+            onChange={(e) => { const v = pf.change(e.target.value); setDraft(v); updateMention(v, e.target.selectionStart); if (!pf.fill) updateSlash(v); }}
             onBlur={() => { setMention(null); setSlash(null); }}
             onPaste={(e) => {
               if (e.clipboardData.files.length) {
@@ -1264,11 +1347,9 @@ export function Chat({
                   setSlash({ ...slash, sel: (slash.sel + d + slash.items.length) % slash.items.length });
                   return;
                 }
-                if (e.key === "Tab" || (e.key === "Enter" && draft.trim() !== slash.items[slash.sel][0])) {
+                if (e.key === "Tab" || (e.key === "Enter" && draft.trim() !== slash.items[slash.sel].cmd)) {
                   e.preventDefault();
-                  const pick = slash.items[slash.sel][0];
-                  setDraft(snippetFor(pick)?.text ?? pick + " ");
-                  setSlash(null);
+                  pickSlash(slash.items[slash.sel]);
                   return;
                 }
                 if (e.key === "Escape") { e.preventDefault(); setSlash(null); return; }
@@ -1291,6 +1372,7 @@ export function Chat({
                   return;
                 }
               }
+              if (pf.key(e)) return;
               const enterSends = getSettings().sendKey === "enter";
               if (e.key === "Enter" && !e.nativeEvent.isComposing && (enterSends ? !e.shiftKey && !mod(e) : e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -1322,6 +1404,7 @@ export function Chat({
                 {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>
             )}
+            <button className="icon attach" title="Save as prompt" aria-label="Save the message as a prompt" disabled={!draft.trim()} onClick={() => setSaving(draft)}><BookmarkPlus size={15} /></button>
             <label className="icon attach" title="Attach files or paste a screenshot">
               <Paperclip size={15} />
               <input type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />

@@ -1,0 +1,11 @@
+
+/code/pawprint-web/src/pages/pricing.tsx
+   4:10  error    'useMemo' is defined but never used  @typescript-eslint/no-unused-vars
+  18:5   warning  Unexpected console statement         no-console
+  31:1   error    Expected indentation of 2 spaces     indent
+
+/code/pawprint-web/src/app.tsx
+  7:3  error  Parsing error: Unexpected token
+
+✖ 4 problems (3 errors, 1 warning)
+  1 error and 0 warnings potentially fixable with the `--fix` option.

@@ -18,7 +18,7 @@ export const mod = (e: { metaKey: boolean; ctrlKey: boolean }) => (IS_MAC ? e.me
 export const modKey = (): { metaKey: true } | { ctrlKey: true } => (IS_MAC ? { metaKey: true } : { ctrlKey: true });
 
 /**
- * ⌃1 to ⌃9 switch workspace. On Linux Ctrl+1..4 already switch tabs (⌘1..4 on a Mac), so the
+ * ⌃1 to ⌃9 switch workspace. On Linux Ctrl+1..5 already switch tabs (⌘1..5 on a Mac), so the
  * workspace keys move to Alt+1..9.
  */
 export const isWorkspaceDigit = (e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; key: string }) =>

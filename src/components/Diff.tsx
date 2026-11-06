@@ -7,6 +7,7 @@ import { keyHint, mod } from "../platform";
 import { hasSuggestion, planLine, submitBlocker, suggestionParts, VERDICTS } from "../review";
 import { Mascot } from "./Mascot";
 import { ask } from "./Confirm";
+import { setChangesSelection } from "../prompts";
 
 /**
  * A draft review comment on lines `line` to `end_line` of one file. `side` is "old" only when every
@@ -583,6 +584,20 @@ export function Diff({
   const [discarding, setDiscarding] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => setNotice(null), [workspaceId]);
+  // Text you select in a diff fills a prompt's {{selection}} blank. Selecting elsewhere keeps it;
+  // clicking inside the diff (an empty selection there) clears it.
+  useEffect(() => {
+    const on = () => {
+      const sel = document.getSelection();
+      const node = sel?.anchorNode;
+      const el = node instanceof Element ? node : node?.parentElement;
+      if (!sel || !el?.closest(".diff")) return;
+      setChangesSelection(sel.isCollapsed ? "" : sel.toString());
+    };
+    document.addEventListener("selectionchange", on);
+    return () => document.removeEventListener("selectionchange", on);
+  }, []);
+  useEffect(() => setChangesSelection(""), [workspaceId]);
   // Draft comments live in the app's database, per workspace, so they survive restarts until sent.
   const [comments, setComments] = useState<ReviewComment[]>([]);
   useEffect(() => {

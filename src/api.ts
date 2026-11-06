@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { PersonalPrompt, PromptEntry, PromptScope } from "./prompts";
 
 export type Repo = {
   id: string;
@@ -22,7 +23,35 @@ export type RepoPrefs = {
   actions: [string, string][];
   /** Paths agents should leave alone, gitignore-style (`.env*`, `migrations/**`). */
   protected: string[];
+  /** Run the Checks tab's checks after every agent turn that ends well. */
+  checks_after_turn?: boolean;
 };
+
+/** One failing test or error from a check, with its place in the code when the tool gives one. */
+export type CheckFailure = { title: string; file: string | null; line: number | null; message: string; snippet?: string };
+/** The last run of one check. `regressed`: it passed the time before and fails now. */
+export type CheckResult = {
+  name: string; command: string; status: "passed" | "failed" | "error";
+  passed: number | null; failed: number; failures: CheckFailure[]; formats: string[];
+  exit_code: number | null; duration_ms: number; finished_at: string; regressed: boolean;
+};
+/** A check: from the repo's nekotrail.json ("repo") or an action saved in repo settings ("app"). */
+export type CheckDef = { name: string; command: string; source: "repo" | "app" };
+export type ChecksView = {
+  checks: CheckDef[];
+  /** nekotrail.json checks that wait for the user's OK before they run. */
+  trust: { fingerprint: string; checks: [string, string][] } | null;
+  /** Checks that fit the repo, offered when it has none. */
+  suggestions: [string, string][];
+  after_turn: boolean;
+  results: CheckResult[];
+  /** A run is going: `current` runs now, `queued` are next. */
+  active: boolean;
+  current: string | null;
+  queued: string[];
+};
+/** The sidebar dot per workspace. */
+export type CheckDot = "running" | "failed" | "passed";
 
 export type Doctor = {
   git: { ok: boolean; version: string };
@@ -139,7 +168,9 @@ export type ChatEvent =
   /** After a turn: protected files it changed. `checkpoint` and `ignored` are what Put it back restores from. */
   | { kind: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel }
   /** Put it back ran: these files are as they were before the turn. */
-  | { kind: "guard_restored"; files: string[]; checkpoint: string };
+  | { kind: "guard_restored"; files: string[]; checkpoint: string }
+  /** Checks that ran after the turn ("Run checks after every agent turn"). */
+  | { kind: "checks"; results: { name: string; status: CheckResult["status"]; passed: number | null; failed: number; regressed: boolean }[] };
 
 /** One protected file a turn changed. */
 export type GuardHit = { path: string; change: "added" | "changed" | "deleted" };
@@ -351,7 +382,13 @@ export const api = {
   mcpShareApply: (id: string, name: string, target: McpAgent, choices: SecretChoices, token: string) =>
     invoke<{ file: string; backup: string | null }>("mcp_share_apply", { id, name, target, choices, token }),
   skillShare: (name: string, target: "agents" | "claude") => invoke<string>("skill_share", { name, target }),
-  slashCommands: (id: string) => invoke<[string, string][]>("slash_commands", { id }),
+  promptsList: (id?: string, repo?: string) => invoke<{ entries: PromptEntry[]; saved: boolean }>("prompts_list", { id: id ?? null, repo: repo ?? null }),
+  promptsSave: (list: PersonalPrompt[]) => invoke<void>("prompts_save", { list }),
+  promptsDuplicate: (where: { id?: string; repo?: string }, name: string, scope: PromptScope) =>
+    invoke<string>("prompts_duplicate", { id: where.id ?? null, repo: where.repo ?? null, name, scope }),
+  promptsExport: (path: string) => invoke<number>("prompts_export", { path }),
+  promptsImport: (path: string) => invoke<{ added: string[]; renamed: [string, string][]; skipped: string[] }>("prompts_import", { path }),
+  promptContext: (id: string) => invoke<{ branch: string; base: string; files_changed: string }>("prompt_context", { id }),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),
@@ -421,6 +458,12 @@ export const api = {
   liveCheckpoints: (id: string, checkpoints: string[]) => invoke<string[]>("live_checkpoints", { id, checkpoints }),
   /** Protected paths for a repo: the app's list and what its nekotrail.json adds. */
   repoGuard: (id: string) => invoke<{ app: string[]; file: string[] }>("repo_guard", { id }),
+  checksList: (id: string) => invoke<ChecksView>("checks_list", { id }),
+  checksRun: (id: string, names: string[] | null = null) => invoke<void>("checks_run", { id, names }),
+  checksStop: (id: string) => invoke<void>("checks_stop", { id }),
+  checksTrust: (id: string, fingerprint: string) => invoke<void>("checks_trust", { id, fingerprint }),
+  checksStatuses: () => invoke<Record<string, CheckDot>>("checks_statuses"),
+  checksOutput: (id: string, name: string) => invoke<string>("checks_output", { id, name }),
   /** Put back the protected files a turn changed (`id` is the chat). Returns the paths put back. */
   putBackProtected: (id: string, checkpoint: string, ignored: string | null, paths: string[]) =>
     invoke<string[]>("put_back_protected", { id, checkpoint, ignored, paths }),

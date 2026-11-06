@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod agent;
 pub mod agentcfg;
+pub mod checks;
 pub mod cli;
 pub mod mcpshare;
 pub mod config;
@@ -12,6 +13,7 @@ pub mod linux;
 pub mod names;
 pub mod ports;
 pub mod preview;
+pub mod prompts;
 pub mod prpoll;
 pub mod pty;
 pub mod radar;
@@ -20,6 +22,7 @@ pub mod review;
 pub mod safe;
 pub mod search;
 pub mod store;
+pub mod testparse;
 pub mod title;
 
 use serde::Serialize;
@@ -107,6 +110,8 @@ pub struct AppState {
     /// Workspaces whose Run script stopped on "address already in use", and the port it named
     /// (None when it didn't say). Cleared when Run starts again.
     port_failures: Mutex<HashMap<String, Option<u16>>>,
+    /// Each workspace's test, lint and typecheck results, and the run going now.
+    checks: checks::Checks,
 }
 
 /// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
@@ -641,6 +646,8 @@ fn archive_blocking(st: &AppState, id: &str, force: bool) -> Res<()> {
         let _ = git::git(root, &["update-ref", "-d", &git::legacy_checkpoint_ref(&id)]);
     }
     st.ptys.close(&format!("{id}:term"));
+    st.checks.stop(&id);
+    st.checks.forget(&id);
     st.db().set_workspace_state(&id, "archived").map_err(e)
 }
 
@@ -1956,29 +1963,95 @@ async fn skill_share(name: String, target: String) -> Res<String> {
     mcpshare::share_skill(&mcpshare::Homes::from_env()?, &name, &target)
 }
 
-/// Custom slash commands: `.claude/commands/*.md` in the workspace and in ~/.claude, with their descriptions.
-#[tauri::command]
-async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String, String)>> {
-    let ws = st.db().workspace(&id).map_err(e)?;
-    let mut out = vec![];
-    let dirs = [Some(Path::new(&ws.path).join(".claude/commands")), dirs::home_dir().map(|h| h.join(".claude/commands"))];
-    for dir in dirs.into_iter().flatten() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.extension().and_then(|x| x.to_str()) != Some("md") { continue; }
-            let name = p.file_stem().unwrap().to_string_lossy().to_string();
-            let body = std::fs::read_to_string(&p).unwrap_or_default();
-            let desc = body.lines().find_map(|l| l.strip_prefix("description:")).map(|d| d.trim().trim_matches('"').to_string())
-                .or_else(|| body.lines().find(|l| !l.trim().is_empty() && !l.starts_with("---")).map(|l| l.trim_start_matches('#').trim().chars().take(80).collect()))
-                .unwrap_or_default();
-            if !out.iter().any(|(n, _): &(String, String)| *n == name) {
-                out.push((name, desc));
-            }
-        }
+/// Every prompt for a workspace (its repo's prompts as on its branch) or, with no workspace, a
+/// repo's main checkout; personal prompts either way. The bool is false until the personal list
+/// was first saved, so the app can bring over the old snippets once.
+fn prompt_entries(st: &AppState, id: Option<&str>, repo: Option<&str>) -> Res<(Vec<prompts::Entry>, bool)> {
+    let dir = match (id, repo) {
+        (Some(id), _) => Some(PathBuf::from(st.db().workspace(id).map_err(e)?.path)),
+        (None, Some(r)) => Some(PathBuf::from(st.db().repo(r).map_err(e)?.root_path)),
+        _ => None,
+    };
+    let (personal, saved) = personal_prompts(st)?;
+    let home = dirs::home_dir();
+    let (repo_list, claude) = match &dir {
+        Some(d) => (prompts::repo_prompts(d), prompts::claude_commands(d, home.as_deref())),
+        None => (vec![], prompts::claude_commands(Path::new("/nonexistent"), home.as_deref())),
+    };
+    Ok((prompts::merge(personal, repo_list, claude), saved))
+}
+
+fn personal_prompts(st: &AppState) -> Res<(Vec<prompts::Prompt>, bool)> {
+    match st.db().setting(prompts::STORE_KEY).map_err(e)? {
+        Some(t) => Ok((serde_json::from_str(&t).unwrap_or_default(), true)),
+        None => Ok((vec![], false)),
     }
-    out.sort();
-    Ok(out)
+}
+
+fn save_personal(st: &AppState, list: Vec<prompts::Prompt>) -> Res<()> {
+    let list = prompts::validate(list)?;
+    st.db().set_setting(prompts::STORE_KEY, &serde_json::to_string(&list).map_err(e)?).map_err(e)
+}
+
+#[tauri::command]
+async fn prompts_list(app: AppHandle, id: Option<String>, repo: Option<String>) -> Res<Value> {
+    blocking(app, move |st| {
+        let (entries, saved) = prompt_entries(st, id.as_deref(), repo.as_deref())?;
+        Ok(json!({ "entries": entries, "saved": saved }))
+    })
+    .await
+}
+
+/// Replaces the personal list. Repo and Claude prompts are never written: they aren't in it.
+#[tauri::command]
+async fn prompts_save(st: State<'_, AppState>, list: Vec<prompts::Prompt>) -> Res<()> {
+    save_personal(&st, list)
+}
+
+/// Copies any prompt (a read-only one too) into the personal list and returns the copy's name.
+#[tauri::command]
+async fn prompts_duplicate(app: AppHandle, id: Option<String>, repo: Option<String>, name: String, scope: prompts::Scope) -> Res<String> {
+    blocking(app, move |st| {
+        let (entries, _) = prompt_entries(st, id.as_deref(), repo.as_deref())?;
+        let found = entries.iter().find(|x| x.name == name && x.scope == scope).ok_or_else(|| format!("/{name} isn't there any more."))?;
+        let taken: Vec<String> = entries.iter().map(|x| x.name.clone()).collect();
+        let copy = prompts::duplicate(found, &taken);
+        let out = copy.name.clone();
+        let (mut personal, _) = personal_prompts(st)?;
+        personal.push(copy);
+        save_personal(st, personal)?;
+        Ok(out)
+    })
+    .await
+}
+
+/// Writes the personal list to a JSON file the user picked.
+#[tauri::command]
+async fn prompts_export(st: State<'_, AppState>, path: String) -> Res<usize> {
+    let (list, _) = personal_prompts(&st)?;
+    std::fs::write(&path, prompts::export(&list)).map_err(e)?;
+    Ok(list.len())
+}
+
+/// Adds the prompts in an export file. Never overwrites one you have.
+#[tauri::command]
+async fn prompts_import(st: State<'_, AppState>, path: String) -> Res<prompts::Imported> {
+    let text = std::fs::read_to_string(&path).map_err(e)?;
+    let (cur, _) = personal_prompts(&st)?;
+    let (list, rep) = prompts::import(&cur, &text)?;
+    save_personal(&st, list)?;
+    Ok(rep)
+}
+
+/// Values for the built-in blanks: the branch, its target, and the files it changed.
+#[tauri::command]
+async fn prompt_context(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let files = git::changes(Path::new(&ws.path), &ws.target_branch).map(|c| c.into_iter().map(|f| f.path).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+        Ok(json!({ "branch": ws.branch, "base": ws.target_branch, "files_changed": files }))
+    })
+    .await
 }
 
 /// Collision radar: active workspaces in one repo changing the same files, grouped, each group in
@@ -3125,6 +3198,9 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
             next
         };
         let title = guard_hit.clone().unwrap_or_else(|| st.db().session(&id).map(|s| s.title).unwrap_or_default());
+        // A turn that ended well, with nothing queued and nothing to ask: run the checks if the repo wants that.
+        let run_checks = ok && !user_stopped && guard_hit.is_none() && needs.is_none() && next.is_none()
+            && st.db().workspace(&workspace_id).and_then(|w| st.db().repo(&w.repo_id)).is_ok_and(|r| r.prefs.checks_after_turn);
         let _ = app.emit("running", json!({
             "session_id": id, "running": false, "workspace_id": workspace_id,
             "ok": ok, "title": title, "more_queued": next.is_some(),
@@ -3132,6 +3208,156 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
         }));
         if let Some(text) = next {
             let _ = start_turn(app.clone(), &st, id, text);
+        } else if run_checks {
+            let _ = start_checks(&app, &st, &workspace_id, None, Some(id));
+        }
+    });
+    Ok(())
+}
+
+// ---------- checks ----------
+
+/// A workspace's checks that can run, and its `nekotrail.json` checks with their fingerprint
+/// when the user hasn't approved those exact commands yet (they don't run until then).
+type Untrusted = Option<(Vec<(String, String)>, String)>;
+
+fn checks_for(st: &AppState, ws: &Workspace, repo: &Repo) -> (Vec<checks::Defined>, Untrusted) {
+    let file = config::checks_from_file(Path::new(&ws.path));
+    let print = config::checks_fingerprint(&file);
+    let trusted = file.is_empty() || st.db().setting(&config::trust_key(&ws.repo_id, &print)).ok().flatten().is_some();
+    let list = checks::defined(if trusted { &file } else { &[] }, &repo.prefs.actions);
+    (list, (!trusted).then_some((file, print)))
+}
+
+/// Everything the Checks tab shows: the checks, approval or suggestions, the last results
+/// (without their output, see `checks_output`) and the run going now.
+#[tauri::command]
+async fn checks_list(st: State<'_, AppState>, id: String) -> Res<Value> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+    let (list, untrusted) = checks_for(&st, &ws, &repo);
+    let suggestions = if list.is_empty() && untrusted.is_none() {
+        let path = ws.path.clone();
+        tauri::async_runtime::spawn_blocking(move || checks::suggest(Path::new(&path))).await.unwrap_or_default()
+    } else {
+        vec![]
+    };
+    let results: Vec<Value> = st
+        .checks
+        .results(&id)
+        .into_iter()
+        .filter(|r| list.iter().any(|d| d.name == r.name))
+        .map(|r| {
+            let mut v = json!(r);
+            if let Some(o) = v.as_object_mut() {
+                o.remove("output");
+            }
+            v
+        })
+        .collect();
+    let progress = st.checks.progress(&id);
+    Ok(json!({
+        "checks": list,
+        "trust": untrusted.map(|(c, print)| json!({"fingerprint": print, "checks": c})),
+        "suggestions": suggestions,
+        "after_turn": repo.prefs.checks_after_turn,
+        "results": results,
+        "active": progress.is_some(),
+        "current": progress.as_ref().and_then(|p| p.0.clone()),
+        "queued": progress.map(|p| p.1).unwrap_or_default(),
+    }))
+}
+
+/// What one check printed the last time it ran.
+#[tauri::command]
+async fn checks_output(st: State<'_, AppState>, id: String, name: String) -> Res<String> {
+    Ok(st.checks.result(&id, &name).map(|r| r.output).unwrap_or_default())
+}
+
+/// Run the workspace's checks (all, or the ones named) in the background. `checks` events report
+/// progress; results land in `checks_list`.
+#[tauri::command]
+async fn checks_run(app: AppHandle, st: State<'_, AppState>, id: String, names: Option<Vec<String>>) -> Res<()> {
+    start_checks(&app, &st, &id, names, None)
+}
+
+#[tauri::command]
+async fn checks_stop(st: State<'_, AppState>, id: String) -> Res<()> {
+    st.checks.stop(&id);
+    Ok(())
+}
+
+/// The user approved the repo file's checks they were shown, for this repo, until they change.
+#[tauri::command]
+async fn checks_trust(st: State<'_, AppState>, id: String, fingerprint: String) -> Res<()> {
+    let ws = st.db().workspace(&id).map_err(e)?;
+    let file = config::checks_from_file(Path::new(&ws.path));
+    if file.is_empty() || config::checks_fingerprint(&file) != fingerprint {
+        return Err("nekotrail.json changed since you looked at it. Check the commands again.".into());
+    }
+    st.db().set_setting(&config::trust_key(&ws.repo_id, &fingerprint), &store::now()).map_err(e)
+}
+
+/// Each workspace's dot: "running", "failed" or "passed" (missing before the first run).
+#[tauri::command]
+async fn checks_statuses(st: State<'_, AppState>) -> Res<HashMap<String, String>> {
+    Ok(st.checks.statuses())
+}
+
+/// Start a run. `turn` is the chat whose turn just ended: the result goes into that chat, and a
+/// check that passed before and fails now moves the workspace to Needs you.
+fn start_checks(app: &AppHandle, st: &AppState, ws_id: &str, names: Option<Vec<String>>, turn: Option<String>) -> Res<()> {
+    let ws = st.db().workspace(ws_id).map_err(e)?;
+    let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+    let (list, _) = checks_for(st, &ws, &repo);
+    st.checks.retain(ws_id, &list.iter().map(|d| d.name.clone()).collect::<Vec<_>>());
+    let chosen: Vec<checks::Defined> = list.into_iter().filter(|d| names.as_ref().is_none_or(|n| n.contains(&d.name))).collect();
+    if chosen.is_empty() {
+        return Err("This repo has no checks to run yet. Add them in the Checks tab.".into());
+    }
+    let order: Vec<String> = chosen.iter().map(|d| d.name.clone()).collect();
+    let stop = st.checks.begin(ws_id, &order).ok_or("Checks are already running in this workspace.")?;
+    let env = env_for(st, &repo, &ws);
+    let (app, ws_id, root) = (app.clone(), ws_id.to_string(), PathBuf::from(&ws.path));
+    let trigger = if turn.is_some() { "turn" } else { "manual" };
+    let _ = app.emit("checks", json!({"workspace_id": ws_id, "state": "running", "trigger": trigger}));
+    std::thread::spawn(move || {
+        let st = app.state::<AppState>();
+        let mut done: Vec<checks::CheckResult> = vec![];
+        for d in chosen {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            st.checks.starting(&ws_id, &d.name);
+            let _ = app.emit("checks", json!({"workspace_id": ws_id, "state": "running", "trigger": trigger}));
+            let prev = st.checks.result(&ws_id, &d.name);
+            let ex = checks::exec(&d.command, &root, &env, &stop, checks::TIMEOUT, |_| {});
+            if ex.stopped {
+                break; // Stop keeps the last result rather than a half run.
+            }
+            let parsed = checks::read_results(&root, &d.command, &ex);
+            let r = checks::outcome(&d.name, &d.command, &ex, parsed, prev.as_ref(), checks::TIMEOUT);
+            st.checks.put(&ws_id, r.clone());
+            done.push(r);
+        }
+        st.checks.end(&ws_id);
+        let stopped = stop.load(std::sync::atomic::Ordering::Relaxed);
+        let regressed = checks::regressions(&done);
+        let _ = app.emit("checks", json!({"workspace_id": ws_id, "state": "done", "trigger": trigger, "stopped": stopped, "regressed": regressed}));
+        let Some(session) = turn else { return };
+        if stopped || done.is_empty() {
+            return;
+        }
+        let ev = json!({"kind": "checks", "results": done.iter().map(|r| json!({
+            "name": r.name, "status": r.status, "passed": r.passed, "failed": r.failed, "regressed": r.regressed,
+        })).collect::<Vec<_>>()});
+        let _ = st.db().append_event(&session, &ev);
+        emit_event(&app, &session, &ev);
+        if !regressed.is_empty() {
+            let _ = st.db().set_unread(&ws_id, true);
+            let title = format!("{} passed before and {} now", regressed.join(" and "), if regressed.len() == 1 { "fails" } else { "fail" });
+            let _ = app.emit("needs", json!({"workspace_id": ws_id, "session_id": session, "needs": "checks", "title": title}));
+            let _ = app.emit("workspaces-changed", json!({}));
         }
     });
     Ok(())
@@ -3469,7 +3695,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default() })
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")) })
         .setup(move |app| {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
@@ -3499,12 +3725,13 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
             github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
-            remote_take, link_confirm, cli_install, cli_status
+            remote_take, link_confirm, cli_install, cli_status,
+            checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");
@@ -3675,7 +3902,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
@@ -3717,7 +3944,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
@@ -3793,7 +4020,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let repo = |id: &str, remote: Option<&str>| Repo {
             id: id.into(), name: id.into(), root_path: dir.path().join(id).to_string_lossy().into(), default_branch: "main".into(),
@@ -3844,7 +4071,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")),
         };
         let repo = Repo {
             id: "r1".into(), name: "app".into(), root_path: dir.path().join("app").to_string_lossy().into(), default_branch: "main".into(),

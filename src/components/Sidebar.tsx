@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Eye, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
-import { api, displayName, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
+import { api, displayName, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
 import { ReviewRequests } from "./ReviewRequests";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
@@ -34,6 +34,8 @@ type Props = {
   prStates: Record<string, string>;
   /** Lines added / removed per workspace id. */
   lines: Record<string, [number, number]>;
+  /** Checks per workspace: running, failing or passing. */
+  checks?: Record<string, CheckDot>;
   /** Collision radar: groups of workspaces changing the same files, in suggested merge order. */
   collisions: Collision[];
   usage: { today: number; week: number; by_agent: Record<string, number> } | null;
@@ -99,6 +101,8 @@ function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { rep
     </div>
   );
 }
+
+const CHECK_LABEL: Record<CheckDot, string> = { passed: "Checks pass", failed: "Checks fail", running: "Checks running" };
 
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
@@ -226,9 +230,11 @@ export function Sidebar(p: Props) {
     const l = p.lines[w.id];
     const on = !smart && p.selected === w.id;
     const clash = w.state === "active" ? collisionNote(w) : null;
+    const ck = w.state === "active" ? p.checks?.[w.id] : undefined;
     // A titled row says what the task is; its star sits underneath.
     const sub = subName(p.sky, w);
     const meta = <>
+      {ck && <span className={`ws-check ck-${ck}`} role="img" aria-label={CHECK_LABEL[ck]} title={CHECK_LABEL[ck]} />}
       {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
       {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
       {w.pinned && <Pin size={sub ? 12 : 14} className="muted" aria-label="Pinned" />}
