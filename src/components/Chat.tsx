@@ -1,7 +1,8 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Search, Square, SquareTerminal, Users, Wrench, X } from "lucide-react";
-import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type PermissionMode, type Session } from "../api";
+import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
+import { occurrences } from "../search";
 import { Mascot } from "./Mascot";
 import { Markdown } from "./Markdown";
 import { ModelPicker } from "./ModelPicker";
@@ -78,13 +79,18 @@ type Row =
   | { type: "blocked"; text: string; files: string[] }
   | { type: "guard"; files: GuardHit[]; checkpoint: string | null; ignored: string | null; level: GuardLevel; restored?: string[] };
 
-/** Pair each tool call with its result so one row shows both. */
-function toRows(events: ChatEvent[]): Row[] {
+/**
+ * Pair each tool call with its result so one row shows both. With `rowOf`, also note for each event
+ * the row it starts (-1 when it only updates an earlier row), so search can find a message's row.
+ */
+function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
   const rows: Row[] = [];
   const toolIdx = new Map<string, number>();
   const approvalIdx = new Map<string, number>();
   const guardIdx = new Map<string, number>();
   for (const ev of events) {
+    const before = rows.length;
+    rowOf?.push(before);
     switch (ev.kind) {
       case "tool":
         toolIdx.set(ev.id, rows.length);
@@ -134,9 +140,19 @@ function toRows(events: ChatEvent[]): Row[] {
       default:
         rows.push("fix" in ev && ev.fix ? { type: ev.kind, text: ev.text, fix: ev.fix, agent: ev.agent } : { type: ev.kind, text: ev.text });
     }
+    if (rowOf && rows.length === before) rowOf[rowOf.length - 1] = -1;
   }
   return rows;
 }
+
+/** The row showing event `index`, or the next row after it. */
+export function rowForEvent(rowOf: number[], index: number, rowCount: number): number {
+  for (let k = Math.max(0, index); k < rowOf.length; k++) if (rowOf[k] >= 0) return rowOf[k];
+  return rowCount - 1;
+}
+
+/** What ⌘F matches in a row: its text, or a tool call's command or path. */
+const findText = (r: Row): string | null => ("text" in r ? r.text : r.type === "tool" ? r.input : null);
 
 /** Rewind handler shared through context, so memoized rows don't re-render when it changes. */
 type ChatCtxValue = {
@@ -363,7 +379,7 @@ function RewindButton({ checkpoint, prompt, label = "Rewind to here" }: { checkp
 /** One chat row. Memoized: a new message renders only the new row, not the whole history. */
 const RowView = memo(function RowView({ r, pendingSpin, latestPlan }: { r: Row; pendingSpin: boolean; latestPlan: boolean }) {
   const { expandAll, query } = useContext(RewindCtx);
-  const hit = !!query && "text" in r && r.text.toLowerCase().includes(query);
+  const hit = !!query && !!findText(r)?.toLowerCase().includes(query);
   return <div className={hit ? "row-hit" : undefined}>{rowBody(r, pendingSpin, latestPlan, expandAll)}</div>;
 }, (a, b) => {
   if (a.pendingSpin !== b.pendingSpin || a.latestPlan !== b.latestPlan) return false;
@@ -453,11 +469,11 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
 }
 
 /** The rendered rows. Memoized so typing in the composer or an app refresh doesn't walk a long chat. */
-const Thread = memo(function Thread({ visible, hidden, total, current, busy, latestPlanIdx }: {
-  visible: Row[]; hidden: number; total: number; current: number | undefined; busy: boolean; latestPlanIdx: number;
+const Thread = memo(function Thread({ visible, hidden, total, current, flash, busy, latestPlanIdx }: {
+  visible: Row[]; hidden: number; total: number; current: number | undefined; flash: number | null; busy: boolean; latestPlanIdx: number;
 }) {
   return visible.map((r, k) => (
-    <div key={hidden + k} data-row={hidden + k} className={current === hidden + k ? "row-current" : undefined}>
+    <div key={hidden + k} data-row={hidden + k} className={[current === hidden + k ? "row-current" : "", flash === hidden + k ? "row-flash" : ""].join(" ").trim() || undefined}>
       <RowView r={r} pendingSpin={busy && hidden + k === total - 1} latestPlan={hidden + k === latestPlanIdx} />
     </div>
   ));
@@ -472,6 +488,8 @@ export function Chat({
   onRunningChange,
   inject,
   append,
+  jump,
+  readOnly = false,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -484,6 +502,10 @@ export function Chat({
   inject?: { text: string; nonce: number; send?: boolean };
   /** Text to add to the end of the draft without replacing it (Annotate in the Preview tab). */
   append?: { text: string; nonce: number };
+  /** Open a chat at one message (from ⌘⇧F): load enough history, scroll there, flash it. */
+  jump?: JumpTo;
+  /** Archived workspaces: read the chats, but nothing can be sent, started or changed. */
+  readOnly?: boolean;
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -624,7 +646,7 @@ export function Chat({
     },
     expandAll,
     query: (search ?? "").trim().toLowerCase(),
-    disabled: anyBusy,
+    disabled: anyBusy || readOnly,
     live: liveCheckpoints,
     rewind: async (checkpoint: string, prompt: string | null) => {
       const { active } = live.current;
@@ -648,26 +670,65 @@ export function Chat({
         if (ok) await api.restoreCheckpoint(active, checkpoint);
       } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, expandAll, search, liveCheckpoints]);
+  }), [anyBusy, expandAll, search, liveCheckpoints, readOnly]);
+
+  // A search hit to open once its chat is showing (see `openTail`).
+  const pendingJump = useRef<JumpTo | null>(null);
+  const [flash, setFlash] = useState<{ row: number; nonce: number } | null>(null);
 
   const loadSessions = async (pick?: string) => {
     let list = await api.sessions(workspaceId);
-    if (list.length === 0) list = [await api.newSession(workspaceId, "claude")];
+    // A hit in a chat you closed: show that chat as a tab again (its history was kept).
+    const j = pendingJump.current?.session.workspace_id === workspaceId ? pendingJump.current : null;
+    if (j && !list.some((s) => s.id === j.sessionId)) list = [...list, j.session];
+    if (list.length === 0) {
+      if (readOnly) { setSessions([]); setActive(null); return; }
+      list = [await api.newSession(workspaceId, "claude")];
+    }
     setSessions(list);
-    setActive((cur) => pick ?? (cur && list.some((s) => s.id === cur) ? cur : list[list.length - 1].id));
+    const want = pick ?? j?.sessionId;
+    setActive((cur) => want ?? (cur && list.some((s) => s.id === cur) ? cur : list[list.length - 1].id));
   };
+
+  // Declared before the workspace effect below, so a jump into another workspace is seen by its loadSessions.
+  useEffect(() => {
+    if (!jump || jump.session.workspace_id !== workspaceId) return;
+    pendingJump.current = jump;
+    setSessions((list) => (list.some((s) => s.id === jump.sessionId) ? list : [...list, jump.session]));
+    if (active === jump.sessionId) openTail(jump.sessionId).catch((e) => setError(errText(e)));
+    else setActive(jump.sessionId);
+  }, [jump?.nonce]);
 
   useEffect(() => {
     setActive(null);
     loadSessions().catch((e) => setError(errText(e)));
   }, [workspaceId]);
 
+  /**
+   * Load the chat's latest events. Big chats open with the last TAIL; older ones load on request.
+   * For a search hit, enough is loaded to include it, and the view scrolls to it and flashes it.
+   */
+  const openTail = async (sid: string) => {
+    const j = pendingJump.current?.sessionId === sid ? pendingJump.current : null;
+    pendingJump.current = null;
+    const n = j ? Math.max(TAIL, j.total - j.index + 40) : TAIL;
+    const { events, total } = await api.sessionEventsTail(sid, n);
+    setEvents(events);
+    setOlder(total - events.length);
+    if (!j) return;
+    const rowOf: number[] = [];
+    const rs = toRows(events, rowOf);
+    const row = rowForEvent(rowOf, j.index - (total - events.length), rs.length);
+    stick.current = false;
+    setLimit(Math.max(PAGE, rs.length - row + 20));
+    setFlash({ row, nonce: Date.now() });
+  };
+
   useEffect(() => {
     if (!active) return;
     setEvents([]);
     setOlder(0);
-    // Big chats open with their latest events; older ones load on request.
-    api.sessionEventsTail(active, TAIL).then(({ events, total }) => { setEvents(events); setOlder(total - events.length); });
+    openTail(active).catch((e) => setError(errText(e)));
     api.queued(active).then(setQueue);
     const un1 = listen<{ session_id: string; event: ChatEvent }>("agent", ({ payload }) => {
       if (payload.session_id === active) setEvents((e) => [...e, payload.event]);
@@ -759,8 +820,20 @@ export function Chat({
   const hits = useMemo(() => {
     const q = (search ?? "").trim().toLowerCase();
     if (!q) return [] as number[];
-    return rows.flatMap((r, i) => ("text" in r && r.text.toLowerCase().includes(q) ? [i] : []));
+    return rows.flatMap((r, i) => (findText(r)?.toLowerCase().includes(q) ? [i] : []));
   }, [rows, search]);
+  // ⌘F covers the whole chat: the first search in a big chat loads the events not loaded yet
+  // (only the rows near a match are drawn).
+  const [findingOlder, setFindingOlder] = useState(false);
+  useEffect(() => {
+    if (!active || !(search ?? "").trim() || older === 0 || findingOlder) return;
+    setFindingOlder(true);
+    const sid = active;
+    api.sessionEvents(sid)
+      .then((all) => { if (live.current.active === sid) { setEvents(all); setOlder(0); } })
+      .catch((e) => setError(errText(e)))
+      .finally(() => setFindingOlder(false));
+  }, [search, older, active]);
   useEffect(() => setHitIdx(Math.max(0, hits.length - 1)), [hits.length]);
   // Bring the current match into view (loading older rows if it is hidden).
   useEffect(() => {
@@ -775,6 +848,43 @@ export function Chat({
   useEffect(() => setLimit(PAGE), [active]);
   const hidden = Math.max(0, rows.length - limit);
   const visible = useMemo(() => rows.slice(hidden), [rows, hidden]);
+  // A search hit just opened: bring it to the middle and flash it for a moment.
+  useEffect(() => {
+    if (!flash) return;
+    const show = () => scroller.current?.querySelector(`[data-row="${flash.row}"]`)?.scrollIntoView({ block: "center" });
+    requestAnimationFrame(show);
+    const again = setTimeout(show, 250); // code blocks and diagrams can change heights after the first paint
+    const t = setTimeout(() => setFlash(null), 2000);
+    return () => { clearTimeout(again); clearTimeout(t); };
+  }, [flash?.nonce]);
+  // ⌘F: mark every occurrence in the rows on screen, the current one stronger (CSS Custom Highlights,
+  // so the rendered markdown is never touched).
+  useEffect(() => {
+    const reg = typeof CSS !== "undefined" ? CSS.highlights : undefined;
+    const q = (search ?? "").trim();
+    if (!reg || typeof Highlight === "undefined") return;
+    const clear = () => { reg.delete("chat-find"); reg.delete("chat-find-current"); };
+    clear();
+    if (!q || !scroller.current) return;
+    const all: Range[] = [];
+    const cur: Range[] = [];
+    const current = hits[hitIdx];
+    for (const el of scroller.current.querySelectorAll<HTMLElement>("[data-row] > .row-hit")) {
+      const mine = Number((el.parentElement as HTMLElement).dataset.row) === current ? cur : all;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        for (const [a, b] of occurrences(n.textContent ?? "", q)) {
+          const r = new Range();
+          r.setStart(n, a);
+          r.setEnd(n, b);
+          mine.push(r);
+        }
+      }
+    }
+    reg.set("chat-find", new Highlight(...all));
+    reg.set("chat-find-current", new Highlight(...cur));
+    return clear;
+  }, [search, hits, hitIdx, visible]);
   // Keep the reader's place when older rows are added above.
   const anchor = useRef<number | null>(null);
   const showEarlier = () => {
@@ -915,24 +1025,24 @@ export function Chat({
   };
 
   // ⌘T new chat, ⌘F search, ⌘G next match, Ctrl+O expand all, ⌘⇧↵ approve plan.
-  const keys = useRef({ newChat, approvePlan, latestPlanIdx, agent: session?.agent });
-  keys.current = { newChat, approvePlan, latestPlanIdx, agent: session?.agent };
+  const keys = useRef({ newChat, approvePlan, latestPlanIdx, agent: session?.agent, readOnly });
+  keys.current = { newChat, approvePlan, latestPlanIdx, agent: session?.agent, readOnly };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (scroller.current?.closest(".pane")?.hasAttribute("hidden")) return; // Chat tab not showing
       if (e.ctrlKey && !e.metaKey && e.key === "o") { e.preventDefault(); setExpandAll((x) => !x); return; }
       // ↵ allows and ⌫ denies the waiting tool call, unless you're typing.
-      if ((e.key === "Enter" || e.key === "Backspace") && !e.metaKey && !e.shiftKey && !(e.target as HTMLElement).closest("input, textarea, select")) {
+      if ((e.key === "Enter" || e.key === "Backspace") && !e.metaKey && !e.shiftKey && !keys.current.readOnly && !(e.target as HTMLElement).closest("input, textarea, select")) {
         const cards = scroller.current?.querySelectorAll<HTMLElement>("[data-approval]");
         const card = cards?.[cards.length - 1];
         if (card) { e.preventDefault(); api.answerApproval(card.dataset.approval!, e.key === "Enter"); return; }
       }
       if (!e.metaKey) return;
       const k = e.key.toLowerCase();
-      if (k === "t" && !e.shiftKey) { e.preventDefault(); keys.current.newChat(keys.current.agent ?? "claude"); }
+      if (k === "t" && !e.shiftKey) { if (!keys.current.readOnly) { e.preventDefault(); keys.current.newChat(keys.current.agent ?? "claude"); } }
       else if (k === "f" && !e.shiftKey) { e.preventDefault(); setSearch((q) => q ?? ""); requestAnimationFrame(() => document.getElementById("chat-search")?.focus()); }
       else if (k === "g") { e.preventDefault(); setHitIdx((i) => (e.shiftKey ? i - 1 : i + 1)); }
-      else if (e.key === "Enter" && e.shiftKey && keys.current.latestPlanIdx >= 0) { e.preventDefault(); keys.current.approvePlan(); }
+      else if (e.key === "Enter" && e.shiftKey && keys.current.latestPlanIdx >= 0 && !keys.current.readOnly) { e.preventDefault(); keys.current.approvePlan(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -942,7 +1052,7 @@ export function Chat({
   }, [hitIdx, hits.length]);
 
   return (
-    <div className="chat">
+    <div className={`chat ${readOnly ? "read-only" : ""}`}>
       <div className="chat-tabs">
         {/* Only the tabs scroll sideways: the + menu sits outside the scroller, so it isn't clipped. */}
         <div className="chat-tab-strip" role="tablist" aria-label="Chats">
@@ -952,13 +1062,13 @@ export function Chat({
               {running.has(s.id) && <span className="spinner" />}
               {s.agent !== "claude" ? `${agentName(s.agent)} · ` : ""}{s.title}
             </button>
-            {sessions.length > 1 && !running.has(s.id) && (
+            {sessions.length > 1 && !running.has(s.id) && !readOnly && (
               <button className="tab-close" aria-label={`Close ${s.title}`} title="Close chat. Its history is kept." onClick={() => closeChat(s.id)}><X size={12} /></button>
             )}
           </span>
         ))}
         </div>
-        <span className="newchat">
+        {!readOnly && <span className="newchat">
           <button className="icon" title="Start a chat (⌘T)" aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
@@ -980,7 +1090,7 @@ export function Chat({
               <button role="menuitem" onClick={() => { setMenu(false); copyTranscript(); }} disabled={!events.length}><Copy size={13} />Copy transcript</button>
             </span>
           )}
-        </span>
+        </span>}
         <span className="spacer" />
         {copied && <span className="muted chat-flag">Copied</span>}
         {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title="Collapse tool output (⌃O)">Hide tool output</button>}
@@ -992,15 +1102,15 @@ export function Chat({
           <input
             id="chat-search"
             value={search}
-            placeholder="Search this chat"
-            aria-label="Search this chat"
+            placeholder="Find in this chat"
+            aria-label="Find in this chat"
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setSearch(null);
               if (e.key === "Enter") { e.preventDefault(); setHitIdx((i) => (e.shiftKey ? i - 1 : i + 1)); }
             }}
           />
-          <span className="muted num">{search.trim() ? (hits.length ? `${hitIdx + 1} of ${hits.length}` : "No matches") : ""}</span>
+          <span className="muted num" role="status">{search.trim() ? (findingOlder ? "Searching older messages" : hits.length ? `${hitIdx + 1} of ${hits.length}` : "No matches") : ""}</span>
           <button className="icon" aria-label="Previous match" onClick={() => setHitIdx((i) => i - 1)} disabled={!hits.length}><ChevronUp size={15} /></button>
           <button className="icon" aria-label="Next match" onClick={() => setHitIdx((i) => i + 1)} disabled={!hits.length}><ChevronDown size={15} /></button>
           <button className="icon" aria-label="Close search" onClick={() => setSearch(null)}><X size={14} /></button>
@@ -1015,7 +1125,14 @@ export function Chat({
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {rows.length === 0 && (
+        {rows.length === 0 && readOnly && (
+          <div className="empty">
+            <Mascot size={64} mood="sleep" />
+            <h2>{sessions.length ? "Nothing in this chat" : "No chats here"}</h2>
+            <p>This workspace is archived. Its branch is kept.</p>
+          </div>
+        )}
+        {rows.length === 0 && !readOnly && (
           <div className="empty">
             <Mascot size={64} mood="sleep" />
             <h2>{session?.agent_session_id ? "Pick up where you left off" : "What should we build?"}</h2>
@@ -1036,7 +1153,7 @@ export function Chat({
               Show {Math.min(PAGE, hidden)} earlier messages ({hidden} hidden)
             </button>
           )}
-          <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} busy={busy} latestPlanIdx={latestPlanIdx} />
+          <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} flash={flash?.row ?? null} busy={busy} latestPlanIdx={latestPlanIdx} />
         </div>
         </RewindCtx.Provider>
       </div>
@@ -1085,6 +1202,9 @@ export function Chat({
       {note && <div className="banner">{note}</div>}
       {mcpOpen && session && <McpSheet workspaceId={workspaceId} agent={session.agent} onClose={() => setMcpOpen(false)} />}
 
+      {readOnly ? (
+        <div className="chat-readonly muted" role="note">Archived, so this chat is read-only. Restore the workspace to keep working in it.</div>
+      ) : (
       <div className="composer">
         <div className="composer-box">
           {slash && (
@@ -1208,6 +1328,7 @@ export function Chat({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

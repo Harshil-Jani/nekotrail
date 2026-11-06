@@ -126,6 +126,8 @@ fn migrate(conn: &Connection) -> Result<()> {
         migrate_title_source(conn)?;
         conn.execute("INSERT INTO settings (key, value) VALUES ('migrated_title_source', '1')", [])?;
     }
+    // Global search: new messages are indexed as they arrive, older ones in the background.
+    crate::search::ensure(conn)?;
     Ok(())
 }
 
@@ -277,7 +279,7 @@ pub struct ReviewComment {
 pub type AgentScore = (String, i64, i64, i64, i64);
 
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 fn repo_from(r: &Row) -> rusqlite::Result<Repo> {
@@ -721,6 +723,7 @@ impl Store {
             "INSERT INTO messages (session_id, event, created_at) VALUES (?1,?2,?3)",
             params![session_id, event.to_string(), now()],
         )?;
+        crate::search::index(&self.conn, self.conn.last_insert_rowid(), event)?;
         Ok(())
     }
 
@@ -731,6 +734,7 @@ impl Store {
             let mut st = tx.prepare("INSERT INTO messages (session_id, event, created_at) VALUES (?1,?2,?3)")?;
             for ev in events {
                 st.execute(params![session_id, ev.to_string(), at])?;
+                crate::search::index(&tx, tx.last_insert_rowid(), ev)?;
             }
         }
         tx.commit()?;
@@ -782,6 +786,25 @@ impl Store {
 
     pub fn has_events(&self, session_id: &str) -> Result<bool> {
         Ok(self.conn.query_row("SELECT EXISTS(SELECT 1 FROM messages WHERE session_id=?1)", [session_id], |r| r.get(0))?)
+    }
+
+    // ---- global search (see search.rs) ----
+
+    pub fn search(&self, query: &str, filter: &crate::search::Filter) -> Result<Vec<crate::search::Group>> {
+        crate::search::search(&self.conn, query, filter)
+    }
+
+    pub fn search_progress(&self) -> Result<crate::search::Progress> {
+        crate::search::progress(&self.conn)
+    }
+
+    /// Index the next `batch` messages stored before the index existed; true once all are done.
+    pub fn search_backfill_step(&self, batch: i64) -> Result<bool> {
+        Ok(crate::search::backfill_step(&self.conn, batch)?.1)
+    }
+
+    pub fn message_place(&self, message_id: i64) -> Result<crate::search::Place> {
+        crate::search::place(&self.conn, message_id)
     }
 
     pub fn events(&self, session_id: &str) -> Result<Vec<serde_json::Value>> {

@@ -333,6 +333,10 @@ export const api = {
     invoke<void>("update_session", { id, title, model, permissionMode }),
   sessionEventsTail: (id: string, limit: number) => invoke<{ events: ChatEvent[]; total: number }>("session_events_tail", { id, limit }),
   sessionEvents: (id: string) => invoke<ChatEvent[]>("session_events", { id }),
+  /** ⌘⇧F: search every chat, archived workspaces included. `indexing` is set while older messages are still being indexed. */
+  searchChats: (query: string, filter: SearchFilter) => invoke<{ groups: SearchGroup[]; indexing: SearchProgress | null }>("search_chats", { query, filter }),
+  /** Where a search hit lives: its chat and how many events come before it. */
+  searchOpen: (messageId: number) => invoke<SearchPlace>("search_open", { messageId }),
   queued: (id: string) => invoke<string[]>("queued", { id }),
   clearQueue: (id: string) => invoke<void>("clear_queue", { id }),
   send: async (id: string, text: string) => { await beforeTurn(id); return invoke<void>("send", { id, text }); },
@@ -372,5 +376,23 @@ export const api = {
   conductorAvailable: () => invoke<boolean>("conductor_available"),
   importConductor: () => invoke<ImportReport>("import_conductor"),
 };
+
+export type SearchKind = "user" | "agent" | "command" | "file";
+export type SearchFilter = { repo?: string | null; agent?: string | null; workspace?: string | null; since?: string | null; kind?: "user" | "command" | null; limit?: number };
+export type SearchHit = {
+  message_id: number; session_id: string; kind: SearchKind;
+  /** Text around the match; matches are wrapped in \u0002 and \u0003. */
+  snippet: string; created_at: string; agent: Agent; chat: string;
+};
+export type SearchGroup = {
+  workspace_id: string; repo_id: string; repo: string; name: string; title: string; branch: string;
+  state: "active" | "archived"; hits: SearchHit[];
+  /** Hits in this workspace beyond the ones listed. */
+  more: number;
+};
+export type SearchProgress = { done: number; total: number; finished: boolean };
+export type SearchPlace = { session: Session; workspace_id: string; index: number; total: number };
+/** Open a chat at one message: Chat loads enough history to show it, scrolls there and flashes it. */
+export type JumpTo = { sessionId: string; session: Session; index: number; total: number; nonce: number };
 
 export const errText = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e));
