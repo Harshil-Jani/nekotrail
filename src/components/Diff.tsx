@@ -764,7 +764,10 @@ export function Diff({
               <input type="checkbox" checked={isViewed} onChange={() => toggleViewed(f)} aria-label={`Mark ${f.path} as viewed`} title="Mark as viewed" />
               <button onClick={() => { setOpen(f.path); setEditing(null); }}>
                 <span className={`status s-${f.status}`}>{f.status}</span>
-                <span className="file-path" title={f.path}>{f.path}</span>
+                <span className="file-path" title={f.path}>
+                  <span className="file-name">{f.path.split("/").pop()}</span>
+                  {f.path.includes("/") && <span className="file-dir">{f.path.slice(0, f.path.lastIndexOf("/"))}</span>}
+                </span>
                 {n > 0 && <span className="comment-count num" title={`${n} ${n === 1 ? "comment" : "comments"}`}>{n}</span>}
                 <span className="add">+{f.additions}</span>
                 <span className="del">-{f.deletions}</span>
