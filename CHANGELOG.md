@@ -15,6 +15,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - From a terminal: `nekotrail handoff <workspace> --to codex` opens the hand-off in nekotrail with its brief to read, and `--now` sends it straight away. `.` is the workspace you're in.
 - The old "Continue in" button on an out-of-usage card, which pasted the raw transcript into the message box, is replaced by the hand-off.
 
+**Design ship-gate fixes**
+- The hand-off sheet picks the agent with the same switch as the rest of the app.
+- The new chat's mode sits on its own line with a shield, so you see at a glance that a hand-off never gives an agent more room.
+- The sheet says the brief is yours to read and edit, and that the new chat links back to this one.
+- Both stop cards offer the same "Hand off to another agent…" button.
+- "Handed off to Codex" and "Continued from Claude" end with an "Open Codex's chat" link, so the way to the other chat is plain.
+- The brief at the top of the new chat shows in the code font, as you read it in the sheet.
+- Your messages sit at the right edge of the chat again.
+
 ## 0.19.0 (2026-11-07)
 
 **Linear issues**
