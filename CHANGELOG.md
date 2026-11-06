@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**One set of rules for every agent**
+- New Rules sheet (⋯ menu or ⌘K): see which rules files your repo has (AGENTS.md, CLAUDE.md, GEMINI.md, Copilot's, Cursor's, Cline's and more), which of the 16 agents reads which, and how each one differs from your main file.
+- "Use AGENTS.md for every agent" makes the other files point at one file: an `@AGENTS.md` import for Claude and Gemini, a short note where the agents read AGENTS.md anyway, or a copy marked do-not-edit. You see every change first, and a file with your own words is only replaced after you confirm its diff. Old files are backed up and nothing is committed.
+- Edit rules: a markdown editor with a live preview that won't save over a file an agent changed since you opened it.
+- Rules for this task: a note per workspace that goes in front of the first message of every new chat there, whichever agent it is.
+
 **Commit composer**
 - New Commit view in Changes: stage or unstage whole files, single hunks, or the lines you tick. Your files on disk never change, only what's staged.
 - The message box counts your subject line against 72 characters. Draft message asks the workspace's agent for a conventional message from the staged changes, outside your chat. If the agent is busy, the draft comes from the file list instead.
