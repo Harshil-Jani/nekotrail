@@ -231,7 +231,19 @@ export type McpPreview = { file: string; creates: boolean; backup: string | null
 let beforeTurn: (id: string) => Promise<void> = async () => {};
 export const setBeforeTurn = (f: (id: string) => Promise<void>) => { beforeTurn = f; };
 
+/** What the `nekotrail` command and `nekotrail://` links ask the window to do (`remote::Job`). */
+export type RemoteJob =
+  | { kind: "focus"; workspace_id: string }
+  | { kind: "repo"; repo_id: string; added: boolean }
+  | { kind: "start"; workspace_id: string; session_id: string; prompt: string }
+  | { kind: "confirm"; token: string; repo: string; repo_path: string; adds_repo: boolean; prompt: string; agent: string; base: string | null; plan: boolean }
+  | { kind: "error"; text: string };
+
 export const api = {
+  remoteTake: () => invoke<RemoteJob[]>("remote_take"),
+  linkConfirm: (token: string, ok: boolean) => invoke<void>("link_confirm", { token, ok }),
+  cliInstall: () => invoke<{ path: string; hint: string | null }>("cli_install"),
+  cliStatus: () => invoke<{ path: string | null }>("cli_status"),
   githubProfile: () => invoke<GithubUser>("github_profile"),
   repoGithub: (id: string) => invoke<RepoGithub>("repo_github", { id }),
   sky: () => invoke<Sky>("sky"),

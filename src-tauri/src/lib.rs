@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod agent;
 pub mod agentcfg;
+pub mod cli;
 pub mod mcpshare;
 pub mod config;
 pub mod git;
@@ -13,6 +14,7 @@ pub mod preview;
 pub mod prpoll;
 pub mod pty;
 pub mod radar;
+pub mod remote;
 pub mod safe;
 pub mod search;
 pub mod store;
@@ -98,6 +100,8 @@ pub struct AppState {
     prs: Mutex<PrCache>,
     /// Wakes the poller early (a push, a merge, the window coming back).
     pr_wake: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    /// What the `nekotrail` command and `nekotrail://` links asked the window to do.
+    inbox: remote::Inbox,
 }
 
 /// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
@@ -2971,6 +2975,30 @@ async fn import_conductor(st: State<'_, AppState>) -> Res<importer::Report> {
     importer::import(&st.db(), &db).map_err(e)
 }
 
+// ---------- the nekotrail command and links ----------
+
+/// What the `nekotrail` command and links queued for the window (see `remote::Job`).
+#[tauri::command]
+fn remote_take(st: State<'_, AppState>) -> Vec<remote::Job> {
+    st.inbox.take()
+}
+
+/// Your answer to a link that wants to start an agent. Only `ok` starts it; either way the token is spent.
+#[tauri::command]
+async fn link_confirm(app: AppHandle, token: String, ok: bool) -> Res<()> {
+    tauri::async_runtime::spawn_blocking(move || remote::confirm(&app, &token, ok)).await.map_err(e)?
+}
+
+#[tauri::command]
+async fn cli_install() -> Res<Value> {
+    cli::install()
+}
+
+#[tauri::command]
+fn cli_status() -> Value {
+    cli::status()
+}
+
 /// The app was called purrfectpr before v0.2. Carry its database over once.
 fn migrate_old_data(data: &Path) {
     let old = dirs::data_dir().map(|d| d.join("dev.purrfectpr.app").join("purrfectpr.db"));
@@ -3016,10 +3044,26 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default() })
-        .setup(|app| {
+        .plugin(tauri_plugin_deep_link::init())
+        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default() })
+        .setup(move |app| {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
+            remote::serve(app.handle().clone(), data);
+            cli::refresh_script();
+            use tauri_plugin_deep_link::DeepLinkExt;
+            let h = app.handle().clone();
+            app.deep_link().on_open_url(move |ev| {
+                for url in ev.urls() {
+                    remote::on_link(&h, url.as_str());
+                }
+            });
+            // A link that launched the app. The same link arriving twice asks once (`remote::Pending`).
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for url in urls {
+                    remote::on_link(app.handle(), url.as_str());
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3034,7 +3078,8 @@ pub fn run() {
             remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
-            github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open
+            github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
+            remote_take, link_confirm, cli_install, cli_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");
@@ -3199,7 +3244,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
         };
         let repo = Repo {
             id: "r".into(), name: "demo".into(), root_path: dir.path().to_string_lossy().into(), default_branch: "main".into(),
@@ -3241,7 +3286,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
         };
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
@@ -3317,7 +3362,7 @@ mod tests {
         let st = AppState {
             store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
-            prs: Default::default(), pr_wake: Default::default(),
+            prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(),
         };
         let repo = |id: &str, remote: Option<&str>| Repo {
             id: id.into(), name: id.into(), root_path: dir.path().join(id).to_string_lossy().into(), default_branch: "main".into(),

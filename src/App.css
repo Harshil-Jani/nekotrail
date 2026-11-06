@@ -1062,6 +1062,8 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 @keyframes twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .sky-star.shining circle:nth-child(3) { animation: none; } }
 .setting-note { margin: -2px 0 4px; font-size: 12px; }
+.setting-note.bad { color: var(--bad); }
+.setting-note code { user-select: text; overflow-wrap: anywhere; }
 input.switch { width: 32px; height: 18px; flex-shrink: 0; border-radius: 9px; background: var(--press); box-shadow: inset 0 0 0 0.5px var(--line-strong); padding: 0; margin: 0; }
 input.switch:checked { background: var(--accent); box-shadow: none; }
 input.switch:focus-visible { box-shadow: var(--ring) !important; }
@@ -1374,6 +1376,13 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .menu-icon-space { width: 13px; flex-shrink: 0; display: inline-block; }
 .preview-empty p code { white-space: nowrap; }
 .confirm-body { display: flex; flex-direction: column; gap: var(--s2); }
+/* A prompt from a link, exactly as it will be sent. */
+.confirm-quote {
+  margin: var(--s2) 0 0; padding: var(--s2) var(--s3); max-height: 220px; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; color: var(--text);
+  background: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06)); border-radius: 8px;
+}
+.confirm-footer { margin-top: var(--s2); }
 /* Disabled filled buttons go neutral, as on macOS: half-transparent orange or green turned muddy on dark. */
 button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
   background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08)); color: var(--faint); box-shadow: none; border-color: transparent; opacity: 1;
