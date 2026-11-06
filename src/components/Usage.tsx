@@ -176,7 +176,7 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
             {days > 1 && <Stat label={`${range}, API-equivalent`} value={sum.turns ? costText(sum).text : money(0)} sub={costSub(sum, `in ${range}`)} partial={sum.priced_turns > 0 && sum.priced_turns < sum.turns} />}
             <Stat label="Turns" value={sum.turns.toLocaleString()} sub={range} />
             <Stat label="Tokens in and out" value={sum.turns ? tokenText(sum) : "0"} sub={sum.token_turns ? `${tokens(sum.cached)} read from cache` : sum.turns ? "No agent reported tokens" : range} />
-            <Stat label="Agent time" value={duration(sum.duration_ms)} sub={range} />
+            <Stat label="Agent time" value={sum.turns ? duration(sum.duration_ms) : "No turns yet"} sub={range} />
           </div>
         )}
 

@@ -529,11 +529,11 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       return <div className="msg error">{r.text}</div>;
     case "done":
       return (
-        <div className="msg done num">
+        <div className="msg done num" title={r.ev.cost_usd ? "API-equivalent: what this turn would cost at API prices. On a subscription you pay a flat fee." : undefined}>
           {r.ev.stopped ? <Square size={14} /> : r.ev.is_error ? <X size={14} /> : <Check size={14} />}
           {r.ev.stopped ? "Stopped" : r.ev.is_error ? "Ended with an error" : "Done"}
           {r.ev.duration_ms ? ` · ${(r.ev.duration_ms / 1000).toFixed(1)}s` : ""}
-          {r.ev.cost_usd ? ` · $${r.ev.cost_usd.toFixed(2)}` : ""}
+          {r.ev.cost_usd ? ` · $${r.ev.cost_usd.toFixed(2)} API-equivalent` : ""}
         </div>
       );
   }
