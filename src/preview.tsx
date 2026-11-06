@@ -108,6 +108,12 @@ const workspaces = [
   ws("w4", "r2", "ziggy", "harshil/pricing-page", { title: "Pricing page with an annual toggle", title_source: "auto" }),
   ws("w5", "r2", "pip", "harshil/blog-rss"),
 ];
+// ?many adds 20 more workspaces (most titled, a few not yet) to judge the sidebar's density.
+if (new URLSearchParams(location.search).has("many")) {
+  const tasks = ["Retry webhooks with backoff", "Move the SLA timer to the worker", "", "Dark mode for the ticket view", "Paginate /v1/tickets with cursors", "Fix flaky login test on CI", "", "Add audit log for admin actions", "Upgrade to Go 1.24", "CSV export for reports", "Stop double-sending reminder emails", "Rate limit password resets", "", "Search tickets by customer email", "Bump Next to 16 and fix the build", "Explain the billing retry logic", "Cache the pricing API for 5 minutes", "Add Sentry to the worker", "Translate onboarding into Hindi", "Remove the old v0 endpoints"];
+  const stars = ["biscuit", "tofu", "dumpling", "pudding", "muffin", "pepper", "rocket", "flick", "button", "bean", "peanut", "pebble", "tiny", "biscuit", "tofu", "dumpling", "pudding", "muffin", "pepper", "rocket"];
+  tasks.forEach((t, i) => workspaces.push(ws(`m${i}`, i % 3 ? "r1" : "r2", stars[i], `harshil/task-${i}`, t ? { title: t, title_source: i % 4 ? "auto" : "pr" } : {})));
+}
 const events = [
   { kind: "user", checkpoint: "abc123", text: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it." },
   { kind: "tool", id: "t1", name: "Bash", input: "kubectl logs deploy/pawprint-api --since=30m | grep 502" },
@@ -257,6 +263,8 @@ mockIPC(
       case "mcp_share_apply":
         if (new URLSearchParams(location.search).get("mcp") === "stale") throw "The file changed since the preview. Look at it again before adding.";
         return { file: args.target === "opencode" ? "~/.config/opencode/opencode.json" : "~/.codex/config.toml", backup: args.target === "opencode" ? null : "~/.codex/config.toml.bak-nekotrail-20261106-142233" };
+      // ?dirty: archiving asks first, as if the workspace had uncommitted changes.
+      case "archive_workspace": if (location.search.includes("dirty") && !args.force) throw "DIRTY"; return null;
       case "skill_share": return "~/.agents/skills/triage";
       case "slash_commands": return [["ship", "Run tests, bump the version and open the release PR"], ["triage", "Label and prioritise new issues"]];
       case "sections": return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
