@@ -1278,7 +1278,7 @@ export default function App() {
                     {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                   </h1>
                 )}
-                <div className="ws-sub">{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{repo?.name} · {ws.branch} → {ws.target_branch}</div>
+                <div className="ws-sub">{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{repo?.name} · {isHistory(ws) ? <>on {ws.branch}, in your main checkout</> : <>{ws.branch} → {ws.target_branch}</>}</div>
               </div>
               <span className="spacer" />
               {ws.state === "active" && !isHistory(ws) && (

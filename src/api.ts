@@ -281,8 +281,8 @@ export const starName = (sky: Sky, w: Workspace) => {
 /** What the sidebar and header call a workspace: its task title, else its star. */
 export const displayName = (sky: Sky, w: Workspace) => w.title || starName(sky, w);
 
-/** The secondary line under a titled workspace: its star. Empty when the star is already the title. */
-export const subName = (sky: Sky, w: Workspace) => (w.title ? starName(sky, w) : "");
+/** The secondary line under a titled workspace: its star. Empty when the star is already the title, and for History, whose star means nothing. */
+export const subName = (sky: Sky, w: Workspace) => (w.title && !isHistory(w) ? starName(sky, w) : "");
 
 /** The name inside a sentence. A task title is quoted so "Fix login is done" reads as a name: “Fix login” is done. */
 export const nameInText = (sky: Sky, w: Workspace) => (w.title ? `“${w.title}”` : starName(sky, w));

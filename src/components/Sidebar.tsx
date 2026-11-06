@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eye, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, FolderInput, Kanban, Layers, ListChecks, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
-import { api, displayName, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
+import { api, displayName, isHistory, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
 import { ReviewRequests } from "./ReviewRequests";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
@@ -254,7 +254,7 @@ export function Sidebar(p: Props) {
         onContextMenu={(e) => { e.preventDefault(); setCtx({ w, x: e.clientX, y: e.clientY }); }}
       >
         <span className="ws-mark">
-          {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.review_pr ? <Eye size={15} className="pr-none" aria-label={`Reviewing PR #${w.review_pr}`} /> : <PrIcon state={p.prStates[w.id]} />}
+          {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.review_pr ? <Eye size={15} className="pr-none" aria-label={`Reviewing PR #${w.review_pr}`} /> : isHistory(w) ? <History size={15} className="pr-none" aria-label="Terminal history, read only" /> : <PrIcon state={p.prStates[w.id]} />}
           {w.unread && !p.running.has(w.id) && <span className="unread badge" aria-label="Unread" />}
         </span>
         <span className="ws-text" title={`${label(w)}${sub ? `\n${sub}` : ""}\n${repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>
