@@ -12,6 +12,7 @@ pub mod prpoll;
 pub mod pty;
 pub mod radar;
 pub mod safe;
+pub mod search;
 pub mod store;
 pub mod title;
 
@@ -2088,6 +2089,56 @@ async fn session_events_tail(st: State<'_, AppState>, id: String, limit: i64) ->
     Ok(json!({"events": events, "total": total}))
 }
 
+/// ⌘⇧F: every chat in every workspace (archived ones too), grouped by workspace, plus how far
+/// the one-time indexing of older messages has got (null once it's done).
+#[tauri::command]
+async fn search_chats(st: State<'_, AppState>, query: String, filter: search::Filter) -> Res<Value> {
+    let db = st.db();
+    let groups = db.search(&query, &filter).map_err(e)?;
+    let p = db.search_progress().map_err(e)?;
+    Ok(json!({"groups": groups, "indexing": if p.finished { Value::Null } else { json!(p) }}))
+}
+
+/// Where a search hit lives: its chat (closed chats too), and its position, so the chat can load
+/// enough history to scroll to it.
+#[tauri::command]
+async fn search_open(st: State<'_, AppState>, message_id: i64) -> Res<Value> {
+    let db = st.db();
+    let place = db.message_place(message_id).map_err(e)?;
+    let session = db.session(&place.session_id).map_err(e)?;
+    Ok(json!({"session": session, "workspace_id": place.workspace_id, "index": place.index, "total": place.total}))
+}
+
+/// Index messages stored before search existed, a batch at a time so the database lock is only
+/// ever held for a few milliseconds. Tells the window how far it has got ("search-index").
+fn search_backfill_loop(app: AppHandle) {
+    std::thread::spawn(move || {
+        // Let the window load its first snapshot before competing for the database.
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let st = app.state::<AppState>();
+        if st.db().search_progress().map(|p| p.finished).unwrap_or(true) {
+            return;
+        }
+        let started = std::time::Instant::now();
+        loop {
+            let step = st.db().search_backfill_step(500);
+            let progress = st.db().search_progress();
+            if let Ok(p) = progress {
+                let _ = app.emit("search-index", p);
+            }
+            match step {
+                Ok(true) => break,
+                Ok(false) => std::thread::sleep(std::time::Duration::from_millis(2)),
+                Err(err) => {
+                    eprintln!("search index: {err}");
+                    return;
+                }
+            }
+        }
+        eprintln!("search index: older messages indexed in {:?}", started.elapsed());
+    });
+}
+
 #[tauri::command]
 async fn session_events(st: State<'_, AppState>, id: String) -> Res<Vec<Value>> {
     st.db().events(&id).map_err(e)
@@ -2933,6 +2984,7 @@ pub fn run() {
         .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default() })
         .setup(|app| {
             pr_poll_loop(app.handle().clone());
+            search_backfill_loop(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2947,7 +2999,7 @@ pub fn run() {
             remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,
-            github_profile, repo_github, sky, busy_work, stop_all_work
+            github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open
         ])
         .run(tauri::generate_context!())
         .expect("error while running nekotrail");

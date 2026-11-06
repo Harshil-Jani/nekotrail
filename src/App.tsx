@@ -3,8 +3,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart } from "lucide-react";
-import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn } from "./api";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search } from "lucide-react";
+import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -16,6 +16,7 @@ import { NightSky } from "./components/NightSky";
 import { NewWorkspace, type NewWorkspaceRequest, type Source as NewSource } from "./components/NewWorkspace";
 import { Mascot, type Mood } from "./components/Mascot";
 import { Palette, type Command } from "./components/Palette";
+import { SearchSheet } from "./components/SearchSheet";
 import { CloneSheet, Welcome } from "./components/Welcome";
 import { Compare } from "./components/Compare";
 import { Board } from "./components/Board";
@@ -348,6 +349,11 @@ export default function App() {
   const [collisions, setCollisions] = useState<Collision[]>([]);
   useEffect(() => { api.collisions(prStates).then(setCollisions).catch(() => {}); }, [lines, prStatesKey]);
   const [quickOpen, setQuickOpen] = useState<string[] | null>(null);
+  // ⌘⇧F, and the message it last opened (the chat scrolls to it).
+  const [searchOpen, setSearchOpen] = useState(new URLSearchParams(window.location.search).has("search"));
+  const [jump, setJump] = useState<JumpTo | undefined>();
+  // An archived workspace opened from search while archived ones are hidden in the sidebar.
+  const [extraWs, setExtraWs] = useState<Workspace | null>(null);
   const [focusFile, setFocusFile] = useState<{ path: string; nonce: number } | undefined>();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
@@ -559,7 +565,28 @@ export default function App() {
     if (c) say(`${c.name}: ${c.story}`);
   };
 
-  const ws = workspaces.find((w) => w.id === selected) ?? null;
+  const ws = workspaces.find((w) => w.id === selected) ?? (extraWs?.id === selected ? extraWs : null);
+
+  // A jump belongs to one visit: leaving its workspace forgets it, so coming back doesn't scroll again.
+  useEffect(() => { if (jump && jump.session.workspace_id !== selected) setJump(undefined); }, [selected]);
+
+  /** Open a search hit: its workspace (archived ones read-only), its chat, scrolled to the message. */
+  const openHit = async (hit: SearchHit) => {
+    try {
+      const place = await api.searchOpen(hit.message_id);
+      let w = workspaces.find((x) => x.id === place.workspace_id);
+      if (!w) {
+        w = (await api.snapshot(true)).workspaces.find((x) => x.id === place.workspace_id);
+        if (!w) { say("That workspace is gone.", true); return; }
+        setExtraWs(w);
+      }
+      select(w.id);
+      setTab("chat");
+      setJump({ sessionId: place.session.id, session: place.session, index: place.index, total: place.total, nonce: Date.now() });
+    } catch (e) {
+      say(errText(e), true);
+    }
+  };
   const star = ws ? starFor(sky, ws.name) : null;
   const starLine = (st: Star) => {
     const c = constellationOf(sky, st);
@@ -859,6 +886,7 @@ export default function App() {
       });
     }
     c.push(
+      { id: "search", group: "Go", label: "Search every chat", hint: "⌘⇧F", keywords: "find history messages prompts commands files grep", icon: <Search size={15} />, run: () => setSearchOpen(true) },
       { id: "next", group: "Go", label: "Go to next workspace with news", hint: "⌘⌥L", icon: <Sparkles size={15} />, run: nextUnread },
       { id: "diagnostics", group: "App", label: "Copy diagnostics for a bug report", keywords: "debug support version", icon: <Gear size={15} />, run: copyDiagnostics },
       { id: "storage", group: "App", label: "Open storage and clean build folders", keywords: "disk space clean node_modules venv", icon: <FolderOpen size={15} />, run: () => setStorage(true) },
@@ -894,6 +922,7 @@ export default function App() {
       const k = e.key.toLowerCase();
       const go = (fn: () => void) => { e.preventDefault(); fn(); };
       if (k === "k" && !e.shiftKey) return go(() => setPalette((p) => !p));
+      if (k === "f" && e.shiftKey) return go(() => { setPalette(false); setSearchOpen((o) => !o); });
       if (k === "k" && e.shiftKey) return go(() => setView((v) => (v === "board" ? "workspace" : "board")));
       if (e.key === "[" && !e.shiftKey) return go(() => navRef.current(-1));
       if (e.key === "]" && !e.shiftKey) return go(() => navRef.current(1));
@@ -1154,15 +1183,13 @@ export default function App() {
 
             <div className="panel">
               {ws.state === "archived" ? (
-                <div className="empty">
-                  <Mascot size={88} mood="sleep" />
-                  <h2>Archived</h2>
-                  <p>Its branch {ws.branch} is kept. Restore the workspace to bring its folder back.</p>
+                <div className="pane">
+                  <Chat key={`ro-${ws.id}`} workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} jump={jump} readOnly />
                 </div>
               ) : (
                 <>
                   <div className="pane" hidden={tab !== "chat"}>
-                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} />
+                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
                     {tab === "changes" && <Diff workspaceId={ws.id} refreshKey={wsRefreshKey} focusFile={focusFile} onSendReview={(text, send) => { setTab("chat"); setInject({ text, nonce: Date.now(), send }); }} />}
@@ -1218,6 +1245,14 @@ export default function App() {
       {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} agent={trustAsk.agent} onAnswer={trustAsk.answer} />}
       {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
+      {searchOpen && (
+        <SearchSheet
+          repos={repos}
+          nameOf={(g) => g.title || starName(sky, { name: g.name } as Workspace)}
+          onOpen={(hit) => openHit(hit)}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {quickOpen && (
         <Palette
           placeholder="Search files in this workspace"

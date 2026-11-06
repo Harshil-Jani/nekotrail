@@ -130,6 +130,52 @@ const events = [
 ];
 // ?rewound shows the marker a rewind leaves, with its Undo.
 if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Rewound to before: The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", undo: "def456", files: 2 } as any);
+// ⌘⇧F: an archived workspace (Bean) with a chat of its own, and a search over every sample chat.
+// ?search opens the sheet; ?q=retry types a query; ?indexing shows the one-time indexing of older chats.
+if (new URLSearchParams(location.search).get("q")) sessionStorage.setItem("nekotrail.search", new URLSearchParams(location.search).get("q")!);
+const archivedWs = ws("w9", "r1", "bean", "harshil/webhook-retry", { state: "archived", title: "Retry webhooks with backoff", title_source: "pr" });
+const archivedEvents = [
+  { kind: "user", text: "Webhooks to Stripe fail now and then with a 503. Retry them with backoff, at most 5 times." },
+  { kind: "tool", id: "a1", name: "Read", input: "internal/webhooks/sender.go" },
+  { kind: "tool_result", id: "a1", output: "…", is_error: false },
+  { kind: "text", text: "Added exponential backoff with jitter (1s, 2s, 4s, 8s, 16s). A 4xx is never retried, since sending it again won't help." },
+  { kind: "tool", id: "a2", name: "Bash", input: "go test ./internal/webhooks/... -run TestRetry" },
+  { kind: "tool_result", id: "a2", output: "ok", is_error: false },
+  { kind: "done", is_error: false, duration_ms: 52000, cost_usd: 0.31 },
+];
+const corpus = (() => {
+  const day = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+  const out: { id: number; ws: string; session: string; index: number; total: number; ev: any; at: string; agent: string; chat: string }[] = [];
+  const add = (w: string, session: string, evs: any[], agent: string, chat: string, at: string) =>
+    evs.forEach((ev, index) => out.push({ id: out.length + 1, ws: w, session, index, total: evs.length, ev, at, agent, chat }));
+  add("w1", "s1", events, "claude", "Fix 502 after deploy", day(0.1));
+  add("w2", "s9", planEvents, "claude", "New chat", day(1.2));
+  add("w9", "s7", archivedEvents, "codex", "Webhook retries", day(12));
+  return out;
+})();
+const searchKind = (ev: any) => ev.kind === "user" ? "user" : ev.kind === "text" ? "agent" : ev.kind === "tool" ? (ev.name === "Bash" ? "command" : ["Read", "Edit", "Write"].includes(ev.name) ? "file" : null) : null;
+function previewSearch(q: string, f: any) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const groups: any[] = [];
+  for (const c of corpus) {
+    const kind = searchKind(c.ev);
+    const text: string = c.ev.kind === "tool" ? c.ev.input : c.ev.text;
+    if (!kind || !words.length || !words.every((w) => text.toLowerCase().includes(w))) continue;
+    if (f.kind && f.kind !== kind) continue;
+    if (f.agent && f.agent !== c.agent) continue;
+    if (f.since && c.at < f.since) continue;
+    const w = [...workspaces, archivedWs].find((x) => x.id === c.ws)!;
+    if (f.repo && f.repo !== w.repo_id) continue;
+    if (f.workspace && f.workspace !== w.id) continue;
+    const first = text.toLowerCase().indexOf(words[0]);
+    let snip = (first > 50 ? "…" : "") + text.slice(Math.max(0, first - 50), first + 110) + (first + 110 < text.length ? "…" : "");
+    for (const wd of words) snip = snip.replace(new RegExp(wd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), (m) => `\u0002${m}\u0003`);
+    let g = groups.find((x) => x.workspace_id === w.id);
+    if (!g) groups.push(g = { workspace_id: w.id, repo_id: w.repo_id, repo: repos.find((r) => r.id === w.repo_id)!.name, name: w.name, title: w.title, branch: w.branch, state: w.state, hits: [], more: 0 });
+    g.hits.push({ message_id: c.id, session_id: c.session, kind, snippet: snip, created_at: c.at, agent: c.agent, chat: c.chat });
+  }
+  return { groups, indexing: new URLSearchParams(location.search).has("indexing") ? { done: 7120, total: 19844, finished: false } : null };
+}
 const pr = {
   number: 482, url: "https://github.com", state: "OPEN", title: "Fix 502s after deploy: outlive the ALB idle timeout", isDraft: false,
   reviewDecision: "REVIEW_REQUIRED", mergeable: "MERGEABLE", additions: 38, deletions: 1, commentCount: 2,
@@ -152,16 +198,19 @@ mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
       case "snapshot": if (location.search.includes("fresh")) return { repos: [], workspaces: [], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
-        return { repos, workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
+        return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       case "repo_github": return { nameWithOwner: "pawprint/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "", isPrivate: false };
       case "sky": return SKY;
       case "conductor_available": return true;
-      case "sessions": return args.workspaceId === "w1"
+      case "search_chats": return previewSearch(args.query, args.filter);
+      case "search_open": { const c = corpus.find((x) => x.id === args.messageId)!; return { session: { id: c.session, workspace_id: c.ws, agent: c.agent, agent_session_id: null, title: c.chat, model: null, permission_mode: "acceptEdits", effort: null }, workspace_id: c.ws, index: c.index, total: c.total }; }
+      case "sessions": if (args.workspaceId === "w9") return [{ id: "s7", workspace_id: "w9", agent: "codex", agent_session_id: null, title: "Webhook retries", model: null, permission_mode: "acceptEdits" }];
+        return args.workspaceId === "w1"
         ? [{ id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" }, { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: "acceptEdits", effort: "high" }]
         : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
-      case "session_events_tail": { const all = args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
-      case "session_events": return args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
+      case "session_events_tail": { const all = args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
+      case "session_events": return args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
       case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_cache": {
         // What the PR poller would have pushed by now: one view per workspace.
