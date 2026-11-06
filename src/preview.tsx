@@ -926,6 +926,9 @@ mockIPC(
         linkTaken = true;
         // ?link=editor: the editor extension's "New task from selection". ?link=draft: "Send selection to workspace chat".
         if (linkMode === "draft") return [{ kind: "draft", workspace_id: workspaces[0].id, text: "From src/auth/session.ts:41-44:\n\n```ts\nif (token.expiresAt < Date.now()) {\n  return refresh(token);\n}\n```" }];
+        // ?link=editor-long: a selection near the 20k character cap.
+        if (linkMode === "editor-long") return [{ kind: "confirm", token: "t1", from: "editor", repo: "pawprint-api", repo_path: "/code/pawprint-api", adds_repo: false, agent: "claude", base: null, plan: false,
+          prompt: "Explain what this module does and where the retry should go.\n\nFrom src/auth/session.ts:1-600:\n\n```ts\n" + Array.from({ length: 600 }, (_, i) => `export const step${i} = (token: Token) => token.expiresAt < Date.now() + ${i} ? refresh(token) : token;`).join("\n").slice(0, 19800) + "\n```" }];
         if (linkMode === "editor") return [{ kind: "confirm", token: "t1", from: "editor", repo: "pawprint-api", repo_path: "/code/pawprint-api", adds_repo: false, agent: "claude", base: null, plan: false,
           prompt: "Make the session refresh retry once on a network error.\n\nFrom src/auth/session.ts:41-44:\n\n```ts\nif (token.expiresAt < Date.now()) {\n  return refresh(token);\n}\n```" }];
         return [{ kind: "confirm", token: "t1", repo: linkMode === "long" ? "pawprint-mobile" : "pawprint-api", repo_path: linkMode === "long" ? "~/code/pawprint-mobile" : "/code/pawprint-api", adds_repo: linkMode === "long", agent: linkMode === "long" ? "codex" : "claude", base: linkMode === "long" ? "release/2.4" : null, plan: linkMode === "long",

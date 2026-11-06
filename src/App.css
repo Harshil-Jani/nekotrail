@@ -2220,3 +2220,7 @@ input.alert-dest-name:focus { background: var(--field); box-shadow: var(--ring);
 input.switch:disabled { opacity: 0.4; cursor: default; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .alert-privacy svg { flex-shrink: 0; margin-top: 2px; color: var(--muted); }
+/* A task with a code selection in it reads as code: SF Mono keeps its indentation and columns. */
+.confirm-quote.code { font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+/* With a chat open the composer fills the bottom, so a toast sits under the toolbar and chat tabs instead of over Send. */
+body:has(.composer) .toast { bottom: auto; top: 140px; }

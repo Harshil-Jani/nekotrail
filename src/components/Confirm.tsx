@@ -78,7 +78,7 @@ export function ConfirmHost() {
         )}
         {cur.quote !== undefined && (
           <div className={`confirm-quote-wrap${more ? " more" : ""}`}>
-            <pre className="confirm-quote" ref={quote} onScroll={checkMore} tabIndex={0} aria-label="Task">{cur.quote}</pre>
+            <pre className={`confirm-quote${cur.quote.includes("```") ? " code" : ""}`} ref={quote} onScroll={checkMore} tabIndex={0} aria-label="Task">{cur.quote}</pre>
             {more && <p className="confirm-more" aria-hidden>Scroll to read the whole task</p>}
           </div>
         )}

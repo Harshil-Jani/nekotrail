@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
+import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
@@ -1040,6 +1041,7 @@ export default function App() {
         ];
         // The editor extension asks the same question: you read the task, then start it here.
         const editor = job.from === "editor";
+        if (editor) facts.push(...taskFacts(job.prompt));
         const who = editor ? "Your editor" : "A link";
         const go = await ask({
           title: `Start ${agent} from ${editor ? "your editor" : "a link"}?`,
