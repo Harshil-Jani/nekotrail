@@ -66,7 +66,35 @@ export type Workspace = {
   section_id: string;
   /** Stacked PRs: the workspace whose branch this one started from and targets, or "". */
   parent_id: string;
+  /** A review workspace: the number of someone else's PR it reviews, read-only. 0 for every other workspace. */
+  review_pr: number;
 };
+
+/** An open PR waiting for your review, from the PR poller (one extra query per repo). */
+export type ReviewRequest = {
+  repo_id: string;
+  number: number;
+  url: string;
+  title: string;
+  isDraft: boolean;
+  headRefName: string;
+  headRefOid: string;
+  baseRefName: string;
+  isCrossRepository: boolean;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  updatedAt: string;
+  author: { login: string; avatarUrl: string };
+};
+
+/** How a review's drafts would go up: on lines, or folded into the summary (their lines aren't in the PR's diff). */
+export type ReviewPlan = {
+  number: number; url: string; title: string; author: string; head_sha: string;
+  inline: number; folded: string[]; suggestions: number;
+};
+
+export type ReviewVerdict = "comment" | "approve" | "request_changes";
 
 /** The workspace a stacked one sits on, and that workspace's PR (null before it has one). */
 export type StackParent = {
@@ -328,6 +356,15 @@ export const api = {
   reviewComments: (id: string) => invoke<import("./components/Diff").ReviewComment[]>("review_comments", { id }),
   addReviewComments: (id: string, comments: import("./components/Diff").ReviewComment[]) => invoke<void>("add_review_comments", { id, comments }),
   removeReviewComments: (id: string, ids: string[]) => invoke<void>("remove_review_comments", { id, ids }),
+  updateReviewComment: (id: string, comment: string, text: string) => invoke<void>("update_review_comment", { id, comment, text }),
+  /** Open PRs waiting for your review, as the poller last saw them. Updates come as `review-requests` events. */
+  reviewRequests: () => invoke<ReviewRequest[]>("review_requests"),
+  /** A read-only workspace on the PR's head, with `agent` asked for findings (or the review already open for it). */
+  startReview: (repoId: string, number: number, agent: Agent) => invoke<Workspace>("start_review", { repoId, number, agent }),
+  reviewPlan: (id: string) => invoke<ReviewPlan>("review_plan", { id }),
+  /** Posts the drafts to GitHub as one review, then archives the workspace. Only from the Submit button. */
+  submitReview: (id: string, verdict: ReviewVerdict, body: string) =>
+    invoke<{ url: string | null; inline: number; folded: number; archived: boolean }>("submit_review", { id, verdict, body }),
   openIn: (id: string, app: string) => invoke<void>("open_in", { id, app }),
   openInTargets: () => invoke<{ id: string; name: string }[]>("open_in_targets"),
   lineCounts: () => invoke<Record<string, [number, number]>>("line_counts"),

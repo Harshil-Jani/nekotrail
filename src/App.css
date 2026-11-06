@@ -1520,3 +1520,18 @@ html.linux .gh-comment, html.linux .review-comment, html.linux .review-edit { fo
 html.linux .sidebar-head { padding-left: var(--s2); }
 html.linux .sidebar-toggle.floating { left: var(--s3); top: 9px; }
 html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, html.linux .app.no-sidebar .sky-title { padding-left: 52px; }
+
+/* Reviewing other people's PRs */
+.review-req { position: relative; }
+.review-req .ws { width: 100%; padding-right: 26px; }
+.review-with { position: absolute; right: 4px; top: 6px; width: 20px; height: 20px; opacity: 0; }
+.review-req:hover .review-with, .review-with:focus-visible, .review-with[aria-expanded="true"] { opacity: 1; }
+.review-with-menu .menu-icon-space { flex: none; }
+.review-with-menu { top: 30px; right: 4px; min-width: 200px; max-height: 60vh; overflow-y: auto; }
+.chip.read-only { display: inline-flex; align-items: center; color: var(--muted); background: var(--hover); }
+.review-bar-top b { font-weight: 600; }
+.modal.submit-review { width: min(520px, calc(100vw - 48px)); }
+.modal.submit-review > p { margin: 0; }
+.modal.submit-review textarea { min-height: 96px; resize: vertical; font-size: 13px; }
+.modal.submit-review .submit-plan { font-size: 12px; }
+.review-comment > .icon { flex-shrink: 0; }
