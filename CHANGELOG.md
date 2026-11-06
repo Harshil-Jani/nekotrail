@@ -18,6 +18,14 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Addresses and tokens are kept in your Keychain (on Linux, your keyring), never in nekotrail's database or logs.
 - Several updates within a minute arrive as one message, and quiet hours hold messages until they end. "Send a test" checks a destination, and the last error shows under it.
 
+**Design ship-gate fixes**
+- Away alerts state what a message holds and where its address and tokens are kept once, in a box under the heading, where you add a destination. A saved destination shows a lock next to where it sends, and one still to set up can't be switched on until you save it.
+- "Include the agent's last line" now says the line can mention your code, and that anything that looks like a key or token is hidden.
+- Quiet hours and the morning summary sit under "When to send".
+- "Start Claude from your editor?" names the file and lines the code came from, and for a long task how many lines and characters it has. Code in the task shows in a code font.
+- The "Your selection is in the message box" note sits under the chat tabs, so it no longer covers Send.
+- A finished turn's cost says it is API-equivalent, and Usage with no turns yet says so for agent time instead of 0 s.
+
 ## 0.17.0 (2026-11-07)
 
 **Spend you can trust**
