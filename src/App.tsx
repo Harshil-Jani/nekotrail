@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search } from "lucide-react";
-import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
+import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type RemoteJob, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -712,6 +712,84 @@ export default function App() {
       say(`Couldn't create the workspace. ${errText(e)}`, true);
     }
   };
+
+  // The `nekotrail` terminal command and nekotrail:// links. The backend queues what they ask for
+  // (so nothing is lost while the window loads) and nudges with a "remote" event; we drain the queue.
+  const showWorkspace = (id: string) => { setNewFor(null); setSelected(id); setView("workspace"); };
+  /** A workspace made outside the window: run its setup (asking first, as usual), then send the task. */
+  const startRemote = async (job: Extract<RemoteJob, { kind: "start" }>) => {
+    const snap = await api.snapshot(false);
+    const w = snap.workspaces.find((x) => x.id === job.workspace_id);
+    if (!w) return;
+    await refresh();
+    showWorkspace(w.id);
+    setTab("chat");
+    const scripts = await api.workspaceScripts(w.id);
+    const setup = !!scripts.setup && await trusted(w, scripts, "setup");
+    if (scripts.setup && !setup) say("Setup skipped. Run it later from the Terminal tab.");
+    if (setup) {
+      const done = waitForExit(`${w.id}:setup`);
+      await startPty(`${w.id}:setup`, "setup", "setup");
+      setTab("chat");
+      say("Setup is running in the Terminal tab. The agent starts as soon as it finishes.");
+      await done;
+    }
+    await api.send(job.session_id, job.prompt);
+  };
+  const remoteRef = useRef<(job: RemoteJob) => Promise<void>>(async () => {});
+  remoteRef.current = async (job) => {
+    switch (job.kind) {
+      case "error":
+        return say(job.text, true);
+      case "focus":
+        await refresh();
+        return showWorkspace(job.workspace_id);
+      case "repo": {
+        const snap = await api.snapshot(false);
+        await refresh();
+        const r = snap.repos.find((x) => x.id === job.repo_id);
+        if (job.added && r) say(`Added ${r.name}.`);
+        // Its newest workspace, or the new-workspace panel when it has none yet.
+        const newest = snap.workspaces.filter((w) => w.repo_id === job.repo_id && w.state === "active")
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        if (newest) return showWorkspace(newest.id);
+        setNewSource("task");
+        setNewFor(job.repo_id);
+        return;
+      }
+      case "start":
+        // Not awaited: setup can take minutes, and other requests shouldn't wait behind it.
+        startRemote(job).catch((e) => say(`Couldn't start the agent. ${errText(e)}`, true));
+        return;
+      case "confirm": {
+        // A web page can open a link, so a link never starts an agent without this answer.
+        const agent = agentName(job.agent);
+        const where = job.adds_repo ? `${job.repo} (${job.repo_path}, which this also adds to nekotrail)` : `${job.repo} (${job.repo_path})`;
+        const go = await ask({
+          title: `Start ${agent} from a link?`,
+          body: `A link asks for a new workspace in ${where}${job.base ? `, from ${job.base}` : ""}, with ${agent}${job.plan ? " in plan mode" : ""} working on this task:`,
+          quote: job.prompt,
+          footer: "Only start it if you opened this link yourself and you trust the task.",
+          ok: "Start agent",
+        });
+        await api.linkConfirm(job.token, go).catch((e) => say(errText(e), true));
+        return;
+      }
+    }
+  };
+  useEffect(() => {
+    // One at a time, so link questions never stack on top of each other.
+    let chain = Promise.resolve();
+    const drain = () => {
+      chain = chain.then(async () => {
+        const jobs = (await api.remoteTake().catch(() => null)) ?? [];
+        for (const job of jobs) await remoteRef.current(job).catch((e) => say(errText(e), true));
+      });
+    };
+    drain();
+    const un = listen("remote", drain);
+    return () => { un.then((f) => f()); };
+  }, []);
 
   const archive = async (opts?: { auto?: boolean; id?: string }) => {
     const target = opts?.id ? workspaces.find((w) => w.id === opts.id) : ws;

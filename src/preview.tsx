@@ -382,6 +382,8 @@ mockIPC(
       case "remove_review_comments": reviews[args.id] = (reviews[args.id] ?? []).filter((c) => !args.ids.includes(c.id)); return null;
       case "send": (window as any).__sent = [...((window as any).__sent ?? []), args.text]; return null;
       case "save_attachment": (window as any).__lastAttachment = args.bytes; return `.nekotrail/attachments/140212-${args.name}`;
+      case "remote_take": return [];
+      case "cli_status": return { path: null };
       default: return null;
     }
   },

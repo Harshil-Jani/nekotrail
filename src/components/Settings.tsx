@@ -120,6 +120,37 @@ function AppearancePane({ s, set }: { s: S; set: <K extends keyof S>(k: K, v: S[
 }
 
 /** ⌘, : preferences in five panes, like a Mac settings window. Changes save as you make them. */
+/** Settings, General: install the `nekotrail` terminal command. */
+function CommandLine() {
+  const [path, setPath] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.cliStatus().then((s) => setPath(s.path)).catch(() => {}); }, []);
+  const install = async () => {
+    setBusy(true);
+    try {
+      const r = await api.cliInstall();
+      setPath(r.path);
+      setNote(r.hint ? { text: r.hint } : { text: "Installed. Try nekotrail --help in a new terminal." });
+    } catch (e) {
+      setNote({ text: String(e), error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section>
+      <h3>Command line</h3>
+      <p className="muted setting-note">Run <code>nekotrail .</code> to open a repo, or <code>nekotrail new "fix the login bug"</code> to start an agent, from any terminal.</p>
+      <div className="setting">
+        <span>{path ? <>Installed at <code>{path}</code></> : "The nekotrail command"}</span>
+        <button onClick={install} disabled={busy}>{path ? "Reinstall" : "Install command line tool"}</button>
+      </div>
+      {note && <p className={`setting-note ${note.error ? "bad" : "muted"}`} role="status">{note.text}</p>}
+    </section>
+  );
+}
+
 export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: () => void; home: string; update?: UpdatePhase | null; onCheckUpdates?: () => void }) {
   // ?settings=agents opens a pane directly (the preview page uses it for screenshots).
   const [pane, setPane] = useState<Pane>(() => {
@@ -248,6 +279,7 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
             <code className="muted">{backend?.home ? `${backend.home}/workspaces` : home}</code>
           </div>
         </section>
+        <CommandLine />
         </>}
 
         {pane === "agents" && <>

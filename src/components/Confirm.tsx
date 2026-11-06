@@ -4,6 +4,10 @@ export type Ask = {
   title: string;
   /** Plain text; each "\n" starts a new paragraph. */
   body?: string;
+  /** Text shown exactly as given (a prompt from a link), set apart from the body and scrollable. */
+  quote?: string;
+  /** A line under the quote. */
+  footer?: string;
   /** Label of the button that goes ahead, e.g. "Archive anyway". */
   ok: string;
   cancel?: string;
@@ -53,6 +57,8 @@ export function ConfirmHost() {
         <h2 id="confirm-title">{cur.title}</h2>
         {/* Each line of the body is its own paragraph, so a consequence can stand on its own line. */}
         {cur.body && <div id="confirm-body" className="confirm-body">{cur.body.split("\n").map((line, i) => <p key={i} className="muted">{line}</p>)}</div>}
+        {cur.quote !== undefined && <pre className="confirm-quote">{cur.quote}</pre>}
+        {cur.footer && <p className="muted confirm-footer">{cur.footer}</p>}
         <div className="row end">
           {!cur.notice && <button onClick={() => done(false)}>{cur.cancel ?? "Cancel"}</button>}
           <button className={cur.danger ? "danger-fill" : "primary"} onClick={() => done(true)}>{cur.ok}</button>
