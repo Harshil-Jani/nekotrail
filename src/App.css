@@ -1450,5 +1450,9 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .commands-list section { display: flex; flex-direction: column; gap: 2px; }
 .commands-chat { display: flex; align-items: baseline; gap: var(--s2); font-size: 12px; padding-bottom: var(--s1); }
 .commands-chat b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.commands-list details summary code { white-space: pre-wrap; word-break: break-all; }
+/* Long commands wrap in full: the row grows with them, the icon stays on the first line. */
+.commands-list details summary { height: auto; min-height: 28px; align-items: flex-start; padding-block: 6px; }
+.commands-list details summary > svg, .commands-list details summary > .pending { flex: none; margin-top: 1px; }
+.commands-list details summary code { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 16px; }
+.commands-list details.failed summary code { color: var(--text); }
 .commands-list details p { margin: var(--s1) 0 var(--s2) var(--s5); font-size: 12px; }

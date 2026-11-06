@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, Copy, SquareTerminal, X } from "lucide-react";
+import { AlertCircle, Check, CircleDashed, Copy, SquareTerminal, X } from "lucide-react";
 import { api, errText } from "../api";
 import { agentName } from "../agents";
 import { commandsFrom, commandsText, type RanCommand } from "../commandsLog";
@@ -33,6 +33,15 @@ export function CommandsLog({ workspaceId, name, onClose }: { workspaceId: strin
   }, [chats, q]);
   const total = chats?.reduce((n, c) => n + c.commands.length, 0) ?? 0;
   const failed = chats?.reduce((n, c) => n + c.commands.filter((x) => x.failed).length, 0) ?? 0;
+  const matching = shown.reduce((n, c) => n + c.commands.length, 0);
+  const filtering = q.trim() !== "" && matching !== total;
+  // "Copied" goes back to the button label after a moment, and whenever the filter changes what Copy takes.
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  useEffect(() => setCopied(false), [q]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -45,7 +54,7 @@ export function CommandsLog({ workspaceId, name, onClose }: { workspaceId: strin
         {total > 0 && (
           <div className="row">
             <input className="commands-filter" value={q} placeholder="Filter commands" aria-label="Filter commands" onChange={(e) => setQ(e.target.value)} autoFocus />
-            <button onClick={() => { navigator.clipboard.writeText(commandsText(shown)); setCopied(true); }}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : "Copy all"}</button>
+            <button disabled={matching === 0} onClick={() => { navigator.clipboard.writeText(commandsText(shown)); setCopied(true); }}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : filtering ? `Copy ${matching}` : "Copy all"}</button>
           </div>
         )}
         <div className="commands-list">
@@ -55,7 +64,7 @@ export function CommandsLog({ workspaceId, name, onClose }: { workspaceId: strin
               {c.commands.map((x, i) => (
                 <details key={i} className={`step ${x.failed ? "failed" : ""}`}>
                   <summary>
-                    {x.failed ? <AlertCircle size={14} /> : x.pending ? <span className="muted">…</span> : <Check size={14} />}
+                    {x.failed ? <AlertCircle size={14} aria-label="Failed" /> : x.pending ? <CircleDashed size={14} className="pending" aria-label="No result" /> : <Check size={14} />}
                     <code>{x.command}</code>
                   </summary>
                   {x.output ? <pre>{x.output}</pre> : <p className="muted">{x.pending ? "No result: it was still running when the turn ended." : "It printed nothing."}</p>}
