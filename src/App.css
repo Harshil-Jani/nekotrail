@@ -2245,7 +2245,7 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 
 /* Hand off to another agent: who carries on, then the brief they get, editable. */
 .modal-backdrop:has(> .modal.handoff) { align-items: flex-start; padding-top: 6vh; }
-.modal.handoff { width: min(760px, calc(100vw - 48px)); max-height: 88vh; gap: var(--s3); }
+.modal.handoff { width: min(760px, calc(100vw - 48px)); max-height: 88vh; overflow-y: auto; gap: var(--s3); }
 .handoff-why { font-size: 12.5px; }
 .handoff-pick { display: flex; flex-direction: column; gap: var(--s2); }
 .handoff-pick .mcp-h, .handoff-brief .mcp-h { margin: 0; }
@@ -2255,20 +2255,22 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .handoff-model { gap: var(--s2); flex-wrap: wrap; }
 .handoff-model .picker-btn { box-shadow: inset 0 0 0 0.5px var(--line-strong); }
 .handoff .picker-menu { top: calc(100% + 6px); bottom: auto; }
-.handoff-brief { display: flex; flex-direction: column; gap: var(--s2); min-height: 0; flex: 1; }
-.handoff-brief textarea { min-height: 260px; height: 42vh; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.5; padding: var(--s3); border-radius: var(--r-lg); }
+.handoff-brief { display: flex; flex-direction: column; gap: var(--s2); flex: none; }
+.handoff-brief textarea { min-height: 200px; height: 42vh; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.5; padding: var(--s3); border-radius: var(--r-lg); }
 .handoff-meta { display: flex; flex-wrap: wrap; gap: 4px var(--s3); align-items: center; }
 .handoff-meta .bad-text { color: var(--bad-text); }
 .handoff-meta svg { vertical-align: -2px; }
 .handoff-meta .ok { color: var(--good-text); }
 .handoff-reset { height: 22px; font-size: 12px; gap: 4px; }
 .handoff-busy { gap: var(--s2); }
-.handoff .export-foot { gap: var(--s2); }
-.handoff .export-foot > .export-small { max-width: 340px; }
+.handoff .export-foot { gap: var(--s2); flex-wrap: wrap; }
+.handoff .export-foot > .export-small { flex: 1 1 260px; max-width: 360px; }
 /* The line a hand-off leaves in each chat, pointing at the other one. */
 .msg.note.handoff-mark { color: var(--text); }
 .msg.note.handoff-mark svg { color: var(--accent-text); flex-shrink: 0; }
 .msg.note.handoff-mark button.link { font-size: 12.5px; }
-/* Offered above the message box when the agent ran out of usage or was stopped. */
-.handoff-offer { display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s4) var(--s2); padding: 6px var(--s3); border-radius: var(--r-lg); background: var(--accent-soft); font-size: 12.5px; }
-.handoff-offer svg { color: var(--accent-text); flex-shrink: 0; }
+/* The brief a hand-off sent, folded at the top of the chat that picked it up. */
+.msg.user.handoff-brief-msg { white-space: normal; min-width: 280px; }
+.handoff-brief-msg summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.handoff-brief-msg summary .muted { font-weight: 400; }
+.handoff-brief-text { white-space: pre-wrap; margin-top: var(--s2); font-size: 13px; line-height: 1.5; }

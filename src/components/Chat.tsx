@@ -13,7 +13,7 @@ import { ask } from "./Confirm";
 import { getSettings } from "../settings";
 import { keyHint, mod, modKey } from "../platform";
 import { AGENT_INFO, agentName, splitAgents } from "../agents";
-import { handoffOffer, markerText, reasonLine } from "../handoff";
+import { handoffOffer, markerText } from "../handoff";
 import { HandoffSheet } from "./HandoffSheet";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
@@ -77,7 +77,8 @@ function ContextMeter({ tokens, window }: { tokens: number; window: number }) {
 
 
 type Row =
-  | { type: "user"; text: string; checkpoint?: string | null }
+  /** `brief`: the first message of a chat that continues a hand-off (long, so it starts folded). */
+  | { type: "user"; text: string; checkpoint?: string | null; brief?: boolean }
   | { type: "rewind"; text: string; undo: string }
   | { type: "text" | "thinking" | "error" | "note"; text: string; fix?: "install" | "login" | "limit" | null; agent?: Agent }
   | { type: "tool"; name: string; input: string; output?: string; is_error?: boolean; pending: boolean }
@@ -98,6 +99,7 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
   const toolIdx = new Map<string, number>();
   const approvalIdx = new Map<string, number>();
   const guardIdx = new Map<string, number>();
+  let briefNext = false;
   for (const ev of events) {
     const before = rows.length;
     rowOf?.push(before);
@@ -127,7 +129,8 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
         break;
       }
       case "user":
-        rows.push({ type: "user", text: ev.text, checkpoint: ev.checkpoint });
+        rows.push(briefNext ? { type: "user", text: ev.text, checkpoint: ev.checkpoint, brief: true } : { type: "user", text: ev.text, checkpoint: ev.checkpoint });
+        briefNext = false;
         break;
       case "rewind":
         rows.push({ type: "rewind", text: ev.text, undo: ev.undo });
@@ -147,6 +150,7 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
         break;
       case "handoff":
         rows.push({ type: "handoff", ev });
+        briefNext = ev.dir === "from";
         break;
       case "guard_restored": {
         const i = guardIdx.get(ev.checkpoint);
@@ -188,6 +192,8 @@ type ChatCtxValue = {
   query: string;
   /** Open the hand-off sheet for this chat (when its agent is missing, out of usage or stuck). */
   handoff: () => void;
+  /** The chat ends with its agent out of usage or stopped: the hand-off is the next step, so its buttons stand out. */
+  offered: boolean;
   /** Show another chat of this workspace (a hand-off line points at it). */
   openChat: (id: string) => void;
   /** Start one workspace per plan step, in parallel. */
@@ -210,7 +216,7 @@ export function parseFindings(text: string): Finding[] {
   }
   return out;
 }
-const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", handoff: () => {}, openChat: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {}, savePrompt: () => {} });
+const RewindCtx = createContext<ChatCtxValue>({ rewind: async () => {}, live: null, disabled: true, approvePlan: () => {}, expandAll: false, query: "", handoff: () => {}, offered: false, openChat: () => {}, addFindings: () => {}, fanOut: () => {}, putBack: async () => {}, savePrompt: () => {} });
 
 const CHANGE: Record<GuardHit["change"], string> = { added: "new", changed: "changed", deleted: "deleted" };
 
@@ -268,7 +274,7 @@ function FindingsButton({ text }: { text: string }) {
 
 /** An agent problem with the way out: install it, sign in, or switch agents. */
 function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; agent: Agent; text: string }) {
-  const { handoff, disabled } = useContext(RewindCtx);
+  const { handoff, offered, disabled } = useContext(RewindCtx);
   const name = AGENT_INFO[agent]?.full ?? "Claude Code";
   const install = AGENT_INFO[agent]?.install ?? AGENT_INFO.claude.install;
   const [copied, setCopied] = useState(false);
@@ -290,7 +296,7 @@ function FixCard({ fix, agent, text }: { fix: "install" | "login" | "limit"; age
         {fix === "login" && <button className="accent" onClick={() => runInTerminal((AGENT_INFO[agent] ?? AGENT_INFO.claude).login)}><SquareTerminal size={13} />Sign in from terminal</button>}
         {fix === "limit" && <span className="muted">The limit resets on its own. Your chat is kept.</span>}
         <span className="spacer" />
-        <button className={fix === "limit" ? "accent" : "quiet"} onClick={handoff} disabled={disabled} title="Another agent carries on in this workspace, with a brief of what was done"><ArrowRightLeft size={13} />Hand off to another agent…</button>
+        <button className={fix === "limit" && offered ? "accent" : "quiet"} onClick={handoff} disabled={disabled} title="Another agent carries on in this workspace, with a brief of what was done"><ArrowRightLeft size={13} />Hand off to another agent…</button>
       </div>
     </div>
   );
@@ -418,8 +424,8 @@ function MessageMenu({ text }: { text: string }) {
 
 /** "Hand off to another agent…", for cards that offer it. */
 function HandoffButton() {
-  const { handoff, disabled } = useContext(RewindCtx);
-  return <button onClick={handoff} disabled={disabled}><ArrowRightLeft size={13} />Hand off…</button>;
+  const { handoff, offered, disabled } = useContext(RewindCtx);
+  return <button className={offered ? "accent" : undefined} onClick={handoff} disabled={disabled}><ArrowRightLeft size={13} />Hand off…</button>;
 }
 
 /** "Handed off to Codex" or "Continued from Claude", opening the other chat. */
@@ -452,7 +458,12 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
     case "user":
       return (
         <div className="msg-user-wrap">
-          <div className="msg user">{r.text}</div>
+          {r.brief ? (
+            <details className="msg user handoff-brief-msg" open={expandAll || undefined}>
+              <summary>Brief from the hand-off <span className="muted">· {[...r.text].length.toLocaleString("en-US")} characters</span></summary>
+              <div className="handoff-brief-text">{r.text}</div>
+            </details>
+          ) : <div className="msg user">{r.text}</div>}
           <span className="msg-user-actions">
             {r.checkpoint && <RewindButton checkpoint={r.checkpoint} prompt={r.text} />}
             <MessageMenu text={r.text} />
@@ -709,9 +720,12 @@ export function Chat({
   };
   // The handlers below read the latest chat through this ref, so the context value (and with it
   // every memoized row) only changes when busy, expand-all or search change, not on each new event.
+  // Out of usage, going in circles or at a cap, and you haven't written since: offer the hand-off.
+  const offer = useMemo(() => (readOnly ? null : handoffOffer(events)), [events, readOnly]);
   const live = useRef({ session, events, active, workspaceId, approvePlan, openHandoff: () => {}, openChat: (_: string) => {} });
   const rewindCtx = useMemo(() => ({
     handoff: () => live.current.openHandoff(),
+    offered: !!offer,
     openChat: (id: string) => live.current.openChat(id),
     fanOut: (plan: string, steps: string[]) => {
       const { session, workspaceId } = live.current;
@@ -773,7 +787,7 @@ export function Chat({
         if (ok) await api.restoreCheckpoint(active, checkpoint);
       } catch (e) { setError(errText(e)); }
     },
-  }), [anyBusy, expandAll, search, liveCheckpoints, readOnly]);
+  }), [anyBusy, expandAll, search, liveCheckpoints, readOnly, offer]);
 
   // A search hit to open once its chat is showing (see `openTail`).
   const pendingJump = useRef<JumpTo | null>(null);
@@ -1083,12 +1097,16 @@ export function Chat({
     if (!sessionId || readOnly) return;
     setHandingOff({ sessionId, agent, model });
   };
+  // Asked for before this workspace's chats loaded (a workspace just opened): wait for them.
+  const handoffDone = useRef(0);
   useEffect(() => {
-    if (!handoff) return;
+    if (!handoff || handoffDone.current === handoff.nonce) return;
     const sid = handoff.sessionId ?? active;
-    if (sid && sid !== active && sessions.some((s) => s.id === sid)) setActive(sid);
-    openHandoff(sid ?? undefined, handoff.agent, handoff.model);
-  }, [handoff?.nonce]);
+    if (!sid || !sessions.some((s) => s.id === sid)) return;
+    handoffDone.current = handoff.nonce;
+    if (sid !== active) setActive(sid);
+    openHandoff(sid, handoff.agent, handoff.model);
+  }, [handoff?.nonce, active, sessions]);
   // A hand-off line points at the other chat: show its tab again if it was closed.
   const openChat = async (id: string) => {
     if (sessions.some((s) => s.id === id)) { setActive(id); return; }
@@ -1101,7 +1119,6 @@ export function Chat({
     }
   };
   live.current = { session, events, active, workspaceId, approvePlan, openHandoff: () => openHandoff(), openChat };
-  const offer = useMemo(() => (readOnly ? null : handoffOffer(events)), [events, readOnly]);
   const hasTask = events.some((e) => e.kind === "user");
 
   const fork = async () => {
@@ -1379,14 +1396,6 @@ export function Chat({
         </div>
       )}
       </div>}
-      {offer && !busy && session && (
-        <div className="handoff-offer" role="note">
-          <ArrowRightLeft size={14} aria-hidden />
-          <span>{reasonLine(offer, session.agent)}</span>
-          <span className="spacer" />
-          <button className="accent" onClick={() => openHandoff()}>Hand off…</button>
-        </div>
-      )}
       {error && <div className="banner error">{error}</div>}
       {note && <div className="banner">{note}</div>}
       {saving !== null && <SavePromptSheet text={saving} where={{ id: workspaceId }} onClose={() => setSaving(null)} onSaved={(n) => setNote(`Saved. Type /${n} to use it.`)} />}
