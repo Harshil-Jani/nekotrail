@@ -38,7 +38,8 @@ export function Compare({
   // Cheapest and fastest get a quiet marker; the human decides.
   const done = workspaces.filter((w) => stats[w.id]?.turns);
   const best = (f: (s: Stats) => number) => done.length > 1 ? done.reduce((a, b) => (f(stats[a.id]) <= f(stats[b.id]) ? a : b)).id : null;
-  const cheapest = best((s) => s.cost_usd || Infinity);
+  // Only when every result reported a cost: an agent that reports none isn't free, it's unknown.
+  const cheapest = done.every((w) => stats[w.id].cost_usd > 0) ? best((s) => s.cost_usd) : null;
   const fastest = best((s) => s.duration_ms || Infinity);
   // Recommended only when one result is both the cheapest and the fastest; otherwise no button shouts.
   const recommended = cheapest && cheapest === fastest ? cheapest : null;
@@ -78,7 +79,7 @@ export function Compare({
                   <div><dt>Changes</dt><dd className="num">{files[w.id] ?? "…"} files {l && <><span className="add">+{l[0]}</span> <span className="del">-{l[1]}</span></>}</dd></div>
                   <div><dt>Turns</dt><dd className="num">{s ? `${s.turns}${s.errors ? `, ${s.errors} with errors` : ""}` : "…"}</dd></div>
                   <div><dt>Time</dt><dd className="num">{s ? `${Math.round(s.duration_ms / 1000)}s` : "…"}{fastest === w.id && <Crown size={12} className="win" aria-label="fastest" />}</dd></div>
-                  <div><dt>Cost</dt><dd className="num">{s ? `$${s.cost_usd.toFixed(2)}` : "…"}{cheapest === w.id && <Crown size={12} className="win" aria-label="cheapest" />}</dd></div>
+                  <div><dt>API-equivalent</dt><dd className="num">{s ? (s.cost_usd > 0 ? `$${s.cost_usd.toFixed(2)}` : <span className="muted">Not reported</span>) : "…"}{cheapest === w.id && <Crown size={12} className="win" aria-label="cheapest" />}</dd></div>
                   <div><dt>PR</dt><dd>{prStates[w.id] ? prStates[w.id].toLowerCase() : "none yet"}</dd></div>
                 </dl>
                 <div className="row">

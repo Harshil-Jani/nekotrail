@@ -458,9 +458,15 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
           {r.evidence.length > 0 && (
             <ul className="stop-evidence" aria-label="What nekotrail saw">{r.evidence.map((line, i) => <li key={i}>{line}</li>)}</ul>
           )}
-          <span className="muted stop-foot">{r.reason === "loop"
-            ? "The queue and autopilot give it no more turns. Look at what it did, then send a message to carry on yourself."
-            : "Raise the cap in Usage to let it carry on, or send a message yourself."}</span>
+          {r.reason === "loop" ? (
+            <span className="muted stop-foot">The queue and autopilot give it no more turns. Look at what it did, then send a message to carry on yourself.</span>
+          ) : (
+            <div className="stop-foot row">
+              <span className="muted">Raise the cap to let it carry on, or send a message yourself.</span>
+              <span className="spacer" />
+              <button onClick={() => window.dispatchEvent(new Event("nekotrail-open-usage"))}>Change caps</button>
+            </div>
+          )}
         </div>
       );
     case "checks": {

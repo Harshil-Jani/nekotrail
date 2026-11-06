@@ -35,7 +35,7 @@ export function Scorecard({ onClose }: { onClose: () => void }) {
                     <div><dt>Turns</dt><dd className="num">{r.turns.toLocaleString()}</dd></div>
                     <div><dt>Ended in an error</dt><dd className="num">{r.errors}</dd></div>
                     <div><dt>Average turn</dt><dd className="num">{r.turns ? fmt(r.duration_ms / r.turns) : "none"}</dd></div>
-                    <div><dt>Spend</dt><dd className="num">${r.cost_usd.toFixed(2)}{r.turns ? <span className="muted"> · ${(r.cost_usd / r.turns).toFixed(2)} a turn</span> : null}</dd></div>
+                    <div><dt>API-equivalent</dt><dd className="num">{r.cost_usd > 0 ? <>${r.cost_usd.toFixed(2)}{r.turns ? <span className="muted"> · ${(r.cost_usd / r.turns).toFixed(2)} a turn</span> : null}</> : <span className="muted">Not reported</span>}</dd></div>
                     <div><dt>Workspaces merged</dt><dd className="num">{r.merged}</dd></div>
                   </dl>
                 </section>

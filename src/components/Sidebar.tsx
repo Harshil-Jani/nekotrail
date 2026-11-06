@@ -423,7 +423,7 @@ export function Sidebar(p: Props) {
               <span className="ws-mark"><Gauge size={15} className="muted" /></span>
               <span className="ws-text">
                 <span className="ws-name">Usage</span>
-                <span className="ws-sub-line"><span className="ws-star num">{p.usage && p.usage.week > 0 ? `$${p.usage.today.toFixed(2)} today, API-equivalent` : "Spend, caps and limits"}</span></span>
+                <span className="ws-sub-line"><span className="ws-star num">{p.usage && p.usage.today > 0 ? `$${p.usage.today.toFixed(2)} today, API-equivalent` : "Spend, caps and limits"}</span></span>
               </span>
             </button>
           </section>

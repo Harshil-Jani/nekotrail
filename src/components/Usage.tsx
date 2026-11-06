@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Download, Info, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Download, Gauge, Info, Plus, Trash2 } from "lucide-react";
 import { api, errText, type Repo } from "../api";
 import { agentName } from "../agents";
 import {
@@ -93,7 +93,12 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
   const saveCaps = async () => {
     if (!draft) return;
     const r = parseDraft(draft, repoName);
-    if ("error" in r) { setCapError(r.error); return; }
+    if ("error" in r) {
+      setCapError(r.error);
+      // Take you to the field that's wrong; it may be far above the Save button.
+      document.querySelector<HTMLInputElement>('.usage [aria-invalid="true"]')?.focus();
+      return;
+    }
     setCapError(null);
     setSaving(true);
     try {
@@ -133,6 +138,13 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
     return [...seen].sort((a, b) => agentName(a).localeCompare(agentName(b)));
   }, [lines, report]);
   const range = RANGES.find((r) => r.days === days)?.label ?? `${days} days`;
+  /** Each saved daily cap that today's spend has reached, in one sentence each. */
+  const reached = useMemo(() => {
+    if (!report) return [];
+    const scopes: [string, Caps, Spent][] = [["every repo", report.budgets.all, report.today]];
+    for (const [id, c] of Object.entries(report.budgets.repos)) scopes.push([repoName(id), c, report.today_repos[id] ?? { usd: 0, turns: 0, tokens: 0 }]);
+    return scopes.flatMap(([name, c, spent]) => meters(c.day, spent).filter((m) => m.reached).map((m) => `Today's cap for ${name} is reached: ${m.text}${m.label === "API-equivalent" ? " (API-equivalent)" : ` ${m.label.toLowerCase()}`}.`));
+  }, [report, repoName]);
 
   return (
     <div className="tq usage">
@@ -150,12 +162,18 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
           <Info size={14} aria-hidden />
           <span>Costs are API-equivalent: what each agent reports at API prices. On a subscription such as Claude Pro or Max you pay a flat fee, so this is not your bill. Agents that report no cost show turns and tokens only.</span>
         </div>
+        {reached.length > 0 && (
+          <div className="tq-banner cap-hit" role="status">
+            <Gauge size={14} aria-hidden />
+            <span>{reached.join(" ")} The queue starts no new task and autopilot no new turn until midnight. Raise the cap below to carry on.</span>
+          </div>
+        )}
         {error && <div className="tq-banner cap-hit"><AlertCircle size={14} aria-hidden /><span>Couldn't load usage. {error}</span><span className="spacer" /><button onClick={load}>Try again</button></div>}
 
         {report && (
           <div className="usage-stats" role="list" aria-label="Totals">
-            <Stat label="Today, API-equivalent" value={todaySum.turns ? costText(todaySum).text : money(0)} sub={`${todaySum.turns} ${todaySum.turns === 1 ? "turn" : "turns"} today`} />
-            {days > 1 && <Stat label={`${range}, API-equivalent`} value={sum.turns ? costText(sum).text : money(0)} sub={sum.priced_turns < sum.turns ? `${sum.turns - sum.priced_turns} turns had no cost` : `${sum.priced_turns} ${sum.priced_turns === 1 ? "turn" : "turns"} with a cost`} />}
+            <Stat label="Today, API-equivalent" value={todaySum.turns ? costText(todaySum).text : money(0)} sub={costSub(todaySum, "today")} partial={todaySum.priced_turns > 0 && todaySum.priced_turns < todaySum.turns} />
+            {days > 1 && <Stat label={`${range}, API-equivalent`} value={sum.turns ? costText(sum).text : money(0)} sub={costSub(sum, `in ${range}`)} partial={sum.priced_turns > 0 && sum.priced_turns < sum.turns} />}
             <Stat label="Turns" value={sum.turns.toLocaleString()} sub={range} />
             <Stat label="Tokens in and out" value={sum.turns ? tokenText(sum) : "0"} sub={sum.token_turns ? `${tokens(sum.cached)} read from cache` : sum.turns ? "No agent reported tokens" : range} />
             <Stat label="Agent time" value={duration(sum.duration_ms)} sub={range} />
@@ -231,7 +249,7 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
               </div>
             </h2>
             {rows.length === 0 ? (
-              <div className="usage-card"><p className="muted usage-empty-line">No finished turns {days === 1 ? "today" : `in the last ${range}`}.</p></div>
+              <div className="usage-card"><p className="muted usage-empty-line">No finished turns {days === 1 ? "today" : `in the last ${range}`}. Each turn an agent finishes, in any chat or queued task, shows up here.</p></div>
             ) : (
               <div className="usage-card flush">
                 <table className="usage-table">
@@ -264,11 +282,19 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
+/** Under a cost total: how many turns it covers, and how many reported no cost and so aren't in it. */
+function costSub(r: { turns: number; priced_turns: number }, when: string): string {
+  if (r.turns === 0) return `No turns ${when}`;
+  const left = r.turns - r.priced_turns;
+  const turns = `${r.turns} ${r.turns === 1 ? "turn" : "turns"} ${when}`;
+  return left > 0 ? `${turns}. ${left} reported no cost.` : turns;
+}
+
+function Stat({ label, value, sub, partial }: { label: string; value: string; sub: string; partial?: boolean }) {
   return (
     <div className="usage-stat" role="listitem">
       <span className="usage-stat-label">{label}</span>
-      <span className="usage-stat-value num">{value}</span>
+      <span className="usage-stat-value num">{value}{partial && <span className="usage-partial" aria-hidden>*</span>}</span>
       <span className="muted usage-stat-sub">{sub}</span>
     </div>
   );
@@ -276,23 +302,36 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
 
 /** One scope's caps: a daily row (with today's spend against it) and a per-task row. */
 function CapRows({ title, caps, spent, onChange, onRemove }: { title: string; caps: CapsText; spent: Spent; onChange: (c: CapsText) => void; onRemove?: () => void }) {
-  const field = (which: "day" | "task", k: Kind) => (
-    <label className="usage-field">
+  const field = (which: "day" | "task", k: Kind) => {
+    const bad = parseCap(caps[which][k], k);
+    const msg = "error" in bad ? bad.error : null;
+    return (
+    <label className={`usage-field${msg ? " bad" : ""}`} title={msg ?? undefined}>
       {k === "usd" && <span className="usage-prefix" aria-hidden>$</span>}
       <input
         inputMode={k === "usd" ? "decimal" : "numeric"}
         value={caps[which][k]}
         placeholder="No cap"
         aria-label={`${title}, ${which === "day" ? "daily cap" : "cap per task"}, ${k === "usd" ? "API-equivalent dollars" : k}`}
+        aria-invalid={!!msg}
         onChange={(e) => onChange({ ...caps, [which]: { ...caps[which], [k]: e.target.value } })}
       />
       {k !== "usd" && <span className="usage-suffix" aria-hidden>{k}</span>}
     </label>
-  );
+    );
+  };
   const parsed = (t: CapText): Cap => {
     const out: Cap = { ...NO_CAP };
     for (const k of KINDS) { const r = parseCap(t[k], k); if ("value" in r) out[k] = r.value; }
     return out;
+  };
+  const rowError = (which: "day" | "task") => {
+    for (const k of KINDS) { const r = parseCap(caps[which][k], k); if ("error" in r) return r.error; }
+    return null;
+  };
+  const errLine = (which: "day" | "task") => {
+    const e = rowError(which);
+    return e ? <p className="bad-text usage-field-error">{e}</p> : null;
   };
   const day = parsed(caps.day);
   const m = meters(day, spent);
@@ -306,6 +345,7 @@ function CapRows({ title, caps, spent, onChange, onRemove }: { title: string; ca
         <span className="usage-cap-label">Each day</span>
         {KINDS.map((k) => <span key={k}>{field("day", k)}</span>)}
       </div>
+      {errLine("day")}
       {hasCap(day) && (
         <div className="usage-meters">
           {m.map((x) => (
@@ -320,6 +360,7 @@ function CapRows({ title, caps, spent, onChange, onRemove }: { title: string; ca
         <span className="usage-cap-label">Each task</span>
         {KINDS.map((k) => <span key={k}>{field("task", k)}</span>)}
       </div>
+      {errLine("task")}
     </div>
   );
 }

@@ -737,7 +737,13 @@ mockIPC(
         };
       }
       case "terminal_import": return { repos: 1, workspaces: 1, chats: (args as { picks: unknown[] }).picks.length, messages: 400, skipped: 0, problems: [] };
-      case "usage_summary": if (fresh) return { today: 0, week: 0, by_agent: {} }; return { today: 3.4, week: 41.27, by_agent: { claude: 33.1, codex: 8.17 } };
+      case "usage_summary": {
+        // The same made-up week the Usage view shows, so the sidebar and the view agree.
+        const r = usageReport(7);
+        const by_agent: Record<string, number> = {};
+        for (const l of r.lines) if (l.priced_turns) by_agent[l.agent] = (by_agent[l.agent] ?? 0) + l.cost;
+        return { today: r.today.usd, week: r.lines.reduce((a: number, l: any) => a + l.cost, 0), by_agent };
+      }
       case "usage_report": return usageReport(args.days);
       case "usage_export": return usageReport(args.days).lines.length;
       case "budgets_set": usageBudgets = args.budgets; return usageBudgets;

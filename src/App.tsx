@@ -129,7 +129,10 @@ export default function App() {
       if (prefs.needsNotify) notify("The queue stopped at a spend cap", payload.text);
       say(payload.text, false, { label: "Open usage", run: () => setView("usage") });
     });
-    return () => { un.then((f) => f()); unBudget.then((f) => f()); };
+    // "Change caps" on a chat's budget stop card.
+    const openUsage = () => setView("usage");
+    window.addEventListener("nekotrail-open-usage", openUsage);
+    return () => { un.then((f) => f()); unBudget.then((f) => f()); window.removeEventListener("nekotrail-open-usage", openUsage); };
   }, []);
   const [ram, setRam] = useState<Awaited<ReturnType<typeof api.resourceUsage>> | null>(null);
   useEffect(() => {
