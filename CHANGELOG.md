@@ -24,6 +24,14 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Amend last commit, and Undo last commit (its changes come back staged). Both are off once the commit is pushed.
 - Staging or committing a protected file asks first.
 
+**Design ship-gate fixes**
+- Commit: "Write a subject line first" is readable, and Split into commits shows each change as a coloured diff with plain labels like "Binary file".
+- Rules: the sheet keeps one height on every tab, Who reads what shows each file as its own chip, and when Write is off the footer says which box to tick.
+- Import terminal sessions: a chevron on each repo shows it opens to its folders and chats, and agent names are plain grey chips.
+- History: the sidebar shows a history icon and no repeated name, and the subtitle says it is your main checkout instead of "main → main".
+- Prompts: the / sits inside the Name field. New workspace no longer offers prompts that need a selection from Changes.
+- The Checks line in a chat starts with a capital: "Test passed before and fails now."
+
 ## 0.14.0 (2026-11-06)
 
 **Checks: tests, lint and typecheck**
