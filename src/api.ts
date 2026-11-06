@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PersonalPrompt, PromptEntry, PromptScope } from "./prompts";
 import type { NewQueueTask, QueueSummary, QueueTask, QueueView } from "./queue";
 import type { Budgets, UsageReport } from "./usage";
+import type { AlertSecret, AlertService, AlertsConfig, AlertsView } from "./alerts";
 
 export type Repo = {
   id: string;
@@ -407,6 +408,13 @@ export const api = {
   usageReport: (days: number) => invoke<UsageReport>("usage_report", { days }),
   usageExport: (path: string, days: number) => invoke<number>("usage_export", { path, days }),
   budgetsSet: (budgets: Budgets) => invoke<Budgets>("budgets_set", { budgets }),
+  /** Away alerts (Settings, Notifications). Secrets go straight to the keychain and never come back. */
+  alertsView: () => invoke<AlertsView>("alerts_view"),
+  alertsAdd: (service: AlertService) => invoke<AlertsView>("alerts_add", { service }),
+  alertsSave: (config: AlertsConfig) => invoke<AlertsView>("alerts_save", { config }),
+  alertsSetSecret: (id: string, secret: AlertSecret) => invoke<AlertsView>("alerts_set_secret", { id, secret }),
+  alertsRemove: (id: string) => invoke<AlertsView>("alerts_remove", { id }),
+  alertsTest: (id: string) => invoke<AlertsView>("alerts_test", { id }),
   resourceUsage: () => invoke<{ total_mb: number; top: { name: string; mb: number }[] }>("resource_usage"),
   workspaceStorage: () => invoke<{ workspace_id: string; total_kb: number; cleanable_kb: number; dirs: { path: string; kb: number }[] }[]>("workspace_storage"),
   cleanWorkspace: (id: string) => invoke<number>("clean_workspace", { id }),

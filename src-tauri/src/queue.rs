@@ -749,6 +749,24 @@ impl Queue {
         s
     }
 
+    /// Tasks that ended after `since` (epoch seconds), for away alerts. Leaves `summary_seen` alone.
+    pub fn summary_since(&self, since: i64) -> Summary {
+        let mut s = Summary::default();
+        for t in self.tasks.iter().filter(|t| t.state.finished() && t.ended_at.is_some_and(|e| e > since)) {
+            match t.state {
+                State::Done => s.done += 1,
+                State::NeedsYou => s.needs_you += 1,
+                _ => s.failed += 1,
+            }
+        }
+        s
+    }
+
+    /// Something is running, or in line and allowed to start (not paused, not waiting for you).
+    pub fn has_work(&self) -> bool {
+        self.tasks.iter().any(|t| matches!(t.state, State::Starting | State::Running | State::Then) || (t.state == State::Queued && !self.paused))
+    }
+
     /// Remove every finished task.
     pub fn clear_finished(&mut self) -> usize {
         let before = self.tasks.len();
@@ -1235,6 +1253,10 @@ mod tests {
         assert_eq!(q.summary().text(), "1 needs you");
         let many = Summary { done: 8, needs_you: 2, failed: 1, ..Default::default() };
         assert_eq!(many.text(), "8 done, 2 need you, 1 failed");
+        // Away alerts count from their own time and leave what you've seen alone.
+        assert_eq!(q.summary_since(NOW + 2).text(), "2 need you, 1 failed");
+        assert_eq!(q.summary_seen, NOW + 4);
+        assert!(!q.has_work(), "everything ended");
         assert_eq!(q.clear_finished(), 5);
     }
 
