@@ -33,6 +33,9 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Setup lists the agents you have first, and "more agents you can add" folds open in line with the other checks.
 - "Installed" and "Not installed" in the agent menus line up with the agent names. Settings, Agents says other agents show up once they're installed.
 - The Settings footer reads as one line (version, What's new, Check for updates), with Sponsor set apart by a heart.
+- "Commands the agent ran" wraps long commands in full instead of drawing them over the next row, and with a filter on, Copy names how many it copies.
+- Repo settings keeps Save in view on long tabs and stops jumping when you switch tabs. Protected files says once that every turn is checked after it ends, so each agent's row only says what's different.
+- Protected file cards name each file once. After Put back, a file the agent created reads "removed", and the confirm says by name which files go back and which go to the Trash.
 
 ## 0.12.1 (2026-11-06)
 
