@@ -12,7 +12,8 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 **Share MCP servers and skills**
 - The MCP sheet (`/mcp`) shows every server your agents have and copies one into another agent in one click. It shows exactly what goes in, backs up your settings file first, and changes nothing else in it.
 - Values that look like secrets are never copied without asking: bring each one across as a variable from your shell, or copy the value.
-- Share Claude skills with Codex and Gemini in one click. It's a link in `~/.agents/skills`, so the skill lives in one place and edits show up for every agent.
+- MCP servers share with OpenCode too: add Claude, Codex or Gemini servers to OpenCode, and copy OpenCode's servers to them, with variables converted or refused with a reason. A new settings file is previewed in full before it is written.
+- Share Claude skills with Codex and Gemini in one click. It's a link in `~/.agents/skills`, so the skill lives in one place and edits show up for every agent. OpenCode already reads `~/.claude/skills` and `~/.agents/skills`, and the sheet says so.
 
 ## 0.12.0 (2026-11-06)
 
