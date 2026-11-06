@@ -145,7 +145,7 @@ export function NewWorkspace({
                 setAgent(a);
               }}
                 title={a === "both" ? "Run Claude and Codex side by side, then keep the better one" : undefined}>
-                {a === "both" ? "Both" : AGENT_INFO[a].name}
+                {a === "both" ? "Claude + Codex" : AGENT_INFO[a].name}
               </button>
             ))}
           </div>
