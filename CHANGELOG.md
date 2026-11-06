@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**A first run that gets you to your first answer**
+- New first run, one screen at a time: the agents on your Mac, where your code is (Conductor, terminal chats or a local repo, whichever it finds), then a first task suggested from your repo, run in Plan mode so nothing changes.
+- A short tour of the main parts after your first workspace opens. It shows once; ⌘K, "Show the tour" brings it back.
+- Empty sidebar, board, night sky and storage now say what to do next.
+- Copy diagnostics now includes how long the first run took to the first agent answer. It's kept on your machine only.
+
 **Export session**
 - New Export session (⋯ menu, ⌘K, or a chat's + menu): a report of what the agent did, with the task, the plan, a timeline with one line per command or file and failed commands marked, the changed files with key hunks, checks, time, cost and the PR link.
 - Copy or save it as Markdown, or save one HTML file that works offline in light and dark, with no scripts and nothing loaded from the web.
