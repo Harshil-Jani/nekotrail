@@ -13,6 +13,7 @@ pub mod linux;
 pub mod names;
 pub mod ports;
 pub mod preview;
+pub mod prompts;
 pub mod prpoll;
 pub mod pty;
 pub mod radar;
@@ -1962,29 +1963,95 @@ async fn skill_share(name: String, target: String) -> Res<String> {
     mcpshare::share_skill(&mcpshare::Homes::from_env()?, &name, &target)
 }
 
-/// Custom slash commands: `.claude/commands/*.md` in the workspace and in ~/.claude, with their descriptions.
-#[tauri::command]
-async fn slash_commands(st: State<'_, AppState>, id: String) -> Res<Vec<(String, String)>> {
-    let ws = st.db().workspace(&id).map_err(e)?;
-    let mut out = vec![];
-    let dirs = [Some(Path::new(&ws.path).join(".claude/commands")), dirs::home_dir().map(|h| h.join(".claude/commands"))];
-    for dir in dirs.into_iter().flatten() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.extension().and_then(|x| x.to_str()) != Some("md") { continue; }
-            let name = p.file_stem().unwrap().to_string_lossy().to_string();
-            let body = std::fs::read_to_string(&p).unwrap_or_default();
-            let desc = body.lines().find_map(|l| l.strip_prefix("description:")).map(|d| d.trim().trim_matches('"').to_string())
-                .or_else(|| body.lines().find(|l| !l.trim().is_empty() && !l.starts_with("---")).map(|l| l.trim_start_matches('#').trim().chars().take(80).collect()))
-                .unwrap_or_default();
-            if !out.iter().any(|(n, _): &(String, String)| *n == name) {
-                out.push((name, desc));
-            }
-        }
+/// Every prompt for a workspace (its repo's prompts as on its branch) or, with no workspace, a
+/// repo's main checkout; personal prompts either way. The bool is false until the personal list
+/// was first saved, so the app can bring over the old snippets once.
+fn prompt_entries(st: &AppState, id: Option<&str>, repo: Option<&str>) -> Res<(Vec<prompts::Entry>, bool)> {
+    let dir = match (id, repo) {
+        (Some(id), _) => Some(PathBuf::from(st.db().workspace(id).map_err(e)?.path)),
+        (None, Some(r)) => Some(PathBuf::from(st.db().repo(r).map_err(e)?.root_path)),
+        _ => None,
+    };
+    let (personal, saved) = personal_prompts(st)?;
+    let home = dirs::home_dir();
+    let (repo_list, claude) = match &dir {
+        Some(d) => (prompts::repo_prompts(d), prompts::claude_commands(d, home.as_deref())),
+        None => (vec![], prompts::claude_commands(Path::new("/nonexistent"), home.as_deref())),
+    };
+    Ok((prompts::merge(personal, repo_list, claude), saved))
+}
+
+fn personal_prompts(st: &AppState) -> Res<(Vec<prompts::Prompt>, bool)> {
+    match st.db().setting(prompts::STORE_KEY).map_err(e)? {
+        Some(t) => Ok((serde_json::from_str(&t).unwrap_or_default(), true)),
+        None => Ok((vec![], false)),
     }
-    out.sort();
-    Ok(out)
+}
+
+fn save_personal(st: &AppState, list: Vec<prompts::Prompt>) -> Res<()> {
+    let list = prompts::validate(list)?;
+    st.db().set_setting(prompts::STORE_KEY, &serde_json::to_string(&list).map_err(e)?).map_err(e)
+}
+
+#[tauri::command]
+async fn prompts_list(app: AppHandle, id: Option<String>, repo: Option<String>) -> Res<Value> {
+    blocking(app, move |st| {
+        let (entries, saved) = prompt_entries(st, id.as_deref(), repo.as_deref())?;
+        Ok(json!({ "entries": entries, "saved": saved }))
+    })
+    .await
+}
+
+/// Replaces the personal list. Repo and Claude prompts are never written: they aren't in it.
+#[tauri::command]
+async fn prompts_save(st: State<'_, AppState>, list: Vec<prompts::Prompt>) -> Res<()> {
+    save_personal(&st, list)
+}
+
+/// Copies any prompt (a read-only one too) into the personal list and returns the copy's name.
+#[tauri::command]
+async fn prompts_duplicate(app: AppHandle, id: Option<String>, repo: Option<String>, name: String, scope: prompts::Scope) -> Res<String> {
+    blocking(app, move |st| {
+        let (entries, _) = prompt_entries(st, id.as_deref(), repo.as_deref())?;
+        let found = entries.iter().find(|x| x.name == name && x.scope == scope).ok_or_else(|| format!("/{name} isn't there any more."))?;
+        let taken: Vec<String> = entries.iter().map(|x| x.name.clone()).collect();
+        let copy = prompts::duplicate(found, &taken);
+        let out = copy.name.clone();
+        let (mut personal, _) = personal_prompts(st)?;
+        personal.push(copy);
+        save_personal(st, personal)?;
+        Ok(out)
+    })
+    .await
+}
+
+/// Writes the personal list to a JSON file the user picked.
+#[tauri::command]
+async fn prompts_export(st: State<'_, AppState>, path: String) -> Res<usize> {
+    let (list, _) = personal_prompts(&st)?;
+    std::fs::write(&path, prompts::export(&list)).map_err(e)?;
+    Ok(list.len())
+}
+
+/// Adds the prompts in an export file. Never overwrites one you have.
+#[tauri::command]
+async fn prompts_import(st: State<'_, AppState>, path: String) -> Res<prompts::Imported> {
+    let text = std::fs::read_to_string(&path).map_err(e)?;
+    let (cur, _) = personal_prompts(&st)?;
+    let (list, rep) = prompts::import(&cur, &text)?;
+    save_personal(&st, list)?;
+    Ok(rep)
+}
+
+/// Values for the built-in blanks: the branch, its target, and the files it changed.
+#[tauri::command]
+async fn prompt_context(app: AppHandle, id: String) -> Res<Value> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let files = git::changes(Path::new(&ws.path), &ws.target_branch).map(|c| c.into_iter().map(|f| f.path).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+        Ok(json!({ "branch": ws.branch, "base": ws.target_branch, "files_changed": files }))
+    })
+    .await
 }
 
 /// Collision radar: active workspaces in one repo changing the same files, grouped, each group in
@@ -3658,7 +3725,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, slash_commands, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor,

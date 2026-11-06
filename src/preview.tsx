@@ -263,6 +263,54 @@ const checksFor = (id: string) => {
 };
 const checkOutput = "--- FAIL: TestIdleTimeout (0.00s)\n    --- FAIL: TestIdleTimeout/behind_nlb (0.00s)\n        http_test.go:31: IdleTimeout = 75s, want at least 350s for the NLB listener\nFAIL\nFAIL\tpawprint/internal/server\t0.412s\n--- FAIL: TestSLA (0.00s)\n    --- FAIL: TestSLA/friday_evening (0.00s)\n        sla_test.go:42: deadline = 2026-11-06 21:00, want 2026-11-09 12:00\n            business hours skipped the weekend\nFAIL\nFAIL\tpawprint/internal/tickets\t0.012s\nok  \tpawprint/internal/billing\t0.220s\nFAIL";
 
+// The prompt library. A small stand-in for the backend's parser (src-tauri/src/prompts.rs), enough
+// for screenshots: blanks, defaults, built-ins and \{{ escapes. ?noprompts starts with none of yours.
+const BUILTIN = ["branch", "base", "files_changed", "selection"];
+function segsOf(text: string) {
+  const out: any[] = [];
+  let buf = "";
+  for (let i = 0; i < text.length;) {
+    if (text.startsWith("\\{{", i)) { buf += "{{"; i += 3; continue; }
+    if (text.startsWith("{{", i)) {
+      const end = text.indexOf("}}", i + 2);
+      const m = end > 0 ? /^\s*([\w-]+)\s*(?::(.*))?$/.exec(text.slice(i + 2, end)) : null;
+      if (m && !text.slice(i + 2, end).includes("\n")) {
+        if (buf) { out.push({ t: "text", text: buf }); buf = ""; }
+        out.push({ t: "field", name: m[1], default: m[2]?.trim() || null, builtin: BUILTIN.includes(m[1]) });
+        i = end + 2;
+        continue;
+      }
+    }
+    buf += text[i++];
+  }
+  if (buf) out.push({ t: "text", text: buf });
+  return out;
+}
+let personalPrompts: { name: string; description: string; text: string }[] | null = new URLSearchParams(location.search).has("noprompts") ? null : [
+  { name: "tests", description: "Tests for the last change", text: "Write tests for what you just changed. Cover the edge cases, run them, and fix anything that fails." },
+  { name: "fix-ticket", description: "Fix a ticket on this branch", text: "Fix {{ticket}} on {{branch}}. Keep the change small, add a test that fails before the fix, and target {{env:staging}} first." },
+  { name: "explain", description: "Explain the selected code", text: "Explain this code from the diff, and what could break if we change it:\n\n{{selection}}" },
+  { name: "release", description: "My release checklist", text: "Bump the version and write the changelog." },
+];
+const repoPrompts = [
+  { name: "release", description: "Cut a release the team's way", text: "Bump the version in {{file:package.json}}, update CHANGELOG.md for {{version}}, and open the release PR against {{base}}.", source: ".nekotrail/prompts/release.md" },
+  { name: "migration", description: "Write a safe database migration", text: "Write a migration for {{change}}. It must be reversible and safe to run while the old code is still serving traffic.", source: "nekotrail.json" },
+];
+const claudeCommands = [
+  { name: "ship", description: "Run tests, bump the version and open the release PR", text: "Run the tests, bump the version and open the release PR for $ARGUMENTS", source: "~/.claude/commands/ship.md" },
+  { name: "triage", description: "Label and prioritise new issues", text: "Label and prioritise the new issues.", source: ".claude/commands/triage.md" },
+  { name: "tests", description: "Claude's own tests command", text: "Write tests.", source: "~/.claude/commands/tests.md" },
+];
+function promptEntries() {
+  const all: any[] = [];
+  const tiers: [string, any[]][] = [["repo", repoPrompts], ["personal", (personalPrompts ?? []).map((x) => ({ ...x, source: "" }))], ["claude", claudeCommands]];
+  for (const [scope, list] of tiers) for (const x of list) {
+    const top = all.find((e) => e.name === x.name && !e.hidden_by);
+    all.push({ ...x, segs: scope === "claude" ? [{ t: "text", text: x.text }] : segsOf(x.text), scope, read_only: scope !== "personal", hidden_by: top ? top.scope : null });
+  }
+  return all.sort((a, b) => a.name.localeCompare(b.name) || Number(!!a.hidden_by) - Number(!!b.hidden_by));
+}
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
@@ -388,7 +436,12 @@ mockIPC(
       // ?dirty: archiving asks first, as if the workspace had uncommitted changes.
       case "archive_workspace": if (location.search.includes("dirty") && !args.force) throw "DIRTY"; return null;
       case "skill_share": return "~/.agents/skills/triage";
-      case "slash_commands": return [["ship", "Run tests, bump the version and open the release PR"], ["triage", "Label and prioritise new issues"]];
+      case "prompts_list": return { entries: promptEntries(), saved: personalPrompts !== null };
+      case "prompts_save": personalPrompts = args.list; return null;
+      case "prompts_duplicate": { const name = `${args.name}-copy`; const e = promptEntries().find((x) => x.name === args.name && x.scope === args.scope); personalPrompts = [...(personalPrompts ?? []), { name, description: e.description, text: e.text.replace("$ARGUMENTS", "{{arguments}}") }]; return name; }
+      case "prompts_export": return (personalPrompts ?? []).length;
+      case "prompts_import": return { added: [], renamed: [], skipped: [] };
+      case "prompt_context": return { branch: "harshil/fix-502-gateway", base: "main", files_changed: "internal/server/http.go\ninternal/server/http_test.go" };
       case "sections": return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
       case "imported_outside": return location.search.includes("moveimport") ? ["w1", "w2", "w3"] : [];

@@ -10,6 +10,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
 import type { UpdatePhase } from "../useUpdater";
+import { PromptsPane } from "./PromptsPane";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
 const SHORTCUTS: [string, string][] = [
@@ -38,11 +39,12 @@ const SHORTCUTS: [string, string][] = [
   [keyHint("⌘B"), "Hide or show the sidebar"],
   [keyHint("⌘+ / ⌘- / ⌘0"), "Zoom in / out / reset"],
   [keyHint("⌘,"), "Open settings"],
-  ["@ and /", "Mention a file, run a command"],
+  ["@ and /", "Mention a file, run a command or insert a prompt"],
+  ["Tab / ⇧Tab", "Next / previous blank in a prompt"],
 ];
 
-type Pane = "general" | "appearance" | "notifications" | "agents" | "shortcuts";
-const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["shortcuts", "Shortcuts"]];
+export type Pane = "general" | "appearance" | "notifications" | "agents" | "prompts" | "shortcuts";
+const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["prompts", "Prompts"], ["shortcuts", "Shortcuts"]];
 
 const SIZES = [10, 11, 12, 13, 14, 15, 16, 18];
 const CODE_SAMPLE = "const purr = (cat) => cat.nap ?? 0; // {}[]|0O1lI";
@@ -151,10 +153,14 @@ function CommandLine() {
   );
 }
 
-export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: () => void; home: string; update?: UpdatePhase | null; onCheckUpdates?: () => void }) {
+export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, repoName, initialPane }: {
+  onClose: () => void; home: string; update?: UpdatePhase | null; onCheckUpdates?: () => void;
+  /** The workspace in view, so the Prompts pane lists its repo's prompts too. */
+  workspaceId?: string; repoName?: string; initialPane?: Pane;
+}) {
   // ?settings=agents opens a pane directly (the preview page uses it for screenshots).
   const [pane, setPane] = useState<Pane>(() => {
-    const want = new URLSearchParams(location.search).get("settings");
+    const want = new URLSearchParams(location.search).get("settings") ?? initialPane;
     return PANES.some(([id]) => id === want) ? (want as Pane) : "general";
   });
   const [s, setS] = useState<S>(getSettings);
@@ -316,21 +322,9 @@ export function Settings({ onClose, home, update, onCheckUpdates }: { onClose: (
           {defaultsFor.length < AGENTS.length && <p className="muted setting-note">Other agents show up here once they're installed.</p>}
         </section>
 
-        <section>
-          <h3>Snippets</h3>
-          <p className="muted setting-note">Saved prompts. Type /name in the chat box to insert one, then edit and send.</p>
-          {s.snippets.map((sn, i) => (
-            <div className="snippet-row" key={i}>
-              <input value={sn.name} aria-label="Snippet name" placeholder="name"
-                onChange={(e) => set("snippets", s.snippets.map((x, j) => (j === i ? { ...x, name: e.target.value.replace(/[^\w-]/g, "") } : x)))} />
-              <textarea rows={2} value={sn.text} aria-label="Snippet text" placeholder="What the agent should do"
-                onChange={(e) => set("snippets", s.snippets.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
-              <button className="icon" aria-label={`Delete snippet ${sn.name}`} onClick={() => set("snippets", s.snippets.filter((_, j) => j !== i))}><X size={14} /></button>
-            </div>
-          ))}
-          <button className="quiet add-env" onClick={() => set("snippets", [...s.snippets, { name: "", text: "" }])}><Plus size={14} />Add snippet</button>
-        </section>
         </>}
+
+        {pane === "prompts" && <PromptsPane workspaceId={workspaceId} repoName={repoName} />}
 
         {pane === "shortcuts" && (
         <section>

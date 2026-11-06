@@ -17,6 +17,9 @@
 //!
 //! `checks` are the commands the Checks tab runs. Like the scripts, they run only after the user
 //! approved their exact text (`checks_fingerprint`).
+//!
+//! The same file can hold the team's saved prompts (`"prompts": [{ "name", "description", "text" }]`),
+//! read by `prompts`. They only ever fill the chat box, so they need no approval either.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { PersonalPrompt, PromptEntry, PromptScope } from "./prompts";
 
 export type Repo = {
   id: string;
@@ -381,7 +382,13 @@ export const api = {
   mcpShareApply: (id: string, name: string, target: McpAgent, choices: SecretChoices, token: string) =>
     invoke<{ file: string; backup: string | null }>("mcp_share_apply", { id, name, target, choices, token }),
   skillShare: (name: string, target: "agents" | "claude") => invoke<string>("skill_share", { name, target }),
-  slashCommands: (id: string) => invoke<[string, string][]>("slash_commands", { id }),
+  promptsList: (id?: string, repo?: string) => invoke<{ entries: PromptEntry[]; saved: boolean }>("prompts_list", { id: id ?? null, repo: repo ?? null }),
+  promptsSave: (list: PersonalPrompt[]) => invoke<void>("prompts_save", { list }),
+  promptsDuplicate: (where: { id?: string; repo?: string }, name: string, scope: PromptScope) =>
+    invoke<string>("prompts_duplicate", { id: where.id ?? null, repo: where.repo ?? null, name, scope }),
+  promptsExport: (path: string) => invoke<number>("prompts_export", { path }),
+  promptsImport: (path: string) => invoke<{ added: string[]; renamed: [string, string][]; skipped: string[] }>("prompts_import", { path }),
+  promptContext: (id: string) => invoke<{ branch: string; base: string; files_changed: string }>("prompt_context", { id }),
   addDir: (id: string, dir: string) => invoke<string[]>("add_dir", { id, dir }),
   forkSession: (id: string) => invoke<Session>("fork_session", { id }),
   removeQueued: (id: string, index: number) => invoke<string[]>("remove_queued", { id, index }),

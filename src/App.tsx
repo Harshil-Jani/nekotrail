@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText } from "lucide-react";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { Sidebar } from "./components/Sidebar";
@@ -25,7 +25,8 @@ import { Board } from "./components/Board";
 import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
-import { Settings } from "./components/Settings";
+import { Settings, type Pane as SettingsPane } from "./components/Settings";
+import { loadPrompts, type PromptEntry } from "./prompts";
 import { TrustSheet } from "./components/TrustSheet";
 import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
@@ -401,6 +402,9 @@ export default function App() {
   const [comparing, setComparing] = useState<string | null>(params.get("compare")); // pair id
   const [palette, setPalette] = useState(params.has("palette"));
   const [settingsOpen, setSettingsOpen] = useState(params.has("settings"));
+  const [settingsPane, setSettingsPane] = useState<SettingsPane | undefined>(undefined);
+  // Prompts for ⌘K, loaded when it opens so repo prompts are current.
+  const [palettePrompts, setPalettePrompts] = useState<PromptEntry[]>([]);
   const updater = useUpdater();
 
   const refresh = useCallback(async () => {
@@ -1015,6 +1019,15 @@ export default function App() {
         { id: "pin", group: here, label: ws.pinned ? "Unpin workspace" : "Pin workspace to top", icon: <Pin size={15} />, run: () => api.setPinned(ws.id, !ws.pinned).then(refresh) },
         { id: "archive", group: here, label: "Archive workspace", hint: keyHint("⌘⇧A"), keywords: "close done remove", icon: <Archive size={15} />, run: () => archive() },
       );
+      // Saved prompts go into this workspace's chat box, blanks first. Claude Code's own commands
+      // stay in the / menu of Claude chats.
+      for (const p of palettePrompts.filter((x) => x.scope !== "claude")) {
+        c.push({
+          id: `prompt-${p.name}`, group: "Prompts", label: `Insert /${p.name}`, hint: p.description || (p.scope === "repo" ? "Repo prompt" : undefined),
+          keywords: `prompt snippet template ${p.text.slice(0, 120)}`, icon: <BookText size={15} />,
+          run: () => { setTab("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("nekotrail-insert-prompt", { detail: p.name }))); },
+        });
+      }
     }
     c.push(
       { id: "new", group: "Create", label: "Create workspace", hint: keyHint("⌘N"), keywords: "new worktree branch task", icon: <Plus size={15} />, run: () => openNew() },
@@ -1055,7 +1068,8 @@ export default function App() {
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
-      { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => setSettingsOpen(true) },
+      { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => { setSettingsPane(undefined); setSettingsOpen(true); } },
+      { id: "prompts", group: "App", label: "Manage prompts", keywords: "prompt library snippets saved templates import export", icon: <BookText size={15} />, run: () => { setSettingsPane("prompts"); setSettingsOpen(true); } },
 
     );
     for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
@@ -1114,6 +1128,10 @@ export default function App() {
   }, [ws, repos, lit, sky, workspaces, selected, livePtys, localUrls, runningSessions, tab]);
 
   const settingsRepo = repos.find((r) => r.id === settingsFor);
+  useEffect(() => {
+    if (!palette || !ws || ws.state !== "active") return setPalettePrompts([]);
+    loadPrompts({ id: ws.id }).then(setPalettePrompts).catch(() => setPalettePrompts([]));
+  }, [palette, ws?.id]);
 
   return (
     <div className={`app ${resizing ? "resizing" : ""} ${sidebarHidden ? "no-sidebar" : ""}`}>
@@ -1467,7 +1485,8 @@ export default function App() {
           onClose={() => setQuickOpen(null)}
         />
       )}
-      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => setSettingsOpen(false)} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)} />}
+      {settingsOpen && <Settings home="~/nekotrail/workspaces" onClose={() => { setSettingsOpen(false); setSettingsPane(undefined); }} update={updater.phase} onCheckUpdates={() => updater.checkNow(false)}
+        workspaceId={ws && ws.state === "active" ? ws.id : undefined} repoName={repos.find((r) => r.id === ws?.repo_id)?.name} initialPane={settingsPane} />}
       <ConfirmHost />
       {updater.open && updater.phase && (
         <UpdateSheet
