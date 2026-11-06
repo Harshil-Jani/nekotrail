@@ -574,6 +574,8 @@ export const api = {
   githubRepos: () => invoke<{ nameWithOwner: string; description: string; pushedAt: string; isPrivate: boolean }[]>("github_repos"),
   cloneRepo: (spec: string) => invoke<Repo>("clone_repo", { spec }),
   importPreview: () => invoke<ImportReport>("import_preview"),
+  /** The start of a repo's README, its package.json and top-level names, for the first-run task. Read-only. */
+  repoBrief: (id: string) => invoke<import("./onboarding").RepoBrief>("repo_brief", { id }),
   repoIssues: (id: string) => invoke<{ number: number; title: string; body: string; url: string; labels: { name: string }[] }[]>("repo_issues", { id }),
   conductorAvailable: () => invoke<boolean>("conductor_available"),
   importConductor: () => invoke<ImportReport>("import_conductor"),

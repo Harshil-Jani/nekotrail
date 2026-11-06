@@ -274,6 +274,58 @@ async fn repo_branches(st: State<'_, AppState>, id: String) -> Res<Vec<String>> 
     git::branches(Path::new(&r.root_path)).map_err(e)
 }
 
+/// What the first-run "Try it" step reads to suggest a first task: the start of the README, the
+/// package.json, and the names at the top of the repo. Read-only, from the main checkout, and it
+/// never leaves the machine.
+#[derive(Serialize, Default, Debug)]
+struct RepoBrief {
+    readme: Option<String>,
+    package_json: Option<String>,
+    files: Vec<String>,
+}
+
+/// At most `max` bytes of a text file inside `root` (no symlinks out of it), cut at a char boundary.
+fn read_head(root: &Path, rel: &str, max: usize) -> Option<String> {
+    use std::io::Read;
+    let full = safe::confine(root, rel).ok()?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(full).ok()?.take(max as u64).read_to_end(&mut bytes).ok()?;
+    let mut end = bytes.len();
+    while end > 0 && std::str::from_utf8(&bytes[..end]).is_err() {
+        end -= 1;
+    }
+    let text = std::str::from_utf8(&bytes[..end]).ok()?;
+    (!text.trim().is_empty()).then(|| text.to_string())
+}
+
+fn repo_brief_at(root: &Path) -> RepoBrief {
+    let mut names: Vec<(String, bool)> = std::fs::read_dir(root)
+        .map(|it| {
+            it.flatten()
+                .filter_map(|d| {
+                    let name = d.file_name().to_string_lossy().to_string();
+                    (!name.starts_with('.')).then(|| (name, d.file_type().map(|t| t.is_dir()).unwrap_or(false)))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort_by_key(|n| n.0.to_lowercase());
+    let readme = names
+        .iter()
+        .find(|(n, dir)| !dir && n.to_lowercase().starts_with("readme"))
+        .and_then(|(n, _)| read_head(root, n, 4000));
+    // A package.json that doesn't fit in 64 KB would be cut mid-JSON: leave it out.
+    let package_json = read_head(root, "package.json", 64_001).filter(|t| t.len() <= 64_000);
+    let files = names.into_iter().take(60).map(|(n, dir)| if dir { format!("{n}/") } else { n }).collect();
+    RepoBrief { readme, package_json, files }
+}
+
+#[tauri::command]
+async fn repo_brief(st: State<'_, AppState>, id: String) -> Res<RepoBrief> {
+    let r = st.db().repo(&id).map_err(e)?;
+    Ok(repo_brief_at(Path::new(&r.root_path)))
+}
+
 fn scripts_for(st: &AppState, ws: &Workspace) -> Res<config::Scripts> {
     let r = st.db().repo(&ws.repo_id).map_err(e)?;
     Ok(config::resolve(
@@ -4553,7 +4605,7 @@ pub fn run() {
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
             app_settings, set_app_setting,
             pty_run, pty_attach, open_in_targets, line_counts,
-            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
+            remove_queued, fork_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, session_events_tail, set_autopilot, autopilot_status, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
@@ -4571,6 +4623,27 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repo_brief_reads_readme_package_and_top_level_names() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("README.md"), "# Pawprint\n\nA ticket desk for vets. ".repeat(400)).unwrap();
+        std::fs::write(root.path().join("package.json"), r#"{"name":"pawprint","scripts":{"dev":"vite"}}"#).unwrap();
+        std::fs::create_dir(root.path().join("src")).unwrap();
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        let b = repo_brief_at(root.path());
+        let readme = b.readme.unwrap();
+        assert!(readme.starts_with("# Pawprint") && readme.len() <= 4000, "only the start of the README");
+        assert!(b.package_json.unwrap().contains("pawprint"));
+        assert_eq!(b.files, vec!["package.json", "README.md", "src/"], "dot folders are skipped, folders end in /");
+        // A huge package.json is left out rather than cut mid-JSON.
+        std::fs::write(root.path().join("package.json"), format!("{{\"x\":\"{}\"}}", "a".repeat(70_000))).unwrap();
+        assert!(repo_brief_at(root.path()).package_json.is_none());
+        // An empty folder gives an empty brief, not an error.
+        let empty = tempfile::tempdir().unwrap();
+        let b = repo_brief_at(empty.path());
+        assert!(b.readme.is_none() && b.package_json.is_none() && b.files.is_empty());
+    }
 
     #[test]
     fn protected_paths_merge_app_repo_and_workspace_files() {
