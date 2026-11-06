@@ -581,6 +581,11 @@ button.good-btn:hover { background: var(--good); }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
 .terminal-wrap .terminal { height: 100%; box-sizing: border-box; }
 .setting-model { width: 130px; font-size: 12.5px; padding: 4px var(--s2); }
+/* Agent defaults line up in three columns (model, effort, permissions) whatever is picked. Gemini has no effort
+   setting, so its model field keeps the effort column's place empty instead of sliding right. */
+.setting .row:has(> .setting-model) > select { width: 120px; }
+.setting .row:has(> .setting-model) > select:last-child { width: 148px; }
+.setting .row:has(> .setting-model):not(:has(> select + select)) > .setting-model { margin-right: 128px; }
 .setting .row select { min-width: 0; font-size: 12.5px; }
 .app.no-sidebar { grid-template-columns: 0 0 1fr; }
 .app.no-sidebar .sidebar { display: none; }
