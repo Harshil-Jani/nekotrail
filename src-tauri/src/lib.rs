@@ -12,6 +12,7 @@ pub mod pty;
 pub mod radar;
 pub mod safe;
 pub mod store;
+pub mod title;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -550,7 +551,7 @@ async fn create_workspace(st: State<'_, AppState>, repo_id: String, base: Option
         title: String::new(),
         status: String::new(),
         pair_id: String::new(),
-        section_id: String::new(), parent_id,
+        section_id: String::new(), parent_id, title_source: String::new(),
     };
     let prefs = st.db().repo(&ws.repo_id).map_err(e)?.prefs;
     ensure_local_excludes(&root, &prefs.copy_files);
@@ -627,7 +628,19 @@ async fn remove_review_comments(st: State<'_, AppState>, id: String, ids: Vec<St
 }
 #[tauri::command]
 async fn set_workspace_title(st: State<'_, AppState>, id: String, title: String) -> Res<()> {
-    st.db().set_title(&id, title.trim()).map_err(e)
+    let title = title.trim();
+    st.db().set_title(&id, title, title::USER).map_err(e)?;
+    if title.is_empty() {
+        // Cleared by hand: back to automatic, the PR's title if there is one, else the first prompt's.
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let pr = cached_pr(&st, &ws).and_then(|p| p["title"].as_str().map(str::to_string)).filter(|t| !t.trim().is_empty());
+        let (t, source) = match pr {
+            Some(t) => (t, title::PR),
+            None => (st.db().prompt_title(&id).map_err(e)?, title::AUTO),
+        };
+        st.db().set_title(&id, t.trim(), source).map_err(e)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1058,8 +1071,12 @@ fn pr_emit_changes(app: &AppHandle, st: &AppState, wss: &[Workspace]) {
         if pr["state"] == "MERGED" {
             let _ = st.db().set_merged(&w.id);
         }
-        if w.title.is_empty() && let Some(t) = pr["title"].as_str() {
-            let _ = st.db().set_title(&w.id, t);
+        // The PR names the task now, unless the user named it by hand.
+        if let Some(t) = pr["title"].as_str().map(str::trim).filter(|t| !t.is_empty()) {
+            let renamed = st.db().set_title(&w.id, t, title::PR).unwrap_or(false);
+            if renamed {
+                let _ = app.emit("workspaces-changed", json!({}));
+            }
         }
         let _ = app.emit("pr", v);
     }
@@ -2286,20 +2303,6 @@ fn classify_cli_notice(text: &str) -> Option<&'static str> {
     }
 }
 
-/// A short workspace title from the first message: its first sentence, cut at a word near 48 chars.
-fn task_title(text: &str) -> String {
-    let line = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
-    let sentence = line.split_inclusive(['.', '?', '!']).next().unwrap_or(line).trim_end_matches(['.', '?', '!']).trim();
-    if sentence.chars().count() <= 48 {
-        return sentence.to_string();
-    }
-    let cut: String = sentence.chars().take(48).collect();
-    match cut.rfind(' ') {
-        Some(i) if i > 20 => format!("{}…", &cut[..i]),
-        _ => format!("{cut}…"),
-    }
-}
-
 /// Is a tool installed, and what does it say about itself? Used by the first-run setup check.
 fn probe(cmd: &str, args: &[&str]) -> (bool, String) {
     match Command::new(cmd).args(args).stdin(Stdio::null()).output() {
@@ -2376,11 +2379,11 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
     let prefs = &repo.prefs;
     let dirs = st.db().extra_dirs(&id).unwrap_or_default();
     let ws = maybe_name_branch(&app, st, ws, &text);
-    // Name the workspace after its first task, so 20 workspaces stay readable.
-    if ws.title.is_empty() && ws.imported_from.is_none() {
-        let t = task_title(&text);
-        if !t.is_empty() {
-            let _ = st.db().set_title(&ws.id, &t);
+    // Name the workspace after its task, so 20 workspaces stay readable. Only while it has no
+    // title: a PR title or one the user typed is never replaced (see title.rs).
+    if ws.title.is_empty() {
+        let t = title::task_title(&text);
+        if !t.is_empty() && st.db().set_title(&ws.id, &t, title::AUTO).unwrap_or(false) {
             let _ = app.emit("workspaces-changed", json!({}));
         }
     }
@@ -2787,6 +2790,8 @@ pub fn run() {
         && let Err(err) = importer::backfill_history(&store, &db) {
             eprintln!("could not copy Conductor chat history: {err}");
         }
+    // Workspaces whose history just arrived get named after their first prompt.
+    let _ = store.backfill_titles();
 
     // Network and repo calls run beside the window instead of before it (`gh api user` alone is ~0.5s, more offline).
     let branch_prefix: Arc<OnceLock<String>> = Default::default();
@@ -2845,7 +2850,7 @@ mod tests {
         let ws = Workspace {
             id: "abc".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: "/w/mochi".into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
         };
         let env = workspace_env(&repo, &ws);
         let get = |k: &str| env.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone()).unwrap();
@@ -2857,11 +2862,7 @@ mod tests {
     }
 
     #[test]
-    fn titles_and_error_fixes() {
-        assert_eq!(task_title("Fix the 502 after deploy. Then add a test."), "Fix the 502 after deploy");
-        assert_eq!(task_title("\n  Add dark mode?\nmore"), "Add dark mode");
-        let long = task_title("The load balancer returns 502 on /v1/tickets right after a deploy and nobody knows why");
-        assert!(long.ends_with('…') && long.chars().count() <= 49, "{long}");
+    fn error_fixes() {
         assert_eq!(classify_error("Couldn't start claude: No such file or directory (os error 2)"), Some("install"));
         assert_eq!(classify_error("Invalid API key · Please run /login"), Some("login"));
         assert_eq!(classify_error("Claude AI usage limit reached|1762400000"), Some("limit"));
@@ -2957,7 +2958,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
         };
         st.db().insert_repo(&repo).unwrap();
         st.db().insert_workspace(&ws).unwrap();
@@ -2995,7 +2996,7 @@ mod tests {
         let ws = Workspace {
             id: "w".into(), repo_id: "r".into(), name: "mochi".into(), branch: "b".into(), path: dir.path().to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(),
         };
         std::fs::write(dir.path().join("CLAUDE.md"), "Use pnpm.").unwrap();
         assert!(untrusted_agent_config(&st, &ws, agent::get("claude")).is_none(), "text only, nothing to trust");
@@ -3075,7 +3076,7 @@ mod tests {
         let ws = |id: &str, repo: &str, branch: &str, parent: &str| Workspace {
             id: id.into(), repo_id: repo.into(), name: id.into(), branch: branch.into(), path: dir.path().join("ws").join(id).to_string_lossy().into(),
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
-            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: parent.into(), title_source: String::new(),
         };
         st.db().insert_repo(&repo("r1", Some("git@github.com:me/app.git"))).unwrap();
         st.db().insert_repo(&repo("r2", None)).unwrap();

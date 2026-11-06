@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, CircleAlert, CircleCheck, Plug, RotateCw, SquareTerminal, X } from "lucide-react";
 import { api, errText, type Agent, type McpOverview, type McpPreview, type McpRow, type SecretChoices, type SkillRow, type SkillShare } from "../api";
 import { AGENT_INFO, AGENTS, agentName } from "../agents";
@@ -48,7 +48,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
         {share ? (
           <SharePanel workspaceId={workspaceId} row={share.row} target={share.target} onBack={() => setShare(null)} onDone={finished} />
         ) : (
-          <div className="mcp-body">
+          <FadeBody>
             {done && <div className="mcp-done"><CircleCheck size={14} /> <span>{done}</span></div>}
             {error && <div className="mcp-note bad mcp-error"><span>{error}</span><button onClick={load}>Try again</button></div>}
             {all?.problems.map((p) => <div key={p} className="mcp-note bad">{p}</div>)}
@@ -95,7 +95,7 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
                 <Skills skills={all.skills} opencodeNote={opencodeSkillsNote(all.opencode_skill_dirs)} onDone={(m) => { setDone(m); load(); }} />
               </>
             )}
-          </div>
+          </FadeBody>
         )}
         {!share && (
           <div className="row">
@@ -107,6 +107,27 @@ export function McpSheet({ workspaceId, agent, onClose }: { workspaceId: string;
       </div>
     </div>
   );
+}
+
+/** The sheet's scrolling body. While more is below the fold, its bottom 16px fades out, so a cut-off row reads as "scroll for more". */
+function FadeBody({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    // Rows load, previews arrive and errors come and go: the content's size changes without a scroll.
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    for (const c of Array.from(el.children)) ro.observe(c);
+    const mo = new MutationObserver(() => { for (const c of Array.from(el.children)) ro.observe(c); check(); });
+    mo.observe(el, { childList: true, subtree: true });
+    return () => { el.removeEventListener("scroll", check); ro.disconnect(); mo.disconnect(); };
+  }, []);
+  return <div ref={ref} className={`mcp-body ${more ? "fade-more" : ""}`}>{children}</div>;
 }
 
 /** Shows exactly what goes into the other agent's file, asks about secrets, then writes it. */
@@ -126,6 +147,8 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
   const secrets = preview?.secrets ?? row.secrets;
   const answered = secretsAnswered(secrets, choices);
   const blockers = preview?.blockers ?? [];
+  // A new answer makes a new preview, so the last one's errors no longer apply.
+  const choose = (id: string, how: "ref" | "copy") => { setFailed(null); setError(null); setChoices({ ...choices, [id]: how }); };
   const add = async () => {
     if (!preview) return;
     setBusy(true); setFailed(null);
@@ -141,7 +164,7 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
   };
   const from = `${agentName(row.from.agent)} (${scopeText(row.from.scope)}, ${row.from.file})`;
   return (
-    <div className="mcp-body">
+    <FadeBody>
       {blockers.length > 0 ? (
         <p className="muted mcp-lead">{agentName(target)} can't take {row.name} from {from}:</p>
       ) : (
@@ -158,9 +181,9 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
               <span>{secretLabel(s)}</span>
               <div className="seg" role="radiogroup" aria-label={secretLabel(s)}>
                 {s.can_ref && (
-                  <button role="radio" aria-checked={choices[s.id] === "ref"} className={choices[s.id] === "ref" ? "on" : ""} onClick={() => setChoices({ ...choices, [s.id]: "ref" })} title="The value stays out of the file. You set it in your shell profile.">As a variable</button>
+                  <button role="radio" aria-checked={choices[s.id] === "ref"} className={choices[s.id] === "ref" ? "on" : ""} onClick={() => choose(s.id, "ref")} title="The value stays out of the file. You set it in your shell profile.">As a variable</button>
                 )}
-                <button role="radio" aria-checked={choices[s.id] === "copy"} className={choices[s.id] === "copy" ? "on" : ""} onClick={() => setChoices({ ...choices, [s.id]: "copy" })} title="The value is written into the other agent's file.">Copy the value</button>
+                <button role="radio" aria-checked={choices[s.id] === "copy"} className={choices[s.id] === "copy" ? "on" : ""} onClick={() => choose(s.id, "copy")} title="The value is written into the other agent's file.">Copy the value</button>
               </div>
             </div>
           ))}
@@ -188,7 +211,7 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
           {busy ? "Adding…" : `Add to ${agentName(target)}`}
         </button>}
       </div>
-    </div>
+    </FadeBody>
   );
 }
 
@@ -233,7 +256,10 @@ function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencode
               <div className="mcp-ask">
                 {ask.s.ok ? (
                   <>
-                    <span>Makes a link at <code>{ask.s.link}</code> to <code>{ask.s.to}</code>. It's one skill in one place, so an edit shows up for every agent.</span>
+                    <span>
+                      Makes a link at <code>{ask.s.link}</code> to <code>{ask.s.to}</code>. It's one skill in one place, so an edit shows up for every agent.
+                      {ask.s.target === "agents" && " Claude-only settings in it (like allowed-tools) are ignored outside Claude."}
+                    </span>
                     <div className="row">
                       <span className="spacer" />
                       <button onClick={() => setAsk(null)}>Cancel</button>
@@ -249,7 +275,7 @@ function Skills({ skills, opencodeNote, onDone }: { skills: SkillRow[]; opencode
           </li>
         ))}
       </ul>
-      <p className="muted mcp-small">Codex and Gemini both read skills from ~/.agents/skills, so one link shares a Claude skill with both. Claude-only settings in a skill (like allowed-tools) are ignored there. {opencodeNote}</p>
+      <p className="muted mcp-small">Codex and Gemini both read skills from ~/.agents/skills, so one link shares a Claude skill with both. {opencodeNote}</p>
     </>
   );
 }

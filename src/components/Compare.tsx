@@ -8,10 +8,13 @@ type Stats = Awaited<ReturnType<typeof api.workspaceStats>>;
 
 /** Bake-off results: the same task done by different agents, side by side. Keep one, archive the rest. */
 export function Compare({
-  workspaces, names, lines, prStates, onOpen, onKeep, onClose,
+  workspaces, names, task, lines, prStates, onOpen, onKeep, onClose,
 }: {
   workspaces: Workspace[];
+  /** Each column's star: the workspaces share one task, so their titles match. */
   names: (w: Workspace) => string;
+  /** The task they share, or "" before it has a title. */
+  task: string;
   lines: Record<string, [number, number]>;
   prStates: Record<string, string>;
   onOpen: (id: string) => void;
@@ -57,6 +60,7 @@ export function Compare({
           <span className="spacer" />
           <button className="icon" aria-label="Close" onClick={onClose}><X size={16} /></button>
         </div>
+        {task && <p className="compare-task">{task}</p>}
         <p className="muted">Same prompt, different agents. Open each to read the diff, then keep the one you like. The other workspace is archived, and its branch is kept.</p>
         <div className="compare-grid" style={{ gridTemplateColumns: `repeat(${workspaces.length}, 1fr)` }}>
           {workspaces.map((w) => {

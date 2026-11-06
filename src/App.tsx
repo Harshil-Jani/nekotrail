@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart } from "lucide-react";
-import { api, constellationOf, displayName, errText, starFor, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn } from "./api";
+import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, prStateOf, setBeforeTurn } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -48,6 +48,14 @@ async function notify(title: string, body: string) {
     /* not in Tauri (preview) */
   }
 }
+
+/** A notification's second line: the chat's name, unless it only repeats the workspace title (both come from the first message). */
+function chatLine(w: Workspace | undefined, chat?: string): string {
+  if (!chat || chat === "New chat") return "";
+  const flat = (t: string) => t.toLowerCase().replace(/…$/, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  const a = flat(chat), b = flat(w?.title ?? "");
+  return b && (a.startsWith(b.slice(0, 24)) || b.startsWith(a.slice(0, 24))) ? "" : chat;
+}
 import "./App.css";
 
 type Tab = "chat" | "changes" | "terminal" | "preview" | "notes";
@@ -82,7 +90,7 @@ export default function App() {
     const un = listen<{ workspace_id: string; state: string; detail?: string }>("autopilot", ({ payload }) => {
       load();
       const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-      const name = w ? displayName(skyRef.current, w) : "A workspace";
+      const name = w ? nameInText(skyRef.current, w) : "A workspace";
       if (payload.state === "ready" || payload.state === "gave_up") {
         const prefs = getSettings();
         const title = payload.state === "ready" ? `${name} is ready to merge` : `Autopilot needs you on ${name}`;
@@ -381,6 +389,11 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  // The backend renamed a workspace (its title from the first message or the PR, or its branch).
+  useEffect(() => {
+    const un = listen("workspaces-changed", () => { refresh(); });
+    return () => { un.then((f) => f()); };
+  }, [refresh]);
 
   useEffect(() => {
     api.conductorAvailable().then(setCanImport);
@@ -403,7 +416,7 @@ export default function App() {
       // Human in the loop: the agent stopped because it needs you. Ting ting, a notification, a Dock bounce.
       if (payload.needs) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-        const name = w ? displayName(skyRef.current, w) : "A workspace";
+        const name = w ? nameInText(skyRef.current, w) : "A workspace";
         const why: Record<string, string> = {
           plan: "has a plan for you to approve",
           question: "has a question for you",
@@ -414,7 +427,7 @@ export default function App() {
           approval: "wants your OK",
         };
         if (prefs.needsSound) ting();
-        if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, payload.title || "Open nekotrail to continue.");
+        if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, chatLine(w, payload.title) || "Open nekotrail to continue.");
         if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
           try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
         }
@@ -425,15 +438,15 @@ export default function App() {
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
       if (prefs.notify === "always" || (prefs.notify === "away" && away)) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-        const name = w ? displayName(skyRef.current, w) : "A workspace";
-        notify(payload.ok === false ? `${name} needs you` : `${name} is done`, payload.title || "The agent finished its turn.");
+        const name = w ? nameInText(skyRef.current, w) : "A workspace";
+        notify(payload.ok === false ? `${name} needs you` : `${name} is done`, chatLine(w, payload.title) || "The agent finished its turn.");
       }
     });
     // Mid-turn requests (approve a tool call) arrive while the turn is still running.
     const unNeeds = listen<{ workspace_id: string; needs: string; title?: string }>("needs", ({ payload }) => {
       const prefs = getSettings();
       const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-      const name = w ? displayName(skyRef.current, w) : "A workspace";
+      const name = w ? nameInText(skyRef.current, w) : "A workspace";
       refresh();
       if (prefs.needsSound) ting();
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
@@ -672,12 +685,12 @@ export default function App() {
   const archive = async (opts?: { auto?: boolean; id?: string }) => {
     const target = opts?.id ? workspaces.find((w) => w.id === opts.id) : ws;
     if (!target) return;
-    const name = displayName(sky, target);
+    const name = nameInText(sky, target);
     try {
       await api.archiveWorkspace(target.id);
     } catch (e) {
       if (errText(e) !== "DIRTY") return say(errText(e), true);
-      if (opts?.auto) return say(`${name}'s PR merged, but it has uncommitted changes, so it stays open. Commit or discard them, then archive it.`);
+      if (opts?.auto) return say(`The PR for ${name} merged, but it has uncommitted changes, so it stays open. Commit or discard them, then archive it.`);
       const go = await ask({
         title: `Archive ${name} with uncommitted changes?`,
         body: `The branch ${target.branch} is kept, but uncommitted work in its folder is lost.`,
@@ -787,6 +800,8 @@ export default function App() {
   const commands = (): Command[] => {
     const c: Command[] = [];
     const nameOf = (w: Workspace) => displayName(sky, w);
+    // The star goes in the hint and the search words, so "mochi" still finds a titled workspace.
+    const hintOf = (w: Workspace) => [subName(sky, w), repos.find((x) => x.id === w.repo_id)?.name].filter(Boolean).join(" · ");
     // Recent: the last places you went, unread first. Only shown before you type, so it never duplicates results.
     const others = workspaces.filter((w) => w.state === "active" && w.id !== ws?.id);
     const order = recentIds();
@@ -796,10 +811,9 @@ export default function App() {
       .sort((a, b) => Number(b.unread) - Number(a.unread) || rank(a.id) - rank(b.id))
       .slice(0, 5);
     for (const w of recent) {
-      const r = repos.find((x) => x.id === w.repo_id);
       c.push({
         id: `recent-${w.id}`, group: "Recent", label: nameOf(w), emptyOnly: true,
-        hint: `${r?.name ?? ""}${w.unread ? " · new" : runningWs.has(w.id) ? " · working" : ""}`,
+        hint: `${hintOf(w)}${w.unread ? " · new" : runningWs.has(w.id) ? " · working" : ""}`,
         icon: runningWs.has(w.id) ? <span className="spinner" /> : w.unread ? <span className="unread" /> : <Sparkles size={15} />, run: () => select(w.id),
       });
     }
@@ -835,8 +849,8 @@ export default function App() {
     for (const w of [...active].sort((a, b) => Number(b.unread) - Number(a.unread))) {
       const r = repos.find((x) => x.id === w.repo_id);
       c.push({
-        id: `ws-${w.id}`, group: "Workspaces", label: nameOf(w), keywords: `${w.branch} ${r?.name ?? ""}`,
-        hint: `${r?.name ?? ""}${w.unread ? " · new" : runningWs.has(w.id) ? " · working" : ""}`,
+        id: `ws-${w.id}`, group: "Workspaces", label: nameOf(w), keywords: `${w.branch} ${r?.name ?? ""} ${starName(sky, w)}`,
+        hint: `${hintOf(w)}${w.unread ? " · new" : runningWs.has(w.id) ? " · working" : ""}`,
         icon: runningWs.has(w.id) ? <span className="spinner" /> : <Sparkles size={15} />, run: () => select(w.id),
       });
     }
@@ -937,7 +951,7 @@ export default function App() {
         usage={usage}
         sections={sections}
         onChanged={refresh}
-        onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(w.title || displayName(sky, w)); }}
+        onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(displayName(sky, w)); }}
         onArchive={(id) => archive({ id })}
         onBoard={() => setView("board")}
         ram={ram}
@@ -994,18 +1008,23 @@ export default function App() {
                     autoFocus
                     value={editingTitle}
                     aria-label="Workspace name"
-                    placeholder={star?.name ?? ws.name}
+                    placeholder="Name it after its task"
+                    title="Leave it empty to name it after the PR or the first message again"
                     onChange={(e) => setEditingTitle(e.target.value)}
-                    onBlur={() => { api.setWorkspaceTitle(ws.id, editingTitle).then(refresh); setEditingTitle(null); }}
+                    onBlur={() => {
+                      // Only a real change counts as naming it by hand; empty goes back to automatic.
+                      if (editingTitle.trim() !== displayName(sky, ws)) api.setWorkspaceTitle(ws.id, editingTitle).then(refresh).catch((e) => say(errText(e), true));
+                      setEditingTitle(null);
+                    }}
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingTitle(null); }}
                   />
                 ) : (
-                  <h1 onDoubleClick={() => setEditingTitle(ws.title || (star?.name ?? ws.name))} title="Double-click to rename">
+                  <h1 onDoubleClick={() => setEditingTitle(displayName(sky, ws))} title={`${ws.title_source === "auto" ? "Named after the first message. " : ws.title_source === "pr" ? "Named after the PR. " : ""}Double-click to rename.`}>
                     {displayName(sky, ws)}
                     {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
                   </h1>
                 )}
-                <div className="ws-sub">{repo?.name} · {ws.branch} → {ws.target_branch}</div>
+                <div className="ws-sub">{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{repo?.name} · {ws.branch} → {ws.target_branch}</div>
               </div>
               <span className="spacer" />
               {ws.state === "active" && (
@@ -1074,7 +1093,7 @@ export default function App() {
                             ))}
                             <div className="menu-sep" />
                           </>}
-                          <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(ws.title || displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
@@ -1100,7 +1119,8 @@ export default function App() {
               <PrBar
                 ws={ws}
                 repo={repo ?? undefined}
-                name={displayName(sky, ws)}
+                name={nameInText(sky, ws)}
+                star={star?.name ?? starName(sky, ws)}
                 refreshKey={wsRefreshKey}
                 collision={collisions.find((c) => c.order.includes(ws.id))}
                 prStates={prStates}
@@ -1114,6 +1134,7 @@ export default function App() {
                 onSay={say}
                 autopilot={autopilot[ws.id]}
                 nameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; }}
+                textNameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? nameInText(sky, w) : "another workspace"; }}
                 onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
               />
             )}
@@ -1184,7 +1205,7 @@ export default function App() {
       {newFor && repos.length > 0 && (
         <NewWorkspace
           repos={repos} initialRepo={newFor} initialSource={newSource} onCreate={newWorkspace}
-          stackTargets={workspaces.filter((w) => w.state === "active").map((w) => ({ id: w.id, repo_id: w.repo_id, name: displayName(sky, w), branch: w.branch }))}
+          stackTargets={workspaces.filter((w) => w.state === "active").map((w) => ({ id: w.id, repo_id: w.repo_id, name: displayName(sky, w), text: nameInText(sky, w), star: subName(sky, w), branch: w.branch }))}
           initialStack={newStack}
           onClose={() => { setNewFor(null); setNewSource("task"); setNewStack(undefined); }}
         />
@@ -1224,7 +1245,8 @@ export default function App() {
       {comparing && (
         <Compare
           workspaces={workspaces.filter((w) => w.pair_id === comparing && w.state === "active")}
-          names={(w) => displayName(sky, w)}
+          names={(w) => starName(sky, w)}
+          task={workspaces.find((w) => w.pair_id === comparing && w.title)?.title ?? ""}
           lines={lines}
           prStates={prStates}
           onOpen={(id) => { setComparing(null); select(id); setTab("changes"); }}
@@ -1234,7 +1256,7 @@ export default function App() {
             setComparing(null);
             await refresh();
             select(id);
-            say(`Kept ${displayName(sky, workspaces.find((w) => w.id === id)!)}. The other workspace is archived, and its branch is kept.`);
+            say(`Kept ${starName(sky, workspaces.find((w) => w.id === id)!)}. The other workspace is archived, and its branch is kept.`);
           }}
           onClose={() => setComparing(null)}
         />

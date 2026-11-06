@@ -1372,3 +1372,18 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .prbar.pb-5 { flex-wrap: wrap; row-gap: 4px; padding-top: 6px; padding-bottom: 6px; }
 .ws-header.tb-min .tab { padding: 0 6px; }
 .app:not(.no-sidebar) .ws-header.tb-min { padding-right: var(--s2); }
+
+/* Workspaces are named after their task; the star sits on a second, quieter line. */
+.ws.two { height: 40px; }
+.ws .ws-text { flex: 1 1 auto; min-width: 0; gap: 1px; }
+.ws .ws-text .ws-name { flex: none; line-height: 16px; }
+.ws-star { color: var(--muted); font-size: 11px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prbar .stack-link button.stack-name { display: inline-block; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.compare-task { margin: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-stack-star { font-weight: 400; }
+
+/* MCP sheet: a 16px fade at the bottom edge while the list continues below. */
+.mcp-body.fade-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}

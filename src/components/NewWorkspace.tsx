@@ -21,7 +21,8 @@ export type NewWorkspaceRequest = {
 
 export type Source = "task" | "pr" | "branch" | "issue" | "stack";
 /** An active workspace a new one can be stacked on. */
-export type StackTarget = { id: string; repo_id: string; name: string; branch: string };
+/** `name` for the list, `text` inside a sentence (a task title comes quoted), `star` under it. */
+export type StackTarget = { id: string; repo_id: string; name: string; text: string; star: string; branch: string };
 type IssueItem = { number: number; title: string; body: string; url: string; labels: { name: string }[] };
 type PrItem = { number: number; title: string; headRefName: string; author: { login: string }; isDraft: boolean };
 
@@ -191,14 +192,14 @@ export function NewWorkspace({
               {stackable.length === 0 && <p className="muted">No other active workspace in this repo yet.</p>}
               {stackable.map((t) => (
                 <button key={t.id} role="option" aria-selected={stackPick === t.id} className={stackPick === t.id ? "on" : ""} onClick={() => setStackPick(t.id)}>
-                  <span className="nw-pr-title">{t.name}</span>
+                  <span className="nw-pr-title">{t.name}{t.star && <span className="muted nw-stack-star"> · {t.star}</span>}</span>
                   <code className="muted nw-stack-branch">{t.branch}</code>
                 </button>
               ))}
             </div>
             <p className="muted nw-note">
               {stackOn
-                ? `Starts from ${stackOn.name}'s last commit, and its PR goes into ${stackOn.name}'s branch. When ${stackOn.name}'s PR merges, one click moves this one over.`
+                ? `Starts from the last commit of ${stackOn.text}, and its PR goes into that branch. When the PR for ${stackOn.text} merges, one click moves this one over.`
                 : "Build on work that isn't merged yet. The new PR goes into that workspace's branch, so reviewers see only the new changes."}
             </p>
           </>
@@ -238,7 +239,7 @@ export function NewWorkspace({
           <span className="muted nw-hint">⇧↵ new line · Esc to close</span>
           <button className="primary" onClick={submit} disabled={busy || !repo || (source === "pr" && !prPick) || (source === "branch" && !branch.trim()) || (source === "issue" && !issuePick) || (source === "stack" && !stackOn)}>
             {busy ? <span className="spinner" /> : null}
-            {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? `Stack on ${stackOn.name}` : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
+            {source === "issue" ? (issuePick ? `Create from #${issuePick}` : "Pick an issue") : source === "pr" ? (prPick ? `Create from #${prPick}` : "Pick a PR") : source === "branch" ? "Create from branch" : source === "stack" ? (stackOn ? "Create stacked workspace" : "Pick a workspace") : prompt.trim() ? "Create workspace" : "Create empty workspace"}
             <CornerDownLeft size={14} />
           </button>
         </div>
