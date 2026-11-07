@@ -1,23 +1,24 @@
-"""Builds the README images in docs/readme/ from the app screenshots and the site clip.
+"""Builds the README images in docs/readme/ from the app screenshots, and the animated GIFs.
 
     python3 docs/readme/build_assets.py            # cards + buttons + icons
-    python3 docs/readme/build_assets.py --hero     # also the animated hero (slow, about 3 minutes)
+    python3 docs/readme/build_assets.py --gifs     # also records and encodes every GIF (about 4 minutes)
+    python3 docs/readme/build_assets.py --gifs hero review   # just these GIFs
 
-Needs Pillow (with WebP) and ffmpeg. After re-shooting docs/screenshots/*.png (1600x1000, dark theme) or
-site/public/clips/parallel.mp4, run this and every README image is redrawn with the same file names.
+Needs Pillow. After re-shooting docs/screenshots/*.png (1600x1000, dark theme), run this and every README
+image is redrawn with the same file names. --gifs needs the preview harness running
+(`bun run dev -- --port 1439`), Playwright with Chromium, ffmpeg and gifski: see clips.py.
 
 - cards/<name>.png : each screenshot cropped to its feature, all the same size (1084x694), rounded corners,
   a hairline edge (so a dark card still reads on GitHub's dark page) and a soft shadow (for the light page).
-- hero.webp        : the parallel-workspaces clip, 15 fps, framed the same way.
+- gifs/<name>.gif  : short loops of the real UI (clips.py): the hero at 1200 px, the Tour's features at 800 px.
 - buttons/, icons/ : SVGs in a -light and a -dark variant, picked by <picture> in the README.
 """
-import glob, os, subprocess, sys, tempfile
+import os, subprocess, sys
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 SHOTS = os.path.join(REPO, "docs", "screenshots")
-CLIP = os.path.join(REPO, "site", "public", "clips", "parallel.mp4")
 
 W, H = 1040, 650   # card image (16:10)
 PAD = 22           # room for the shadow, same on every side
@@ -101,17 +102,6 @@ def cards():
         print(f"cards/{name}.png {os.path.getsize(out) // 1024} KB")
 
 
-def hero(fps=15, quality=72):
-    with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", CLIP, "-vf", f"fps={fps}",
-                        os.path.join(tmp, "f%04d.png")], check=True)
-        frames = [frame(Image.open(f).convert("RGB"), r=14) for f in sorted(glob.glob(os.path.join(tmp, "f*.png")))]
-    out = os.path.join(HERE, "hero.webp")
-    frames[0].save(out, save_all=True, append_images=frames[1:], duration=1000 // fps, loop=0,
-                   quality=quality, method=6, lossless=False, allow_mixed=True)
-    print(f"hero.webp {len(frames)} frames {os.path.getsize(out) // 1024} KB")
-
-
 def button(name, label, glyph, kind, text_len, width, theme, glyph_color=None):
     fill, stroke, text = THEMES[theme][kind]
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="40" viewBox="0 0 {width} 40" role="img" aria-label="{label}">
@@ -150,5 +140,6 @@ def svgs():
 if __name__ == "__main__":
     svgs()
     cards()
-    if "--hero" in sys.argv:
-        hero()
+    if "--gifs" in sys.argv:
+        names = [a for a in sys.argv[1:] if not a.startswith("--")]
+        subprocess.run([sys.executable, os.path.join(HERE, "clips.py"), *names], check=True)
