@@ -31,7 +31,12 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
       fontSize: look.termSize || TERM_SIZE,
       cursorBlink: mode === "shell",
       scrollback: 5000,
-      theme: { background: "#0b0b1e", foreground: "#e6e6f5", cursor: "#ccccff", cursorAccent: "#0b0b1e", selectionBackground: "#ccccff40" },
+      theme: {
+        background: "#0b0b1e", foreground: "#e6e6f5", cursor: "#ccccff", cursorAccent: "#0b0b1e", selectionBackground: "#ccccff40",
+        // Moonlight ANSI colours: each passes 4.5:1 on the terminal background (xterm's own red and blue don't).
+        black: "#2a2a52", red: "#ff7a8e", green: "#5ee0a0", yellow: "#ffd27a", blue: "#9c9cff", magenta: "#e0a6ff", cyan: "#7adce8", white: "#d8d8ee",
+        brightBlack: "#8a8ab8", brightRed: "#ff9eae", brightGreen: "#8aeebc", brightYellow: "#ffe0a3", brightBlue: "#c0c0ff", brightMagenta: "#ecc6ff", brightCyan: "#a6eaf2", brightWhite: "#f5f5ff",
+      },
     });
     const fit = new FitAddon();
     t.loadAddon(fit);

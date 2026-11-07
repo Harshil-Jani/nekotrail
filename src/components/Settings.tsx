@@ -147,7 +147,7 @@ function AboutPane({ version }: { version: string }) {
         <span>Version</span>
         <span className="num">{version}</span>
       </div>
-      <p className="muted setting-note">Free and open source under the MIT License. Copyright (c) 2026 Harshil Jani.</p>
+      <p className="muted setting-note">Free and open source under the MIT License. Copyright © 2026 Harshil Jani.</p>
       <div className="setting">
         <span>Links</span>
         <span className="setting-links">

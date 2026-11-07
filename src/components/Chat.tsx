@@ -1030,6 +1030,17 @@ export function Chat({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [events.length, pending.length, busy]);
   useEffect(() => { stick.current = true; }, [active]);
+  // Content that grows after it is drawn (a diagram, the queue arriving, the working row's text) keeps
+  // the reader at the bottom too, so what the agent does next is never just below the fold.
+  useEffect(() => {
+    const el = scroller.current;
+    const thread = el?.querySelector(".thread");
+    if (!el || !thread || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(thread);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active]);
 
   useEffect(() => {
     if (!inject?.text) return;
@@ -1542,7 +1553,7 @@ export function Chat({
                   <span className="pending-state">
                     {p.state === "sending"
                       ? <><span className="spinner" aria-hidden />Sending</>
-                      : <><Clock size={12} aria-hidden />Queued: sends when the agent finishes</>}
+                      : <><Clock size={12} aria-hidden />{p.key === pending.find((x) => x.state === "queued")?.key ? "Queued: sends when the agent finishes" : "Queued"}</>}
                     {p.index !== null && !readOnly && (
                       <>
                         <button className="icon" title="Move back to the message box to edit" aria-label="Edit queued message" onClick={() => unqueue(p.index!, p.text, true)}><Pencil size={13} /></button>

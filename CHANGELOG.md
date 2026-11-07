@@ -31,6 +31,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - A first message that is only a greeting ("Hey there") no longer names the workspace ("There"). It keeps the branch name until a message says what the task is; existing ones are fixed on the next launch.
 - `caffeinate` no longer stays behind as a zombie process after every turn.
 
+**Design ship-gate fixes**
+- A chat stays at its newest line when something below it grows after it is drawn (a diagram, your queued messages, the working row), so what the agent does next is never hidden under the fold.
+- The working row's dots are a little larger and stronger, and its text is the same size as the rest of the app, so it is easy to see that an answer is coming.
+- Several queued messages say "Queued: sends when the agent finishes" once, then just "Queued", instead of repeating the sentence under each one.
+- The terminal says it exited, didn't start or is slow in a bar above the output, instead of a card that covered the first lines. It is dark in light mode too, like the terminal.
+- Terminal colours are tuned to Moonlight, so red, blue and grey text from your shell are readable on the dark background (xterm's own red, blue and grey were below 4.5:1).
+- A terminal that couldn't start no longer says "Open a new tab with + to try again" next to the Start a new shell button.
+- About reads "Copyright ©" instead of "(c)".
+
 ## 0.22.2 (2026-11-07)
 
 **Fixes**

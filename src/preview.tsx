@@ -2,7 +2,7 @@
  * Sample data for rendering the real UI in a plain browser (no Tauri backend).
  * Open /preview.html?ws=w1&tab=chat (tabs: chat, changes, terminal, preview, checks, notes; ?view=sky).
  * Checks: ?ws=w1&tab=checks (a failing run), ?ws=w2 (running), ?ws=w4 (suggestions), ?checks=trust, ?checks=none.
- * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=paused, ?queue=cap (a spend cap reached, a runaway task), ?queueAdd (the Add form open), ?summary (the morning summary).
+ * Queue: ?view=queue (a night's worth of tasks), ?queue=empty, ?queue=loading, ?queue=paused, ?queue=cap (a spend cap reached, a runaway task), ?queueAdd (the Add form open), ?summary (the morning summary).
  * Usage: ?view=usage (a week of turns), ?usage=empty, ?usage=cap (caps set, today's reached). Chat stops: ?ws=w1&stop=loop or &stop=budget.
  * Hand off: ?ws=w1&handoff=w1 opens the sheet on the Claude chat (&long: a 64-step chat; &limit: out of usage; &ask: Ask before changes,
  * so Codex starts in Plan; &handoffTo=gemini). ?ws=w1&limit shows the out-of-usage card offering it; ?ws=w1&handedOff the two marker lines.
@@ -12,6 +12,7 @@
  * step; try comes with one repo). ?tour opens the coach-mark tour on any workspace.
  * Linear: ?new=r1&from=linear (your open issues), &linear=off (not connected), &linear=empty (no issues),
  * &linear=error (Linear is rate limiting). Settings: ?settings=integrations, with &linear=off or &linear=error.
+ * Terminal: ?ws=w1&tab=terminal&term=failed|slow|exited (slow shows after 8s).
  * Working row: ?ws=w1&tab=chat&thinking plays a turn; &thinking=start|reading|edits|still|answer holds one state.
  * Conductor: ?rescue=import (found, not imported: the sheet), ?rescue=notice (imported, not moved: the notice;
  * add &ws=w1 for the in-workspace banner), ?rescue=move, ?rescue=moving, ?rescue=done, ?rescue=partial.
@@ -827,7 +828,7 @@ mockIPC(
       case "plugin:dialog|save": return `/Users/sam/Downloads/${args.options?.defaultPath ?? "export"}`;
       case "export_save": (window as any).__exported = args.text ?? args.contents ?? args; return null;
       case "plugin:path|resolve_directory": return "/Users/sam";
-      case "queue_view": return queueView();
+      case "queue_view": return queueMode === "loading" ? new Promise(() => {}) : queueView();
       case "queue_add": {
         const t = qTask(`q${Date.now()}`, args.task.prompt, { ...args.task, state: args.task.mode === "ask" ? "waiting" : "queued", added_at: Math.floor(Date.now() / 1000) });
         queueTasks = [...queueTasks, t]; queueChanged(); return t;
@@ -946,7 +947,14 @@ mockIPC(
         { id: 2, path: "internal/server/http.go", line: 22, side: "RIGHT", body: "Good catch, NLB is only used by the gRPC port.", user: "Harshil-Jani", avatar: "", url: "https://github.com", reply_to: 1, outdated: false },
       ] : [];
       case "read_file": return "package server\n\nfunc New(cfg Config) *http.Server {\n  return nil\n}\n";
-      case "pty_open": return "\x1b[32m~/code/ws/mochi\x1b[0m on \x1b[35mharshil/fix-502-gateway\x1b[0m\r\n$ ";
+      case "pty_open": {
+        // ?term=failed (the shell can't start), =slow (it never answers), =exited (it ends after its prompt).
+        const term = new URLSearchParams(location.search).get("term");
+        if (term === "failed") throw "No such file or directory: /code/ws/mochi";
+        if (term === "slow") return new Promise(() => {});
+        if (term === "exited") setTimeout(() => emit("pty-exit", { id: args.id }), 600);
+      }
+      return "\x1b[32m~/code/ws/mochi\x1b[0m on \x1b[35mharshil/fix-502-gateway\x1b[0m\r\n$ ";
       case "pty_attach": return String(args.id).endsWith(":run") ? "$ make dev\r\ngo run ./cmd/api\r\n2026/11/06 01:40:12 listening on http://localhost:41230\r\n" : null;
       case "line_counts": return { w1: [38, 1], w2: [120, 31], w4: [6, 2], g1: [66, 0], g2: [18, 3], g3: [9, 0] };
       case "create_multi_task": return (args.repoIds as string[]).map((r, i) => ({ ...workspaces[0], id: `new${i}`, repo_id: r, name: "vega", branch: "harshil/vega", group_id: "new0", pinned: false, title: "" }));
