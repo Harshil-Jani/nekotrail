@@ -56,12 +56,12 @@ Sixteen agents through their official CLIs. No proxy, no markup.
 <td width="50%" valign="top">
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/icons/handoff-dark.svg"><img src="docs/readme/icons/handoff-light.svg" width="44" alt=""></picture><br>
 <b>Hand off without starting over.</b><br>
-When an agent runs out of usage or loops, another carries on in the same branch, from a brief you read first.
+Another agent picks up in the same branch, from a brief you read first.
 </td>
 <td width="50%" valign="top">
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/icons/shield-dark.svg"><img src="docs/readme/icons/shield-light.svg" width="44" alt=""></picture><br>
-<b>Conductor work, kept safe.</b><br>
-Nothing is copied or deleted: git renames each worktree's folder and NekoTrail checks it.
+<b>Leave Conductor, keep everything.</b><br>
+One import moves your worktrees with <code>git worktree move</code> and checks each one. Nothing is copied or deleted.
 </td>
 </tr>
 </table>
@@ -79,8 +79,8 @@ Type the task, press Enter. Start from a GitHub or Linear issue, a PR, a branch 
 </td>
 <td width="50%" valign="top">
 <img src="docs/readme/cards/plan.png" width="100%" alt="Plan card with Approve and build, Split into 3 workspaces, a todo list and queued messages"><br>
-<b>Approve the plan, or split it</b><br>
-into parallel workspaces (<kbd>⌘⇧↵</kbd>).
+<b>Approve the plan, or split it.</b><br>
+Approve with <kbd>⌘⇧↵</kbd>, or split it into parallel workspaces.
 </td>
 </tr>
 <tr>
@@ -111,7 +111,7 @@ Same task, two workspaces. Compare files, time and cost; keep the winner.
 <td width="50%" valign="top">
 <img src="docs/readme/cards/scorecard.png" width="100%" alt="Agent scorecard comparing Claude and Codex"><br>
 <b>See which agent works for you.</b><br>
-Finish rate, turn time, spend and merged PRs, from your own history.
+Clean finishes, turn time, API-equivalent cost and merged workspaces, from your own history.
 </td>
 <td width="50%" valign="top">
 <img src="docs/readme/cards/night-sky.png" width="100%" alt="Night sky with constellations"><br>
@@ -248,7 +248,7 @@ bun run tauri dev
 |---|---|
 | Start | Open a local repo, clone a GitHub repo, or import from Conductor. Start from a task, a GitHub or Linear issue, a PR or a branch. |
 | Workspaces | One worktree and branch per task. Archive removes the folder and keeps the branch. |
-| Chat | Any of the sixteen agents, several chats per workspace. Queue messages, `@` a file, paste a screenshot. Modes: plan, auto-accept, full-auto. |
+| Chat | Any of the sixteen agents, several chats per workspace. Queue messages, `@` a file, paste a screenshot. Modes: Plan, Ask before changes, Auto-accept edits, Full auto. |
 | Compare agents | Pick "Claude + Codex": same task, two workspaces. Compare files, turns, time and cost. |
 | Hand off | Another agent carries on in the same branch (+ menu, ⌘K or /handoff). You read and edit the brief first. The new chat keeps this chat's mode. |
 | Linear | Start from a Linear issue: its branch name, the issue in the first message, "Fixes ENG-123" in the PR. |
@@ -375,7 +375,7 @@ Early (0.21). Built and used daily on macOS. Linux x86_64 builds are new and exp
 
 ### Sponsor
 
-NekoTrail is free, open source and local-first, with no account and no paid tier.<br>If it saves you time, you can support its development.<br>In the app: Settings, next to the version, or "Sponsor NekoTrail" and "Buy me a coffee" in ⌘K.
+NekoTrail is free, open source and local-first, with no account and no paid tier.<br>If it saves you time, you can support it here, in Settings or in ⌘K.
 
 <p>
 <a href="https://github.com/sponsors/Harshil-Jani"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/buttons/sponsor-dark.svg"><img src="docs/sponsor/github-sponsors.svg" height="40" alt="Sponsor on GitHub"></picture></a>&nbsp;
