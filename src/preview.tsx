@@ -12,6 +12,8 @@
  * step; try comes with one repo). ?tour opens the coach-mark tour on any workspace.
  * Linear: ?new=r1&from=linear (your open issues), &linear=off (not connected), &linear=empty (no issues),
  * &linear=error (Linear is rate limiting). Settings: ?settings=integrations, with &linear=off or &linear=error.
+ * Conductor: ?rescue=import (found, not imported: the sheet), ?rescue=notice (imported, not moved: the notice;
+ * add &ws=w1 for the in-workspace banner), ?rescue=move, ?rescue=moving, ?rescue=done, ?rescue=partial.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -713,6 +715,45 @@ const linearIssues = (f: any) => {
     && (!q || i.title.toLowerCase().includes(q))));
 };
 
+// Conductor rescue: ?rescue=import (found, not imported yet: the sheet), ?rescue=notice (imported
+// earlier and left in Conductor's folder: the one-time notice on Welcome and in a workspace, e.g.
+// &ws=w1), ?rescue=move (the sheet from that notice), ?rescue=moving (the move in progress),
+// ?rescue=done (every worktree moved and checked), ?rescue=partial (one can't move, one moved
+// with a difference to look at).
+const rescueMode = new URLSearchParams(location.search).get("rescue");
+let rescueMoved = false;
+const cw = (repo: string, name: string) => `/Users/sam/conductor/workspaces/${repo}/${name}`;
+const nw = (repo: string, name: string) => `/Users/sam/nekotrail/workspaces/${repo}/${name}`;
+const rescueItems = () => {
+  const imported = rescueMode === "move" || rescueMode === "notice";
+  const rows: [string, string, string, string, number, number][] = imported ? [
+    ["w1", "pawprint-api", "Fix 502s behind the load balancer", "harshil/fix-502-gateway", 412_000, 3],
+    ["w2", "pawprint-api", "SLA deadlines in business hours", "harshil/sla-business-hours", 388_500, 0],
+    ["w3", "pawprint-web", "Dark mode for the ticket list", "harshil/ticket-dark-mode", 1_310_000, 7],
+  ] : [
+    ["", "pawprint-api", "Fix 502s behind the load balancer", "harshil/fix-502-gateway", 412_000, 3],
+    ["", "pawprint-api", "SLA deadlines in business hours", "harshil/sla-business-hours", 388_500, 0],
+    ["", "pawprint-api", "Retry webhooks with backoff", "harshil/webhook-retry", 402_300, 1],
+    ["", "pawprint-web", "Dark mode for the ticket list", "harshil/ticket-dark-mode", 1_310_000, 7],
+    ["", "pawprint-web", "Upgrade to React 19", "harshil/react-19", 1_295_800, 12],
+    ["", "pawprint-types", "Shared ticket status enum", "harshil/status-enum", 8_400, 0],
+  ];
+  const dirs = ["lome", "tunis", "oslo", "lima", "quito", "baku"];
+  return rows.map(([id, repo, label, branch, kb, uncommitted], i) => ({
+    id, repo, label, branch, kb, uncommitted, imported, from: cw(repo, dirs[i]), to: nw(repo, dirs[i]),
+  }));
+};
+const rescueOutcomes = (ids?: string[] | null) => rescueItems()
+  .map((it, i) => ({ ...it, id: it.id || `new${i}` }))
+  .filter((it) => !ids || ids.includes(it.id))
+  .map((it, i) => {
+    const base = { id: it.id, label: it.label, from: it.from, to: it.to, moved: true, error: null as string | null, problems: [] as string[], uncommitted: it.uncommitted };
+    if (rescueMode !== "partial") return base;
+    if (it.branch === "harshil/react-19") return { ...base, moved: false, error: "Git has this worktree locked (Conductor may have locked it). Run `git worktree unlock` on it, then move it again.", uncommitted: 0 };
+    if (i === 3) return { ...base, problems: ["Uncommitted files differ: 7 before the move, 6 after."] };
+    return base;
+  });
+
 mockIPC(
   (cmd, args: any) => {
     switch (cmd) {
@@ -1005,7 +1046,17 @@ mockIPC(
       case "prompt_context": return { branch: "harshil/fix-502-gateway", base: "main", files_changed: "internal/server/http.go\ninternal/server/http_test.go" };
       case "sections": if (fresh) return []; return [{ id: "sec1", name: "This week", sort: 1 }, { id: "sec2", name: "Waiting on review", sort: 2 }];
       case "resource_usage": return { total_mb: 1597, top: [{ name: "claude", mb: 812 }, { name: "node", mb: 431 }, { name: "nekotrail", mb: 208 }, { name: "zsh", mb: 12 }] };
-      case "imported_outside": return location.search.includes("moveimport") ? ["w1", "w2", "w3"] : [];
+      case "imported_outside": return !rescueMoved && (location.search.includes("moveimport") || rescueMode === "notice" || rescueMode === "move") ? ["w1", "w2", "w3"] : [];
+      case "conductor_rescue_plan": {
+        const items = rescueItems();
+        const fresh = !items[0].imported;
+        return { report: fresh ? { repos: 3, workspaces: 6, sessions: 14, skipped: 1, chats_with_history: 11 } : { repos: 0, workspaces: 0, sessions: 0, skipped: 3, chats_with_history: 0 }, items, root: "/Users/sam/nekotrail/workspaces" };
+      }
+      case "import_conductor": return new Promise((r) => setTimeout(() => r({ repos: 3, workspaces: 6, sessions: 14, skipped: 1, chats_with_history: 11 }), 500));
+      case "relocate_imported": {
+        if (rescueMode === "moving") return new Promise(() => {}); // holds on the in-progress state
+        return new Promise((r) => setTimeout(() => { rescueMoved = true; r(rescueOutcomes(args.ids)); }, 900));
+      }
       case "autopilot_status": return { w2: 1 };
       // Mochi (w1, PR open, 39 lines) and Comet (w2, draft, 151 lines) both change http.go.
       case "collisions": return [{ repo_id: "r1", order: ["w1", "w2"], pairs: [{ a: "w1", b: "w2", files: ["internal/server/http.go"] }] }];
