@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { bannerText, isQuiet, loadNoticeMode, showBanner } from "./notice";
 import { FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronRight, GitBranch, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Coffee, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
 import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
@@ -62,14 +62,18 @@ const NAP_AFTER_MS = 5 * 60_000; // the cat naps after 5 quiet minutes
 const loadTerminal = () => import("./components/Terminal");
 const TerminalPanel = lazy(() => loadTerminal().then((m) => ({ default: m.TerminalPanel })));
 
-async function notify(title: string, body: string) {
-  try {
-    let ok = await isPermissionGranted();
-    if (!ok) ok = (await requestPermission()) === "granted";
-    if (ok) sendNotification({ title, body });
-  } catch {
-    /* not in Tauri (preview) */
-  }
+/** Where a banner comes from: the task as its title, "repo · branch" under it. */
+type BannerFrom = { task: string; repo?: string; branch?: string };
+
+/** A system banner: what happened, and an optional detail line. Skipped in e2e runs and unbundled macOS builds (notice.rs). */
+function notify(from: BannerFrom, what: string, detail?: string | null, mood: "happy" | "idle" = "idle") {
+  void showBanner(bannerText({ ...from, what, detail }), mood);
+}
+
+/** Bounce the Dock icon (or flag the taskbar), never during an e2e run. */
+function bounce() {
+  if (isQuiet() || !(document.hidden || !document.hasFocus())) return;
+  try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
 }
 
 /** A notification's second line: the chat's name, unless it only repeats the workspace title (both come from the first message). */
@@ -121,8 +125,9 @@ export default function App() {
       if (payload.state === "ready" || payload.state === "gave_up" || payload.state === "budget" || payload.state === "loop") {
         const prefs = getSettings();
         const title = payload.state === "ready" ? `${name} is ready to merge` : payload.state === "gave_up" ? `Autopilot needs you on ${name}` : `Autopilot stopped on ${name}`;
+        const what = payload.state === "ready" ? "Autopilot: ready to merge" : payload.state === "gave_up" ? "Autopilot needs you" : "Autopilot stopped";
         if (prefs.needsSound) ting();
-        if (prefs.needsNotify) notify(title, payload.detail ?? "");
+        if (prefs.needsNotify) notify(bannerFrom(w), what, payload.detail, payload.state === "ready" ? "happy" : "idle");
         say(`${title}. ${payload.detail ?? ""}`);
       }
     });
@@ -130,7 +135,7 @@ export default function App() {
     const unBudget = listen<{ text: string }>("budget", ({ payload }) => {
       const prefs = getSettings();
       if (prefs.needsSound) ting();
-      if (prefs.needsNotify) notify("The queue stopped at a spend cap", payload.text);
+      if (prefs.needsNotify) notify({ task: "Task queue" }, "The queue stopped at a spend cap", payload.text);
       say(payload.text, false, { label: "Open usage", run: () => setView("usage") });
     });
     // "Change caps" on a chat's budget stop card.
@@ -581,49 +586,42 @@ export default function App() {
       // Human in the loop: the agent stopped because it needs you. Ting ting, a notification, a Dock bounce.
       if (payload.needs) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-        const name = w ? nameInText(skyRef.current, w) : "A workspace";
         const why: Record<string, string> = {
-          plan: "has a plan for you to approve",
-          question: "has a question for you",
-          login: "needs you to sign in",
-          limit: "hit its usage limit",
-          install: "can't find its agent CLI",
-          error: "stopped with an error",
-          approval: "wants your OK",
-          protected: "changed a protected file",
-          loop: "was stopped: it was going in circles",
+          plan: "The agent has a plan for you to approve",
+          question: "The agent has a question for you",
+          login: "The agent needs you to sign in",
+          limit: "The agent hit its usage limit",
+          install: "NekoTrail can't find this agent's CLI",
+          error: "The agent stopped with an error",
+          approval: "The agent wants your OK",
+          protected: "The agent changed a protected file",
+          loop: "The agent was stopped: it was going in circles",
         };
         if (prefs.needsSound) ting();
-        if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, chatLine(w, payload.title) || "Open NekoTrail to continue.");
-        if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
-          try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
-        }
+        if (prefs.needsNotify) notify(bannerFrom(w), why[payload.needs] ?? "The agent needs you", chatLine(w, payload.title));
+        if (prefs.needsBounce) bounce();
         return;
       }
-      if (prefs.sound) chime(payload.ok !== false);
+      if (prefs.sound && !isQuiet()) chime(payload.ok !== false);
       // The cat brings you something: tell the user when they're looking elsewhere.
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
       if (prefs.notify === "always" || (prefs.notify === "away" && away)) {
         const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-        const name = w ? nameInText(skyRef.current, w) : "A workspace";
-        notify(payload.ok === false ? `${name} needs you` : `${name} is done`, chatLine(w, payload.title) || "The agent finished its turn.");
+        notify(bannerFrom(w), payload.ok === false ? "The agent stopped and needs you" : "The agent finished its turn", chatLine(w, payload.title), payload.ok === false ? "idle" : "happy");
       }
     });
     // Mid-turn requests (approve a tool call) arrive while the turn is still running.
     const unNeeds = listen<{ workspace_id: string; needs: string; title?: string }>("needs", ({ payload }) => {
       const prefs = getSettings();
       const w = workspacesRef.current.find((x) => x.id === payload.workspace_id);
-      const name = w ? nameInText(skyRef.current, w) : "A workspace";
       refresh();
       if (prefs.needsSound) ting();
       const away = document.hidden || !document.hasFocus() || selectedRef.current !== payload.workspace_id;
       if (payload.needs === "checks") {
         // A check that passed before fails after the agent's turn.
-        if (prefs.needsNotify) notify(`${name}: a check fails now`, payload.title || "Open the Checks tab to see what broke.");
-      } else if (prefs.needsNotify && away) notify(`${name} wants your OK`, payload.title || "Open NekoTrail to allow or deny.");
-      if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
-        try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
-      }
+        if (prefs.needsNotify) notify(bannerFrom(w), "A check that passed before fails now", payload.title);
+      } else if (prefs.needsNotify && away) notify(bannerFrom(w), "The agent wants your OK for a step", payload.title);
+      if (prefs.needsBounce) bounce();
     });
     return () => { clearTimeout(snap); clearTimeout(facts); un.then((f) => f()); unNeeds.then((f) => f()); };
   }, [refresh]);
@@ -632,6 +630,14 @@ export default function App() {
   const selectedRef = useRef(selected);
   const workspacesRef = useRef(workspaces);
   const skyRef = useRef(sky);
+  const reposRef = useRef(repos);
+  reposRef.current = repos;
+  /** A banner's title and subtitle: the task (not the star), then "repo · branch". */
+  const bannerFrom = (w: Workspace | undefined): BannerFrom => w
+    ? { task: displayName(skyRef.current, w), repo: reposRef.current.find((r) => r.id === w.repo_id)?.name, branch: w.branch }
+    : { task: "NekoTrail" };
+  // Whether this process may alert at all (none in an e2e run, no banners from an unbundled macOS build).
+  useEffect(() => { void loadNoticeMode(); }, []);
   selectedRef.current = selected;
   workspacesRef.current = workspaces;
   skyRef.current = sky;

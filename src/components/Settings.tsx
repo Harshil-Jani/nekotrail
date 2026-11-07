@@ -12,6 +12,7 @@ import pkg from "../../package.json";
 import type { UpdatePhase } from "../useUpdater";
 import { PromptsPane } from "./PromptsPane";
 import { AwayAlerts } from "./AwayAlerts";
+import { bannerText, showBanner } from "../notice";
 import { LinearSettings } from "./LinearSettings";
 import { chime, getSettings, saveSettings, ting, type Settings as S } from "../settings";
 
@@ -172,6 +173,27 @@ function AboutPane({ version }: { version: string }) {
   </>;
 }
 
+/** Settings, Notifications: send one banner now, so you see what an agent's looks like. */
+function TestBanner() {
+  const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
+  const send = async () => {
+    const r = await showBanner(bannerText({ task: "Test notification", repo: "NekoTrail", branch: "Settings", what: "This is how NekoTrail tells you an agent is done" }), "happy");
+    setNote(r === "send" ? { text: "Sent. If no banner shows, allow NekoTrail in System Settings, Notifications." }
+      : r === "unbundled" ? { text: "This is a development build. macOS would show its notifications with a blank icon, so it sends none. The installed app does.", error: true }
+      : r === "test" ? { text: "Notifications are off during a test run.", error: true }
+      : { text: "Notifications need the app.", error: true });
+  };
+  return (
+    <section>
+      <div className="setting">
+        <span>See what a notification looks like</span>
+        <button onClick={send}>Send a test notification</button>
+      </div>
+      {note && <p className={`setting-note ${note.error ? "bad" : "muted"}`} role="status">{note.text}</p>}
+    </section>
+  );
+}
+
 /** ⌘, : preferences in five panes, like a Mac settings window. Changes save as you make them. */
 /** Settings, General: install the `nekotrail` terminal command. */
 function CommandLine() {
@@ -297,6 +319,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
             </span>
           </label>
         </section>
+        <TestBanner />
         <AwayAlerts />
         </>}
 

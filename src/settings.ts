@@ -1,3 +1,4 @@
+import { isQuiet } from "./notice";
 /** App preferences, kept in localStorage. Read with `getSettings()`, change with `saveSettings()`. */
 export type Settings = {
   /** When to send a system notification after an agent finishes. */
@@ -59,6 +60,7 @@ let ctx: AudioContext | null = null;
 
 /** Two soft notes, rising when the turn went well and falling when it needs you. No audio files. */
 export function chime(ok = true) {
+  if (isQuiet()) return;
   try {
     ctx ??= new AudioContext();
     const t = ctx.currentTime;
@@ -83,6 +85,7 @@ export function chime(ok = true) {
 
 /** "Ting ting": two bright, quick pings, clearly different from the done chime. Means "come back, you're needed". */
 export function ting() {
+  if (isQuiet()) return;
   try {
     ctx ??= new AudioContext();
     const t = ctx.currentTime;
