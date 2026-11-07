@@ -10,6 +10,7 @@ pub mod cli;
 pub mod mcpshare;
 pub mod multirepo;
 pub mod config;
+pub mod envview;
 pub mod git;
 pub mod guard;
 pub mod handoff;
@@ -592,13 +593,9 @@ async fn trust_agent_config(st: State<'_, AppState>, id: String, fingerprint: St
 
 /// Environment for anything running in a workspace: workspace facts, its ports (when it holds a
 /// block, see `ports`), then the repo's variables from Repo settings.
+/// The Environment view (envview.rs) shows the same parts, so a change here shows up there.
 fn workspace_env(repo: &Repo, ws: &Workspace, base: Option<u16>) -> Vec<(String, String)> {
-    let mut env = vec![
-        ("NEKOTRAIL_WORKSPACE_NAME".to_string(), ws.name.clone()),
-        ("NEKOTRAIL_WORKSPACE_PATH".to_string(), ws.path.clone()),
-        ("NEKOTRAIL_ROOT_PATH".to_string(), repo.root_path.clone()),
-        ("NEKOTRAIL_DEFAULT_BRANCH".to_string(), ws.target_branch.clone()),
-    ];
+    let mut env = workspace_facts(repo, ws);
     if let Some(base) = base {
         env.extend(port_env(repo, ws, base));
     }
@@ -608,6 +605,15 @@ fn workspace_env(repo: &Repo, ws: &Workspace, base: Option<u16>) -> Vec<(String,
         env.extend(review::read_only_env());
     }
     env
+}
+
+fn workspace_facts(repo: &Repo, ws: &Workspace) -> Vec<(String, String)> {
+    vec![
+        ("NEKOTRAIL_WORKSPACE_NAME".to_string(), ws.name.clone()),
+        ("NEKOTRAIL_WORKSPACE_PATH".to_string(), ws.path.clone()),
+        ("NEKOTRAIL_ROOT_PATH".to_string(), repo.root_path.clone()),
+        ("NEKOTRAIL_DEFAULT_BRANCH".to_string(), ws.target_branch.clone()),
+    ]
 }
 
 /// The port variables for a workspace. A variable you set yourself, exported in your shell (the
@@ -2460,6 +2466,42 @@ fn rules_backup_dir(ws: &Workspace) -> Res<PathBuf> {
     let data = remote::data_dir().ok_or("Can't find your Application Support folder.")?;
     let name: String = ws.name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' }).collect();
     Ok(data.join("rules-backups").join(format!("{name}-{}", backup_stamp())))
+}
+
+/// Every variable this workspace's agents, terminals and scripts get, by where it comes from,
+/// with its `.env` files and which value wins. Read only: no port block is handed out, nothing is
+/// saved, and no value is logged (they only go back to the window, which masks them).
+#[tauri::command]
+async fn workspace_environment(app: AppHandle, id: String) -> Res<envview::View> {
+    blocking(app, move |st| {
+        let ws = st.db().workspace(&id).map_err(e)?;
+        let repo = st.db().repo(&ws.repo_id).map_err(e)?;
+        let active = ws.state == "active";
+        let base = if active { st.db().port_block(&ws.id).map_err(e)? } else { None };
+        let dir = Path::new(&ws.path);
+        let (ports, ports_set, ports_note) = match base {
+            Some(b) => {
+                let names = config::port_names_from_file(dir);
+                let set = port_env(&repo, &ws, b).into_iter().map(|(k, _)| k).collect();
+                (ports::env(b, &names, |_| false), set, None)
+            }
+            None if !active => (vec![], vec![], Some("An archived workspace holds no ports.".to_string())),
+            None => (vec![], vec![], Some("Its ports (NEKOTRAIL_PORT, PORT) are handed out the first time something runs here.".to_string())),
+        };
+        let files = if dir.is_dir() { envview::read_files(dir, &envview::env_files(dir, &repo.prefs.copy_files)) } else { vec![] };
+        let inputs = envview::Inputs {
+            workspace: workspace_facts(&repo, &ws),
+            ports,
+            ports_set,
+            ports_note,
+            repo: repo.prefs.env.clone(),
+            review: if ws.review_pr > 0 { review::read_only_env() } else { vec![] },
+            files,
+            login: loginenv::current(),
+        };
+        Ok(envview::View { workspace: ws.id.clone(), repo_id: repo.id.clone(), repo: repo.name.clone(), sections: envview::build(&inputs) })
+    })
+    .await
 }
 
 /// The rules files in a workspace, who reads which, and how each differs from `source`.
@@ -5377,7 +5419,7 @@ pub fn run() {
             remove_queued, fork_session, handoff_brief, handoff_start, show_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, conductor_rescue_plan, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
-            pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
+            pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, workspace_environment, terminal_scan, terminal_import,
             github_profile, repo_github, repo_avatar, sky, busy_work, stop_all_work, search_chats, search_open,
             remote_take, link_confirm, cli_install, cli_status,
             checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output,

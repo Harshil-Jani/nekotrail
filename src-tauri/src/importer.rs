@@ -26,6 +26,10 @@ pub struct Report {
     pub skipped: usize,
     /// Chats whose message history was copied in.
     pub chats_with_history: usize,
+    /// Environment variables added to Repo settings (only names the repo didn't have yet).
+    pub env_vars: usize,
+    /// Conductor variables left behind: one workspace's, cloud-only, or a scope we don't know.
+    pub env_skipped: usize,
 }
 
 struct SrcWorkspace {
@@ -125,12 +129,112 @@ fn conductor_prefs(src: &Connection, repo_id: &str) -> crate::store::RepoPrefs {
     }
 }
 
+/// A name a shell would take as a variable.
+fn env_key_ok(k: &str) -> bool {
+    k.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Conductor's variables for one repo, weakest first (a later one wins), and how many rows of its
+/// `env_vars` table were left out. Two places hold them:
+///
+/// - The `env_vars` table (key, scope, context, value). Conductor doesn't document its scopes, so
+///   only these are read: `repo`/`repository`/`project` rows whose context is this repo's
+///   Conductor id, folder or name, and `global`/`user`/`app` rows (or no scope), which Conductor
+///   applies to every repo, so they go on each repo imported. A `workspace` row would reach the
+///   repo's other workspaces too, and `cloud` rows never ran locally: those, and any scope not
+///   named here, are counted as skipped rather than guessed at. Older Conductors have no table.
+/// - The repo's `.conductor/settings.toml` and `settings.local.toml`, `[environment_variables]`
+///   and its `.local` table (the `.cloud` one is cloud-only). These beat the table, local beats
+///   shared, as in Conductor.
+///
+/// Values are copied as they are and never logged.
+pub fn conductor_env(src: &Connection, repo_id: &str, root: &str, name: &str) -> (Vec<(String, String)>, usize) {
+    let mut global = vec![];
+    let mut repo = vec![];
+    let mut skipped = 0;
+    let rows: Vec<(String, String, String, Option<String>)> = src
+        .prepare("SELECT COALESCE(key,''), LOWER(TRIM(COALESCE(scope,''))), COALESCE(context,''), value FROM env_vars")
+        .and_then(|mut st| st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect())
+        .unwrap_or_default();
+    for (key, scope, context, value) in rows {
+        let (Some(value), true) = (value, env_key_ok(&key)) else { skipped += 1; continue };
+        match scope.as_str() {
+            "" | "global" | "user" | "app" => global.push((key, value)),
+            "repo" | "repository" | "project" => {
+                let ctx = context.trim().trim_end_matches('/');
+                if ctx == repo_id || ctx == root.trim_end_matches('/') || ctx == name {
+                    repo.push((key, value));
+                }
+                // Another repo's: counted once, by the import, not per repo.
+            }
+            _ => skipped += 1,
+        }
+    }
+    let mut out = global;
+    out.extend(repo);
+    for file in ["settings.toml", "settings.local.toml"].into_iter().filter(|_| !root.is_empty()) {
+        let Ok(text) = std::fs::read_to_string(Path::new(root).join(".conductor").join(file)) else { continue };
+        let Ok(t) = text.parse::<toml::Table>() else { continue };
+        let Some(vars) = t.get("environment_variables").and_then(toml::Value::as_table) else { continue };
+        let plain = |tab: &toml::Table| -> Vec<(String, String)> {
+            tab.iter()
+                .filter(|(k, _)| env_key_ok(k))
+                .filter_map(|(k, v)| match v {
+                    toml::Value::String(s) => Some((k.clone(), s.clone())),
+                    toml::Value::Integer(_) | toml::Value::Float(_) | toml::Value::Boolean(_) => Some((k.clone(), v.to_string())),
+                    _ => None,
+                })
+                .collect()
+        };
+        out.extend(plain(vars));
+        if let Some(local) = vars.get("local").and_then(toml::Value::as_table) {
+            out.extend(plain(local));
+        }
+    }
+    (out, skipped)
+}
+
+/// `env_vars` rows scoped to a repo that isn't in this import (not on this Mac any more).
+fn orphan_repo_env(src: &Connection, known: &[(String, String, String)]) -> usize {
+    let rows: Vec<String> = src
+        .prepare("SELECT COALESCE(context,'') FROM env_vars WHERE LOWER(TRIM(COALESCE(scope,''))) IN ('repo','repository','project')")
+        .and_then(|mut st| st.query_map([], |r| r.get(0))?.collect())
+        .unwrap_or_default();
+    rows.iter()
+        .filter(|c| {
+            let c = c.trim().trim_end_matches('/');
+            !known.iter().any(|(id, root, name)| c == id || c == root.trim_end_matches('/') || c == name)
+        })
+        .count()
+}
+
+/// Add Conductor's variables to Repo settings, only names the repo doesn't have yet. Returns how many.
+fn merge_env(store: &Store, repo_id: &str, vars: Vec<(String, String)>) -> Result<usize> {
+    let mut repo = store.repo(repo_id)?;
+    // A name set twice in Conductor: the stronger (later) one.
+    let mut add: Vec<(String, String)> = vec![];
+    for (k, v) in vars {
+        add.retain(|(x, _)| *x != k);
+        add.push((k, v));
+    }
+    add.retain(|(k, _)| !repo.prefs.env.iter().any(|(x, _)| x == k));
+    if add.is_empty() {
+        return Ok(0);
+    }
+    let n = add.len();
+    repo.prefs.env.extend(add);
+    store.set_repo_prefs(repo_id, &repo.prefs)?;
+    Ok(n)
+}
+
 pub fn import(store: &Store, db: &Path) -> Result<Report> {
     let src = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let mut report = Report::default();
 
     // Repos: reuse ours when the same folder is already added.
     let mut repo_map = std::collections::HashMap::new();
+    // (Conductor id, folder, name) of each repo brought over or matched.
+    let mut known: Vec<(String, String, String)> = vec![];
     let mut st = src.prepare(
         "SELECT id, name, root_path, default_branch, remote_url, setup_script, run_script, archive_script FROM repos",
     )?;
@@ -165,8 +269,16 @@ pub fn import(store: &Store, db: &Path) -> Result<Report> {
                 repo.id.clone()
             }
         };
+        known.push((src_id.clone(), repo.root_path.clone(), repo.name.clone()));
         repo_map.insert(src_id, id);
     }
+
+    // Conductor's variables, into Repo settings (see `conductor_env`). Table rows that are skipped
+    // are the same for every repo, so they are counted once.
+    for (src_id, root, name) in &known {
+        report.env_vars += merge_env(store, &repo_map[src_id], conductor_env(&src, src_id, root, name).0)?;
+    }
+    report.env_skipped = conductor_env(&src, "", "", "").1 + orphan_repo_env(&src, &known);
 
     // Active workspaces only; archived ones have no worktree left to open.
     let mut st = src.prepare(
@@ -291,6 +403,86 @@ mod tests {
     }
 
     #[test]
+    fn brings_conductor_env_into_repo_settings_without_replacing_yours() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let ws = tmp.path().join("ws");
+        std::fs::create_dir_all(repo.join(".conductor")).unwrap();
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(
+            repo.join(".conductor/settings.toml"),
+            "[environment_variables]\nAPI_BASE_URL = \"http://localhost:3000\"\nWORKERS = 4\n[environment_variables.local]\nLOCAL_ONLY = \"yes\"\n[environment_variables.cloud]\nCLOUD_ONLY = \"no\"\n",
+        )
+        .unwrap();
+        std::fs::write(repo.join(".conductor/settings.local.toml"), "[environment_variables]\nAPI_BASE_URL = \"http://localhost:4000\"\n").unwrap();
+        let db = fixture(tmp.path(), &repo, &ws);
+        let c = Connection::open(&db).unwrap();
+        c.execute_batch(
+            "CREATE TABLE env_vars (key TEXT, scope TEXT, context TEXT, value TEXT);
+             CREATE UNIQUE INDEX idx_env_vars_key_scope_context ON env_vars(key, scope, context);
+             INSERT INTO env_vars VALUES ('SHARED_FLAG','global',NULL,'on'),
+                                         ('NODE_ENV','global','','production'),
+                                         ('NODE_ENV','repo','r1','development'),
+                                         ('DB_NAME','Repository','r1','app_dev'),
+                                         ('MINE','repo','r1','from-conductor'),
+                                         ('OTHER','repo','r9','another repo'),
+                                         ('WS_ONLY','workspace','w1','one workspace'),
+                                         ('CLOUD','cloud','r1','cloud only'),
+                                         ('bad key','repo','r1','x'),
+                                         ('NULLED','repo','r1',NULL);",
+        )
+        .unwrap();
+        drop(c);
+
+        // The repo is already here, with a variable of yours that Conductor also has.
+        let store = Store::in_memory().unwrap();
+        let mine = Repo {
+            id: new_id(),
+            name: "demo".into(),
+            root_path: repo.to_str().unwrap().into(),
+            default_branch: "main".into(),
+            remote_url: None,
+            setup_script: None,
+            run_script: None,
+            archive_script: None,
+            prefs: crate::store::RepoPrefs { env: vec![("MINE".into(), "kept".into())], ..Default::default() },
+        };
+        store.insert_repo(&mine).unwrap();
+
+        let r = import(&store, &db).unwrap();
+        assert_eq!((r.env_vars, r.env_skipped), (6, 5), "{r:?}");
+        let mut env = store.repo(&mine.id).unwrap().prefs.env;
+        env.sort();
+        let want: Vec<(String, String)> = [
+            ("API_BASE_URL", "http://localhost:4000"),
+            ("DB_NAME", "app_dev"),
+            ("LOCAL_ONLY", "yes"),
+            ("MINE", "kept"),
+            ("NODE_ENV", "development"),
+            ("SHARED_FLAG", "on"),
+            ("WORKERS", "4"),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        assert_eq!(env, want, "repo beats global, settings.local.toml beats settings.toml, yours is kept, cloud and workspace rows stay out");
+
+        let again = import(&store, &db).unwrap();
+        assert_eq!(again.env_vars, 0, "a second import adds nothing");
+    }
+
+    #[test]
+    fn an_older_conductor_without_env_vars_imports_fine() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (repo, ws) = (tmp.path().join("repo"), tmp.path().join("ws"));
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&ws).unwrap();
+        let db = fixture(tmp.path(), &repo, &ws);
+        let r = import(&Store::in_memory().unwrap(), &db).unwrap();
+        assert_eq!((r.repos, r.env_vars, r.env_skipped), (1, 0, 0));
+    }
+
+    #[test]
     fn imports_active_workspaces_and_chats_once() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");
@@ -301,7 +493,7 @@ mod tests {
 
         let store = Store::in_memory().unwrap();
         let r = import(&store, &db).unwrap();
-        assert_eq!(r, Report { repos: 1, workspaces: 1, sessions: 2, skipped: 1, chats_with_history: 1 });
+        assert_eq!(r, Report { repos: 1, workspaces: 1, sessions: 2, skipped: 1, chats_with_history: 1, ..Default::default() });
 
         let w = &store.workspaces(false).unwrap()[0];
         assert_eq!((w.name.as_str(), w.branch.as_str(), w.pinned, w.notes.as_str()), ("tunis", "me/fix", true, "todo"));
@@ -315,7 +507,7 @@ mod tests {
 
         // Running it again adds nothing.
         let again = import(&store, &db).unwrap();
-        assert_eq!(again, Report { repos: 0, workspaces: 0, sessions: 0, skipped: 2, chats_with_history: 0 });
+        assert_eq!(again, Report { repos: 0, workspaces: 0, sessions: 0, skipped: 2, chats_with_history: 0, ..Default::default() });
         assert_eq!(store.events(&s[0].id).unwrap().len(), 2, "history is not copied twice");
     }
 }

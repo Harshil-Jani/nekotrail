@@ -50,7 +50,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
 
   const report = plan?.report ?? null;
   const items = plan?.items ?? [];
-  const importing = !!report && report.repos + report.workspaces > 0;
+  const importing = !!report && report.repos + report.workspaces + (report.env_vars ?? 0) > 0;
 
   const go = async (retry?: string[]) => {
     if (!plan) return;
@@ -64,7 +64,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
         onChanged();
       }
       if (choice === "leave" || (!retry && !items.length)) {
-        onClose(rep ? { text: `Imported ${plural(rep.repos, "repo")}, ${plural(rep.workspaces, "workspace")} and ${plural(rep.sessions, "chat")}.${choice === "leave" && items.length ? " They stay in Conductor's folder; move them from ⌘K any time." : ""}`, bad: false } : undefined);
+        onClose(rep ? { text: `Imported ${plural(rep.repos, "repo")}, ${plural(rep.workspaces, "workspace")} and ${plural(rep.sessions, "chat")}.${rep.env_vars ? ` ${plural(rep.env_vars, "environment variable")} added to Repo settings.` : ""}${choice === "leave" && items.length ? " They stay in Conductor's folder; move them from ⌘K any time." : ""}`, bad: false } : undefined);
         return;
       }
       setPhase("moving");
@@ -174,6 +174,8 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
           <p className="muted cs-also">
             Also comes in: {plural(report!.repos, "repo")} with their scripts and prompts, and {plural(report!.sessions, "chat")} with their history. Chats continue the same agent session.
             {report!.skipped > 0 ? ` ${report!.skipped} skipped: already in NekoTrail, or the folder is gone.` : ""}
+            {report!.env_vars ? ` Environment variables for Repo settings: ${report!.env_vars} (only names you haven't set yourself).` : ""}
+            {report!.env_skipped ? ` Left in Conductor: ${plural(report!.env_skipped, "variable")} set for one workspace, for Conductor Cloud only, or for a repo that isn't here.` : ""}
           </p>
         )}
 

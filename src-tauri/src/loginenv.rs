@@ -168,6 +168,22 @@ pub fn apply_pty(cmd: &mut portable_pty::CommandBuilder) {
     }
 }
 
+/// What anything started now begins with: the app's own environment, with the login shell's on
+/// top once it has answered. For the Environment view. Secrets included, so never save or log it.
+pub fn current() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> =
+        std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))).filter(|(k, _)| !skipped(k)).collect();
+    if let Some(env) = fresh() {
+        for (k, v) in env.iter() {
+            match out.iter_mut().find(|(x, _)| x == k) {
+                Some(slot) => slot.1 = v.clone(),
+                None => out.push((k.clone(), v.clone())),
+            }
+        }
+    }
+    out
+}
+
 /// `std::env::var_os`, from the login shell's env when it has answered.
 pub fn var_os(key: &str) -> Option<std::ffi::OsString> {
     fresh().and_then(|env| env.iter().find(|(k, _)| k == key).map(|(_, v)| v.into())).or_else(|| std::env::var_os(key))

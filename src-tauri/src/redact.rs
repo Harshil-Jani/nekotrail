@@ -40,6 +40,11 @@ static SECRET_KEY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(SECRET|TOKEN|PASSW(?:OR)?D|(?:^|_)PWD(?:_|$)|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIALS?|(?:^|_)AUTH(?:_|$)|(?:^|_)DSN(?:_|$)|DATABASE_URL|CONN(?:ECTION)?_?STRING|WEBHOOK_URL|SIGNING_KEY|CLIENT_KEY)").unwrap()
 });
 
+/// A variable name whose value is probably a secret: the names an export hides the value of.
+pub fn secret_key(k: &str) -> bool {
+    SECRET_KEY.is_match(k)
+}
+
 fn email_ok(v: &str, _: &Captures) -> bool {
     let Some(at) = v.rfind('@') else { return false };
     let (local, domain) = (&v[..at], v[at + 1..].to_lowercase());

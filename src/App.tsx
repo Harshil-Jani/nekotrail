@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { bannerText, isQuiet, loadNoticeMode, showBanner } from "./notice";
-import { FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronRight, GitBranch, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Coffee, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
+import { Variable as VariableIcon, FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronRight, GitBranch, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Coffee, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
 import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
@@ -34,6 +34,7 @@ import { Scorecard } from "./components/Scorecard";
 import { Storage } from "./components/Storage";
 import { CommandsLog } from "./components/CommandsLog";
 import { RulesSheet } from "./components/RulesSheet";
+import { EnvSheet } from "./components/EnvSheet";
 import { ExportSheet } from "./components/ExportSheet";
 import { TerminalImport } from "./components/TerminalImport";
 import { ConductorSheet, MoveNotice } from "./components/ConductorSheet";
@@ -151,6 +152,7 @@ export default function App() {
   const [, setNavTick] = useState(0);
   const [showArchived, setShowArchived] = useState(false);
   const [settingsFor, setSettingsFor] = useState<string | null>(params.get("repoSettings")); // repo id
+  const [settingsSection, setSettingsSection] = useState<"files" | undefined>(undefined); // which Repo settings tab opens first
   const [trustAsk, setTrustAsk] = useState<{ repo: string; trust?: ScriptTrust; agent?: AgentConfigTrust; answer: (run: boolean) => void } | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
@@ -466,6 +468,7 @@ export default function App() {
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
   const [commandsFor, setCommandsFor] = useState<string | null>(params.get("commands")); // workspace id
+  const [envFor, setEnvFor] = useState<string | null>(params.get("env")); // workspace id: the Environment sheet
   // The Rules sheet: workspace id and the pane it opens on.
   const [rulesFor, setRulesFor] = useState<{ id: string; pane: "files" | "edit" | "task" } | null>(params.get("rules") ? { id: params.get("rules")!, pane: (params.get("rulesPane") as "files" | "edit" | "task") ?? "files" } : null);
   const [terminalImport, setTerminalImport] = useState(params.has("terminalImport"));
@@ -1340,6 +1343,7 @@ export default function App() {
         ...((repo?.prefs?.actions ?? []).map(([n, c]) => ({ id: `act-${n}`, group: here, label: `Run ${n}`, hint: c, keywords: `action script ${c}`, icon: <Play size={15} />, run: () => runAction(n) }))),
         { id: "run", group: here, label: "Run the app", keywords: "script dev start", icon: <Play size={15} />, run: () => runScript() },
         { id: "open-editor", group: here, label: "Open in editor", hint: keyHint("⌘O"), keywords: "cursor vscode code", icon: <Code2 size={15} />, run: () => openInEditor() },
+        { id: "environment", group: here, label: "Environment", keywords: "env variables .env port path secrets login shell", icon: <VariableIcon size={15} />, run: () => setEnvFor(ws.id) },
         { id: "rules", group: here, label: "Project rules", keywords: "agents.md claude.md gemini.md copilot instructions cursor rules sync", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "files" }) },
         { id: "rules-edit", group: here, label: "Edit rules", keywords: "agents.md claude.md markdown", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "edit" }) },
         { id: "rules-task", group: here, label: "Rules for this task", keywords: "workspace note first prompt instructions", icon: <ScrollText size={15} />, run: () => setRulesFor({ id: ws.id, pane: "task" }) },
@@ -1683,6 +1687,7 @@ export default function App() {
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setRulesFor({ id: ws.id, pane: "files" }); }}><ScrollText size={15} /><span>Rules</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); setEnvFor(ws.id); }}><VariableIcon size={15} /><span>Environment</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setCommandsFor(ws.id); }}><SquareTerminal size={15} /><span>Commands the agent ran</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setExportFor({ id: ws.id }); }}><Share size={15} /><span>Export session…</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); window.dispatchEvent(new CustomEvent("nekotrail-rename-branch", { detail: ws.id })); }}><GitBranch size={15} /><span>Rename branch</span></button>
@@ -1841,7 +1846,7 @@ export default function App() {
         />
       )}
       {trustAsk && <TrustSheet repo={trustAsk.repo} trust={trustAsk.trust} agent={trustAsk.agent} onAnswer={trustAsk.answer} />}
-      {settingsRepo && <RepoSettings repo={settingsRepo} onClose={() => { setSettingsFor(null); refresh(); }} />}
+      {settingsRepo && <RepoSettings repo={settingsRepo} initialSection={settingsSection} onClose={() => { setSettingsFor(null); setSettingsSection(undefined); refresh(); }} />}
       {palette && <Palette commands={commands()} onClose={() => setPalette(false)} />}
       {searchOpen && (
         <SearchSheet
@@ -1884,6 +1889,10 @@ export default function App() {
       {commandsFor && (() => {
         const w = workspaces.find((x) => x.id === commandsFor);
         return <CommandsLog workspaceId={commandsFor} name={w ? displayName(sky, w) : "this workspace"} onClose={() => setCommandsFor(null)} />;
+      })()}
+      {envFor && (() => {
+        const w = workspaces.find((x) => x.id === envFor);
+        return <EnvSheet workspaceId={envFor} name={w ? displayName(sky, w) : "this workspace"} onSay={(m) => say(m)} onEditRepo={(id) => { setEnvFor(null); setSettingsSection("files"); setSettingsFor(id); }} onClose={() => setEnvFor(null)} />;
       })()}
       {rulesFor && (() => {
         const w = workspaces.find((x) => x.id === rulesFor.id);

@@ -62,7 +62,11 @@ export type Doctor = {
   git: { ok: boolean; version: string };
   gh: { installed: boolean; ok: boolean; login: string | null };
 } & Record<Agent, { ok: boolean; version: string }>;
-export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number };
+export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number; env_vars?: number; env_skipped?: number };
+/** One variable in the Environment view. `source` is "Workspace", "Port block", "Review workspace", "Repo settings", "Login shell" or a .env file's path. */
+export type EnvEntry = { key: string; value: string; source: string; masked: boolean; overridden_by: string | null };
+export type EnvSection = { id: "app" | "repo" | "files" | "login"; title: string; note: string; entries: EnvEntry[]; hidden: number };
+export type EnvView = { workspace: string; repo_id: string; repo: string; sections: EnvSection[] };
 /** A Conductor worktree that would move into nekotrail's folder (src-tauri/src/rescue.rs). */
 export type RescueItem = { id: string; repo: string; label: string; branch: string; from: string; to: string; kb: number; uncommitted: number; imported: boolean };
 export type RescuePlan = { report: ImportReport | null; items: RescueItem[]; root: string };
@@ -492,6 +496,8 @@ export const api = {
     invoke<McpPreview>("mcp_share_preview", { id, name, target, choices }),
   mcpShareApply: (id: string, name: string, target: McpAgent, choices: SecretChoices, token: string) =>
     invoke<{ file: string; backup: string | null }>("mcp_share_apply", { id, name, target, choices, token }),
+  /** Every variable a workspace's agents, terminals and scripts get, by source. Read only, nothing saved. */
+  workspaceEnvironment: (id: string) => invoke<EnvView>("workspace_environment", { id }),
   rulesOverview: (id: string, source?: string) => invoke<RulesOverview>("rules_overview", { id, source: source ?? null }),
   rulesPlan: (id: string, req: RulesRequest) => invoke<RulesPlan>("rules_plan", { id, req }),
   rulesApply: (id: string, req: RulesRequest, token: string, confirmed: string[]) => invoke<RulesApplied>("rules_apply", { id, req, token, confirmed }),

@@ -3,6 +3,13 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.26.0 (2026-11-08)
+
+**See your workspace's environment**
+- New in a workspace's ⋯ menu (and ⌘K): Environment. It lists every variable your agents, terminals and scripts get, grouped by where it comes from: NekoTrail's own and the ports, Repo settings, the workspace's .env files, and your login shell. When a name is set twice, the one that loses says "overridden".
+- Values from .env files, and any that look like a secret, stay hidden until you click the eye. Nothing is saved or sent anywhere.
+- Moving from Conductor now brings its environment variables into Repo settings too, without replacing any you already set.
+
 ## 0.25.1 (2026-11-08)
 
 **New workspace, tidied up**

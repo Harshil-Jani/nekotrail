@@ -18,6 +18,8 @@
  * add &ws=w1 for the in-workspace banner), ?rescue=move, ?rescue=moving, ?rescue=done, ?rescue=partial.
  * Prompt rail: ?ws=w1&prompts=24 (a chat with 24 messages from you).
  * Many repos: ?new=r1&repos=15 (the repo picker's filter and scroll; every third repo has no picture).
+ * Environment: ?ws=w1&env=w1 opens the sheet (ports, Repo settings, two .env files, the login shell, with
+ * overridden and masked values); &envState=empty (no Repo settings or .env files), &envState=error.
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -589,6 +591,56 @@ const rulesDiff = [
   { op: "add", text: "## Claude" },
   { op: "add", text: "- Use plan mode for anything under `billing/`." },
 ];
+// The Environment sheet (?env=w1). Made-up values; the secret-looking ones are built in pieces, as in the redact tests.
+function envView(id: string) {
+  const st = new URLSearchParams(location.search).get("envState");
+  if (st === "error") throw "This workspace's folder is gone, so its .env files can't be read.";
+  const w = workspaces.find((x) => x.id === id) ?? workspaces[0];
+  const e = (key: string, value: string, source: string, masked = false, overridden_by: string | null = null) => ({ key, value, source, masked, overridden_by });
+  const empty = st === "empty";
+  const neko = [
+    e("NEKOTRAIL_WORKSPACE_NAME", w.name, "Workspace"),
+    e("NEKOTRAIL_WORKSPACE_PATH", `/Users/sam/nekotrail/workspaces/${w.name}`, "Workspace"),
+    e("NEKOTRAIL_ROOT_PATH", "/code/pawprint-api", "Workspace"),
+    e("NEKOTRAIL_DEFAULT_BRANCH", "main", "Workspace"),
+    ...Array.from({ length: 10 }, (_, i) => e(i ? `NEKOTRAIL_PORT_${i}` : "NEKOTRAIL_PORT", String(4120 + i), "Port block")),
+    e("PORT", "4120", "Port block", false, empty ? null : "Repo settings"),
+  ];
+  const repo = empty ? [] : [
+    e("PORT", "3000", "Repo settings"),
+    e("API_BASE_URL", "http://localhost:4121", "Repo settings"),
+    e("LOG_LEVEL", "debug", "Repo settings"),
+    e("SENTRY_AUTH_TOKEN", "sntrys_" + "eyJpYXQiOjE3MzA5NjAwMDB9_x1Y2z3", "Repo settings", true),
+  ];
+  const files = empty ? [] : [
+    e("DATABASE_URL", "postgres://pawprint:" + "kitten-42-purr" + "@localhost:5432/pawprint_dev", ".env", true),
+    e("REDIS_URL", "redis://localhost:6379", ".env", true),
+    e("LOG_LEVEL", "info", ".env", true, "Repo settings"),
+    e("STRIPE_SECRET_KEY", "sk_test_" + "51HbQ2eLkdjf83Kdl2Zx", ".env", true, ".env.local"),
+    e("FEATURE_SLA_V2", "true", ".env", true),
+    e("STRIPE_SECRET_KEY", "sk_test_" + "51HbQ2eLocal9Yw8Vu7", ".env.local", true),
+    e("WEBHOOK_SIGNING_SECRET", "whsec_" + "Tz8Kq3Lm5Np7Rs9Uv1Wx3Yz5", ".env.local", true),
+  ];
+  const login = [
+    e("EDITOR", "nvim", "Login shell"),
+    e("GOPATH", "/Users/sam/go", "Login shell"),
+    e("HOME", "/Users/sam", "Login shell"),
+    e("LANG", "en_US.UTF-8", "Login shell"),
+    e("LOG_LEVEL", "warn", "Login shell", false, empty ? null : "Repo settings"),
+    e("PATH", "/Users/sam/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", "Login shell"),
+    e("SHELL", "/bin/zsh", "Login shell"),
+  ];
+  return {
+    workspace: w.id, repo_id: w.repo_id, repo: "pawprint-api",
+    sections: [
+      { id: "app", title: "NekoTrail", note: "Set by NekoTrail on every agent, terminal and script in this workspace.", entries: neko, hidden: 0 },
+      { id: "repo", title: "Repo settings", note: "Added to everything that runs in this repo's workspaces. They win over your login shell.", entries: repo, hidden: 0 },
+      { id: "files", title: ".env files in this workspace", note: "NekoTrail doesn't load these: your tools do (dotenv, Vite, Next.js). A variable already set above wins over a file, and .env.local wins over .env.", entries: files, hidden: 0 },
+      { id: "login", title: "From your login shell", note: "Your shell's variables, passed on to everything NekoTrail starts. 3 more look like secrets (keys, tokens, passwords): they are passed on too, but NekoTrail never saves or lists them.", entries: login, hidden: 3 },
+    ],
+  };
+}
+
 const rulesOverview = () => ({
   source: "AGENTS.md", source_exists: true, sources: ["AGENTS.md", "CLAUDE.md"],
   warnings: [],
@@ -1106,6 +1158,7 @@ mockIPC(
         return { file: args.target === "opencode" ? "~/.config/opencode/opencode.json" : "~/.codex/config.toml", backup: args.target === "opencode" ? null : "~/.codex/config.toml.bak-nekotrail-20261106-142233" };
       // ?dirty: archiving asks first, as if the workspace had uncommitted changes.
       case "archive_workspace": if (location.search.includes("dirty") && !args.force) throw "DIRTY"; return null;
+      case "workspace_environment": return envView(args.id);
       case "rules_overview": return rulesOverview();
       case "rules_plan": return rulesPlan(args.req);
       case "rules_apply": return { written: ["CLAUDE.md", ".github/copilot-instructions.md"], backup: "~/Library/Application Support/dev.nekotrail.app/rules-backups/mochi-20261106-142200" };

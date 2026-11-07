@@ -7,8 +7,8 @@ import { keyHint } from "../platform";
 type Section = "scripts" | "agent" | "files" | "guard";
 
 /** Everything nekotrail knows about one repo: scripts, instructions for the agent, files and env. */
-export function RepoSettings({ repo, onClose }: { repo: Repo; onClose: () => void }) {
-  const [section, setSection] = useState<Section>("scripts");
+export function RepoSettings({ repo, initialSection = "scripts", onClose }: { repo: Repo; initialSection?: Section; onClose: () => void }) {
+  const [section, setSection] = useState<Section>(initialSection);
   const [s, setS] = useState({ setup: repo.setup_script ?? "", run: repo.run_script ?? "", archive: repo.archive_script ?? "" });
   const [p, setP] = useState<RepoPrefs>(() => ({
     ...{ general_prompt: "", review_prompt: "", pr_prompt: "", copy_files: [], env: [], merge_method: "", actions: [], protected: [] },

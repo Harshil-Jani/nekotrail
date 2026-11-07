@@ -101,6 +101,21 @@ try:
         pg.fill(".nw-prompt", "Keep this prompt"); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         pg.click("button:has-text('Create workspace')"); pg.wait_for_selector(".nw-prompt", timeout=5000)
         check("Esc then reopen keeps what you typed", pg.input_value(".nw-prompt") == "Keep this prompt")
+        # 2026-11-08: the Environment sheet. It opens from the workspace's More actions menu and lists every source.
+        pg.set_viewport_size({"width": 1440, "height": 900})
+        pg.goto(f"http://localhost:{PORT}/preview.html?ws=w1&tab=chat")
+        pg.wait_for_selector(".tb-more", timeout=20000)
+        pg.click(".tb-more"); pg.click(".ws-menu [role=menuitem]:has-text('Environment')")
+        pg.wait_for_selector(".env-sheet .env-sec", timeout=5000)
+        titles = pg.locator(".env-sheet .env-sec h3").all_inner_texts()
+        check(f"More actions -> Environment opens the sheet with its 4 sections ({titles})", titles == ["NekoTrail", "Repo settings", ".env files in this workspace", "From your login shell"])
+        # A .env value is masked until its eye is clicked, and hidden again on a second click.
+        val = ".env-sec[data-section=files] .env-row-item >> nth=0"
+        masked = pg.locator(val).locator(".env-value").inner_text()
+        pg.locator(val).locator("button[aria-label^='Show the value']").click(); pg.wait_for_timeout(150)
+        shown = pg.locator(val).locator(".env-value").inner_text()
+        pg.locator(val).locator("button[aria-label^='Hide the value']").click(); pg.wait_for_timeout(150)
+        check("A .env value is masked until the eye is clicked", masked == "••••••••" and shown.startswith("postgres://") and pg.locator(val).locator(".env-value").inner_text() == "••••••••")
         b.close()
 finally:
     srv.terminate()

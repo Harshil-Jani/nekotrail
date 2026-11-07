@@ -1876,6 +1876,49 @@ button.link.split-hunk-name { font-weight: 400; }
 /* One fixed height for every tab, so switching Files, Edit rules and This task never resizes the sheet. */
 .modal.rules { width: min(860px, calc(100vw - 48px)); height: min(760px, 88vh); }
 .modal.rules > .seg { display: flex; }
+/* Environment: every variable a workspace gets, by source. Same frame as Rules and MCP. */
+.modal-backdrop:has(> .modal.env-sheet) { align-items: flex-start; padding-top: 6vh; }
+.modal.env-sheet { width: min(820px, calc(100vw - 48px)); max-height: 88vh; }
+.modal.env-sheet p { margin: 0; }
+.env-lede { font-size: 12px; line-height: 1.45; }
+.env-filter { width: 100%; }
+.env-body { display: flex; flex-direction: column; gap: var(--s5); min-height: 0; flex: 1; overflow-y: auto; margin: 0 calc(-1 * var(--s2)); padding: 0 var(--s2) var(--s2); }
+.env-error { display: flex; align-items: center; gap: var(--s2); justify-content: space-between; }
+.env-sec { display: flex; flex-direction: column; gap: var(--s2); }
+.env-sec-head { display: flex; align-items: center; gap: var(--s2); }
+.env-sec-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.env-note { font-size: 12px; line-height: 1.45; }
+.env-empty { font-size: 12.5px; padding: var(--s2) var(--s3); border-radius: var(--r-lg); background: var(--surface); }
+.env-group { display: flex; flex-direction: column; gap: var(--s1); }
+.env-group + .env-group { margin-top: var(--s2); }
+.env-file { display: flex; align-items: baseline; gap: var(--s2); font-size: 12px; }
+.env-file b { font-weight: 600; }
+.env-sec h3 { scroll-margin-top: var(--s2); }
+.env-file code { font-family: var(--mono); font-weight: 600; }
+.env-list { list-style: none; margin: 0; padding: 0; border-radius: var(--r-lg); background: var(--surface); }
+.env-row-item { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; align-items: center; gap: var(--s3); padding: 5px var(--s2) 5px var(--s3); min-height: 32px; }
+.env-row-item + .env-row-item { border-top: 0.5px solid var(--line); }
+.env-key { display: flex; align-items: center; gap: var(--s1); min-width: 0; flex-wrap: wrap; }
+.env-key code { font-family: var(--mono); font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.env-value { font-family: var(--mono); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.env-value.masked { color: var(--muted); letter-spacing: 1px; }
+.env-value.empty { color: var(--faint); font-style: italic; }
+.env-row-item.overridden .env-key code, .env-row-item.overridden .env-value { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.env-row-item.overridden .env-value.masked { text-decoration: none; }
+.env-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; width: 58px; }
+.env-value.open { white-space: pre-wrap; overflow-wrap: anywhere; }
+.env-jump { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: calc(-1 * var(--s1)); }
+.env-jump button { height: 24px; padding: 0 var(--s2); font-size: 12px; gap: 6px; }
+.env-jump button .muted { font-variant-numeric: tabular-nums; }
+.env-foot { font-size: 12px; flex-wrap: wrap; }
+.env-foot > .muted { flex: 1 1 260px; min-width: 0; }
+@media (max-width: 560px) {
+  .modal.env-sheet { width: calc(100vw - 24px); padding: var(--s4); }
+  .env-row-item { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "key actions" "value actions"; row-gap: 2px; }
+  .env-key { grid-area: key; }
+  .env-value { grid-area: value; }
+  .env-actions { grid-area: actions; }
+}
 .rules-where { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rules-body { display: flex; flex-direction: column; gap: var(--s3); min-height: 0; flex: 1; overflow-y: auto; margin: 0 calc(-1 * var(--s2)); padding: 0 var(--s2); }
 .rules-body p, .modal.rules p { margin: 0; }
