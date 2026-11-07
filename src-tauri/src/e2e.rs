@@ -70,6 +70,16 @@ pub fn handle(app: &AppHandle, line: &str) -> Res<Value> {
             let seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
             Ok(Value::Array(seen.iter().skip(since).cloned().collect()))
         }
+        // Long soaks: forget what was recorded so far (indices stay valid), so the recorder's own
+        // growth doesn't read as the app's memory growing.
+        "seen_clear" => {
+            let mut seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
+            let n = seen.len();
+            for (i, e) in seen.iter_mut().enumerate() {
+                *e = json!({"n": i, "event": "cleared"});
+            }
+            Ok(json!({"cleared": n}))
+        }
         other => Err(format!("e2e: no op called {other}")),
     }
 }

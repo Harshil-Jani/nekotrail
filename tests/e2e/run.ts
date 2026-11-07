@@ -418,10 +418,27 @@ await journey("the Queue screen loads", async () => {
   if (!Array.isArray(v.tasks) || typeof v.max_total !== "number") fail(`odd queue data: ${JSON.stringify(v).slice(0, 200)}`);
 });
 
-await journey("archive the workspace", async () => {
+await journey("archive the workspace, and every terminal tab it had goes with it", async () => {
+  // A second tab has the id the window gives it (Terminal.tsx: `${wsId}:term-<time>`). Found in the
+  // v0.23 QA soak: archive closed only `${id}:term`, so each extra tab's shell lived on until quit.
+  const w = await $("workspace", { id: ws });
+  const tab = `${ws}:term-${Date.now().toString(36)}`;
+  const kids = () => spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" }).stdout.trim().split("\n")
+    .map((l) => l.trim().split(/\s+/).map(Number)).filter((f) => f[1] === app!.pid).map((f) => f[0]);
+  const before = new Set(kids());
+  await $("pty_open", { id: tab, cwd: w.path });
+  const n = (await seenSince(0)).length;
+  await $("pty_write", { id: tab, data: "echo tab-$((3+3))\r" });
+  await until("the extra tab's output", async () =>
+    (await seenSince(n)).some((e) => e.event === "pty" && e.payload.id === tab && String(e.payload.data).includes("tab-6")));
+  const shells = kids().filter((p) => !before.has(p));
   await $("archive", { id: ws, force: true });
   const snap = await $("snapshot");
   if ((snap.workspaces as any[]).some((w) => w.id === ws)) fail("the workspace is still listed");
+  await until("the extra tab's shell to end with its workspace", async () => {
+    const now = new Set(kids());
+    return shells.every((p) => !now.has(p));
+  }, 5000);
 });
 
 await journey("the app opens even when the shell profile hangs", async () => {
