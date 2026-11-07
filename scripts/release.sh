@@ -30,6 +30,8 @@ if [ "$(uname -s)" = "Darwin" ]; then
   grep "^e2e: all" "$e2e_log"
   rm -f "$e2e_log"
   rm -rf dist
+  echo "Checking: real clicks on the UI (tests/ui/clicks.py)..."
+  python3 tests/ui/clicks.py || { echo "A UI click check failed. Nothing was tagged." >&2; exit 1; }
 else
   echo "WARNING: the end-to-end journeys run on macOS only and were SKIPPED. This release was not tested end to end." >&2
 fi

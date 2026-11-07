@@ -823,6 +823,14 @@ export default function App() {
   const urlShown = !!ws && !!localUrls[ws.id] && runLive;
   // Chat draws its chat tabs into the tab row, next to Changes, Terminal, Preview and Checks.
   const [chatSlot, setChatSlot] = useState<HTMLDivElement | null>(null);
+  // The chat tabs are portaled in from Chat, and React sends portal events up the React tree (Chat's pane),
+  // not the DOM. So a React onClick on this slot never fires: listen on the DOM node itself.
+  useEffect(() => {
+    if (!chatSlot) return;
+    const onClick = (e: MouseEvent) => { if ((e.target as HTMLElement).closest(".chat-tab")) setTab("chat"); };
+    chatSlot.addEventListener("click", onClick, true);
+    return () => chatSlot.removeEventListener("click", onClick, true);
+  }, [chatSlot]);
 
   useEffect(() => {
     if (!ws) return;
@@ -1699,7 +1707,7 @@ export default function App() {
             {/* One row of tabs: the chats (Chat puts them here) on the left, the other views on the right. */}
             {ws.state === "active" && !isHistory(ws) && (
               <div className={`ws-tabbar${tab === "chat" ? " on-chat" : ""}`}>
-                <div className="ws-chats" ref={setChatSlot} onClickCapture={(e) => { if ((e.target as HTMLElement).closest(".chat-tab")) setTab("chat"); }} />
+                <div className="ws-chats" ref={setChatSlot} />
                 <nav className="tabs view-tabs" role="tablist" aria-label="Views">
                   {TABS.filter((t) => t.id !== "chat" && (t.id !== "notes" || tab === "notes" || ws.notes.trim())).map((t) => (
                     <button key={t.id} role="tab" data-tour={t.id === "changes" ? "changes" : undefined} aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}
