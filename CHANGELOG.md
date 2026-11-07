@@ -3,6 +3,15 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Licences and privacy**
+- Settings has an About pane: the version, the MIT licence, links to the website, GitHub and the privacy page, and Open source licences, which shows the full licence text and copyright notices of every Rust crate and JavaScript package the app ships with. The texts are generated at build time from each package's own files and bundled with the app (⌘K, About NekoTrail).
+- New PRIVACY.md lists every network connection NekoTrail makes (the update check, GitHub avatars and images, your own git and gh, and Linear and alerts only once you turn them on) and what stays on your machine. No telemetry. It is linked from the README, the website footer and About.
+- Linux ships as a `.deb` only for now. The AppImage is paused because it would bundle LGPL libraries (WebKitGTK, GTK); it comes back once each release attaches their matching source. If you use the AppImage, switch to the `.deb` or build from source: it gets no more updates.
+- The website no longer shows Conductor's logo or the Apple logo; Conductor is named in plain text. The README and site say the agents' own CLIs, the queue respects each plan's limits, and Gemini CLI's account note follows Google's current terms.
+- CI checks Rust licences and advisories with `cargo deny`, runs `bun audit` on the app, site and extension, and fails if THIRD_PARTY_NOTICES.md is stale or a bundled JavaScript package is outside the licence policy. Dependabot opens weekly update PRs.
+
 ## 0.22.2 (2026-11-07)
 
 **Fixes**
