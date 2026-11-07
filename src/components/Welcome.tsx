@@ -201,7 +201,7 @@ export function Welcome({
             nekotrail moves their folders out of Conductor's into its own, and shows you exactly what moves first.
           </p>
           <button className="primary" onClick={() => onImport()}>
-            <FolderInput size={15} />Bring them over…
+            <FolderInput size={15} />Import from Conductor…
           </button>
         </div>
       )}
