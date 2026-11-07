@@ -4,7 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { listen } from "@tauri-apps/api/event";
 import { Play, Plus, RotateCw, Square, SquareTerminal, Wrench, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
-import { api } from "../api";
+import { api, errText } from "../api";
+import { startFailedText } from "../pty";
 import { fontStack, TERM_SIZE, TERM_STACK } from "../appearance";
 import { getSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
@@ -68,6 +69,9 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
       if (sb) t.write(sb);
       if (mode === "attach" && sb === null) setIdle(true);
       api.ptyResize(ptyId, t.cols, t.rows).catch(() => {});
+    }).catch((err) => {
+      // Say why there is no shell (a folder that is gone, say) instead of a blank terminal that ignores typing.
+      if (live) t.write(startFailedText(errText(err)));
     });
 
     const ro = new ResizeObserver(() => {
