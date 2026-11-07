@@ -3,6 +3,11 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.23.3 (2026-11-08)
+
+**Easier to find your chat**
+- Every chat tab has a chat-bubble icon. On Changes, Terminal or Preview, the chat you came from keeps an outline, so you can see where to click to get back (or press ⌘1).
+
 ## 0.23.2 (2026-11-08)
 
 **Fixes**
