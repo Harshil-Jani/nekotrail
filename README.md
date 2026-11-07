@@ -10,115 +10,109 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="MIT"></a>
 </p>
 
-<p align="center">Run many coding agents at once on your Mac. Each one gets its own branch and folder, and each one ends as a pull request.</p>
+<p align="center">Run Claude Code, Codex and 14 more coding agents at once on your Mac. Each task gets its own git worktree and branch. Free, MIT, local, no account.</p>
 
 <p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="Nekotrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
 
-<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a></p>
+<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#install">Install</a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a></p>
 
 <p align="center"><a href="https://github.com/sponsors/Harshil-Jani"><img src="docs/sponsor/github-sponsors.svg" height="40" alt="Sponsor on GitHub"></a> <a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="40" alt="Buy me a coffee"></a></p>
 
 ---
 
-Nekotrail is an open-source, local-first desktop app for running coding agents in parallel: Claude Code, Codex, Gemini CLI, OpenCode and 12 more, sixteen in all. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
+Every task gets a **workspace**: a git worktree on its own branch, plus a chat, a diff, a live preview, a terminal and a PR bar with GitHub status.
 
-**Moving from Conductor?** Nekotrail imports your repos, active workspaces and chats from the Conductor app on your Mac, then moves your worktrees out of Conductor's folder into its own with `git worktree move`, and checks each one. It uses the same keyboard shortcuts as Conductor, and imported chats continue the same agent session. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) for what comes over, what doesn't, and Conductor Cloud.
-
-**The night sky.** Every workspace is named after a star in one of eight cat constellations. Starting a workspace lights its star; merging its PR makes it shine, and lines appear between neighbouring stars once both have shipped. Ship enough and a whole cat appears in your sky. One of them, Felis, is a real constellation: astronomer Jérôme Lalande drew a cat among the stars in 1799.
+**Moving from Conductor?** One import brings over your repos, active workspaces and chats, then moves your worktrees out of Conductor's folder with `git worktree move`. Same shortcuts, same agent sessions. [What comes over](docs/MOVING-FROM-CONDUCTOR.md).
 
 ## Tour
 
-Screenshots use sample data from `preview.html`. Light and dark follow your Mac, or pick one in Settings.
+Screenshots use sample data. Light and dark follow your Mac.
 
-**Start a workspace.** Type the task and press Enter. Pick any of the sixteen agents, or Claude + Codex to race them. Start from a GitHub or Linear issue, an open PR, an existing branch, or on top of another workspace.
+**Start a workspace.** Type the task, press Enter. Start from a GitHub or Linear issue, a PR, a branch or another workspace.
 <img src="docs/screenshots/new-workspace.png" width="900" alt="New workspace panel with the task box, the Claude, Codex, Gemini, OpenCode and Claude + Codex picker, and sources">
 
-**Choose the model and how hard it thinks.** One picker for the model and its intelligence level (⌘/).
+**Pick the model and how hard it thinks** (⌘/).
 <img src="docs/screenshots/model-picker.png" width="900" alt="Model and intelligence picker in the chat box">
 
-**Approve the plan, or split it.** Approve with one click (⌘⇧↵), or split a numbered plan into parallel workspaces.
+**Approve the plan, or split it** into parallel workspaces (⌘⇧↵).
 <img src="docs/screenshots/plan.png" width="900" alt="Plan card with Approve and build, Split into 3 workspaces, a todo list and queued messages">
 
-**Or approve each change.** In "Ask before changes" mode, every edit and command waits for your Allow (↵), Deny (⌫) or Allow for this chat. Here it's OpenCode, which Nekotrail drives over the Agent Client Protocol.
+**Or approve each change.** In Ask before changes, every edit and command waits for Allow (↵) or Deny (⌫).
 <img src="docs/screenshots/opencode.png" width="900" alt="An OpenCode chat in Ask before changes mode, waiting on an edit with Deny, Allow for this chat and Allow">
 
-**Review the agent like a pull request.** Click a line number (shift-click or drag for more lines) to comment. Send review hands every comment to the agent in one message, with the file, line and code. Comments on lines the agent has since changed are marked Outdated. GitHub review comments show inline too.
+**Review it like a PR.** Click a line number to comment. Send review hands every comment to the agent in one message.
 <img src="docs/screenshots/changes.png" width="900" alt="Changes tab with draft review comments on lines, an Outdated comment, GitHub comments inline and the Send review button">
 
-**Rewind to here.** Every message you send saves your files first. Rewind puts them back, says how many files change before it does anything, and can be undone. `.env`, `node_modules` and other ignored files are never touched.
+**Rewind to here.** Every message you send saves your files first. Rewind puts them back, and can be undone.
 <img src="docs/screenshots/rewind.png" width="900" alt="Rewind sheet: 2 files go back to how they were before the message, 1 commit comes off the branch">
 
-**See your app, and mark it up.** The Preview tab (⌘4) shows your running app inside the workspace. Annotate freezes the page, lets you draw boxes and arrows and add a note, and drops it into your chat as a screenshot the agent can see. Preview only loads local addresses.
+**See your app and mark it up** (⌘4). Draw on the running page and send it to the agent as a screenshot.
 <img src="docs/screenshots/preview.png" width="900" alt="Preview tab in Annotate mode with a box and an arrow drawn on a sample app and a note for the agent">
 
-**Stack work on work.** Start a workspace on top of another one: its PR builds on the unmerged branch, and the PR bar links the parent. When the parent merges, one click moves it onto main, rebases it and points its PR there.
+**Stack work on work.** Build on an unmerged workspace. When the parent merges, one click moves it onto main.
 <img src="docs/screenshots/stacked.png" width="900" alt="PR bar of a stacked workspace showing On Mochi #482 merged, with a Move onto main banner">
 
-**See everything on a board.** Backlog, In progress, In review, Done. Drag to change status (⌘⇧K).
+**See everything on a board** (⌘⇧K). Drag to change status.
 <img src="docs/screenshots/board.png" width="900" alt="Kanban board of workspaces">
 
 **Race Claude and Codex.** Same task, two workspaces. Compare files, time and cost; keep the winner.
-<img src="docs/screenshots/compare.png" width="900" alt="Bake-off comparison of a Claude and a Codex workspace">
+<img src="docs/screenshots/compare.png" width="900" alt="Compare agents: a Claude and a Codex workspace side by side">
 
-**See which agent works for you.** Clean-finish rate, turn time, spend and merged PRs per agent, from your own history.
+**See which agent works for you.** Finish rate, turn time, spend and merged PRs, from your own history.
 <img src="docs/screenshots/scorecard.png" width="900" alt="Agent scorecard comparing Claude and Codex">
 
-**Get disk space back.** See each workspace's size and clean the build folders git ignores, in one click.
+**Get disk space back.** See each workspace's size and clean ignored build folders in one click.
 <img src="docs/screenshots/storage.png" width="900" alt="Storage sheet with per-workspace sizes and Clean buttons">
 
 **Do anything from the keyboard.** ⌘K jumps to any workspace or action.
 <img src="docs/screenshots/palette.png" width="900" alt="Command palette">
 
-**Check your MCP servers.** Type `/mcp` in any chat to see every server Claude, Codex, Gemini and OpenCode have, and copy one from one agent to another in one click. Skills share the same way.
+**Share MCP servers.** Type `/mcp` to see every agent's servers and copy one to another agent.
 <img src="docs/screenshots/mcp.png" width="900" alt="MCP servers and skills sheet with connection status and which agents have each one">
 
-**Light up the night sky.** Every workspace lights a star; every merged PR makes it shine.
+**Light up the night sky.** Every workspace is a star in a cat constellation. Merged PRs make it shine.
 <img src="docs/screenshots/night-sky.png" width="900" alt="Night sky with constellations">
 
-**First launch checks your setup.** It shows the command for anything missing and offers the Conductor import, which moves your worktrees out of Conductor's folder.
+**First launch checks your setup.** It shows the command for anything missing and offers the Conductor import.
 <img src="docs/screenshots/welcome.png" width="900" alt="Welcome screen in light mode with the setup check and Conductor import">
 
 ## Why
 
-- **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. Your workspaces, branches and chats stay on your disk, in folders you own.
-- **Bring any agent.** It drives sixteen agents through their official CLIs, with your own logins, settings and subscriptions: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo. Setup shows the install command for any you don't have. Agents that speak the Agent Client Protocol (ACP) are one registry entry.
-- **Hand off without starting over.** When one agent runs out of usage or goes in circles, hand the task to another in the same workspace and branch, with a brief Nekotrail writes from the chat and you read first.
-- **Your Conductor work, kept safe.** It imports your repos, active workspaces and chats from the Conductor app on your Mac, and moves your worktrees out of Conductor's folder with `git worktree move`, checking each one after. Nothing is copied or deleted: git renames each folder. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md).
+- **Open source and local.** MIT. Workspaces, branches and chats stay on your disk.
+- **Your agents, your logins.** Sixteen agents through their official CLIs: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo. No proxy, no markup.
+- **Hand off without starting over.** When an agent runs out of usage or loops, another carries on in the same branch, from a brief you read first.
+- **Conductor work, kept safe.** Nothing is copied or deleted: git renames each worktree's folder and Nekotrail checks it.
 
 ## What it does
 
 | | |
 |---|---|
-| Start | Open a local repo, clone one of your GitHub repos, or import from Conductor (it shows what it will bring over and move first). Start a workspace from a task, a GitHub or Linear issue, an open PR or a branch. |
-| Workspaces | One git worktree and branch per task, named after the task. Archive removes the folder and keeps the branch; restore brings it back. |
-| Chat | Any of the sixteen agents, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
-| Bake-off | Pick "Claude + Codex" and each gets the same task in its own workspace. Compare files, turns, time and cost side by side, keep the better one. |
-| Hand off | Another agent carries on the task in the same workspace and branch (a chat's + menu, ⌘K or /handoff). You read and edit the brief before it is sent, and the new chat keeps this chat's mode. |
-| Linear | Connect Linear in Settings, Integrations, and start a workspace from one of your issues: Linear's branch name, the issue in the first message, and "Fixes ENG-123" in the PR. |
-| Second opinion | One click asks the other agent to review the branch read-only. Its `file:line` findings become review comments in Changes, ready to send back. |
-| Checkpoints | Every message you send saves your files first. Hover it and click **Rewind to here** to put them back, including untracked and staged files. It tells you how many files change first, and Undo brings the newer state back. Each workspace keeps its last 50. |
-| Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line or range and send all your comments to the agent as one review; comments on lines it has since changed are marked Outdated. Discard one file (the old copy goes to the Trash) and filter long file lists. |
-| Preview | Your running app inside the workspace (⌘4), localhost only. Annotate draws boxes, arrows and a note on a frozen page and attaches it to the chat. Nothing running? Start the Run script from Preview. |
-| Stacks | Start a workspace on top of another. The PR bar links the parent, and when the parent merges, one click moves it onto main and retargets its PR. The sidebar marks workspaces that change the same files and suggests which to merge first. |
+| Start | Open a local repo, clone a GitHub repo, or import from Conductor. Start from a task, a GitHub or Linear issue, a PR or a branch. |
+| Workspaces | One worktree and branch per task. Archive removes the folder and keeps the branch. |
+| Chat | Any of the sixteen agents, several chats per workspace. Queue messages, `@` a file, paste a screenshot. Modes: plan, auto-accept, full-auto. |
+| Compare agents | Pick "Claude + Codex": same task, two workspaces. Compare files, turns, time and cost. |
+| Hand off | Another agent carries on in the same branch (+ menu, ⌘K or /handoff). You read and edit the brief first. The new chat keeps this chat's mode. |
+| Linear | Start from a Linear issue: its branch name, the issue in the first message, "Fixes ENG-123" in the PR. |
+| Second opinion | The other agent reviews the branch read-only. Its findings become review comments. |
+| Checkpoints | Every message saves your files first. Rewind to here puts them back, including untracked files. Undo works. Last 50 per workspace. |
+| Changes | Everything changed versus the target branch. Comment on lines and send them as one review. |
+| Preview | Your running app inside the workspace (⌘4), localhost only. Annotate draws on it for the agent. |
+| Stacks | Build on another workspace. When the parent merges, one click moves it onto main. |
 | Terminal | A real login shell in the workspace folder. |
-| PRs | One button for the next step: the agent opens the PR, fixes failing checks from their logs, or resolves conflicts; then squash and merge. Also commit and push, pull latest, agent review, and GitHub review comments shown in the diff. Start a workspace from any open PR. |
-| Scripts | Setup, run and archive scripts per repo, each in its own terminal tab. Commit a `nekotrail.json` to share them with your team. Every workspace gets its own 10 ports (`NEKOTRAIL_PORT`, `NEKOTRAIL_PORT_1` to `_9`, and `PORT`), and the Ports popover shows what listens on them. |
-| Repo settings | Instructions for every chat, review and PR prompts, `.env` files copied into new workspaces, environment variables. |
-| Appearance | Light, Dark or Follow system, zoom from 80% to 150%, and your choice of monospace font and size for code and the terminal. |
-| GitHub | Your avatar and name, repo owner avatars and stars, PR authors and reviewers, all through your `gh` login. |
-| Night sky | 50 stars in 8 cat constellations. Workspaces light stars, merged PRs make them shine and draw the lines. |
+| PRs | One button for the next step: open the PR, fix failing checks, resolve conflicts, then squash and merge. |
+| Scripts | Setup, run and archive scripts per repo. Share them with a committed `nekotrail.json`. Each workspace gets its own 10 ports. |
+| Repo settings | Instructions for every chat, review and PR prompts, `.env` files copied into new workspaces. |
+| Night sky | 50 stars in 8 cat constellations. Merged PRs make them shine. |
 
 ### The cat
 
-The cat reflects the real state of your work, so its moods carry information:
+The cat shows the real state of your work:
 
 - **Tail wagging:** an agent is working.
-- **Asleep (z z):** nothing has happened for five minutes.
-- **Worried:** CI is failing or a turn ended in an error.
-- **Happy:** a PR was merged. Its star starts to shine, and the cat offers to archive the workspace.
-- **Brings you something:** when an agent finishes while you're elsewhere, you get a macOS notification and a Dock badge. Press ⌘⌥L to jump to the next workspace with news.
-- Its eyes follow your cursor. Click it and it purrs the story of one of your constellations.
-- Archiving a workspace knocks it off the table.
+- **Asleep:** nothing happened for five minutes.
+- **Worried:** CI is failing or a turn errored.
+- **Happy:** a PR merged.
+- **Brings you something:** an agent finished while you were away. ⌘⌥L jumps there.
 
 ## Install
 
