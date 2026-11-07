@@ -1,0 +1,6 @@
+/* Archive on hover: the icon takes the trailing mark's place, so the row never shifts. */
+.ws { position: relative; }
+.ws .ws-archive { display: none; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: var(--r); color: var(--muted); cursor: pointer; }
+.ws:hover .ws-archive, .ws:focus-visible .ws-archive { display: inline-flex; }
+.ws:hover:has(.ws-archive) .ws-trail, .ws:focus-visible:has(.ws-archive) .ws-trail { visibility: hidden; }
+.ws .ws-archive:hover { color: var(--text); background: var(--press, var(--hover)); }

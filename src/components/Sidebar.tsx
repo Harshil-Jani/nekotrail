@@ -6,6 +6,7 @@ import { api, displayName, isHistory, nameInText, starName, subName, statusOf, S
 import { ReviewRequests } from "./ReviewRequests";
 import { Mascot, type Mood } from "./Mascot";
 import { Avatar } from "./Avatar";
+import "./Sidebar.css";
 import { ask } from "./Confirm";
 
 type Props = {
@@ -306,6 +307,15 @@ export function Sidebar(p: Props) {
         </span>
         <span className="ws-name">{label(w)}</span>
         <span className="ws-trail">{trail}</span>
+        {w.state === "active" && !isHistory(w) && (
+          // Archive without opening the workspace. The row is itself a button, so this is a span
+          // with button semantics; ⌘⇧A does the same for the open workspace.
+          <span className="ws-archive" role="button" tabIndex={-1} aria-label={`Archive ${label(w)}`} title={keyHint("Archive workspace (⌘⇧A)")}
+            onClick={(e) => { e.stopPropagation(); p.onArchive(w.id); }}
+            onPointerDown={(e) => e.stopPropagation()}>
+            <Archive size={14} aria-hidden />
+          </span>
+        )}
       </button>
     );
   };
