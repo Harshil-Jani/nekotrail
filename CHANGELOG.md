@@ -5,6 +5,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Notifications**
+- Notifications wear the NekoTrail cat. Each one reads as the task (not the workspace's star name), then the repo and branch, then what happened in a plain sentence, with the mascot on the right on macOS. No emoji, and a one-word leftover like "back" is never the whole message.
+- Only the installed app sends macOS notifications: a development build outside a `.app` would show a blank icon, so it sends none. End-to-end test runs send no notifications, play no sounds and bounce nothing.
+- Settings, Notifications has Send a test notification.
+- Away alerts show the cat too: as the ntfy icon, the Discord avatar, beside "NekoTrail" in Slack (the plain text stays as the fallback), and as an `icon` address in the generic webhook.
+
 **Licences and privacy**
 - Settings has an About pane: the version, the MIT licence, links to the website, GitHub and the privacy page, and Open source licences, which shows the full licence text and copyright notices of every Rust crate and JavaScript package the app ships with. The texts are generated at build time from each package's own files and bundled with the app (⌘K, About NekoTrail).
 - New PRIVACY.md lists every network connection NekoTrail makes (the update check, GitHub avatars and images, your own git and gh, and Linear and alerts only once you turn them on) and what stays on your machine. No telemetry. It is linked from the README, the website footer and About.
