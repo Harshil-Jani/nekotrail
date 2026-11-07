@@ -12,6 +12,9 @@ down". Your worktrees live inside Conductor's folder, so moving them out means y
 anything you haven't committed, no longer depends on Conductor. All of this is from
 [Conductor's announcement](https://conductor.build/announcement).
 
+**What the import touches.** It opens your own local Conductor data file read-only and copies your
+repos, workspaces and chats out of it. No Conductor code is copied or bundled, and nothing is sent anywhere.
+
 ## The short version
 
 1. [Download NekoTrail](https://github.com/Harshil-Jani/nekotrail/releases/latest) and open it (see

@@ -3,7 +3,6 @@ import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
 import Clip from "../../components/Clip.astro";
 import Sponsor from "../../components/Sponsor.astro";
-import ConductorMark from "../../components/ConductorMark.astro";
 import { href, formatDate } from "../../lib/site";
 
 export async function getStaticPaths() {
@@ -17,14 +16,13 @@ const { post, newer, older } = Astro.props;
 const { Content } = await render(post);
 const words = (post.body ?? "").split(/\s+/).filter(Boolean).length;
 const minutes = Math.max(1, Math.round(words / 230));
-// Posts about Conductor show its official wordmark, in its own space, and the trademark line.
+// Posts about Conductor name it in plain text only (no logo) and carry the trademark line.
 const aboutConductor = post.id.includes("conductor");
 ---
 <Base title={post.data.title} description={post.data.description} path={`blog/${post.id}/`} ogType="article" published={post.data.date}>
   <div class="wrap" style="max-width:780px">
     <header class="post-head">
       <a class="back" href={href("blog/")}>← Blog</a>
-      {aboutConductor && <ConductorMark on="auto" height={18} class="page-mark" />}
       <h1 style="margin-top:20px">{post.data.title}</h1>
       <div class="meta">
         <img src={href("brand/n-cat.svg")} alt="" width="32" height="32" />
