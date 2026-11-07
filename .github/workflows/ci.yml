@@ -37,7 +37,7 @@ jobs:
         working-directory: src-tauri
 
   # Linux (new, experimental): the same checks against WebKitGTK. 22.04 matches the release build,
-  # whose glibc sets the oldest distro the AppImage runs on.
+  # whose glibc sets the oldest distro the .deb runs on.
   check-linux:
     runs-on: ubuntu-22.04
     steps:

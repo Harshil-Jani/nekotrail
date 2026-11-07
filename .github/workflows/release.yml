@@ -80,15 +80,17 @@ jobs:
           gh release upload "$tag" latest.json --clobber
           jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json
 
-  # Linux x86_64 (new, experimental): AppImage + .deb, both signed for the updater.
+  # Linux x86_64 (new, experimental): the .deb only, signed for the updater. The AppImage is held back:
+  # it would bundle LGPL WebKitGTK and GTK, and it returns once the matching library sources ship with
+  # each release (docs/ROADMAP.md). The .deb uses the distribution's own copies.
   # Runs after the macOS job on purpose. tauri-action downloads the release's existing latest.json,
-  # keeps its platforms and adds linux-x86_64 (the AppImage), linux-x86_64-appimage and
-  # linux-x86_64-deb before re-uploading it (src/upload-version-json.ts in tauri-action). Two jobs
-  # doing that at the same time would race, and the last upload would drop the other's platforms.
+  # keeps its platforms and adds linux-x86_64 and linux-x86_64-deb before re-uploading it
+  # (src/upload-version-json.ts in tauri-action). Two jobs doing that at the same time would race,
+  # and the last upload would drop the other's platforms.
   linux:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: macos
-    # The oldest supported runner: the AppImage only runs on distros with this glibc or newer.
+    # The oldest supported runner, so the .deb runs on distros with this glibc or newer.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -111,7 +113,7 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
       # The release already exists (the macOS job made it), so tauri-action only adds the Linux
-      # assets and merges latest.json. Bundle targets (deb, appimage) come from tauri.linux.conf.json.
+      # assets and merges latest.json. The bundle target (deb) comes from tauri.linux.conf.json.
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,21 +124,23 @@ jobs:
           releaseName: NekoTrail ${{ github.ref_name }}
           releaseDraft: false
           includeUpdaterJson: true
-      - name: latest.json keeps macOS, gains Linux, and its notes are the changelog section only
+      - name: latest.json keeps macOS, gains the .deb, and its notes are the changelog section only
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF_NAME}"
           gh release download "$tag" -p latest.json -O latest.json --clobber
-          jq --rawfile notes notes.md '.notes = ($notes | sub("\\s+$"; ""))' latest.json > latest.next.json
-          for p in darwin-aarch64 darwin-x86_64 linux-x86_64 linux-x86_64-appimage linux-x86_64-deb; do
+          # With only a .deb built, tauri-action also points the generic linux-x86_64 key at it. An older
+          # AppImage install falls back to that key and would write the .deb over itself, so only the
+          # bundle-specific linux-x86_64-deb key is kept. AppImage installs then find no update and keep running.
+          jq --rawfile notes notes.md '.notes = ($notes | sub("\\s+$"; ""))
+            | del(.platforms["linux-x86_64"], .platforms["linux-x86_64-appimage"])' latest.json > latest.next.json
+          for p in darwin-aarch64 darwin-x86_64 linux-x86_64-deb; do
             jq -e --arg p "$p" '.platforms[$p].url and (.platforms[$p].signature | length > 0)' latest.next.json >/dev/null \
               || { echo "latest.json has no signed $p entry" >&2; cat latest.next.json; exit 1; }
           done
-          # An AppImage install updates from the AppImage, a .deb install from the .deb.
-          jq -e '(.platforms["linux-x86_64"].url | endswith(".AppImage"))
-                 and (.platforms["linux-x86_64-appimage"].url | endswith(".AppImage"))
-                 and (.platforms["linux-x86_64-deb"].url | endswith(".deb"))' latest.next.json >/dev/null \
+          jq -e '(.platforms["linux-x86_64-deb"].url | endswith(".deb"))
+                 and ([.platforms | keys[] | select(startswith("linux"))] == ["linux-x86_64-deb"])' latest.next.json >/dev/null \
             || { echo "latest.json points Linux at the wrong files" >&2; cat latest.next.json; exit 1; }
           jq -e --arg v "${tag#v}" '.version == $v or .version == ("v" + $v)' latest.next.json >/dev/null \
             || { echo "latest.json version does not match $tag" >&2; exit 1; }
@@ -153,7 +157,7 @@ jobs:
             {
               echo ""
               echo "### Linux (experimental)"
-              echo "x86_64 only. Debian or Ubuntu: download the \`.deb\` and run \`sudo apt install ./nekotrail_*_amd64.deb\`. Other distros: download the \`.AppImage\`, make it executable (\`chmod +x\`) and run it. Both update themselves from inside the app."
+              echo "x86_64 only. Debian or Ubuntu: download the \`.deb\` and run \`sudo apt install ./nekotrail_*_amd64.deb\`. It updates itself from inside the app. The \`.AppImage\` is paused for now; if you use it, switch to the \`.deb\` or build from source."
             } >> body.md
             gh release edit "$tag" --notes-file body.md
           fi

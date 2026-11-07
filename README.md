@@ -227,11 +227,11 @@ Every workspace is a star in a cat constellation. Merged PRs make it shine.
 <summary><b>Linux (new, experimental)</b></summary>
 <br>
 
-Since 0.14.0, each release also carries an x86_64 `.deb` and `.AppImage`. This is new and has not been tested on real Linux machines yet, so expect rough edges and please [report them](https://github.com/Harshil-Jani/nekotrail/issues/new/choose).
+Each release also carries an x86_64 `.deb`. This is new and has not been tested on real Linux machines yet, so expect rough edges and please [report them](https://github.com/Harshil-Jani/nekotrail/issues/new/choose).
 
-- **Debian, Ubuntu and similar:** download the `.deb` and run `sudo apt install ./nekotrail_*_amd64.deb`.
-- **Other distros:** download the `.AppImage`, make it executable (`chmod +x nekotrail_*.AppImage`) and run it. It needs glibc 2.35 or newer (Ubuntu 22.04 era).
-- Both update themselves from inside the app. A `.deb` update asks for your password, since it installs with `pkexec`.
+- **Debian, Ubuntu and similar:** download the `.deb` and run `sudo apt install ./nekotrail_*_amd64.deb`. It needs glibc 2.35 or newer (Ubuntu 22.04 era).
+- **Other distros:** build from source for now (see **Build it yourself** below). The `.AppImage` is paused: it would bundle LGPL libraries (WebKitGTK, GTK), and it comes back once their matching source ships with each release. If you installed an earlier AppImage, switch to the `.deb` or a source build; the AppImage no longer gets updates.
+- The `.deb` updates itself from inside the app. An update asks for your password, since it installs with `pkexec`.
 - Shortcuts use Ctrl where the Mac uses ⌘. Two moves: switching workspace is Alt+1 to Alt+9 (Ctrl+1 to Ctrl+4 switch tabs), and Open in editor is Ctrl+Shift+O (Ctrl+O shows tool output). In the terminal, Ctrl keys go to your shell; copy and paste are Ctrl+Shift+C and Ctrl+Shift+V. Settings, Shortcuts lists them all.
 - Not on Linux yet: the Conductor import (Conductor is Mac-only), vibrancy, and the Dock badge (most Linux desktops don't show one). Annotate in Preview uses WebKitGTK's own snapshot and is the least tested part.
 - Requirements as above, plus WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, pulled in by the `.deb`).

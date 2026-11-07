@@ -83,7 +83,7 @@ Maintainers cut releases; contributors don't need to do anything beyond the chan
 
 1. The maintainer turns `## Unreleased` into `## X.Y.Z (date)` in CHANGELOG.md.
 2. `scripts/release.sh X.Y.Z` runs the build, clippy and the Rust tests, bumps the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, commits, tags `vX.Y.Z`, pushes and creates the release page with that section as its notes.
-3. The `release` workflow builds the universal macOS `.dmg` and the Linux `.deb` and `.AppImage`, signs the update archives with the updater key (a repository secret only maintainers hold) and uploads them with `latest.json`. Installed apps pick the update up from there.
+3. The `release` workflow builds the universal macOS `.dmg` and the Linux `.deb` (the `.AppImage` is paused until the LGPL library sources ship with it, see docs/ROADMAP.md), signs the update archives with the updater key (a repository secret only maintainers hold) and uploads them with `latest.json`. Installed apps pick the update up from there.
 
 Local builds can skip the update signing: `bun run tauri build -c '{"bundle":{"createUpdaterArtifacts":false}}'`.
 

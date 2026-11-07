@@ -7,7 +7,8 @@ Want something on this list sooner, or something that isn't on it? Open a [featu
 ## Next
 
 - **A signed, notarized Mac app.** So macOS opens NekoTrail on first launch without the `xattr` step. Updates are already signed and install from inside the app.
-- **Linux, tested for real.** The `.deb` and `.AppImage` are new and have only run in CI. Reports from real machines (other desktops, Wayland, ARM) decide what gets fixed first.
+- **Linux, tested for real.** The `.deb` is new and has only run in CI. Reports from real machines (other desktops, Wayland, ARM) decide what gets fixed first.
+- **The Linux AppImage, back.** It is paused because it bundles LGPL libraries (WebKitGTK, GTK). It returns once each release attaches the matching source for those libraries (the LGPL source offer), next to the AppImage.
 - **More agents over the Agent Client Protocol (ACP).** Gemini over ACP would give it "Ask before changes". Forking ACP chats, and each agent's live model list in the model picker.
 - **Speed at scale.** Fast switching and a flat CPU graph with 30 or more workspaces across several repos.
 - **Polish from your reports.** First-run setup, error messages and the Conductor move, wherever new users get stuck.

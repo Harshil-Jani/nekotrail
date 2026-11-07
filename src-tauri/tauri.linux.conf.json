@@ -15,7 +15,7 @@
     ]
   },
   "bundle": {
-    "targets": ["deb", "appimage"],
+    "targets": ["deb"],
     "category": "DeveloperTool",
     "shortDescription": "Run many coding agents in parallel, each in its own git worktree.",
     "linux": {
