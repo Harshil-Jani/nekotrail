@@ -13,6 +13,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - CI checks Rust licences and advisories with `cargo deny`, runs `bun audit` on the app, site and extension, and fails if THIRD_PARTY_NOTICES.md is stale or a bundled JavaScript package is outside the licence policy. Dependabot opens weekly update PRs.
 
 **Fixes**
+- After you send a message, a row under it says the agent is working and what it is doing, in plain words: Thinking, Reading src/auth.ts, Running bun test, Editing 2 files, with the time so far. It steps aside when the answer shows and goes when the turn ends. After a minute with no news it says Still working, calmly. Works for Claude, Codex, Gemini and the ACP agents, keeps still with reduced motion, and screen readers hear it once, not every second.
 - Opening a chat while its agent works no longer loses or repeats messages. The chat listens before it loads, and lines up what arrives by message number; if one is missing, it loads again.
 - A message you send while the agent works shows at the end of the chat right away, marked Queued, with Edit and Remove. If it never reaches the agent, it comes back into the message box with a note. A message that fails to send stays in the box with the reason.
 - The working spinner no longer sticks on, or turns off too early, when a turn ends and the next queued one starts at once. If a turn says Done but the app never hears it stop, it checks again after 10, 30 and 60 seconds.
