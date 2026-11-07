@@ -249,6 +249,21 @@ await journey("the terminal answers while a turn runs", async () => {
   await idle(sid);
 });
 
+await journey("a big paste into a busy terminal freezes nothing", async () => {
+  const w = await $("workspace", { id: ws });
+  const busy = `${ws}:term-2`, id = `${ws}:term`;
+  await $("pty_open", { id: busy, cwd: w.path });
+  await $("pty_write", { id: busy, data: "sleep 30\r" });
+  await sleep(300);
+  // Whole lines that `sleep` never reads: they fill the terminal's input queue.
+  await $("pty_write", { id: busy, data: `${"x".repeat(79)}\n`.repeat(3000) }, 5000);
+  const n = (await seenSince(0)).length;
+  await $("snapshot", {}, 5000);
+  await $("pty_write", { id, data: "echo free-$((1+1))\r" }, 5000);
+  await until("the other terminal's output", async () =>
+    (await seenSince(n)).some((e) => e.event === "pty" && e.payload.id === id && String(e.payload.data).includes("free-2")));
+});
+
 await journey("a Codex chat runs a turn to the end", async () => {
   const s = (await $("new_session", { workspace_id: ws, agent: "codex" })).id;
   await $("send", { session_id: s, text: "list the files" });

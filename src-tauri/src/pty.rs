@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex};
 
 pub struct Pty {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    /// Input for the terminal. Its own thread writes it, so typing or pasting never waits under
+    /// the terminals' lock: a paste bigger than the PTY's input buffer into a program that isn't
+    /// reading (a dev server, `sleep`) used to block there and freeze every terminal, then the app.
+    input: std::sync::mpsc::Sender<Vec<u8>>,
     child: Box<dyn Child + Send + Sync>,
     /// Recent output, replayed when the terminal view is rebuilt (e.g. after switching workspace).
     scrollback: Arc<Mutex<String>>,
@@ -59,9 +62,21 @@ impl Ptys {
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader()?;
-        let writer = pair.master.take_writer()?;
+        let mut writer = pair.master.take_writer()?;
+        let (input, typed) = std::sync::mpsc::channel::<Vec<u8>>();
+        // Ends when the terminal is forgotten (its sender dropped) or its process is gone.
+        std::thread::spawn(move || {
+            for bytes in typed {
+                if writer.write_all(&bytes).and_then(|_| writer.flush()).is_err() {
+                    break;
+                }
+            }
+        });
         let scrollback = Arc::new(Mutex::new(String::new()));
         let sb = scrollback.clone();
+        // In the map before its output is read, so an exit that comes at once still finds it and
+        // removes it (before, a terminal that ended first stayed listed as running).
+        self.0.lock().unwrap().insert(id.to_string(), Pty { master: pair.master, input, child, scrollback, generation, scripted: command.is_some() });
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             let mut pending: Vec<u8> = Vec::new();
@@ -95,7 +110,6 @@ impl Ptys {
             }
             on_exit(generation);
         });
-        self.0.lock().unwrap().insert(id.to_string(), Pty { master: pair.master, writer, child, scrollback, generation, scripted: command.is_some() });
         Ok(generation)
     }
 
@@ -112,10 +126,11 @@ impl Ptys {
         }
     }
 
+    /// Type `data` into the terminal. Returns at once: the terminal's input thread writes it.
     pub fn write(&self, id: &str, data: &str) -> Result<()> {
-        if let Some(p) = self.0.lock().unwrap().get_mut(id) {
-            p.writer.write_all(data.as_bytes())?;
-            p.writer.flush()?;
+        let input = self.0.lock().unwrap().get(id).map(|p| p.input.clone());
+        if let Some(input) = input {
+            input.send(data.as_bytes().to_vec()).map_err(|_| anyhow::anyhow!("This terminal has ended."))?;
         }
         Ok(())
     }
@@ -190,6 +205,48 @@ mod tests {
         assert!(out.contains("marker-file"), "got: {out}");
         ptys.close("t");
         assert!(!ptys.is_open("t"));
+    }
+
+    #[test]
+    fn a_big_paste_into_a_busy_terminal_freezes_nothing() {
+        // `sleep` never reads its input, so the PTY's input queue fills. Writing 240 KB used to block under the terminals' lock: every terminal, then the app.
+        let d = tempfile::tempdir().unwrap();
+        let cwd = d.path().to_str().unwrap();
+        let ptys = Ptys::default();
+        ptys.open("busy", cwd, &[], Some("sleep 30"), 80, 24, |_| {}, |_| {}).unwrap();
+        let (tx, rx) = mpsc::channel::<String>();
+        ptys.open("other", cwd, &[], None, 80, 24, move |s| { let _ = tx.send(s); }, |_| {}).unwrap();
+        let (done_tx, done_rx) = mpsc::channel();
+        let p2 = ptys.clone();
+        std::thread::spawn(move || {
+            // Whole lines: the tty keeps complete lines until they are read, and blocks the writer
+            // once its input queue is full (characters past one line's limit are only dropped).
+            p2.write("busy", &format!("{}\n", "x".repeat(79)).repeat(3000)).unwrap();
+            let _ = done_tx.send(());
+        });
+        assert!(done_rx.recv_timeout(Duration::from_secs(5)).is_ok(), "the paste blocked");
+        // The other terminal and the map still answer.
+        ptys.write("other", "echo still-$((40+2))\n").unwrap();
+        let mut out = String::new();
+        while let Ok(s) = rx.recv_timeout(Duration::from_secs(10)) {
+            out.push_str(&s);
+            if out.contains("still-42") { break; }
+        }
+        assert!(out.contains("still-42"), "got: {out}");
+        assert!(ptys.is_open("busy") && ptys.scrollback("busy").is_some());
+        ptys.close("busy");
+        ptys.close("other");
+    }
+
+    #[test]
+    fn a_terminal_that_ends_at_once_is_not_left_listed() {
+        let d = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let (tx, rx) = mpsc::channel::<u64>();
+        let p2 = ptys.clone();
+        ptys.open("quick", d.path().to_str().unwrap(), &[], Some("true"), 80, 24, |_| {}, move |g| { p2.close_if("quick", g); let _ = tx.send(g); }).unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(!ptys.is_open("quick"));
     }
 
     #[test]
