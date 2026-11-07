@@ -299,10 +299,19 @@ await journey("Stop on an agent that reports the interrupt itself reads as Stopp
   await until("the turn to start", () => running(sid));
   await until("the agent to start", async () => agentTurns().length > 0);
   await sleep(300);
+  const n = (await seenSince(0)).length;
   await $("stop", { session_id: sid });
   await idle(sid, 15_000);
   const last = (await events(sid)).at(-1);
   if (!(last?.kind === "done" && last.stopped)) fail(`the chat ends with ${JSON.stringify(last).slice(0, 200)}: it shows "Ended with an error", not "Stopped"`);
+  const seen = await seenSince(n);
+  const off = seen.find((e) => e.event === "running" && e.payload.session_id === sid && e.payload.running === false);
+  if (off?.payload.needs != null) fail(`the turn ended asking for you (needs: ${off.payload.needs}), as an error would`);
+  if (seen.some((e) => e.event === "needs" && e.payload.session_id === sid)) fail("Stop raised a needs-you");
+  // The tool it started ignores SIGINT: only the stop sweep of the process group ends it.
+  const pids = agentTurns().filter((l) => l.startsWith("start") || l.startsWith("child")).map((l) => Number(l.split(" ")[1]));
+  if (pids.length < 2) fail(`the fake agent didn't log its pids: ${agentTurns().join(" / ")}`);
+  await until("the agent and the tool it started to be gone", async () => pids.every((p) => !alive(p)), 8000);
 });
 
 await journey("the terminal answers while a turn runs", async () => {

@@ -71,6 +71,10 @@ struct Runs {
     running: HashMap<String, u32>,
     /// Chats where Stop was pressed while their turn was still starting: it doesn't start.
     cancelled: std::collections::HashSet<String>,
+    /// Chats where Stop was pressed on a running turn: session id -> that turn's pid. The turn
+    /// then ends as "Stopped" whatever the agent reports (the claude CLI answers Ctrl-C with its
+    /// own error result), with no needs-you and no alert, and its process group is swept.
+    stopping: HashMap<String, u32>,
     /// session id -> prompts waiting for the current turn to finish. Saved in the settings table
     /// on every change (`save_chat_queue`), so after a quit or a crash they run all the same.
     queued: HashMap<String, VecDeque<String>>,
@@ -103,6 +107,11 @@ fn write_stdin(runs: &Arc<Ordered<Runs>>, id: &str, lines: &[String]) -> bool {
     let Some(stdin) = runs.lock().unwrap().stdins.get(id).cloned() else { return false };
     let mut stdin = stdin.lock().unwrap_or_else(|p| p.into_inner());
     lines.iter().all(|l| stdin.write_all(l.as_bytes()).is_ok()) && stdin.flush().is_ok()
+}
+
+/// Stop was pressed on this chat's turn `pid` (`Runs::stopping`).
+fn stop_pressed(runs: &Arc<Ordered<Runs>>, id: &str, pid: u32) -> bool {
+    runs.lock().unwrap().stopping.get(id) == Some(&pid)
 }
 
 /// `Runs::running` for a turn that is starting and has no process yet.
@@ -3839,15 +3848,19 @@ fn queue_if_busy(app: &AppHandle, st: &AppState, id: &str, text: String) -> Opti
 #[tauri::command]
 async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
     let (pid, parser) = {
-        let runs = st.runs.lock().unwrap();
-        (runs.running.get(&id).copied(), runs.parsers.get(&id).cloned())
+        let mut runs = st.runs.lock().unwrap();
+        let pid = match runs.running.get(&id).copied() {
+            None => return Ok(()),
+            // Still starting (checkpoint, checks): it won't start.
+            Some(RESERVED) => {
+                runs.cancelled.insert(id);
+                return Ok(());
+            }
+            Some(pid) => pid,
+        };
+        mark_stopping(&mut runs, &id, pid);
+        (pid, runs.parsers.get(&id).cloned())
     };
-    let Some(pid) = pid else { return Ok(()) };
-    if pid == RESERVED {
-        // Still starting (checkpoint, checks): it won't start.
-        st.runs.lock().unwrap().cancelled.insert(id);
-        return Ok(());
-    }
     // ACP agents are asked to cancel (and given a moment); everything else gets SIGINT, the way
     // Ctrl-C would stop it. Then TERM and KILL to the whole group, in case it doesn't stop.
     let cancel = parser.and_then(|p| p.lock().unwrap().cancel());
@@ -3861,6 +3874,14 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
     signal_later(st.runs.clone(), id.clone(), pid, grace, "-TERM");
     signal_later(st.runs.clone(), id, pid, grace + 5, "-KILL");
     Ok(())
+}
+
+/// Record that Stop was pressed on this chat's running turn `pid`, before any signal goes out,
+/// so whatever the agent prints in answer (an error result, an error exit) reads as a stop.
+fn mark_stopping(runs: &mut Runs, id: &str, pid: u32) {
+    if pid != RESERVED && runs.running.get(id) == Some(&pid) {
+        runs.stopping.insert(id.to_string(), pid);
+    }
 }
 
 /// The workspace a chat belongs to, refusing while any agent in it is working: a rewind under a
@@ -4547,8 +4568,11 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
                             turn_id = Some(t);
                         }
                     ok = !ev["is_error"].as_bool().unwrap_or(false);
-                    // Agents that report the interrupt themselves (Gemini) mark it, so it reads as a stop.
-                    if ev["stopped"] == true {
+                    // Agents that report the interrupt themselves (Gemini) mark it. Claude doesn't:
+                    // on Ctrl-C it prints an error result (error_during_execution) and exits 0. You
+                    // pressed Stop on this turn, so it reads as a stop either way.
+                    if ev["stopped"] == true || stop_pressed(&st.runs, &id, pid) {
+                        ev["stopped"] = json!(true);
                         user_stopped = true;
                     }
                 }
@@ -4587,7 +4611,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
         let status = end_of.reap(&mut child);
         if !saw_done {
             let stderr = err_buf.lock().unwrap().trim().to_string();
-            let stopped = harness.stopped_by_user(status.as_ref().ok(), &stderr);
+            let stopped = stop_pressed(&st.runs, &id, pid) || harness.stopped_by_user(status.as_ref().ok(), &stderr);
             let ev = if stopped {
                 json!({"kind": "done", "is_error": true, "stopped": true})
             } else {
@@ -4606,6 +4630,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
         }
         // You pressed Stop: whatever the agent started goes too. Background tools often ignore
         // SIGINT and would outlive it. (A turn that ended by itself keeps what it started.)
+        user_stopped |= stop_pressed(&st.runs, &id, pid);
         if user_stopped {
             signal_group(pid, "-TERM");
             std::thread::spawn(move || {
@@ -4654,6 +4679,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             runs.parsers.remove(&id);
             runs.approvals.retain(|_, (sid, _, _)| sid != &id);
             runs.cancelled.remove(&id);
+            runs.stopping.remove(&id);
             let next = runs.queued.get_mut(&id).and_then(|q| q.pop_front());
             // The next message keeps the chat claimed, so a send in between queues behind it
             // instead of jumping ahead.
@@ -5118,7 +5144,11 @@ async fn stop_all_work(st: State<'_, AppState>) -> Res<()> {
     let pids: Vec<u32> = {
         let mut runs = st.runs.lock().unwrap();
         runs.queued.clear();
-        runs.running.values().copied().collect()
+        let all: Vec<(String, u32)> = runs.running.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        for (id, pid) in &all {
+            mark_stopping(&mut runs, id, *pid);
+        }
+        all.into_iter().map(|(_, pid)| pid).collect()
     };
     for pid in pids {
         signal_group(pid, "-INT");
