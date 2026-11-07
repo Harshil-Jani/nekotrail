@@ -186,7 +186,8 @@ export function Welcome({
       <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
       {setupRed && setupCard}
 
-      {moveNotice}
+      {/* The import sheet also moves workspaces imported earlier, so one Conductor card is enough. */}
+      {!hasImport && moveNotice}
       {hasImport && (
         <div className="import-card hero">
           <div className="row import-head">
@@ -196,8 +197,8 @@ export function Welcome({
           </div>
           <p>
             Bring over {preview.repos > 0 ? `${preview.repos} ${preview.repos === 1 ? "repo" : "repos"}, ` : ""}
-            {preview.workspaces} {preview.workspaces === 1 ? "workspace" : "workspaces"} and {preview.sessions} {preview.sessions === 1 ? "chat" : "chats"} with their history.
-            {preview.skipped > 0 ? ` ${preview.skipped} already here or gone from disk.` : ""} Their folders live inside Conductor's, which Conductor says it deletes when its app shuts down, so nekotrail moves them into its own folder. You see exactly what moves first.
+            {preview.workspaces} {preview.workspaces === 1 ? "workspace" : "workspaces"} and {preview.sessions} {preview.sessions === 1 ? "chat" : "chats"} with their history.{" "}
+            nekotrail moves their folders out of Conductor's into its own, and shows you exactly what moves first.
           </p>
           <button className="primary" onClick={() => onImport()}>
             <FolderInput size={15} />Bring them over…

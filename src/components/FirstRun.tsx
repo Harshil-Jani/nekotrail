@@ -122,7 +122,7 @@ function CodeStep({ repos, canImport, onAddRepo, onClone, onImportConductor, onI
   };
   const hero = primary === "conductor" && conductor ? {
     title: "Pick up where you left off in Conductor",
-    body: `Found ${conductor.repos} ${conductor.repos === 1 ? "repo" : "repos"}, ${conductor.workspaces} ${conductor.workspaces === 1 ? "workspace" : "workspaces"} and ${conductor.sessions} ${conductor.sessions === 1 ? "chat" : "chats"}. Their folders live inside Conductor's, which Conductor says it deletes when its app shuts down, so nekotrail moves them into its own folder. You see exactly what moves first, and chats continue where they left off.`,
+    body: `Found ${conductor.repos} ${conductor.repos === 1 ? "repo" : "repos"}, ${conductor.workspaces} ${conductor.workspaces === 1 ? "workspace" : "workspaces"} and ${conductor.sessions} ${conductor.sessions === 1 ? "chat" : "chats"}. nekotrail brings them over and moves their folders out of Conductor's into its own, since Conductor says it will delete all user data when its app shuts down in early 2027. You see exactly what moves first, and chats continue where they left off.`,
   } : primary === "terminal" ? {
     title: "Bring in your terminal chats",
     body: `Found ${found.terminal} ${found.terminal === 1 ? "chat" : "chats"} you ran with Claude Code, Codex or Gemini in a terminal. You pick which ones, and their repos come along. Read-only.`,

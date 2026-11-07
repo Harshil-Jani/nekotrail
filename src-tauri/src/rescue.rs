@@ -1,8 +1,8 @@
 //! Moving imported Conductor workspaces out of Conductor's folder and into nekotrail's own.
 //!
-//! Conductor keeps every worktree inside its own folder, and says its data goes when the app
-//! shuts down. A move here is `git worktree move` and nothing else: it never deletes, copies or
-//! cleans anything in Conductor's folder. Each move is checked afterwards against a snapshot taken
+//! Conductor keeps every worktree inside its own folder, and says it will delete all user data
+//! when its app shuts down in early 2027. A move here is `git worktree move` and nothing else: it
+//! never deletes, copies or cleans anything in Conductor's folder. Each move is checked afterwards against a snapshot taken
 //! just before it: git still lists the worktree at its new path, the branch and its head commit are
 //! the same, and the uncommitted files (staged, unstaged and untracked) are the same, byte for byte.
 
@@ -161,7 +161,7 @@ pub fn plain_error(err: &str) -> String {
     if e.contains("is locked") || e.contains("locked working tree") {
         "Git has this worktree locked (Conductor may have locked it). Run `git worktree unlock` on it, then move it again.".into()
     } else if e.contains("submodule") {
-        "It has submodules, and git can't move a worktree with submodules. It stays in Conductor's folder.".into()
+        "It has submodules, and git can't move a worktree with submodules.".into()
     } else if e.contains("cross-device") || e.contains("invalid cross") {
         "It is on a different disk from your home folder, and git can only move a worktree within one disk.".into()
     } else if e.contains("already exists") {

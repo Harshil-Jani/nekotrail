@@ -945,7 +945,10 @@ mockIPC(
         { nameWithOwner: "pawprint/pawprint-web", description: "The help desk's web app", pushedAt: "2026-11-06T10:00:00Z", isPrivate: false },
         { nameWithOwner: "pawprint/pawprint-api", description: "Tickets, SLAs and on-call", pushedAt: "2026-11-05T10:00:00Z", isPrivate: true },
       ];
-      case "import_preview": return { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
+      // Imported earlier (?rescue=notice or move): nothing new left in Conductor, so Welcome shows the move notice.
+      case "import_preview": return rescueMode === "notice" || rescueMode === "move"
+        ? { repos: 0, workspaces: 0, sessions: 0, skipped: 2, chats_with_history: 0 }
+        : { repos: 3, workspaces: 12, sessions: 31, skipped: 2, chats_with_history: 0 };
       case "terminal_scan": {
         if (fresh && freshFound !== "terminal") return { repos: [], skipped: [], found: {}, sources: [], took_ms: 120 };
         const s = (agent: string, id: string, title: string, messages: number, last: string, extra = {}) => ({ agent, id, title, messages, first: last, last, bytes: messages * 9000, imported: false, resumable: true, ...extra });
