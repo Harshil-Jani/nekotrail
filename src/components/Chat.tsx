@@ -1,5 +1,6 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { PromptRail } from "./PromptRail";
 import { listen } from "@tauri-apps/api/event";
 import { MessageSquare, ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Clock, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
@@ -1130,6 +1131,33 @@ export function Chat({
   useEffect(() => setLimit(PAGE), [active]);
   const hidden = Math.max(0, rows.length - limit);
   const visible = useMemo(() => rows.slice(hidden), [rows, hidden]);
+  // The prompt rail: every message you sent, and which one the screen is on.
+  const sentPrompts = useMemo(() => rows.flatMap((r, i) => (r.type === "user" && !r.brief ? [{ row: i, text: r.text }] : [])), [rows]);
+  const [curPrompt, setCurPrompt] = useState(-1);
+  const railTick = useRef(0);
+  const trackPrompt = () => {
+    cancelAnimationFrame(railTick.current);
+    railTick.current = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (!el || sentPrompts.length < 2) return;
+      // At the bottom you're on your latest message; else the last one above the middle (jumps centre theirs).
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) { setCurPrompt(sentPrompts.length - 1); return; }
+      const line = el.getBoundingClientRect().top + el.clientHeight * 0.55;
+      let cur = -1;
+      for (let i = 0; i < sentPrompts.length; i++) {
+        const r = el.querySelector(`[data-row="${sentPrompts[i].row}"]`);
+        if (!r) continue; // not drawn yet: older than the rows on screen
+        if (r.getBoundingClientRect().top <= line) cur = i; else break;
+      }
+      setCurPrompt(cur === -1 && el.scrollTop > 0 ? 0 : cur);
+    });
+  };
+  useEffect(trackPrompt, [sentPrompts.length, limit]);
+  const jumpToRow = (row: number) => {
+    stick.current = false;
+    if (row < rows.length - limit) setLimit(rows.length - row + 20);
+    setFlash({ row, nonce: Date.now() });
+  };
   // A search hit just opened: bring it to the middle and flash it for a moment.
   useEffect(() => {
     if (!flash) return;
@@ -1503,12 +1531,16 @@ export function Chat({
         </div>
       )}
 
+      <div className="messages-wrap">
+      <PromptRail prompts={sentPrompts} current={curPrompt} onJump={jumpToRow}
+        onOpen={() => { if (active && older > 0 && !findingOlder) { setFindingOlder(true); openTail(active, ALL).catch((e) => setError(errText(e))).finally(() => setFindingOlder(false)); } }} />
       <div
         className="messages"
         ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          trackPrompt();
         }}
       >
         {rows.length === 0 && readOnly && (
@@ -1568,6 +1600,7 @@ export function Chat({
           )}
         </div>
         </RewindCtx.Provider>
+      </div>
       </div>
 
       {todos && todos.length > 0 && <div className="chat-dock">

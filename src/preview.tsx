@@ -16,6 +16,7 @@
  * Working row: ?ws=w1&tab=chat&thinking plays a turn; &thinking=start|reading|edits|still|answer holds one state.
  * Conductor: ?rescue=import (found, not imported: the sheet), ?rescue=notice (imported, not moved: the notice;
  * add &ws=w1 for the in-workspace banner), ?rescue=move, ?rescue=moving, ?rescue=done, ?rescue=partial.
+ * Prompt rail: ?ws=w1&prompts=24 (a chat with 24 messages from you).
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -222,6 +223,13 @@ if (guard) {
 // what it does. Bare: it plays a turn (Thinking, then reads, a command, two edits). Or one still state:
 // &thinking=start (Thinking, nothing yet), =reading (three reads at once), =edits (Editing 2 files),
 // =still (no event for a minute: "Still working · 1m 12s"), =answer (text on screen, the row steps aside).
+// ?prompts=N: a chat where you sent N messages (the prompt rail on the right lists them).
+const promptsN = Number(new URLSearchParams(location.search).get("prompts") || 0);
+const PROMPT_SAMPLES = ["Why does #158's CI sit in the queue for 47 minutes?", "Check GitHub's status page for an Actions outage.", "Draft a short note to the team: CI is delayed, nothing to do on our side.", "Retry the job once the incident is resolved.", "Now raise the job timeout to 45 minutes and explain why.", "Add a test for the retry path.", "Open the PR and ask for review.", "Squash the fixup commits before merging."];
+for (let i = 0; i < promptsN; i++) {
+  events.push({ kind: "user", text: PROMPT_SAMPLES[i % PROMPT_SAMPLES.length] } as any);
+  events.push({ kind: "text", text: "Done. " + "Here is what changed and why, in a few lines so the chat has some height between your messages. ".repeat(3) } as any);
+}
 const thinkingQ = new URLSearchParams(location.search);
 const thinkingMode = thinkingQ.has("thinking") ? (thinkingQ.get("thinking") || "live") : null;
 if (thinkingMode) {

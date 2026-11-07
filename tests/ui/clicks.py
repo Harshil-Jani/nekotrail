@@ -34,6 +34,19 @@ try:
         check("On Terminal, the chat tab still looks like a tab (icon + outline)", marked)
         pg.locator(".ws-chats .chat-tab button[role=tab]").last.click(); pg.wait_for_timeout(300)
         check("Terminal -> click another chat's tab shows the chat", chat_shown())
+
+        # 2026-11-08: the prompt rail lists your messages; clicking one brings it to the screen and lights its tick.
+        on = "() => [...document.querySelectorAll('.prompt-ticks .tick')].findIndex(t => t.classList.contains('on'))"
+        pg.goto(f"http://localhost:{PORT}/preview.html?ws=w1&tab=chat&prompts=24")
+        pg.wait_for_selector(".prompt-ticks .tick", timeout=20000); pg.wait_for_timeout(800)
+        n = pg.locator(".prompt-ticks .tick").count()
+        check(f"Prompt rail has one tick per message you sent (25, got {n})", n == 25)
+        check("At the bottom, the latest message's tick is lit", pg.evaluate(on) == n - 1)
+        pg.hover(".prompt-ticks"); pg.wait_for_timeout(300)
+        check("Hovering the rail lists your messages", pg.locator(".prompt-list button").count() == n)
+        pg.locator(".prompt-list button").nth(3).click(); pg.wait_for_timeout(900); pg.mouse.move(400, 400); pg.wait_for_timeout(200)
+        shown = pg.evaluate("() => { const r = document.querySelector('.messages .row-flash'); if (!r) return false; const b = r.getBoundingClientRect(), m = document.querySelector('.messages').getBoundingClientRect(); return b.top >= m.top && b.bottom <= m.bottom }")
+        check("Clicking message 4 brings it on screen and lights its tick", shown and pg.evaluate(on) == 3)
         b.close()
 finally:
     srv.terminate()

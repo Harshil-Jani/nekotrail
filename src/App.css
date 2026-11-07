@@ -2542,3 +2542,25 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 /* Section counts are noise when the rows are right there: they show on hover, and when folded. */
 .section-head .repo-meta { opacity: 0; transition: opacity 0.15s var(--ease); }
 .section-head:hover .repo-meta, .section-head:has(.fold[aria-expanded="false"]) .repo-meta { opacity: 1; }
+
+/* Prompt rail: a tick per message you sent on the chat's right edge; hover lists them, click jumps. */
+.messages-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.messages-wrap .messages { padding-right: 48px; } /* a gutter for the rail, so bubbles never run under it */
+.prompt-rail { position: absolute; top: var(--s4); right: 14px; bottom: var(--s4); z-index: 5; display: flex; align-items: flex-start; pointer-events: none; }
+.prompt-ticks { pointer-events: auto; display: flex; flex-direction: column; max-height: 100%; padding: 6px 4px; border-radius: var(--r); cursor: pointer; }
+.prompt-ticks .tick { flex: 0 1 8px; min-height: 3px; width: 14px; display: flex; align-items: center; justify-content: flex-end; }
+.prompt-ticks .tick::after { content: ""; display: block; height: 1.5px; width: 10px; border-radius: 1px; background: var(--muted); opacity: 0.45; transition: width 0.12s, opacity 0.12s, background 0.12s; }
+.prompt-rail:hover .prompt-ticks .tick::after { opacity: 0.7; }
+.prompt-ticks .tick.on::after { width: 14px; opacity: 1; background: var(--text); }
+.prompt-ticks .tick.hot::after { width: 14px; opacity: 1; background: var(--accent); }
+.prompt-list { pointer-events: auto; position: absolute; top: 0; right: 26px; width: 320px; max-height: min(60vh, calc(100% - 8px)); overflow-y: auto; scroll-padding-block: 32px; background: var(--surface); border: 0.5px solid var(--line-strong); border-radius: var(--r-lg, 10px); box-shadow: var(--shadow-pop); padding: 4px; animation: prompt-list-in 0.12s ease-out; }
+.prompt-list-head { position: sticky; top: 0; z-index: 1; margin: 0 0 2px; padding: 8px 8px 6px; border-bottom: 0.5px solid var(--line); font-size: 11px; font-weight: 600; color: var(--muted); background: var(--surface); display: flex; justify-content: space-between; }
+.prompt-list button { display: flex; gap: 10px; align-items: baseline; width: 100%; border: none; background: transparent; box-shadow: none; padding: 6px 8px; border-radius: var(--r); text-align: left; font-size: 12.5px; font-weight: 450; color: var(--text); }
+.prompt-list button .num { flex: none; width: 18px; text-align: right; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prompt-list button .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-list button:hover, .prompt-list button:focus-visible { background: var(--hover); }
+.prompt-list button.on { background: transparent; box-shadow: inset 2px 0 0 var(--accent); }
+.prompt-list button.on .num { color: var(--accent); }
+.prompt-list button.on:hover { background: var(--hover); }
+@keyframes prompt-list-in { from { opacity: 0; transform: translateX(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .prompt-list { animation: none; } }
