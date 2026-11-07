@@ -367,7 +367,7 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 
 ## Status
 
-Early (0.21). Built and used daily on macOS. Linux x86_64 builds are new and experimental. Feedback and PRs welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Early (0.22). Built and used daily on macOS. Linux x86_64 builds are new and experimental. Feedback and PRs welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <br>
 

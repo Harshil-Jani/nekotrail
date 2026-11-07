@@ -3,7 +3,7 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.22.0 (2026-11-07)
 
 **New look**
 - New Moonlight theme: midnight indigo in dark mode, indigo in light mode. All text meets WCAG AA contrast in both.
