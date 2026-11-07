@@ -30,8 +30,8 @@ type Probe = { up: boolean; blocked: string | null } | "unknown";
 type Shape = { kind: "box" | "arrow"; x1: number; y1: number; x2: number; y2: number };
 type Shot = { canvas: HTMLCanvasElement; src: string; w: number; h: number; scale: number };
 
-const STROKE = "#ff9a4d"; // the cat orange, the app's one accent
-const HALO = "rgba(0, 0, 0, 0.35)";
+const STROKE = "#ffd27a"; // lantern gold, the colour for "look here"; the dark halo keeps it readable on white pages
+const HALO = "rgba(10, 10, 28, 0.55)";
 
 /** Arrowhead points for a line ending at (x2, y2). */
 function head(s: Shape, len: number): [number, number, number, number, number, number] {

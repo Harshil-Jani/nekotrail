@@ -25,7 +25,7 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
       fontSize: look.termSize || TERM_SIZE,
       cursorBlink: mode === "shell",
       scrollback: 5000,
-      theme: { background: "#1e1e1e", foreground: "#d8dee9", cursor: "#ff9a4d", selectionBackground: "#ff9a4d55" },
+      theme: { background: "#0b0b1e", foreground: "#e6e6f5", cursor: "#ccccff", cursorAccent: "#0b0b1e", selectionBackground: "#ccccff40" },
     });
     const fit = new FitAddon();
     t.loadAddon(fit);

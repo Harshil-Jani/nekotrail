@@ -89,7 +89,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
         ? t.state === "waiting" ? stateText(t, false) : `${waitText(view.waits[t.id], view)}${t.resume ? " · continues in its workspace" : ""}`
         : t.note || stateText(t, false);
     const capped = kind === "next" && view.waits[t.id]?.kind === "budget";
-    const tone = t.state === "failed" ? "bad" : t.state === "needs_you" || asking || t.state === "waiting" || capped ? "wait" : t.state === "done" ? "good" : "";
+    const tone = t.state === "failed" ? "bad" : t.state === "needs_you" || asking ? "attn" : t.state === "waiting" || capped ? "wait" : t.state === "done" ? "good" : "";
     const dropping = drag && drag.over === t.id && drag.id !== t.id;
     return (
       <div
@@ -126,10 +126,10 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
         title={t.prompt}
       >
         <span className="tq-mark" aria-hidden>
-          {kind === "running" ? (asking ? <Hand size={15} className="wait" /> : <span className="spinner" />)
+          {kind === "running" ? (asking ? <Hand size={15} className="attn" /> : <span className="spinner" />)
             : kind === "next" ? <><GripVertical size={14} className="grip" /><span className="tq-n num">{n}</span></>
             : t.state === "done" ? <CheckCircle2 size={15} className="good" />
-            : t.state === "needs_you" ? <AlertCircle size={15} className="wait" />
+            : t.state === "needs_you" ? <AlertCircle size={15} className="attn" />
             : <XCircle size={15} className="bad" />}
         </span>
         <span className="tq-text">

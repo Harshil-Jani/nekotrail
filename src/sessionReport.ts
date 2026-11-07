@@ -441,8 +441,8 @@ export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ESC[c]);
 export type MdToHtml = (markdown: string) => string;
 
 const CSS = `
-:root{color-scheme:light dark;--bg:#fff;--surface:#f5f5f7;--text:rgba(0,0,0,.85);--muted:rgba(0,0,0,.56);--line:rgba(0,0,0,.1);--accent:#b35400;--good:#116329;--bad:#c0000f;--bad-soft:rgba(215,0,21,.08);--add:rgba(26,127,55,.1);--del:rgba(215,0,21,.08)}
-@media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--surface:#262628;--text:rgba(255,255,255,.88);--muted:rgba(255,255,255,.56);--line:rgba(255,255,255,.09);--accent:#ffad6e;--good:#32d74b;--bad:#ff8a80;--bad-soft:rgba(255,105,97,.14);--add:rgba(50,215,75,.12);--del:rgba(255,105,97,.13)}}
+:root{color-scheme:light dark;--bg:#fdfdff;--surface:#f3f3fa;--text:#14143a;--muted:#545485;--line:#dcdcee;--accent:#3d3d85;--good:#095a32;--bad:#a01733;--bad-soft:rgba(181,30,59,.08);--add:rgba(11,106,59,.1);--del:rgba(181,30,59,.08)}
+@media (prefers-color-scheme:dark){:root{--bg:#101026;--surface:#161634;--text:#f0f0ff;--muted:#9c9ccc;--line:#29295a;--accent:#ccccff;--good:#6ee8ac;--bad:#ff94a4;--bad-soft:rgba(255,122,142,.14);--add:rgba(94,224,160,.12);--del:rgba(255,122,142,.13)}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:860px;margin:0 auto;padding:40px 24px 56px}

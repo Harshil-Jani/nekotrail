@@ -43,9 +43,9 @@ NekoTrail runs many coding agents in parallel on your own machine. Every task ge
 ## Brand Commitments
 
 - Name: **NekoTrail**, with a capital N and T in every user-visible string (neko is Japanese for cat). Lowercase `nekotrail` is for identifiers only: the terminal command, bundle id, data folders, `nekotrail.json`, URLs and package names.
-- Mascot: an original cute cat. It must not resemble any existing product's mascot.
+- Mascot: an original cute cat, the Starlight tabby (silver, indigo stripes, a merge tail with gold commit stars). It must not resemble any existing product's mascot.
 - Voice: plain, friendly, short. Cat puns allowed in small doses, never in errors.
-- Visual system: Apple's macOS Human Interface Guidelines, so NekoTrail feels like a native Mac app. System font, semantic label colours, hairline separators, a vibrancy sidebar with the traffic lights inside it, segmented controls, pop-up menus, and light and dark following the system. The cat orange is the one accent. Tokens and rules live in DESIGN.md.
+- Visual system: Apple's macOS Human Interface Guidelines, so NekoTrail feels like a native Mac app. System font, semantic label colours, hairline separators, a vibrancy sidebar with the traffic lights inside it, segmented controls, pop-up menus, and light and dark following the system. Moonlight (`#CCCCFF`, indigo on light) is the brand colour, and lantern gold is kept for what needs you. Tokens and rules live in DESIGN.md.
 - Simple layouts, a consistent spacing scale, contrast checked numerically.
 
 ## Evidence on Hand

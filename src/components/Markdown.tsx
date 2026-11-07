@@ -22,8 +22,8 @@ function loadMermaid(dark: boolean) {
       startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral", htmlLabels: false, look: "classic",
       flowchart: { htmlLabels: false, useMaxWidth: true, curve: "basis" }, fontFamily: "-apple-system, BlinkMacSystemFont, Helvetica, sans-serif", fontSize: 13,
       themeVariables: dark
-        ? { primaryColor: "#2c2c2e", primaryBorderColor: "#4a4a4c", primaryTextColor: "#e8e8ea", lineColor: "#6b6b70", fontSize: "13px" }
-        : { primaryColor: "#ffffff", primaryBorderColor: "#c7c7cc", primaryTextColor: "#1d1d1f", lineColor: "#8e8e93", fontSize: "13px" },
+        ? { primaryColor: "#1f1f45", primaryBorderColor: "#3c3c78", primaryTextColor: "#f0f0ff", lineColor: "#9c9ccc", fontSize: "13px" }
+        : { primaryColor: "#ffffff", primaryBorderColor: "#bdbdde", primaryTextColor: "#14143a", lineColor: "#545485", fontSize: "13px" },
     });
     return m;
   });

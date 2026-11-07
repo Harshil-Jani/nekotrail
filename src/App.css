@@ -1,53 +1,87 @@
 /*
- * nekotrail design system: Apple macOS (Human Interface Guidelines), light and dark following the system.
- * System font at 13px, semantic label colours, hairline separators, continuous rounded corners,
- * native sidebar vibrancy in the app (html.native) with a solid fallback in the browser preview.
- * Contrast (checked): label 13.6:1 light / 12.9:1 dark; secondary label 4.7:1 light / 5.4:1 dark;
- * accent text 5.1:1 light / 8.6:1 dark; ink on accent fill 9.8:1.
+ * NekoTrail design system: Moonlight, on Apple's macOS Human Interface Guidelines. Light and dark follow
+ * the system. Values come from brand/palette.json (themes.dark, themes.light); tests/brandColors.test.ts
+ * keeps the two in step. System font at 13px, hairline separators, continuous rounded corners, native
+ * sidebar vibrancy in the app (html.native) with a solid fallback in the browser preview.
+ * Moonlight (#CCCCFF, indigo #3D3D85 on light) is the brand colour: primary actions, selection, focus.
+ * Lantern gold is the one warm colour, only for what needs you: Needs you, unread dots, callouts.
+ * Contrast (measured on bg, WCAG AA): text 16.6:1 dark / 17.4:1 light; muted 7.2:1 / 6.9:1 (5.3:1 / 5.4:1
+ * on a selected sidebar row); primary text 12.1:1 / 9.4:1; lantern text 13.9:1 / 6.6:1; ink on primary
+ * 10.6:1 / 9.5:1; white on the merge and delete fills 6.7:1 and 6.5:1.
  */
 :root {
   color-scheme: light dark;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px;
 
-  /* surfaces */
-  --bg: light-dark(#ffffff, #1e1e1e);               /* content area */
-  --sidebar: light-dark(#ececee, #262628);          /* solid fallback; vibrancy in the app */
-  --surface: light-dark(#f5f5f7, #262628);          /* grouped content, cards */
-  --raised: light-dark(#ffffff, #3a3a3c);           /* push buttons, chosen segment */
-  --field: light-dark(#ffffff, rgba(255, 255, 255, 0.06));
-  --hover: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.06));
-  --press: light-dark(rgba(0, 0, 0, 0.09), rgba(255, 255, 255, 0.1));
-  --select: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1));
-  --line: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.09));
-  --line-strong: light-dark(rgba(0, 0, 0, 0.16), rgba(255, 255, 255, 0.16));
+  /* surfaces: bg1 content, bg2 sidebar and grouped cards, bg3 raised controls */
+  --bg: light-dark(#fdfdff, #101026);
+  --sidebar: light-dark(#f3f3fa, #161634);          /* solid fallback; tinted vibrancy in the app */
+  --surface: light-dark(#f3f3fa, #161634);
+  --raised: light-dark(#ffffff, #1f1f45);
+  --field: light-dark(#ffffff, rgba(204, 204, 255, 0.05));
+  --hover: light-dark(rgba(41, 41, 102, 0.06), rgba(204, 204, 255, 0.08));
+  --press: light-dark(rgba(41, 41, 102, 0.1), rgba(204, 204, 255, 0.12));
+  --select: light-dark(rgba(41, 41, 102, 0.09), rgba(204, 204, 255, 0.11));
+  --line: light-dark(#dcdcee, #29295a);
+  --line-strong: light-dark(#bdbdde, #3c3c78);
+  --btn-hover: light-dark(#f7f7fc, #272754);
+  --btn-press: light-dark(#eaeaf6, #2e2e60);
+  /* translucent menus, popovers and the palette (blurred behind) */
+  --material: light-dark(rgba(246, 246, 252, 0.94), rgba(26, 26, 58, 0.94));
+  --material-solid: light-dark(rgba(246, 246, 252, 0.98), rgba(26, 26, 58, 0.98));
+  /* the terminal stays dark in both appearances */
+  --term-bg: #0b0b1e;
+  --term-fg: #e6e6f5;
 
   /* labels */
-  --text: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.88));
-  --muted: light-dark(rgba(0, 0, 0, 0.56), rgba(255, 255, 255, 0.56));
-  --faint: light-dark(rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.28));
+  --text: light-dark(#14143a, #f0f0ff);
+  --text2: light-dark(#42426e, #bfbfe6);
+  --muted: light-dark(#545485, #9c9ccc);
+  --faint: light-dark(rgba(20, 20, 58, 0.3), rgba(204, 204, 255, 0.3));
 
-  /* colour: the cat's fur is the accent; system colours for state */
-  --accent: #ff9a4d;
-  --accent-text: light-dark(#b35400, #ffad6e);
-  --accent-ink: #1a0d00;
-  --accent-soft: light-dark(rgba(255, 140, 50, 0.14), rgba(255, 154, 77, 0.16));
-  --accent-ring: rgba(255, 154, 77, 0.45);
-  --good: light-dark(#1a7f37, #32d74b);
-  --good-soft: light-dark(rgba(26, 127, 55, 0.1), rgba(50, 215, 75, 0.14));
-  --bad: light-dark(#d70015, #ff6961);
-  --bad-soft: light-dark(rgba(215, 0, 21, 0.08), rgba(255, 105, 97, 0.14));
-  --wait: light-dark(#8a5a00, #ffd60a);
-  --wait-soft: light-dark(rgba(154, 103, 0, 0.1), rgba(255, 214, 10, 0.12));
-  --purple: light-dark(#8944ab, #bf5af2);
-  --purple-soft: light-dark(rgba(137, 68, 171, 0.1), rgba(191, 90, 242, 0.16));
-  --add-bg: light-dark(rgba(26, 127, 55, 0.1), rgba(50, 215, 75, 0.12));
+  /* colour: Moonlight is the brand colour, lantern gold the attention colour, state colours for state */
+  --accent: light-dark(#3d3d85, #ccccff);
+  --accent-hover: light-dark(#2f2f70, #dcdcff);
+  --accent-press: light-dark(#26265c, #babaf0);
+  --accent-text: light-dark(#3d3d85, #ccccff);
+  --accent-ink: light-dark(#ffffff, #1a1a4a);
+  --accent-soft: light-dark(rgba(61, 61, 133, 0.1), rgba(204, 204, 255, 0.14));
+  --accent-ring: light-dark(rgba(92, 92, 153, 0.55), rgba(204, 204, 255, 0.5));
+  /* Primary text on primary-tinted chips (counts, New, Clean up). */
+  --accent-chip-text: light-dark(#2f2f70, #dcdcff);
+  /* Lantern: Needs you, unread, callouts. Never a button fill. */
+  --lantern: light-dark(#b07a00, #ffd27a);
+  --lantern-text: light-dark(#7a5500, #ffd98f);
+  --lantern-soft: light-dark(rgba(176, 122, 0, 0.1), rgba(255, 210, 122, 0.12));
+  --lantern-ring: light-dark(rgba(176, 122, 0, 0.45), rgba(255, 210, 122, 0.4));
+  --good: light-dark(#0b6a3b, #5ee0a0);
+  --good-soft: light-dark(rgba(11, 106, 59, 0.1), rgba(94, 224, 160, 0.14));
+  --good-fill: #0b6a3b;                               /* Merge button: white text on it in both */
+  --bad: light-dark(#b51e3b, #ff7a8e);
+  --bad-soft: light-dark(rgba(181, 30, 59, 0.08), rgba(255, 122, 142, 0.14));
+  --bad-fill: #b51e3b;
+  /* Warning: amber-orange, kept apart from the lantern gold. */
+  --wait: light-dark(#9a4a00, #ff9f5a);
+  --wait-soft: light-dark(rgba(154, 74, 0, 0.1), rgba(255, 159, 90, 0.13));
+  --purple: light-dark(#7a3fa8, #d3a6ff);
+  --purple-soft: light-dark(rgba(122, 63, 168, 0.1), rgba(211, 166, 255, 0.15));
+  --add-bg: light-dark(rgba(11, 106, 59, 0.1), rgba(94, 224, 160, 0.12));
   /* Small +/- numbers and diff text: one step darker (lighter in dark) than the state colour, so they
-     clear 4.5:1 on the grey sidebar, a selected row, a raised card and the tinted diff lines. */
-  --good-text: light-dark(#116329, #32d74b);
-  --bad-text: light-dark(#c0000f, #ff8a80);
-  /* Orange text on orange-tinted chips (counts, New, Clean up). */
-  --accent-chip-text: light-dark(#8a4200, #ffad6e);
-  --del-bg: light-dark(rgba(215, 0, 21, 0.08), rgba(255, 105, 97, 0.13));
+     clear 4.5:1 on the sidebar, a selected row, a raised card and the tinted diff lines. */
+  --good-text: light-dark(#095a32, #6ee8ac);
+  --bad-text: light-dark(#a01733, #ff94a4);
+  --del-bg: light-dark(rgba(181, 30, 59, 0.08), rgba(255, 122, 142, 0.13));
+
+  /* the night sky (stays dark in both appearances); stars are the only things that glow */
+  --sky-top: #08081a;
+  --sky-mid: #1c1c52;
+  --sky-bottom: #3a3a80;
+  --sky-text: #ffffff;
+  --sky-text2: #cfcff0;
+  --star: #eeeeff;
+  --star-glow: #ccccff;
+  --star-shipped: #ffd27a;
+  --star-shipped-text: #ffd98f;
 
   /* shape and depth */
   --r-xs: 4px; --r-sm: 5px; --r: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 12px;
@@ -89,13 +123,13 @@ button {
   font-size: 13px; font-weight: 500; white-space: nowrap;
   transition: background-color 0.15s var(--ease), box-shadow 0.15s var(--ease), color 0.15s var(--ease);
 }
-button:hover { background: light-dark(#f7f7f8, #444446); }
-button:active { background: light-dark(#ececee, #4a4a4c); }
+button:hover { background: var(--btn-hover); }
+button:active { background: var(--btn-press); }
 button:disabled { opacity: 0.45; pointer-events: none; }
 :focus-visible { outline: none; box-shadow: var(--ring) !important; }
 button.primary, button.accent { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow-control); font-weight: 600; }
-button.primary:hover, button.accent:hover { background: #ffa863; }
-button.primary:active, button.accent:active { background: #f28b3c; }
+button.primary:hover, button.accent:hover { background: var(--accent-hover); }
+button.primary:active, button.accent:active { background: var(--accent-press); }
 button.primary[data-quiet-focus]:focus-visible { box-shadow: var(--shadow-control) !important; }
 button.danger { color: var(--bad); }
 button.quiet, button.icon, button.link { background: transparent; box-shadow: none; }
@@ -140,7 +174,7 @@ kbd { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11p
 
 /* ---------- sidebar (source list) ---------- */
 .sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-right: 0.5px solid var(--line-strong); }
-html.native .sidebar { background: light-dark(rgba(255, 255, 255, 0.18), rgba(0, 0, 0, 0.12)); }
+html.native .sidebar { background: light-dark(rgba(243, 243, 250, 0.6), rgba(22, 22, 52, 0.78)); } /* vibrancy, tinted moonlight */
 /* Room for the window's traffic lights, like Finder and Mail. */
 .sidebar-head { display: flex; align-items: center; gap: 2px; height: 52px; padding: 0 var(--s2) 0 84px; flex-shrink: 0; }
 .wordmark { font-weight: 700; font-size: 13px; margin-left: 4px; }
@@ -162,7 +196,7 @@ html.native .sidebar { background: light-dark(rgba(255, 255, 255, 0.18), rgba(0,
 }
 .ws:hover { background: var(--hover); }
 .ws.selected { background: var(--select); }
-html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.1)); }
+html.native .ws.selected { background: var(--select); }
 .ws.selected .ws-name { font-weight: 600; }
 .ws.archived { opacity: 0.55; }
 .ws-mark { position: relative; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: flex-start; margin-top: 1px; }
@@ -176,7 +210,7 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .ws-text { display: flex; flex-direction: column; min-width: 0; }
 .ws-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-branch { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unread { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.unread { width: 8px; height: 8px; border-radius: 50%; background: var(--lantern); flex-shrink: 0; }
 .spinner { width: 12px; height: 12px; border: 1.5px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .sidebar-foot { border-top: 0.5px solid var(--line-strong); padding: var(--s2) var(--s3) var(--s3); display: flex; flex-direction: column; gap: 4px; }
@@ -363,7 +397,7 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .dl.hunk code { padding-left: var(--s2); color: var(--muted); }
 .add-comment { opacity: 0; border: none; padding: 0; width: 18px; height: 18px; justify-content: center; background: var(--accent); color: var(--accent-ink); }
 .dl:hover .add-comment, .add-comment:focus-visible { opacity: 1; }
-.add-comment:hover { background: #ffa863; }
+.add-comment:hover { background: var(--accent-hover); }
 .review-comment, .review-edit { margin: var(--s1) var(--s4) var(--s2) 108px; max-width: 640px; border: 0.5px solid var(--line-strong); background: var(--surface); font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; font-size: 13px; }
 .review-comment { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s2) var(--s3); white-space: pre-wrap; border-color: var(--accent-ring); }
 .review-comment span { flex: 1; line-height: 1.5; }
@@ -394,7 +428,7 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .nw-grip { color: var(--line); display: inline-flex; }
 .nw-agent { display: flex; border: 0.5px solid var(--line-strong); }
 .nw-agent button { border: none; padding: 4px var(--s3); font-size: 13px; color: var(--muted); }
-.nw-agent button.on { background: var(--text); color: #0f1419; }
+.nw-agent button.on { background: var(--text); color: var(--bg); }
 .nw-prompt { min-height: 160px; resize: none; border: none; background: transparent; padding: var(--s4); font-size: 16px; line-height: 1.5; }
 .nw-prompt:focus { outline: none; }
 .nw-foot { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); }
@@ -412,8 +446,8 @@ html.native .ws.selected { background: light-dark(rgba(0, 0, 0, 0.07), rgba(255,
 .confirm-backdrop { z-index: 60; }
 .modal.confirm { width: min(420px, calc(100vw - 48px)); }
 .modal.confirm p { margin: 0; line-height: 1.5; }
-button.danger-fill { background: #d70015; color: #fff; box-shadow: var(--shadow-control); font-weight: 600; }
-button.danger-fill:hover { background: #e3001a; }
+button.danger-fill { background: var(--bad-fill); color: #fff; box-shadow: var(--shadow-control); font-weight: 600; }
+button.danger-fill:hover { background: color-mix(in srgb, var(--bad-fill) 88%, white); }
 .field { display: flex; flex-direction: column; gap: var(--s1); font-size: 14px; font-weight: 600; }
 .field textarea { font-family: var(--mono); font-size: 13px; font-weight: 400; }
 .banner.error { color: var(--bad); padding: var(--s2) var(--s6); white-space: pre-wrap; font-size: 14px; }
@@ -511,7 +545,7 @@ button.branch:hover { color: var(--text); }
 .git-menu { position: relative; display: inline-flex; }
 .icon-btn { padding: 4px 6px; }
 .git-actions > .git-menu:first-child .icon-btn { border-left: 0.5px solid var(--line-strong); }
-button.good-btn { background: var(--good); border-color: var(--good); color: var(--accent-ink); }
+button.good-btn { background: var(--good-fill); border-color: var(--good-fill); color: #fff; }
 button.good-btn:hover { background: var(--good); }
 .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px; background: var(--surface); border: 0.5px solid var(--line-strong); box-shadow: 0 16px 40px light-dark(rgba(0, 0, 0, 0.18), light-dark(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.4))); padding: var(--s1) 0; display: flex; flex-direction: column; }
 .menu button { border: none; justify-content: flex-start; padding: 7px var(--s3); font-weight: 500; width: 100%; }
@@ -762,7 +796,7 @@ button.good-btn:hover { background: var(--good); }
 .fix-card { background: var(--bad-soft); }
 .welcome .import-card.hero { box-shadow: inset 0 0 0 1px var(--accent-ring); background: var(--accent-soft); }
 .review-comment { box-shadow: inset 0 0 0 1px var(--accent-ring); }
-/* The textarea carries the focus ring; the card itself stays neutral so there is one orange ring, not two. */
+/* The textarea carries the focus ring; the card itself stays neutral so there is one ring, not two. */
 .cmd { border: none; border-radius: var(--r); background: var(--hover); }
 .cmd-inline { border: none; border-radius: var(--r); background: var(--hover); }
 .findings-btn { color: var(--accent-text); }
@@ -777,12 +811,12 @@ button.branch:hover { background: var(--hover); color: var(--text); }
 .git-actions > button:only-child { border-radius: var(--r); }
 .git-actions .git-menu .icon-btn { height: 26px; width: 24px; padding: 0; justify-content: center; border-radius: 0 var(--r) var(--r) 0; margin-left: 1px; }
 .git-actions > .git-menu:first-child .icon-btn { border-radius: var(--r); }
-button.good-btn { background: var(--good); color: light-dark(#fff, #00210a); box-shadow: var(--shadow-control); font-weight: 600; }
+button.good-btn { background: var(--good-fill); color: #fff; box-shadow: var(--shadow-control); font-weight: 600; }
 button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); }
 
 /* Menus, popovers, palette, sheets: vibrant material with a soft shadow */
 .menu, .newchat-menu {
-  border: none; border-radius: var(--r-lg); padding: 5px; background: light-dark(rgba(246, 246, 248, 0.94), rgba(44, 44, 46, 0.94));
+  border: none; border-radius: var(--r-lg); padding: 5px; background: var(--material);
   backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
   box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
 }
@@ -796,7 +830,7 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .palette-backdrop, .modal-backdrop, .nw-backdrop { background: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.35)); backdrop-filter: none; }
 .palette {
   border: none; border-radius: 14px; overflow: hidden;
-  background: light-dark(rgba(246, 246, 248, 0.92), rgba(40, 40, 42, 0.92));
+  background: var(--material);
   backdrop-filter: blur(40px) saturate(1.8); -webkit-backdrop-filter: blur(40px) saturate(1.8);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3), 0 0 0 0.5px var(--line-strong);
 }
@@ -861,9 +895,9 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .code-edit { box-shadow: none; border-radius: 0; }
 
 /* Terminal and sky keep their dark ground in both appearances */
-.terminal, .terminal-wrap { background: #1e1e1e; }
+.terminal, .terminal-wrap { background: var(--term-bg); }
 .terminal.xterm { padding: 0; }
-.terminal .xterm-viewport { background-color: #1e1e1e !important; }
+.terminal .xterm-viewport { background-color: var(--term-bg) !important; }
 .term-tabs { min-height: 36px; }
 .sky-view { color-scheme: dark; }
 
@@ -1036,43 +1070,43 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 .search-row .filter-wrap .icon.on { color: var(--accent-text); }
 
 /* ---------- night sky: the sky is the page ---------- */
-.sky-view { position: relative; height: 100%; overflow: hidden; color-scheme: dark; color: #e8eaee;
-  background: radial-gradient(ellipse 120% 90% at 50% 115%, #15233d 0%, #0a1120 38%, #04060b 75%); }
+.sky-view { position: relative; height: 100%; overflow: hidden; color-scheme: dark; color: var(--star);
+  background: radial-gradient(ellipse 120% 80% at 50% 110%, var(--sky-bottom) 0%, var(--sky-mid) 42%, var(--sky-top) 85%); }
 .sky { position: absolute; inset: 64px 32px 132px; width: calc(100% - 64px); height: calc(100% - 196px); overflow: visible; }
 .sky-line { transition: opacity 0.4s var(--ease), stroke 0.4s var(--ease); }
-.sky-line.shipped { stroke: #ff9a4d; stroke-width: 1.6; opacity: 0.95; }
-.sky-line.hinted { stroke: rgba(232, 234, 238, 0.45); stroke-width: 1; stroke-dasharray: 3 5; }
-.sky-line.ghost { stroke: rgba(232, 234, 238, 0.16); stroke-width: 1; stroke-dasharray: 2 6; }
+.sky-line.shipped { stroke: var(--star-shipped); stroke-width: 1.6; opacity: 0.95; filter: drop-shadow(0 0 3px rgba(255, 210, 122, 0.55)); }
+.sky-line.hinted { stroke: rgba(238, 238, 255, 0.45); stroke-width: 1; stroke-dasharray: 3 5; }
+.sky-line.ghost { stroke: rgba(238, 238, 255, 0.16); stroke-width: 1; stroke-dasharray: 2 6; }
 .sky-cat.dim .sky-line, .sky-star.dim { opacity: 0.18; }
 .sky-star { transition: opacity 0.4s var(--ease); }
 .sky-star circle:nth-child(3) { transition: r 0.4s var(--ease); }
-.sky-star.dark circle:nth-child(3) { fill: #04060b; stroke: rgba(232, 234, 238, 0.45); stroke-width: 1.1; }
-.sky-star.lit circle:nth-child(3) { fill: #e8eaee; }
-.sky-star.shining circle:nth-child(3) { fill: #ff9a4d; animation: twinkle 3.2s ease-in-out infinite; }
-.sky-star text { fill: rgba(232, 234, 238, 0.7); font-size: 11px; font-weight: 500; pointer-events: none; }
+.sky-star.dark circle:nth-child(3) { fill: var(--sky-top); stroke: rgba(238, 238, 255, 0.45); stroke-width: 1.1; }
+.sky-star.lit circle:nth-child(3) { fill: var(--star); }
+.sky-star.shining circle:nth-child(3) { fill: var(--star-shipped); animation: twinkle 3.2s ease-in-out infinite; }
+.sky-star text { fill: rgba(238, 238, 255, 0.72); font-size: 11px; font-weight: 500; pointer-events: none; }
 .sky-star.shining text { fill: #fff; }
 .sky-star.openable { cursor: pointer; }
 .sky-star.openable:hover circle:nth-child(3), .sky-star.openable:focus-visible circle:nth-child(3) { r: 7; }
 .sky-star:focus-visible { outline: none; }
-.sky-label { fill: rgba(232, 234, 238, 0.5); font-size: 12.5px; font-weight: 500; letter-spacing: 0.02em; cursor: pointer; transition: fill 0.3s var(--ease), opacity 0.4s var(--ease); }
+.sky-label { fill: rgba(238, 238, 255, 0.55); font-size: 12.5px; font-weight: 500; letter-spacing: 0.02em; cursor: pointer; transition: fill 0.3s var(--ease), opacity 0.4s var(--ease); }
 .sky-label.dim { opacity: 0.25; }
 .sky-label.on, .sky-label:hover { fill: #fff; }
-.sky-label.complete { fill: #ffb27a; }
+.sky-label.complete { fill: var(--star-shipped-text); }
 .sky-title { position: absolute; top: 0; left: 0; right: 0; height: 64px; display: flex; align-items: baseline; gap: var(--s3); padding: 22px var(--s6) 0; }
 .sky-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #fff; }
-.sky-title p { margin: 0; font-size: 12.5px; color: rgba(232, 234, 238, 0.6); }
+.sky-title p { margin: 0; font-size: 12.5px; color: var(--sky-text2); }
 .sky-caption { position: absolute; left: var(--s6); bottom: 64px; max-width: 520px; min-height: 56px; }
 .sky-caption h2 { margin: 0 0 4px; font-size: 17px; font-weight: 700; color: #fff; }
-.sky-caption .story { margin: 0; font-size: 14px; line-height: 1.55; color: rgba(232, 234, 238, 0.82); text-wrap: pretty; }
-.sky-caption .count { margin: 6px 0 0; font-size: 12px; color: rgba(232, 234, 238, 0.55); }
-.sky-caption .legend { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 12px; color: rgba(232, 234, 238, 0.55); }
-.sky-caption .legend svg { margin-left: 8px; color: rgba(232, 234, 238, 0.6); }
+.sky-caption .story { margin: 0; font-size: 14px; line-height: 1.55; color: rgba(238, 238, 255, 0.86); text-wrap: pretty; }
+.sky-caption .count { margin: 6px 0 0; font-size: 12px; color: var(--sky-text2); }
+.sky-caption .legend { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 12px; color: var(--sky-text2); }
+.sky-caption .legend svg { margin-left: 8px; color: var(--sky-text2); }
 .sky-caption .legend svg:first-child { margin-left: 0; }
 .sky-index { position: absolute; left: var(--s4); right: var(--s4); bottom: 16px; display: flex; flex-wrap: wrap; gap: 2px; }
-.sky-index button { height: 28px; padding: 0 10px; background: transparent; box-shadow: none; color: rgba(232, 234, 238, 0.6); font-weight: 500; font-size: 12.5px; border-radius: var(--r); }
-.sky-index button .num { font-size: 11px; color: rgba(232, 234, 238, 0.4); margin-left: 2px; }
-.sky-index button:hover, .sky-index button.on { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.sky-index button.complete { color: #ffb27a; }
+.sky-index button { height: 28px; padding: 0 10px; background: transparent; box-shadow: none; color: var(--sky-text2); font-weight: 500; font-size: 12.5px; border-radius: var(--r); }
+.sky-index button .num { font-size: 11px; color: rgba(207, 207, 240, 0.7); margin-left: 2px; }
+.sky-index button:hover, .sky-index button.on { background: rgba(204, 204, 255, 0.12); color: var(--sky-text); }
+.sky-index button.complete { color: var(--star-shipped-text); }
 @keyframes twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .sky-star.shining circle:nth-child(3) { animation: none; } }
 .setting-note { margin: -2px 0 4px; font-size: 12px; }
@@ -1134,8 +1168,8 @@ html.native .repo-actions { background: none; }
 .font-control select:first-child { min-width: 180px; }
 .setting .font-control select:last-child { min-width: 76px; }
 .font-sample { margin: 2px 0 var(--s1); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--surface); color: var(--text); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
-.font-sample.term { background: #1e1e1e; color: #d8dee9; box-shadow: inset 0 0 0 0.5px var(--line-strong); }
-.approval-card { border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.font-sample.term { background: var(--term-bg); color: var(--term-fg); box-shadow: inset 0 0 0 0.5px var(--line-strong); }
+.approval-card { border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--lantern-ring); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
 .approval-input { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--bg); font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
 .approval-done code { font-size: 12px; color: var(--muted); }
 /* The turn ended before it was answered: no accent ring, quiet text. */
@@ -1154,7 +1188,7 @@ html.native .repo-actions { background: none; }
 .storage-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .low-disk { justify-content: flex-start; height: auto; padding: 6px 8px; background: var(--wait-soft); color: var(--wait); box-shadow: none; font-size: 12px; white-space: normal; text-align: left; }
 .low-disk:hover { background: var(--wait-soft); filter: brightness(1.1); }
-.away-banner { display: flex; align-items: center; gap: 8px; margin: var(--s2) var(--s5) 0; padding: 6px 6px 6px 12px; border-radius: var(--r-md); background: var(--accent-soft); font-size: 12.5px; }
+.away-banner { display: flex; align-items: center; gap: 8px; margin: var(--s2) var(--s5) 0; padding: 6px 6px 6px 12px; border-radius: var(--r-md); background: var(--lantern-soft); box-shadow: inset 0 0 0 1px var(--lantern-ring); font-size: 12.5px; }
 .away-banner b { font-weight: 600; }
 .away-banner .icon { width: 22px; height: 22px; }
 
@@ -1199,13 +1233,17 @@ html.native .repo-actions { background: none; }
 .prbar button.link.num:hover { color: var(--text); }
 .prbar button.branch, .prbar .git-actions > button, .prbar .icon-btn { height: 24px; }
 /* 3. Merge is calmer; autopilot is neutral. */
-button.good-btn { background: #1a7f37; color: #fff; }
-button.good-btn:hover { background: #1f8f3f; }
+button.good-btn { background: var(--good-fill); color: #fff; }
+button.good-btn:hover { background: color-mix(in srgb, var(--good-fill) 88%, white); }
 .pill.autopilot { background: var(--hover) !important; color: var(--muted) !important; }
-/* 4. Less orange: user bubble neutral, plan title in text colour, agent labels muted. */
+/* 4. Less accent: user bubble neutral, plan title in text colour, agent labels muted. */
 .msg.user { background: var(--hover); max-width: 75%; }
 .msg-user-wrap { max-width: 75%; }
-.plan-card, .approval-card { background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.plan-card { background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+/* The agent is waiting on you: a lantern callout, the one warm note in the chat. */
+.approval-card { background: color-mix(in srgb, var(--lantern) 7%, var(--surface)); box-shadow: inset 0 0 0 1px var(--lantern-ring); }
+.approval-card:not(.stale) .plan-head, .approval-card:not(.stale) .plan-head svg { color: var(--lantern-text); }
+.approval-card.stale { background: var(--surface); }
 .plan-head { color: var(--text); }
 .plan-head svg { color: var(--accent-text); }
 .agent-tag { color: var(--muted); }
@@ -1253,7 +1291,7 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
   position: fixed; top: 60px; right: var(--s4); z-index: 9; width: 380px; max-width: calc(100vw - 32px);
   display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4);
   border-radius: var(--r-xl); color: var(--text);
-  background: light-dark(rgba(246, 246, 248, 0.98), rgba(44, 44, 46, 0.98));
+  background: var(--material-solid);
   backdrop-filter: blur(40px) saturate(1.8); -webkit-backdrop-filter: blur(40px) saturate(1.8);
   box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
   animation: update-in 0.28s var(--ease);
@@ -1348,7 +1386,7 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .review-pop {
   position: absolute; left: var(--s2); right: var(--s2); bottom: calc(100% - 4px); z-index: 20;
   display: flex; flex-direction: column; max-height: min(420px, 60vh); padding: 5px; border-radius: var(--r-lg);
-  background: light-dark(rgba(246, 246, 248, 0.94), rgba(44, 44, 46, 0.94));
+  background: var(--material);
   backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
   box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
 }
@@ -1410,7 +1448,7 @@ body:has(.prbar) .update-sheet { top: 100px; }
 .confirm-quote-wrap { margin-top: var(--s3); position: relative; }
 .confirm-quote-wrap.more .confirm-quote { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
 .confirm-more { margin: 4px 0 0 !important; font-size: 11px; color: var(--accent-text); }
-/* Disabled filled buttons go neutral, as on macOS: half-transparent orange or green turned muddy on dark. */
+/* Disabled filled buttons go neutral, as on macOS: a half-transparent fill turns muddy on dark. */
 button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
   background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08)); color: var(--faint); box-shadow: none; border-color: transparent; opacity: 1;
 }
@@ -1599,7 +1637,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .ports-pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; width: 440px; max-height: min(calc(100vh - 72px), 680px);
   display: flex; flex-direction: column; border-radius: var(--r-lg);
-  background: light-dark(rgba(246, 246, 248, 0.94), rgba(44, 44, 46, 0.94));
+  background: var(--material);
   backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
   box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
   cursor: default;
@@ -1823,8 +1861,8 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .pick-line:hover { border-color: var(--accent-text); }
 .pick-line[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .dl.picked { box-shadow: inset 3px 0 0 var(--accent); }
-.dl.add.picked { background: light-dark(rgba(26, 127, 55, 0.2), rgba(50, 215, 75, 0.22)); }
-.dl.del.picked { background: light-dark(rgba(215, 0, 21, 0.16), rgba(255, 105, 97, 0.24)); }
+.dl.add.picked { background: light-dark(rgba(11, 106, 59, 0.2), rgba(94, 224, 160, 0.22)); }
+.dl.del.picked { background: light-dark(rgba(181, 30, 59, 0.16), rgba(255, 122, 142, 0.24)); }
 
 .modal.split-sheet { width: min(720px, calc(100vw - 48px)); max-height: 86vh; overflow: hidden; gap: var(--s3); }
 .split-sheet > .row { flex-shrink: 0; }
@@ -1836,7 +1874,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .split-group.done { opacity: 0.75; }
 .split-group-head { display: flex; align-items: flex-start; gap: var(--s2); }
 .split-num { flex: 0 0 22px; height: 22px; margin-top: 3px; border-radius: 50%; background: var(--raised); box-shadow: var(--shadow-control); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
-.split-group.done .split-num { background: var(--good); color: #fff; }
+.split-group.done .split-num { background: var(--good-fill); color: #fff; }
 .split-group-head textarea { flex: 1; resize: vertical; min-height: 28px; padding: 4px var(--s2); border-radius: var(--r); border: 0.5px solid var(--line-strong); background: var(--field); font: inherit; font-size: 13px; color: var(--text); }
 .split-group-head textarea:focus { outline: none; box-shadow: var(--ring); border-color: transparent; }
 .split-group > .subject-hint { padding-left: 30px; }
@@ -1942,6 +1980,7 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .tq-mark .good { color: var(--good); }
 .tq-mark .bad { color: var(--bad); }
 .tq-mark .wait { color: var(--wait); }
+.tq-mark .attn { color: var(--lantern); }
 .tq-mark .spinner { margin-top: 2px; }
 .tq-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tq-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1949,6 +1988,7 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .tq-status.good { color: var(--good-text); }
 .tq-status.bad { color: var(--bad-text); }
 .tq-status.wait { color: var(--wait); }
+.tq-status.attn { color: var(--lantern-text); }
 .tq-actions { display: flex; align-items: center; gap: 6px; }
 .tq-actions .icon { width: 26px; height: 26px; }
 .tq-actions .hover-only, .tq-row.next .tq-actions .icon { opacity: 0; transition: opacity 0.15s var(--ease); }
@@ -1975,7 +2015,7 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .nw-multi-title { font-weight: 700; font-size: 15px; padding: var(--s1) 0; }
 .nw-repos { gap: 2px; }
 .nw-repo-row { display: flex; align-items: center; gap: var(--s2); min-height: 32px; margin: 0 6px; padding: 0 var(--s3) 0 var(--s2); border-radius: var(--r-md); }
-/* Ticks carry the choice: an orange fill on every picked row read as three alerts. */
+/* Ticks carry the choice: an accent fill on every picked row read as three alerts. */
 .nw-repo-row:hover { background: var(--hover); }
 .nw-repo-row label { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); cursor: pointer; }
 .nw-repo-row label:has(input:disabled) { cursor: default; color: var(--faint); }
@@ -2082,7 +2122,7 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .fr-fields { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); }
 .fr-fields label { display: inline-flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: 12px; font-weight: 600; }
 .fr-fields label select { color: var(--text); font-weight: 400; }
-.chip.fr-mode { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--purple-soft); color: light-dark(var(--purple), #d48cf8); }
+.chip.fr-mode { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-xs); background: var(--purple-soft); color: var(--purple); }
 .fr-prompt { width: 100%; resize: vertical; min-height: 92px; padding: var(--s3); border-radius: var(--r-xl); box-shadow: inset 0 0 0 0.5px var(--line-strong); font-size: 13.5px; line-height: 1.5; }
 .fr-prompt:focus { box-shadow: var(--ring); }
 .fr-ideas { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: 12px; }
