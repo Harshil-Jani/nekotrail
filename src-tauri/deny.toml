@@ -1,0 +1,68 @@
+# cargo deny check: licences, security advisories, banned crates and sources for the Rust side.
+# Runs in CI (.github/workflows/ci.yml). Locally: `cargo deny check` in src-tauri.
+#
+# Licence policy: nothing under the GPL or AGPL is bundled with the app. Permissive licences are fine,
+# and so is the file-level copyleft MPL-2.0 (cssparser, selectors, dtoa-short, option-ext). On the
+# JavaScript side EPL-2.0 is also allowed (elkjs, which we take under EPL-2.0 rather than GPL-3.0); that
+# side is checked by `bun scripts/third-party-notices.ts --check`. Every component is listed in
+# THIRD_PARTY_NOTICES.md and its full licence text ships inside the app.
+
+[graph]
+# The platforms we release for. Windows-only and Android-only crates never ship.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+]
+# Dev-dependencies only build the tests; they never ship.
+exclude-dev = true
+all-features = false
+
+[advisories]
+# RustSec advisories. Vulnerabilities and unsound code fail at any depth of the tree.
+version = 2
+yanked = "deny"
+# "Unmaintained" notices fail only for our direct dependencies. Deep in Tauri's tree we can't swap a
+# crate, and Dependabot picks up the fix once Tauri moves. Known on 2026-11-07, none a vulnerability:
+#   RUSTSEC-2024-0370 proc-macro-error (via glib-macros 0.18, gtk-rs on Linux)
+#   RUSTSEC-2026-0370/0371/0372 zvariant, zbus_names, zvariant_derive (via zbus 5, merged into zbus 6)
+unmaintained = "workspace"
+unsound = "all"
+ignore = [
+    # Each entry needs the reason it can't be fixed yet and what would fix it.
+    # glib 0.18 VariantStrIter is unsound (a null pointer read). It comes in through gtk-rs 0.18 in
+    # Tauri's Linux stack (wry, muda, tao); NekoTrail never calls it. Fixed in glib 0.20, which needs
+    # Tauri to move to gtk-rs 0.20 or later. Drop this entry when Cargo.lock no longer has glib 0.18.
+    { id = "RUSTSEC-2024-0429", reason = "glib 0.18 via Tauri's gtk-rs 0.18 on Linux; unused API; needs Tauri on gtk-rs 0.20+" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "0BSD",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+
+[bans]
+# Tauri pulls in several versions of a few crates (windows-sys, bitflags and similar). That costs build
+# time, not correctness, so it is a warning, not a failure.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -20,6 +20,9 @@ const NOTICES = join(root, "THIRD_PARTY_NOTICES.md");
 const LICENSES = join(root, "src-tauri", "resources", "THIRD_PARTY_LICENSES.txt");
 const LICENSE_FILE = /^(licen[cs]e|copying|notice|copyright|unlicense)([-._ ].*)?$/i;
 const TEMPLATES = ["MIT", "Apache-2.0", "MPL-2.0", "BSD-3-Clause"];
+// Licence policy for bundled JavaScript (the Rust side is enforced by src-tauri/deny.toml): every package
+// must offer at least one of these. No GPL or AGPL. EPL-2.0 is for elkjs, which we take under EPL-2.0.
+const JS_ALLOWED = ["MIT", "MIT-0", "ISC", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "Zlib", "Unlicense", "CC0-1.0", "MPL-2.0", "EPL-2.0"];
 
 type Component = { kind: "rust" | "js"; name: string; version: string; license: string; dir: string | null; authors: string[] };
 
@@ -223,6 +226,13 @@ ${blocks.join("\n\n")}
 const rust = rustCrates();
 const js = jsPackages();
 const md = noticesMd(rust, js);
+
+const offers = (license: string) => license.replace(/\s*\(from its LICENSE file\)/, "").replace(/[()]/g, " ").split(/\s+OR\s+|\s*\/\s*/).map((s) => s.trim());
+const outside = [...js.values()].filter((c) => !offers(c.license).some((l) => JS_ALLOWED.includes(l)));
+if (outside.length) {
+  console.error(`Outside the licence policy (no GPL or AGPL in the app):\n${outside.map((c) => `  ${c.name} ${c.version}: ${c.license}`).join("\n")}`);
+  process.exit(1);
+}
 
 if (process.argv.includes("--check")) {
   const now = existsSync(NOTICES) ? readFileSync(NOTICES, "utf8") : "";

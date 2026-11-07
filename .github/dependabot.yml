@@ -1,0 +1,40 @@
+# Weekly dependency updates. Security updates also need "Dependabot security updates" turned on in the
+# repository's Settings, Code security. The bun ecosystem reads and updates the text bun.lock.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Tauri and its plugins move together.
+      tauri:
+        patterns: ["tauri", "tauri-*"]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ["@tauri-apps/*"]
+
+  - package-ecosystem: bun
+    directory: /site
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: bun
+    directory: /extensions/vscode
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
