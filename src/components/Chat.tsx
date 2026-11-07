@@ -19,6 +19,7 @@ import { handoffOffer, markerText } from "../handoff";
 import { HandoffSheet } from "./HandoffSheet";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
+import { AgentLogo } from "./AgentLogo";
 import { okFullAuto } from "../fullAuto";
 import { fuzzy, getChangesSelection, loadPrompts, type Builtins, type PromptEntry } from "../prompts";
 import { FillBar, SavePromptSheet, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
@@ -1545,7 +1546,7 @@ export function Chat({
           {menu && (
             <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
               {chatAgents.shown.map((a) => (
-                <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}><span className="menu-icon-space" aria-hidden />Start a {AGENT_INFO[a].name} chat</button>
+                <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}><AgentLogo agent={a} size={13} />Start a {AGENT_INFO[a].name} chat</button>
               ))}
               {(chatAgents.installed.length > 0 || chatAgents.missing.length > 0) && (
                 <button role="menuitem" aria-expanded={moreAgents} onClick={() => setMoreAgents((m) => !m)}>
@@ -1554,7 +1555,7 @@ export function Chat({
               )}
               {moreAgents && (
                 <span className="newchat-more" role="group" aria-label="More agents">
-                  <AgentMenuItems split={chatAgents} known={installedAgents !== null} pick={(a) => { setMenu(false); setMoreAgents(false); newChat(a); }} label={(a) => `Start a ${AGENT_INFO[a].name} chat`} />
+                  <AgentMenuItems split={chatAgents} known={installedAgents !== null} pick={(a) => { setMenu(false); setMoreAgents(false); newChat(a); }} label={(a) => `Start a ${AGENT_INFO[a].name} chat`} size={13} />
                 </span>
               )}
               <div className="menu-sep" />

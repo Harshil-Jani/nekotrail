@@ -17,6 +17,7 @@
  * Conductor: ?rescue=import (found, not imported: the sheet), ?rescue=notice (imported, not moved: the notice;
  * add &ws=w1 for the in-workspace banner), ?rescue=move, ?rescue=moving, ?rescue=done, ?rescue=partial.
  * Prompt rail: ?ws=w1&prompts=24 (a chat with 24 messages from you).
+ * Many repos: ?new=r1&repos=15 (the repo picker's filter and scroll; every third repo has no picture).
  * All names, numbers and PRs here are made up for screenshots.
  */
 import React from "react";
@@ -122,6 +123,15 @@ const repos = [
     prefs: new URLSearchParams(location.search).has("guard") ? { protected: [".env*", "migrations/**", "infra/**", "!migrations/README.md"] } : undefined },
   { id: "r2", name: "pawprint-web", root_path: "/code/pawprint-web", default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null },
 ];
+// ?repos=15: a long repo list (the new-workspace picker's filter and scrolling). Every third one has no picture.
+{
+  const n = Number(new URLSearchParams(location.search).get("repos") || 0);
+  const names = ["tailwag-mobile", "kibble-billing", "litterbox-infra", "whisker-design-system", "purr-notifications", "catnip-analytics", "hairball-legacy-monolith-with-a-very-long-name", "scratchpost-docs", "meow-auth", "zoomies-search", "nap-scheduler", "furball-ml", "paw-admin", "tabby-cli", "calico-edge"];
+  for (let i = 2; i < n; i++) {
+    const name = names[(i - 2) % names.length];
+    repos.push({ id: `r${i + 1}`, name, root_path: `/Users/sam/${i % 4 === 0 ? "work" : "code"}/${name}`, default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null } as (typeof repos)[number]);
+  }
+}
 const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
 const ws = (id: string, repo_id: string, name: string, branch: string, extra = {}) => ({
   id, repo_id, name, branch, path: `/code/ws/${name}`, target_branch: "main", state: "active", pinned: false, unread: false, notes: "", imported_from: null, created_at: "2026-11-05T10:00:00Z", title: "", title_source: "", status: "", pair_id: pairOf(id), section_id: id === "w3" || id === "w4" ? "sec1" : "", parent_id: "", review_pr: 0, group_id: "", ...extra,
@@ -863,7 +873,7 @@ mockIPC(
         return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: [...(opencode ? ["s9"] : []), ...(thinkingMode ? ["s1"] : [])], running_workspaces: [...(opencode ? ["w3", "w2"] : ["w3"]), ...(thinkingMode ? ["w1"] : [])], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       // Made-up org logos for the sample repos (a paw and a leaf), as the cache would hand them over; ?noavatar for the letter.
-      case "repo_avatar": return new URLSearchParams(location.search).has("noavatar") ? null : sampleLogo(args.id === "r2" ? "#1f7a5c" : "#c2410c", args.id === "r2" ? "leaf" : "paw");
+      case "repo_avatar": return new URLSearchParams(location.search).has("noavatar") || Number(String(args.id).slice(1)) % 3 === 0 ? null : sampleLogo(args.id === "r2" ? "#1f7a5c" : "#c2410c", args.id === "r2" ? "leaf" : "paw");
       case "repo_github": return { nameWithOwner: "pawprint/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "", isPrivate: false };
       case "sky": return SKY;
       case "conductor_available": return !fresh || freshFound === "conductor";

@@ -445,18 +445,9 @@ html.native .ws.selected { background: var(--select); }
 }
 .nw-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); border-bottom: 0.5px solid var(--line-strong); cursor: grab; user-select: none; }
 .nw-head:active { cursor: grabbing; }
-.nw-repo { position: relative; display: inline-flex; align-items: center; }
-.nw-repo select { background: none; border: none; font-weight: 700; font-size: 16px; padding: var(--s1) var(--s6) var(--s1) 0; background-image: none; cursor: pointer; }
-.nw-repo svg { position: absolute; right: var(--s1); pointer-events: none; color: var(--muted); }
-.nw-grip { color: var(--line); display: inline-flex; }
-.nw-agent { display: flex; border: 0.5px solid var(--line-strong); }
-.nw-agent button { border: none; padding: 4px var(--s3); font-size: 13px; color: var(--muted); }
-.nw-agent button.on { background: var(--text); color: var(--bg); }
 .nw-prompt { min-height: 160px; resize: none; border: none; background: transparent; padding: var(--s4); font-size: 16px; line-height: 1.5; }
 .nw-prompt:focus { outline: none; }
 .nw-foot { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); }
-.nw-model { width: 150px; padding: 4px var(--s3); font-size: 13px; background: var(--raised); border-color: transparent; }
-.nw-foot select { font-size: 13px; padding: 4px var(--s6) 4px var(--s3); background-color: var(--raised); border-color: transparent; }
 .nw-hint { font-size: 12px; }
 @keyframes nw-fade { from { opacity: 0; } }
 @keyframes nw-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
@@ -597,10 +588,6 @@ button.good-btn:hover { background: var(--good); }
 .nw-source { padding: 0 var(--s3); }
 /* Inset the source control to the sheet's 16px content edge (as a margin: .seg owns its own padding). */
 .seg.nw-source { margin: var(--s3) var(--s4) 0; }
-/* Permissions in the sheet's footer: the same quiet pop-up as the model picker next to it. */
-.nw-foot select { height: 24px; padding: 0 var(--s6) 0 var(--s2); font-size: 12px; background-color: transparent; box-shadow: none; color: var(--muted); }
-.nw-foot select:hover { background-color: var(--hover); color: var(--text); }
-.nw-foot select:focus-visible { box-shadow: var(--ring); }
 .nw-prompt.short { min-height: 72px; font-size: 14px; }
 .nw-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; padding: var(--s1) 0; border-bottom: 0.5px solid var(--line-strong); }
 .nw-list p { padding: var(--s3) var(--s4); margin: 0; display: flex; gap: var(--s2); align-items: center; }
@@ -870,16 +857,6 @@ button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); 
 .seg { gap: 2px; padding: 2px; border: none; border-radius: var(--r-md); background: var(--hover); align-self: flex-start; }
 .seg button { height: 22px; padding: 0 12px; border: none; border-radius: var(--r); background: transparent; box-shadow: none; color: var(--muted); font-size: 12px; font-weight: 500; }
 .seg button.on { background: var(--raised); color: var(--text); box-shadow: var(--shadow-control), 0 0 0 0.5px var(--line); border: none; }
-.nw-agent { gap: 2px; padding: 2px; border-radius: var(--r-md); background: var(--hover); border: none; }
-.nw-agent button { height: 22px; border: none; border-radius: var(--r); background: transparent; box-shadow: none; color: var(--muted); }
-.nw-agent button.on { background: var(--raised); color: var(--text); box-shadow: var(--shadow-control), 0 0 0 0.5px var(--line); }
-/* "More agents": the agents not up front, in a menu that scrolls instead of running off a short window. */
-.nw-more { position: relative; flex-shrink: 0; }
-.nw-more > button { height: 26px; gap: 2px; padding: 0 var(--s2); font-size: 13px; }
-.nw-more-menu { min-width: 200px; max-height: min(420px, 60vh); overflow-y: auto; cursor: default; }
-.nw-more-menu > * { flex-shrink: 0; }
-.nw-more-menu button { width: 100%; justify-content: flex-start; text-align: left; }
-.nw-more-menu .menu-icon-space { flex: none; }
 .newchat-more { display: flex; flex-direction: column; }
 /* With "More agents" open the + menu is long: it scrolls rather than run off a short window. */
 .chat-tabs .newchat-menu { max-height: calc(100vh - 140px); overflow-y: auto; }
@@ -1023,8 +1000,6 @@ button.add-chip.off:hover { background: var(--hover); }
 kbd { background: transparent !important; border: none !important; padding: 0 !important; color: var(--muted); opacity: 1; }
 /* On an accent fill (a hovered menu row, the selected palette row, a primary button) kbd follows the ink. */
 .menu button:hover kbd, .palette-list button.on kbd, button.primary kbd, button.accent kbd { color: inherit; }
-.nw-repo select { box-shadow: none; background-color: transparent; font-weight: 700; font-size: 15px; }
-.nw-repo select:hover { background-color: var(--hover); }
 
 /* Sections, drag and drop, context menu */
 .section-head { border-radius: var(--r); }
@@ -1497,7 +1472,6 @@ button.primary:disabled, button.accent:disabled, button.good-btn:disabled {
 .settings-foot .foot-sep { width: 0.5px; height: 12px; background: var(--line-strong); margin: 0 var(--s1); }
 .settings-foot button.link.sponsor { display: inline-flex; align-items: center; gap: 4px; }
 /* Agent menus: "Installed" and "Not installed" line up with the agent names (icon space + gap), as macOS section titles do. */
-.nw-more-menu .menu-label { padding-left: calc(var(--s2) + 13px + 6px); }
 .newchat-more .menu-label { padding-left: calc(var(--s2) + 13px + var(--s2)); }
 
 /* ---------- protected files ---------- */
@@ -2578,3 +2552,57 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .steps-fold.open:not(:hover) { background: transparent; }
 .messages [data-step] { border-left: 1px solid var(--line); padding-left: 12px; margin-left: 6px; }
 @media (prefers-reduced-motion: reduce) { .steps-fold .chev { transition: none; } }
+
+/* ---------- new workspace: header pickers (repo with its picture, agent with its mark) ---------- */
+.agent-logo { flex: none; display: inline-block; vertical-align: middle; }
+.agent-mono { display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; background: var(--press); color: var(--text); font-weight: 700; line-height: 1; font-family: var(--sans, inherit); }
+.menu button .agent-logo, .newchat-menu button .agent-logo { flex: none; color: var(--text); }
+.menu button:hover:not(:disabled) .agent-logo, .menu button:focus-visible .agent-logo { color: inherit; }
+.agent-pair { display: inline-flex; flex: none; gap: 2px; }
+/* The chat + menu: agent marks take the 13px icon column, so "More agents" headings still line up. */
+.newchat-menu button { gap: var(--s2); }
+
+.nw-head { min-height: 52px; gap: var(--s3); }
+.nw-head .spacer { flex: 1 1 0; min-width: 0; }
+.nw-repo-picker, .nw-agent-picker, .nw-perm { position: relative; display: inline-flex; min-width: 0; }
+.nw-repo-picker { flex: 0 1 auto; }
+.nw-agent-picker { flex: none; }
+.nw-repo-btn, .nw-agent-btn { height: 30px; gap: var(--s2); background: transparent; box-shadow: none; border-radius: var(--r-md); min-width: 0; }
+.nw-repo-btn { padding: 0 var(--s2) 0 var(--s1); margin-left: calc(-1 * var(--s1)); font-size: 15px; font-weight: 700; max-width: 420px; }
+.nw-agent-btn { padding: 0 var(--s2); font-size: 13px; font-weight: 500; box-shadow: inset 0 0 0 0.5px var(--line-strong); }
+.nw-repo-btn:hover, .nw-agent-btn:hover, .nw-repo-btn[aria-expanded="true"], .nw-agent-btn[aria-expanded="true"] { background: var(--hover); }
+.nw-repo-btn > svg, .nw-agent-btn > svg:last-child { flex: none; color: var(--muted); }
+.nw-repo-btn .avatar, .nw-repo-menu .avatar, .nw-repos .avatar { border-radius: 5px; box-shadow: 0 0 0 0.5px var(--line); }
+.nw-repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-agent-name { white-space: nowrap; }
+
+/* Header menus: anchored under their button, inside the sheet, scrolling instead of running off the window. */
+.nw-menu { overflow-y: auto; overscroll-behavior: contain; cursor: default; }
+.nw-menu > *, .nw-menu-list > * { flex-shrink: 0; }
+.nw-menu button { width: 100%; gap: var(--s2); }
+.nw-menu button > span { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-menu button > svg, .nw-menu button > .avatar, .nw-menu button > .agent-logo, .nw-menu button > .agent-pair, .nw-menu button > .check-space { flex: none; }
+.nw-menu button:focus-visible, .nw-menu button.active { background: var(--accent); color: var(--accent-ink); box-shadow: none !important; }
+.nw-menu button:focus-visible svg, .nw-menu button.active svg, .nw-menu button.active .nw-menu-path, .nw-menu button:focus-visible .why { color: inherit; }
+.nw-menu .menu-label { padding-left: calc(var(--s2) + 14px + var(--s2)); }
+/* Agent menu headings line up with the agent names: tick, gap, a 30px mark column, gap. */
+.nw-agent-menu .menu-label { padding-left: calc(var(--s2) + 14px + var(--s2) + 30px + var(--s2)); }
+.nw-agent-menu { left: auto; right: 0; top: calc(100% + 6px); width: 260px; min-width: 0; max-height: min(480px, 70vh); }
+.nw-agent-menu button:has(small.why) { height: auto; padding-top: 4px; padding-bottom: 4px; }
+.nw-agent-menu small.why { white-space: normal; }
+.nw-agent-menu .agent-pair { width: 30px; }
+.nw-agent-menu .check-space + .agent-logo, .nw-agent-menu svg + .agent-logo { margin-right: 16px; }
+.nw-repo-menu { left: 0; right: auto; top: calc(100% + 6px); width: 340px; min-width: 0; max-height: min(400px, 60vh); padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.nw-menu-search { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s3); height: 36px; flex: none; border-bottom: 0.5px solid var(--line); color: var(--muted); }
+.nw-menu-search input { flex: 1; min-width: 0; height: 100%; border: none; background: transparent; box-shadow: none !important; padding: 0; font-size: 13px; color: var(--text); }
+/* 11.5 rows tall at most: the half row says the list goes on. */
+.nw-menu-list { overflow-y: auto; padding: 5px; display: flex; flex-direction: column; min-height: 0; max-height: calc(30px * 11.5 + 10px); }
+.nw-repo-menu button { height: 30px; font-size: 13px; }
+.nw-repo-menu button:hover:not(.active) { background: transparent; color: inherit; }
+.nw-repo-menu button:hover:not(.active) svg { color: var(--muted); }
+.nw-repo-menu button > span.nw-menu-name { flex: 0 1 auto; font-weight: 500; }
+.nw-repo-menu button > span.nw-menu-path { flex: none; max-width: 40%; margin-left: auto; padding-left: var(--s2); text-align: right; font-size: 11.5px; color: var(--muted); }
+.nw-menu-empty { margin: 0; padding: var(--s2) var(--s2) var(--s3); font-size: 12px; }
+.nw-perm-menu { min-width: 220px; }
+/* A long prompt scrolls under a clean 12px edge instead of running into the source tabs. */
+.nw-prompt { margin-top: var(--s3); padding-top: var(--s1); }

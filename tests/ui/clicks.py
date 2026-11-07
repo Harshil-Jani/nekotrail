@@ -60,6 +60,47 @@ try:
         check("Typing in sidebar Search offers 'Search all chats'", pg.locator(".deep-search").count() == 1)
         pg.press("#workspace-search", "Enter"); pg.wait_for_timeout(1200)
         check("Enter opens chat search with the words and finds matches", pg.locator(".gs-snippet").count() > 0)
+
+        # 2026-11-08: the New workspace sheet. At 1100px "More" spilled past the sheet and its menu floated over the chat;
+        # agents had no logos; the repo picker was a plain select with no pictures.
+        inside_win = "(sel) => { const m = document.querySelector(sel); if (!m) return false; const r = m.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight }"
+        for w, h in ((1100, 900), (1100, 640), (1800, 1000)):
+            pg.set_viewport_size({"width": w, "height": h})
+            pg.goto(f"http://localhost:{PORT}/preview.html?new=r1&agents=all&repos=15")
+            pg.wait_for_selector(".nw-panel .nw-agent-btn", timeout=20000); pg.wait_for_timeout(500)
+            fits = pg.evaluate("() => { const p = document.querySelector('.nw-panel').getBoundingClientRect(); return [...document.querySelectorAll('.nw-head > *, .nw-head > * *')].every(e => { const r = e.getBoundingClientRect(); return !r.width || (r.right <= p.right + 0.5 && r.left >= p.left - 0.5) }) }")
+            check(f"{w}x{h}: every New workspace header item fits inside the sheet", fits)
+            pg.click(".nw-agent-btn"); pg.wait_for_timeout(200)
+            rows = pg.locator(".nw-agent-menu [role^=menuitem]").count()
+            logos = pg.evaluate("() => [...document.querySelectorAll('.nw-agent-menu [role^=menuitem]')].filter(b => b.querySelector('.agent-logo')).length")
+            check(f"{w}x{h}: agent menu shows a logo on every agent ({logos}/{rows})", rows >= 16 and logos == rows)
+            check(f"{w}x{h}: agent menu stays inside the window", pg.evaluate(inside_win, ".nw-agent-menu"))
+            pg.keyboard.press("Escape"); pg.wait_for_timeout(150)
+            check(f"{w}x{h}: Esc closes the agent menu, not the sheet", pg.locator(".nw-agent-menu").count() == 0 and pg.locator(".nw-panel").count() == 1)
+            pg.click(".nw-repo-btn"); pg.wait_for_timeout(300)
+            rows = pg.locator(".nw-repo-menu [role=option]").count()
+            pics = pg.evaluate("() => [...document.querySelectorAll('.nw-repo-menu [role=option]')].filter(b => b.querySelector('img.avatar, .avatar-fallback')).length")
+            check(f"{w}x{h}: repo picker shows a picture per repo ({pics}/{rows}) and ticks the current one", rows == 15 and pics == rows and pg.locator(".nw-repo-menu [aria-selected=true] svg").count() == 1)
+            check(f"{w}x{h}: repo menu stays inside the window", pg.evaluate(inside_win, ".nw-repo-menu"))
+            pg.keyboard.type("kib"); pg.wait_for_timeout(150)
+            check(f"{w}x{h}: typing filters the repo list", pg.locator(".nw-repo-menu [role=option]").count() == 1)
+            pg.keyboard.press("Enter"); pg.wait_for_timeout(200)
+            check(f"{w}x{h}: Enter picks the repo and keeps the sheet open", pg.locator(".nw-repo-menu").count() == 0 and pg.locator(".nw-panel").count() == 1 and "kibble-billing" in pg.inner_text(".nw-repo-btn"))
+        pg.click(".nw-repo-btn"); pg.keyboard.press("ArrowDown"); pg.keyboard.press("Enter"); pg.wait_for_timeout(200)
+        check("Repo picker: Down then Enter picks the next repo", "litterbox-infra" in pg.inner_text(".nw-repo-btn"))
+        pg.click(".nw-foot .picker-btn"); pg.wait_for_timeout(200); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+        check("Esc in the model picker closes the picker, not the sheet", pg.locator(".nw-panel").count() == 1 and pg.locator(".nw-foot .picker-menu").count() == 0)
+        pg.click(".nw-perm-btn"); pg.keyboard.press("ArrowUp"); pg.keyboard.press("Enter"); pg.wait_for_timeout(200)
+        check("Permissions menu: arrows and Enter change the mode", "Ask before changes" in pg.inner_text(".nw-perm-btn"))
+        pg.click(".nw-prompt")
+        left = []
+        for _ in range(20):
+            pg.keyboard.press("Tab")
+            if not pg.evaluate("() => !!document.activeElement.closest('.nw-panel')"): left.append(1)
+        check("Tab stays inside the New workspace sheet", not left)
+        pg.fill(".nw-prompt", "Keep this prompt"); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+        pg.click("button:has-text('Create workspace')"); pg.wait_for_selector(".nw-prompt", timeout=5000)
+        check("Esc then reopen keeps what you typed", pg.input_value(".nw-prompt") == "Keep this prompt")
         b.close()
 finally:
     srv.terminate()
