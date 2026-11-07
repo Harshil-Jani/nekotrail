@@ -21,7 +21,7 @@ const reference: Tool = {
   name: "Conductor", url: "https://conductor.build",
   license: "Proprietary (per its terms)",
   desktop: "Mac. Sign-ups and downloads closed since 4 Nov 2026",
-  phone: "None listed on conductor.build",
+  phone: "iPhone app that remote-controls the Mac app (per its changelog)",
   agents: "Claude Code, Codex, Cursor and OpenCode (per its docs)",
   conductor: "n/a",
 };
@@ -40,7 +40,7 @@ const tools: Tool[] = [
     desktop: "macOS, Windows, Linux. Also SSH hosts and cloud VMs",
     phone: "iOS and Android",
     agents: "34 listed in its README, and any CLI agent",
-    conductor: "Offers a repo's conductor.json setup script (per its source)",
+    conductor: "Reads a repo's conductor.json setup script (per its source)",
   },
   {
     name: "Paseo", url: "https://github.com/getpaseo/paseo",
@@ -70,7 +70,7 @@ const tools: Tool[] = [
     name: "Nimbalyst (formerly Crystal)", url: "https://github.com/nimbalyst/nimbalyst",
     license: "MIT",
     desktop: "macOS 12+, Windows 10+, Linux",
-    phone: "iOS and Android companion (per its repo description)",
+    phone: "iOS companion app (per its README)",
     agents: "Codex and Claude Code; OpenCode and GitHub Copilot in alpha; a Gemini provider",
     conductor: "None found in its README or repo",
   },
@@ -80,7 +80,7 @@ const cells = (t: Tool) => [t.license, t.desktop, t.phone, t.agents, t.conductor
 
 const choose: [string, string][] = [
   ["Need Windows?", "Orca, Paseo, Emdash and Nimbalyst have Windows builds. NekoTrail and Paradev don't yet."],
-  ["Want to check on agents from your phone?", "Orca and Paseo have iOS and Android apps, and Nimbalyst has a companion app. Paradev's iPhone and iPad app is on its Pro plan. NekoTrail has no phone app; it sends alerts through ntfy, Slack or Discord."],
+  ["Want to check on agents from your phone?", "Orca and Paseo have iOS and Android apps, and Nimbalyst has an iOS companion app. Paradev's iPhone and iPad app is on its Pro plan. NekoTrail has no phone app; it sends alerts through ntfy, Slack or Discord."],
   ["Run agents on another machine?", "Orca and Emdash work on SSH hosts, and Paseo runs as a daemon on a server you connect to. NekoTrail runs on the Mac in front of you."],
   ["Moving from Conductor?", "NekoTrail imports repos, workspaces and Claude and Codex chats. Paradev's guide adopts Conductor worktrees in place. Orca and Emdash read a repo's conductor.json setup script."],
 ];
@@ -97,7 +97,7 @@ const FAQ: Faq = [
   ["Which Conductor alternatives are open source?", "All six listed here publish their code: NekoTrail, Orca, Paradev and Nimbalyst under MIT, and Paseo and Emdash under Apache-2.0. Conductor itself is proprietary."],
   ["Which run on Windows?", "Orca, Paseo, Emdash and Nimbalyst have Windows builds. Paradev says Windows is not yet available, and NekoTrail runs on macOS and, experimentally, Linux."],
   ["Which can import from Conductor?", "NekoTrail imports repos, workspaces and Claude and Codex chats, and moves each worktree out of Conductor's folder. Paradev's guide adopts Conductor worktrees in place. Orca and Emdash read a repo's conductor.json setup script. No Conductor import was found in Paseo's or Nimbalyst's repo."],
-  ["Which have a phone app?", "Orca and Paseo have iOS and Android apps, Nimbalyst has a companion app, and Paradev's iPhone and iPad app is on its Pro plan. NekoTrail has no phone app; it sends alerts through ntfy, Slack or Discord."],
+  ["Which have a phone app?", "Orca and Paseo have iOS and Android apps, Nimbalyst has an iOS companion app, and Paradev's iPhone and iPad app is on its Pro plan. NekoTrail has no phone app; it sends alerts through ntfy, Slack or Discord."],
 ];
 
 const sources: [string, [string, string][]][] = [
@@ -106,6 +106,7 @@ const sources: [string, [string, string][]][] = [
     ["Docs", "https://www.conductor.build/docs/"],
     ["Terms", "https://conductor.build/terms"],
     ["Home page", "https://conductor.build"],
+    ["Changelog (iPhone remote control)", "https://www.conductor.build/changelog"],
   ]],
   ["Orca", [
     ["README", "https://github.com/stablyai/orca#readme"],
@@ -146,8 +147,8 @@ const sections = [
 const slug = (s: string) => s.toLowerCase().replace(/\(.*\)/, "").trim().replace(/\s+/g, "-");
 ---
 <Base
-  title="Conductor Alternatives, Compared Honestly"
-  description="Orca, Paseo, Emdash, Paradev, Nimbalyst and NekoTrail, compared on license, platforms, phone apps, agents and Conductor import, with a link to each project's own repo."
+  title="Conductor Alternatives Compared"
+  description="Orca, Paseo, Emdash, Paradev, Nimbalyst and NekoTrail, compared on license, platforms, phone apps, agents and Conductor import, with sources."
   path="alternatives/"
   image="og/alternatives.png"
   imageAlt="Conductor alternatives for running coding agents in parallel, compared"
