@@ -3,6 +3,14 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.25.0 (2026-11-08)
+
+**Answers first**
+- A finished reply shows only its answer. The steps it took fold into one line, "Worked for 41s · 5 steps". Click it to see them, or press ⌃O to open every reply's steps.
+
+**Search inside chats**
+- Type in the sidebar's Search and press Enter (or click Search all chats) to search every chat in every workspace: your messages, the agent's replies and the commands it ran.
+
 ## 0.24.0 (2026-11-08)
 
 **Find your messages**
