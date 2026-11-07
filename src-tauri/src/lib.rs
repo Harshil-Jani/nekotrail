@@ -4608,15 +4608,42 @@ async fn pty_attach(st: State<'_, AppState>, id: String) -> Res<Option<String>> 
     Ok(st.ptys.scrollback(&id))
 }
 
+/// The environment a terminal (`<workspace id>:<name>`) starts with: the workspace's ports and its
+/// repo's variables. The database lock is let go before `env_for`, which takes it again to hand
+/// out the port block: holding it across that call locked the database for good, so the shell never
+/// started and every later screen that reads the database (the Queue among them) waited forever.
+fn terminal_env(st: &AppState, id: &str) -> Vec<(String, String)> {
+    let found = id.split(':').next().and_then(|ws_id| {
+        let db = st.db();
+        let w = db.workspace(ws_id).ok()?;
+        let r = db.repo(&w.repo_id).ok()?;
+        Some((r, w))
+    });
+    found.map(|(r, w)| env_for(st, &r, &w)).unwrap_or_default()
+}
+
+/// Start terminal `id` in `cwd` with its workspace's environment. `start_pty` without the window,
+/// so tests can drive a real shell through it.
+#[allow(clippy::too_many_arguments)]
+fn open_terminal(
+    st: &AppState,
+    id: &str,
+    cwd: &str,
+    cmd: Option<&str>,
+    cols: u16,
+    rows: u16,
+    on_data: impl Fn(String) + Send + 'static,
+    on_exit: impl FnOnce(u64) + Send + 'static,
+) -> Res<()> {
+    if !Path::new(cwd).is_dir() {
+        return Err(format!("This workspace's folder is gone, so a terminal can't start there: {cwd}"));
+    }
+    let env = terminal_env(st, id);
+    st.ptys.open(id, cwd, &env, cmd, cols, rows, on_data, on_exit).map(|_| ()).map_err(e)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn start_pty(app: &AppHandle, st: &AppState, id: &str, cwd: &str, cmd: Option<&str>, cols: u16, rows: u16) -> Res<()> {
-    // Terminals get the workspace's environment (ports, repo variables).
-    let env = id
-        .split(':')
-        .next()
-        .and_then(|ws_id| st.db().workspace(ws_id).ok())
-        .and_then(|w| st.db().repo(&w.repo_id).ok().map(|r| env_for(st, &r, &w)))
-        .unwrap_or_default();
     let (a1, a2, id1, id2) = (app.clone(), app.clone(), id.to_string(), id.to_string());
     // The Run script: watch its output for "address already in use", the sign of a dev server that
     // ignored PORT and tried a default another workspace already holds.
@@ -4625,40 +4652,37 @@ fn start_pty(app: &AppHandle, st: &AppState, id: &str, cwd: &str, cmd: Option<&s
         st.port_failures.lock().unwrap().remove(ws_id);
     }
     let tail = Mutex::new(String::new());
-    st.ptys
-        .open(
-            id,
-            cwd,
-            &env,
-            cmd,
-            cols,
-            rows,
-            move |data| {
-                if let Some(ws_id) = &run_of {
-                    // Keep a little of the last chunk, so an error split across two reads still matches.
-                    let mut t = tail.lock().unwrap();
-                    t.push_str(&data);
-                    if let Some(port) = ports::in_use_error(&t) {
-                        t.clear();
-                        port_failed(&a1, ws_id, port);
-                    } else if t.len() > 512 {
-                        let mut cut = t.len() - 256;
-                        while !t.is_char_boundary(cut) {
-                            cut += 1;
-                        }
-                        t.drain(..cut);
+    open_terminal(
+        st,
+        id,
+        cwd,
+        cmd,
+        cols,
+        rows,
+        move |data| {
+            if let Some(ws_id) = &run_of {
+                // Keep a little of the last chunk, so an error split across two reads still matches.
+                let mut t = tail.lock().unwrap();
+                t.push_str(&data);
+                if let Some(port) = ports::in_use_error(&t) {
+                    t.clear();
+                    port_failed(&a1, ws_id, port);
+                } else if t.len() > 512 {
+                    let mut cut = t.len() - 256;
+                    while !t.is_char_boundary(cut) {
+                        cut += 1;
                     }
+                    t.drain(..cut);
                 }
-                let _ = a1.emit("pty", json!({"id": id1, "data": data}));
-            },
-            move |generation| {
-                let st = a2.state::<AppState>();
-                st.ptys.close_if(&id2, generation);
-                let _ = a2.emit("pty-exit", json!({"id": id2}));
-            },
-        )
-        .map(|_| ())
-        .map_err(e)
+            }
+            let _ = a1.emit("pty", json!({"id": id1, "data": data}));
+        },
+        move |generation| {
+            let st = a2.state::<AppState>();
+            st.ptys.close_if(&id2, generation);
+            let _ = a2.emit("pty-exit", json!({"id": id2}));
+        },
+    )
 }
 
 /// The Run script said its port was taken. Remember it for the Ports popover, and tell the window
@@ -5582,5 +5606,105 @@ mod tests {
         let folder = dir.path().join("looks.md");
         std::fs::create_dir(&folder).unwrap();
         assert!(export_path_ok(&folder).is_err());
+    }
+
+    /// The Terminal tab: a workspace's shell starts, what you type reaches it, and it sees the
+    /// workspace's ports. Opening it used to hold the database lock while handing out the port
+    /// block, which takes the same lock: the shell never started, typing went nowhere, and every
+    /// screen that reads the database after it (the Queue among them) waited forever. Runs on a
+    /// thread with a deadline, so a regression fails here instead of hanging the test run.
+    #[test]
+    fn terminal_starts_takes_input_and_leaves_the_database_unlocked() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let dir = tempfile::tempdir().unwrap();
+        let st = Arc::new(test_state(dir.path()));
+        let repo = git_repo(&st, dir.path(), "api");
+        let wsd = dir.path().join("ws");
+        std::fs::create_dir_all(&wsd).unwrap();
+        let ws = Workspace {
+            id: "w1".into(), repo_id: repo.id.clone(), name: "mochi".into(), branch: "b".into(), path: wsd.to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
+        };
+        st.db().insert_workspace(&ws).unwrap();
+        assert_eq!(st.db().port_block("w1").unwrap(), None, "the first terminal is what hands out the block");
+
+        let (out_tx, out_rx) = mpsc::channel::<String>();
+        let (done_tx, done_rx) = mpsc::channel::<Res<()>>();
+        let (st2, cwd) = (st.clone(), ws.path.clone());
+        std::thread::spawn(move || {
+            let r = open_terminal(&st2, "w1:term", &cwd, None, 80, 24, move |s| { let _ = out_tx.send(s); }, |_| {});
+            let _ = done_tx.send(r);
+        });
+        let opened = done_rx.recv_timeout(Duration::from_secs(10)).expect("opening the terminal hung (database lock held twice)");
+        opened.unwrap();
+        assert!(st.store.try_lock().is_ok(), "the database is free again once the shell is up");
+        let base = st.db().port_block("w1").unwrap().expect("a port block was handed out");
+
+        // What you type goes to the shell (the same call the pty_write command makes).
+        st.ptys.write("w1:term", "echo typed-$NEKOTRAIL_PORT; exit\n").unwrap();
+        let want = format!("typed-{base}");
+        let mut out = String::new();
+        while let Ok(s) = out_rx.recv_timeout(Duration::from_secs(10)) {
+            out.push_str(&s);
+            if out.contains(&want) { break; }
+        }
+        assert!(out.contains(&want), "got: {out}");
+        st.ptys.close("w1:term");
+
+        // A workspace whose folder is gone says so, instead of a shell that silently never starts.
+        let gone = dir.path().join("gone").to_string_lossy().to_string();
+        let err = open_terminal(&st, "w1:term-2", &gone, None, 80, 24, |_| {}, |_| {}).unwrap_err();
+        assert!(err.contains("folder is gone"), "{err}");
+        assert!(!st.ptys.is_open("w1:term-2"));
+    }
+
+    /// The Queue screen on an install upgraded from older versions: the saved queue may be missing
+    /// (never used), written by an older version without the newer fields, or as 0.22 writes it.
+    /// Each reads as an empty queue with the default limits, and the view still answers after a
+    /// terminal opened (the old terminal start left the database locked, so it never did).
+    #[test]
+    fn queue_view_answers_on_an_upgraded_database_with_a_terminal_open() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let dir = tempfile::tempdir().unwrap();
+        let st = Arc::new(test_state(dir.path()));
+        let saved = [
+            None,
+            Some(r#"{"tasks":[]}"#),
+            Some(r#"{"tasks":[],"paused":false,"max_total":3,"max_per_repo":3,"limits":{},"summary_seen":1794026311}"#),
+        ];
+        for json in saved {
+            match json {
+                Some(j) => st.db().set_setting(queue::SETTING, j).unwrap(),
+                None => st.db().delete_setting(queue::SETTING).unwrap(),
+            }
+            // As `run` loads it at launch.
+            *st.queue.lock().unwrap() = queue::Queue::from_json(st.db().setting(queue::SETTING).unwrap().as_deref());
+            let v = queuerun::view(&st);
+            assert_eq!(v["tasks"], json!([]), "{json:?}");
+            assert_eq!(v["max_total"], queue::DEFAULT_LIMIT, "{json:?}");
+            assert_eq!(v["paused"], false);
+        }
+
+        let repo = git_repo(&st, dir.path(), "api");
+        let wsd = dir.path().join("ws");
+        std::fs::create_dir_all(&wsd).unwrap();
+        let ws = Workspace {
+            id: "w1".into(), repo_id: repo.id.clone(), name: "mochi".into(), branch: "b".into(), path: wsd.to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
+        };
+        st.db().insert_workspace(&ws).unwrap();
+        let (tx, rx) = mpsc::channel::<Value>();
+        let st2 = st.clone();
+        std::thread::spawn(move || {
+            let _ = open_terminal(&st2, "w1:term", &ws.path, None, 80, 24, |_| {}, |_| {});
+            let _ = tx.send(queuerun::view(&st2));
+        });
+        let v = rx.recv_timeout(Duration::from_secs(10)).expect("the Queue view hung after a terminal opened");
+        assert_eq!(v["tasks"], json!([]));
+        st.ptys.close_all();
     }
 }
