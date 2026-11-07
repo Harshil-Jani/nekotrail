@@ -147,6 +147,8 @@ async function journey(name: string, body: () => Promise<void>) {
 // ---------- setup ----------
 
 mkdirSync(home, { recursive: true });
+// A login profile that hangs while ~/.hang-login exists (the slow-profile journey).
+writeFileSync(join(home, ".zprofile"), '[ -f "$HOME/.hang-login" ] && sleep 120\n');
 mkdirSync(repo, { recursive: true });
 git(repo, "init", "-q", "-b", "main");
 writeFileSync(join(repo, "README.md"), "# demo\n");
@@ -357,6 +359,19 @@ await journey("archive the workspace", async () => {
   await $("archive", { id: ws, force: true });
   const snap = await $("snapshot");
   if ((snap.workspaces as any[]).some((w) => w.id === ws)) fail("the workspace is still listed");
+});
+
+await journey("the app opens even when the shell profile hangs", async () => {
+  writeFileSync(join(home, ".hang-login"), "");
+  crashing = true;
+  app!.kill("SIGKILL");
+  await until("the app to be gone", async () => app!.exitCode !== null || app!.signalCode !== null, 5000);
+  crashing = false;
+  const t = Date.now();
+  await launch();
+  rmSync(join(home, ".hang-login"));
+  if (Date.now() - t > 20_000) fail(`it took ${((Date.now() - t) / 1000).toFixed(0)} s to open`);
+  spawnSync("pkill", ["-f", "sleep 120"]);
 });
 
 if (failures.length) fail(`${failures.length} journeys failed: ${failures.join("; ")}`);
