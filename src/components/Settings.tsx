@@ -253,7 +253,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
     setBackend((b) => (b ? { ...b, [key]: v } : b));
     api.setAppSetting(key, v);
   };
-  const setB = (key: "caffeinate" | "auto_branch", on: boolean) => setRaw(key, on ? "on" : "off");
+  const setB = (key: "caffeinate" | "auto_branch" | "ai_names", on: boolean) => setRaw(key, on ? "on" : "off");
   const box = useRef<HTMLDivElement>(null);
   // The sheet takes focus when it opens and hands it back to where you were when it closes.
   useEffect(() => {
@@ -357,6 +357,11 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
             <span>Name the branch after the first message</span>
             <input type="checkbox" className="switch" checked={backend?.auto_branch !== "off"} onChange={(e) => setB("auto_branch", e.target.checked)} />
           </label>
+          <label className="setting">
+            <span>Name branches and chats with AI</span>
+            <input type="checkbox" className="switch" checked={backend?.ai_names !== "off"} onChange={(e) => setB("ai_names", e.target.checked)} />
+          </label>
+          <p className="muted setting-note">Uses your agent's fastest model, about a cent's worth of tokens on an API plan.</p>
           <label className="setting">
             <span>Archive when the PR merges</span>
             <input type="checkbox" className="switch" checked={s.archiveOnMerge} onChange={(e) => set("archiveOnMerge", e.target.checked)} />

@@ -1,4 +1,5 @@
 pub mod about;
+pub mod ainame;
 pub mod acp;
 pub mod alerts;
 pub mod avatar;
@@ -1193,13 +1194,13 @@ async fn hide_session(st: State<'_, AppState>, id: String) -> Res<()> {
     st.db().set_session_hidden(&id, true).map_err(e)
 }
 
-/// Backend settings: `caffeinate` and `auto_branch` ("on" / "off").
+/// Backend settings: `caffeinate`, `auto_branch` and `ai_names` ("on" / "off").
 #[tauri::command]
 async fn app_settings(st: State<'_, AppState>) -> Res<Value> {
     let db = st.db();
     let get = |k: &str| db.setting(k).ok().flatten().unwrap_or_else(|| "on".into());
     let raw = |k: &str| db.setting(k).ok().flatten().unwrap_or_default();
-    let mut out = json!({"caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "home": st.home.to_string_lossy()});
+    let mut out = json!({"caffeinate": get("caffeinate"), "auto_branch": get("auto_branch"), "ai_names": get(ainame::SETTING), "home": st.home.to_string_lossy()});
     // New-chat defaults per agent: claude_model, codex_effort, gemini_mode, ...
     for k in agent_setting_keys() {
         out[&k] = json!(raw(&k));
@@ -1214,7 +1215,7 @@ fn agent_setting_keys() -> Vec<String> {
 
 #[tauri::command]
 async fn set_app_setting(st: State<'_, AppState>, key: String, value: String) -> Res<()> {
-    if !["caffeinate", "auto_branch"].contains(&key.as_str()) && !agent_setting_keys().contains(&key) {
+    if !["caffeinate", "auto_branch", ainame::SETTING].contains(&key.as_str()) && !agent_setting_keys().contains(&key) {
         return Err(format!("Unknown setting: {key}."));
     }
     st.db().set_setting(&key, &value).map_err(e)
@@ -4191,34 +4192,108 @@ fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) 
     }
     // A multi-repo task keeps one branch name in every repo: all of them are renamed, or none.
     let all: Vec<Workspace> = std::iter::once(ws.clone()).chain(linked_workspaces(st, &ws)).collect();
-    if all.iter().any(|w| w.branch != ws.branch) {
-        return ws;
-    }
-    let mut name = format!("{}/{slug}", st.branch_prefix());
-    let mut n = 2;
-    while all.iter().any(|w| git::branch_exists(Path::new(&w.path), &name)) {
-        name = format!("{}/{slug}-{n}", st.branch_prefix());
-        n += 1;
-    }
-    let pushed = |w: &Workspace| git::git(Path::new(&w.path), &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", w.branch)]).is_ok();
-    if all.iter().any(pushed) {
-        return ws;
-    }
-    let mut renamed: Vec<&Workspace> = vec![];
-    for w in &all {
-        if git::git(Path::new(&w.path), &["branch", "-m", &w.branch, &name]).is_err() {
-            for r in renamed {
-                let _ = git::git(Path::new(&r.path), &["branch", "-m", &name, &r.branch]);
-            }
-            return ws;
-        }
-        renamed.push(w);
-    }
+    let Some(name) = rename_task_branch(st.branch_prefix(), &all, &slug) else { return ws };
     for w in &all {
         let _ = st.db().set_branch(&w.id, &name);
     }
     let _ = app.emit("workspaces-changed", json!({}));
     Workspace { branch: name, ..ws }
+}
+
+/// Renames the branch of every workspace in `all` (one task, one or more repos) to
+/// `<prefix>/<slug>`, made free with -2, -3...: all of them or none. Never a branch that was
+/// pushed, nor when the workspaces aren't on the same branch. The new name, if renamed.
+fn rename_task_branch(prefix: &str, all: &[Workspace], slug: &str) -> Option<String> {
+    let first = all.first()?;
+    if all.iter().any(|w| w.branch != first.branch) {
+        return None;
+    }
+    let mut name = format!("{prefix}/{slug}");
+    let mut n = 2;
+    while all.iter().any(|w| git::branch_exists(Path::new(&w.path), &name)) {
+        name = format!("{prefix}/{slug}-{n}");
+        n += 1;
+    }
+    let pushed = |w: &Workspace| git::git(Path::new(&w.path), &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/origin/{}", w.branch)]).is_ok();
+    if all.iter().any(pushed) {
+        return None;
+    }
+    let mut renamed: Vec<&Workspace> = vec![];
+    for w in all {
+        if git::git(Path::new(&w.path), &["branch", "-m", &w.branch, &name]).is_err() {
+            for r in renamed {
+                let _ = git::git(Path::new(&r.path), &["branch", "-m", &name, &r.branch]);
+            }
+            return None;
+        }
+        renamed.push(w);
+    }
+    Some(name)
+}
+
+/// What a chat's first message was named locally, for the AI to improve on (ainame.rs).
+struct FirstNames {
+    agent: String,
+    session_id: String,
+    ws_id: String,
+    repo: String,
+    text: String,
+    /// The star-name branch the workspace started on, and the slug branch the message gave it.
+    placeholder: String,
+    slug_branch: Option<String>,
+    /// The workspace title this message gave it ("" for none), or None when it already had one.
+    ws_title: Option<String>,
+    /// The chat tab's title this message gave it.
+    chat_title: String,
+}
+
+/// Name the branch, the workspace and the chat tab again with the chat's own agent CLI, in the
+/// background: the turn never waits for it. Each name is only replaced while it is still the
+/// one the first message gave it, under the same guards as the first rename.
+fn spawn_ai_names(app: AppHandle, f: FirstNames) {
+    std::thread::spawn(move || {
+        let Some(names) = ainame::ask(&f.agent, &f.text, &f.repo) else { return };
+        let st = app.state::<AppState>();
+        let mut changed = false;
+        if let Some(slug) = &names.branch {
+            changed |= ai_rename_branch(&st, &f, slug);
+        }
+        if let Some(t) = &names.title {
+            if let Some(expected) = &f.ws_title {
+                changed |= st.db().refine_auto_title(&f.ws_id, expected, t).unwrap_or(false);
+            }
+            changed |= st.db().refine_session_title(&f.session_id, &f.chat_title, t).unwrap_or(false);
+        }
+        if changed {
+            let _ = app.emit("workspaces-changed", json!({}));
+        }
+    });
+}
+
+/// The AI's branch name, if the branch is still one we picked, wasn't pushed, and every repo of
+/// the task is still on it. True if renamed.
+fn ai_rename_branch(st: &AppState, f: &FirstNames, slug: &str) -> bool {
+    if st.db().setting("auto_branch").ok().flatten().as_deref() == Some("off") {
+        return false;
+    }
+    let Ok(ws) = st.db().workspace(&f.ws_id) else { return false };
+    if ws.imported_from.is_some() || !ainame::may_rename(&ws.branch, &f.placeholder, f.slug_branch.as_deref()) {
+        return false;
+    }
+    if ws.branch == format!("{}/{slug}", st.branch_prefix()) {
+        return false;
+    }
+    let all: Vec<Workspace> = std::iter::once(ws.clone()).chain(linked_workspaces(st, &ws)).collect();
+    // The agent may have switched branches in the meantime: then the name isn't ours to change.
+    let on_it = |w: &Workspace| git::git(Path::new(&w.path), &["symbolic-ref", "--quiet", "--short", "HEAD"]).is_ok_and(|b| b.trim() == w.branch);
+    if !all.iter().all(on_it) {
+        return false;
+    }
+    let Some(name) = rename_task_branch(st.branch_prefix(), &all, slug) else { return false };
+    for w in &all {
+        let _ = st.db().set_branch(&w.id, &name);
+    }
+    true
 }
 
 /// How long a turn waits for the agent to exit after its final answer (Claude's `result`), and
@@ -4303,30 +4378,48 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
         }
     }
     let starting = Starting { app: app.clone(), st, id: id.clone(), done: false };
-    let (session, ws, repo) = {
+    let (session, ws, repo, chat_title) = {
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
         let ws = db.workspace(&s.workspace_id).map_err(e)?;
         // An agent turn in History would edit your main checkout.
         terminal::refuse_in_history(&ws)?;
         let repo = db.repo(&ws.repo_id).map_err(e)?;
+        let mut chat_title = None;
         if s.title == "New chat" {
             let t: String = text.lines().next().unwrap_or("").chars().take(48).collect();
-            db.update_session_settings(&id, if t.is_empty() { "New chat" } else { &t }, s.model.as_deref(), &s.permission_mode).map_err(e)?;
+            let t = if t.is_empty() { "New chat".to_string() } else { t };
+            db.update_session_settings(&id, &t, s.model.as_deref(), &s.permission_mode).map_err(e)?;
+            chat_title = Some(t);
         }
-        (s, ws, repo)
+        (s, ws, repo, chat_title)
     };
     let env = env_for(st, &repo, &ws);
     let prefs = &repo.prefs;
     let dirs = st.db().extra_dirs(&id).unwrap_or_default();
+    let placeholder = format!("{}/{}", st.branch_prefix(), ws.name);
+    let was_placeholder = ws.branch == placeholder;
     let ws = maybe_name_branch(&app, st, ws, &text);
     // Name the workspace after its task, so 20 workspaces stay readable. Only while it has no
     // title: a PR title or one the user typed is never replaced (see title.rs).
+    let mut ws_title = None;
     if ws.title.is_empty() {
         let t = title::task_title(&text);
         if !t.is_empty() && st.db().set_title(&ws.id, &t, title::AUTO).unwrap_or(false) {
             let _ = app.emit("workspaces-changed", json!({}));
         }
+        ws_title = Some(t);
+    }
+    // A chat's first message: a model names it again, better, in the background (ainame.rs).
+    if let Some(chat_title) = chat_title
+        && ainame::supported(&session.agent)
+        && ainame::enabled(st.db().setting(ainame::SETTING).ok().flatten().as_deref())
+    {
+        let slug_branch = (was_placeholder && ws.branch != placeholder).then(|| ws.branch.clone());
+        spawn_ai_names(app.clone(), FirstNames {
+            agent: session.agent.clone(), session_id: id.clone(), ws_id: ws.id.clone(), repo: repo.name.clone(), text: text.clone(),
+            placeholder, slug_branch, ws_title, chat_title,
+        });
     }
     // Made from a Linear issue: its first turn moves the issue to In Progress (in the background).
     linear::on_turn(&app, st, &ws.id);
@@ -5479,6 +5572,53 @@ mod tests {
         let empty = tempfile::tempdir().unwrap();
         let b = repo_brief_at(empty.path());
         assert!(b.readme.is_none() && b.package_json.is_none() && b.files.is_empty());
+    }
+
+    /// A workspace on `branch` in the repo at `path`, for the branch-rename tests.
+    fn rename_ws(id: &str, path: &Path, branch: &str) -> Workspace {
+        Workspace {
+            id: id.into(), repo_id: "r".into(), name: "mochi".into(), branch: branch.into(), path: path.to_string_lossy().into(),
+            target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
+            imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
+        }
+    }
+
+    #[test]
+    fn task_branch_renames_are_all_or_none_and_never_pushed_ones() {
+        let head = |p: &Path| git::git(p, &["symbolic-ref", "--short", "HEAD"]).unwrap().trim().to_string();
+        // The slug from the Hinglish prompt, then the AI's name for it.
+        let a = git::tests::init_repo();
+        git::git(a.path(), &["checkout", "-qb", "me/mochi"]).unwrap();
+        let slug = branch_slug("Apne ko Cityflo mai CAP and PACELC ke concept ko apply krna hain into lets backend");
+        assert_eq!(slug, "apne-ko-cityflo-mai-cap");
+        let name = rename_task_branch("me", &[rename_ws("a", a.path(), "me/mochi")], &slug).unwrap();
+        assert_eq!(name, "me/apne-ko-cityflo-mai-cap");
+        let ai = ainame::parse(r#"{"branch": "me/Cityflo-CAP-PACELC-Backend", "title": "Cityflo CAP PACELC Backend"}"#).unwrap();
+        let ai = ai.branch.unwrap();
+        assert!(ainame::may_rename(&name, "me/mochi", Some(&name)));
+        assert_eq!(rename_task_branch("me", &[rename_ws("a", a.path(), &name)], &ai).as_deref(), Some("me/cityflo-cap-pacelc-backend"));
+        assert_eq!(head(a.path()), "me/cityflo-cap-pacelc-backend");
+        // A name already taken gets -2.
+        git::git(a.path(), &["branch", "me/fix-login"]).unwrap();
+        assert_eq!(rename_task_branch("me", &[rename_ws("a", a.path(), "me/cityflo-cap-pacelc-backend")], "fix-login").as_deref(), Some("me/fix-login-2"));
+
+        // Pushed: the remote has it by that name, so it stays.
+        let b = git::tests::init_repo();
+        git::git(b.path(), &["checkout", "-qb", "me/apne-ko-cityflo-mai-cap"]).unwrap();
+        git::git(b.path(), &["update-ref", "refs/remotes/origin/me/apne-ko-cityflo-mai-cap", "HEAD"]).unwrap();
+        assert_eq!(rename_task_branch("me", &[rename_ws("b", b.path(), "me/apne-ko-cityflo-mai-cap")], "cityflo-cap-pacelc-backend"), None);
+        assert_eq!(head(b.path()), "me/apne-ko-cityflo-mai-cap");
+
+        // Multi-repo: one repo pushed, so neither is renamed; repos on different branches, neither.
+        let c = git::tests::init_repo();
+        git::git(c.path(), &["checkout", "-qb", "me/apne-ko-cityflo-mai-cap"]).unwrap();
+        let both = [rename_ws("c", c.path(), "me/apne-ko-cityflo-mai-cap"), rename_ws("b", b.path(), "me/apne-ko-cityflo-mai-cap")];
+        assert_eq!(rename_task_branch("me", &both, "cityflo-cap-pacelc-backend"), None);
+        assert_eq!(head(c.path()), "me/apne-ko-cityflo-mai-cap");
+        let mixed = [rename_ws("c", c.path(), "me/apne-ko-cityflo-mai-cap"), rename_ws("a", a.path(), "me/fix-login-2")];
+        assert_eq!(rename_task_branch("me", &mixed, "cityflo-cap-pacelc-backend"), None);
+        // A branch renamed by hand is not ours to rename again.
+        assert!(!ainame::may_rename("me/my-name", "me/mochi", Some("me/apne-ko-cityflo-mai-cap")));
     }
 
     #[test]

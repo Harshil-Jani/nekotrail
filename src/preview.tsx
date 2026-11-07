@@ -1011,7 +1011,7 @@ mockIPC(
         { number: 512, title: "Retry webhooks with backoff", headRefName: "ana/webhook-retry", author: { login: "ana" }, isDraft: false, updatedAt: "" },
         { number: 509, title: "Move ticket SLA timer to the worker", headRefName: "raj/sla-worker", author: { login: "raj" }, isDraft: true, updatedAt: "" },
       ];
-      case "app_settings": return { caffeinate: "on", auto_branch: "on", home: "~/nekotrail" };
+      case "app_settings": return { caffeinate: "on", auto_branch: "on", ai_names: "on", home: "~/nekotrail" };
       case "pr_review_comments": return args.id === "w1" ? [
         { id: 1, path: "internal/server/http.go", line: 22, side: "RIGHT", body: "75s works for the ALB. What about the NLB path, which keeps connections for 350s?", user: "octocat", avatar: "", url: "https://github.com", reply_to: null, outdated: false },
         { id: 2, path: "internal/server/http.go", line: 22, side: "RIGHT", body: "Good catch, NLB is only used by the gRPC port.", user: "Harshil-Jani", avatar: "", url: "https://github.com", reply_to: 1, outdated: false },

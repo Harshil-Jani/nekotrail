@@ -78,7 +78,7 @@ export type AgentCatalog = { label: string; effort_label: string; effort_names: 
 export type ModelCatalog = Record<Agent, AgentCatalog>;
 
 export type AppSettings = {
-  caffeinate: "on" | "off"; auto_branch: "on" | "off"; home: string;
+  caffeinate: "on" | "off"; auto_branch: "on" | "off"; ai_names: "on" | "off"; home: string;
 } & Record<`${Agent}_${"model" | "effort" | "mode"}`, string>;
 
 export type WsStatus = "" | "backlog" | "in_progress" | "in_review" | "done";

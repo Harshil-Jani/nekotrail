@@ -1042,6 +1042,11 @@ export function Chat({
       clearTimeout(tabs);
       tabs = window.setTimeout(() => { api.sessions(workspaceId).then((l) => { if (!s.dead) setSessions(l); }).catch(() => {}); }, 250);
     });
+    // The first message's chat title can be renamed a few seconds later (AI names, see ainame.rs).
+    const un5 = listen("workspaces-changed", () => {
+      clearTimeout(tabs);
+      tabs = window.setTimeout(() => { api.sessions(workspaceId).then((l) => { if (!s.dead) setSessions(l); }).catch(() => {}); }, 250);
+    });
     const un4 = listen<{ session_id: string; context_tokens: number }>("usage", ({ payload }) => {
       if (payload.session_id === sid) setLiveTokens(payload.context_tokens);
     });
@@ -1053,6 +1058,7 @@ export function Chat({
       un2.then((f) => f());
       un3.then((f) => f());
       un4.then((f) => f());
+      un5.then((f) => f());
     };
   }, [active]);
 

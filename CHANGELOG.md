@@ -31,6 +31,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - What a turn would cost at API prices is hidden now. Turn it back on in Settings, Chat.
 - The arrow next to a repo in the sidebar folds it, like a click on its name.
 
+**Better branch and chat names**
+- The first message now gets a short English name from your agent's fastest model, the way you would name it yourself. "Apne ko Cityflo mai CAP and PACELC ke concept ko apply krna hain into lets backend" becomes the branch `cityflo-cap-pacelc-backend` and the chat "Cityflo CAP PACELC Backend", instead of the first five words.
+- It runs in the background a few seconds after you send, so nothing waits on it. Until it answers, and if it can't, the branch and chat keep the quick name from your first words, as before.
+- A branch that was pushed, renamed by you, or switched by the agent is never touched, and neither is a title you typed or one from a PR or issue.
+- Only Claude Code and Codex chats are named this way, through the same CLI and login as the chat itself. Turn it off in Settings, under Workspaces: "Name branches and chats with AI".
+
 ## 0.25.1 (2026-11-08)
 
 **New workspace, tidied up**

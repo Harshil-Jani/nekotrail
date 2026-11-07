@@ -662,6 +662,25 @@ impl Store {
         Ok(true)
     }
 
+    /// A better `auto` title for the same first prompt (the AI's, see ainame.rs), set only while
+    /// the title is still `expected` (the one the prompt gave it) with source `auto`, or there is
+    /// none yet. An issue, PR or typed title, or an `auto` one from another prompt, stays.
+    pub fn refine_auto_title(&self, id: &str, expected: &str, title: &str) -> Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE workspaces SET title=?3, title_source=?4 WHERE id=?1 AND title<>?3
+             AND ((title_source=?4 AND title=?2) OR (title_source='' AND title=''))",
+            params![id, expected, title, crate::title::AUTO],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// A chat's tab title, replaced only while it is still `expected` (the one its first message
+    /// gave it): a chat renamed by hand keeps its name.
+    pub fn refine_session_title(&self, id: &str, expected: &str, title: &str) -> Result<bool> {
+        let n = self.conn.execute("UPDATE sessions SET title=?3 WHERE id=?1 AND title=?2 AND title<>?3", params![id, expected, title])?;
+        Ok(n > 0)
+    }
+
     /// The title the first prompts give a workspace, or "" when none says anything.
     pub fn prompt_title(&self, id: &str) -> Result<String> {
         Ok(user_prompts(&self.conn, id, 5)?.iter().map(|p| crate::title::task_title(p)).find(|t| !t.is_empty()).unwrap_or_default())
@@ -1413,6 +1432,44 @@ mod tests {
         assert!(s.set_title(&id, "", USER).unwrap());
         assert_eq!(get(&s), (String::new(), String::new()));
         assert!(s.set_title(&id, "Fix the 502", AUTO).unwrap());
+    }
+
+    #[test]
+    fn ai_titles_only_replace_the_prompts_own_title() {
+        use crate::title::{AUTO, ISSUE, USER};
+        let s = Store::in_memory().unwrap();
+        let r = sample_repo();
+        s.insert_repo(&r).unwrap();
+        let get = |id: &str| { let w = s.workspace(id).unwrap(); (w.title, w.title_source) };
+        // The first prompt's title becomes the AI's.
+        let a = titled_ws(&s, &r, "mochi", "", &[]);
+        s.set_title(&a, "Apne ko Cityflo mai CAP and PACELC ke", AUTO).unwrap();
+        assert!(s.refine_auto_title(&a, "Apne ko Cityflo mai CAP and PACELC ke", "Cityflo CAP PACELC Backend").unwrap());
+        assert_eq!(get(&a), ("Cityflo CAP PACELC Backend".into(), AUTO.into()));
+        // No title yet (the prompt gave none): the AI's fills it.
+        let b = titled_ws(&s, &r, "socks", "", &[]);
+        assert!(s.refine_auto_title(&b, "", "Fix the login loop").unwrap());
+        assert_eq!(get(&b), ("Fix the login loop".into(), AUTO.into()));
+        // Typed while the model was thinking: never overwritten. Same for an issue's title.
+        let c = titled_ws(&s, &r, "biscuit", "", &[]);
+        s.set_title(&c, "Fix the 502", AUTO).unwrap();
+        s.set_title(&c, "Gateway", USER).unwrap();
+        assert!(!s.refine_auto_title(&c, "Fix the 502", "Fix 502 After Deploy").unwrap());
+        assert_eq!(get(&c), ("Gateway".into(), USER.into()));
+        let d = titled_ws(&s, &r, "pudding", "", &[]);
+        s.set_title(&d, "ENG-1 Login loop", ISSUE).unwrap();
+        assert!(!s.refine_auto_title(&d, "ENG-1 Login loop", "Login Loop").unwrap());
+        // An auto title from another prompt isn't the one the AI named.
+        assert!(!s.refine_auto_title(&a, "Something older", "Other").unwrap());
+        assert_eq!(get(&a).0, "Cityflo CAP PACELC Backend");
+        // Chat tabs: only while still the first message's title.
+        let sess = s.sessions(&a).unwrap().remove(0);
+        s.update_session_settings(&sess.id, "Apne ko Cityflo mai CAP", None, "acceptEdits").unwrap();
+        assert!(s.refine_session_title(&sess.id, "Apne ko Cityflo mai CAP", "Cityflo CAP PACELC Backend").unwrap());
+        assert_eq!(s.session(&sess.id).unwrap().title, "Cityflo CAP PACELC Backend");
+        s.update_session_settings(&sess.id, "My tab", None, "acceptEdits").unwrap();
+        assert!(!s.refine_session_title(&sess.id, "Apne ko Cityflo mai CAP", "Other").unwrap());
+        assert_eq!(s.session(&sess.id).unwrap().title, "My tab");
     }
 
     #[test]
