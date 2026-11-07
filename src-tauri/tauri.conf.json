@@ -78,6 +78,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Harshil Jani",
+    "copyright": "Copyright (c) 2026 Harshil Jani. MIT License.",
+    "license": "MIT",
+    "homepage": "https://harshil-jani.github.io/nekotrail/",
+    "category": "DeveloperTool",
+    "shortDescription": "Run many coding agents in parallel, one worktree and pull request each.",
+    "longDescription": "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request. Open source and local-first: it drives the agent CLIs you already use, such as Claude Code, Codex, Gemini CLI and OpenCode, with your own logins.",
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",

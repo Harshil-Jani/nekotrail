@@ -1,10 +1,15 @@
 [package]
 name = "nekotrail"
 version = "0.21.0"
-description = "Run many coding agents in parallel, each in its own git worktree, and ship each one as a PR."
+description = "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request."
 authors = ["Harshil Jani"]
 license = "MIT"
 repository = "https://github.com/Harshil-Jani/nekotrail"
+homepage = "https://harshil-jani.github.io/nekotrail/"
+readme = "../README.md"
+keywords = ["coding-agents", "worktree", "tauri", "claude", "codex"]
+categories = ["development-tools"]
+publish = false
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

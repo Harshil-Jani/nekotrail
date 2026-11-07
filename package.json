@@ -2,6 +2,19 @@
   "name": "nekotrail",
   "private": true,
   "version": "0.21.0",
+  "description": "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request.",
+  "homepage": "https://harshil-jani.github.io/nekotrail/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harshil-Jani/nekotrail.git"
+  },
+  "bugs": "https://github.com/Harshil-Jani/nekotrail/issues",
+  "license": "MIT",
+  "author": "Harshil Jani (https://github.com/Harshil-Jani)",
+  "funding": [
+    "https://github.com/sponsors/Harshil-Jani",
+    "https://buymeacoffee.com/harshiljani"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "nekotrail",
   "license": "MIT",
+  "author": "Harshil Jani (https://github.com/Harshil-Jani)",
   "private": true,
   "icon": "media/icon.png",
   "repository": {
@@ -12,8 +13,11 @@
     "url": "https://github.com/Harshil-Jani/nekotrail.git",
     "directory": "extensions/vscode"
   },
-  "homepage": "https://github.com/Harshil-Jani/nekotrail/tree/main/extensions/vscode",
+  "homepage": "https://harshil-jani.github.io/nekotrail/",
   "bugs": "https://github.com/Harshil-Jani/nekotrail/issues",
+  "sponsor": {
+    "url": "https://github.com/sponsors/Harshil-Jani"
+  },
   "engines": {
     "vscode": "^1.86.0"
   },
