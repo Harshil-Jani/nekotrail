@@ -29,7 +29,7 @@ body:
     attributes:
       label: nekotrail version
       description: Settings shows it next to the version link at the bottom.
-      placeholder: "0.20.0"
+      placeholder: "0.21.0"
     validations:
       required: true
   - type: dropdown
