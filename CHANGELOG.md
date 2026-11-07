@@ -1,6 +1,6 @@
 # Changelog
 
-Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
+Every release of Nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
@@ -14,15 +14,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.21.0 (2026-11-07)
 
 **Moving from Conductor**
-- Importing from Conductor now opens a sheet that leads with keeping your work safe: your worktrees live inside Conductor's folder, and Conductor says it will delete all user data when its app shuts down in early 2027, so nekotrail moves them into its own folder. **Move into nekotrail** is picked for you; Import only is still there.
+- Importing from Conductor now opens a sheet that leads with keeping your work safe: your worktrees live inside Conductor's folder, and Conductor says it will delete all user data when its app shuts down in early 2027, so Nekotrail moves them into its own folder. **Move into Nekotrail** is picked for you; Import only is still there.
 - The sheet shows exactly what moves before anything happens: each repo and worktree, its branch, its size and how many uncommitted files it has.
 - Moving runs only `git worktree move`. Nothing is ever copied or deleted, and a worktree that can't move stays where it was.
-- After each move nekotrail checks that `git worktree list` shows the new folder, the branch and its head commit are unchanged, and the uncommitted files are the same files with the same content.
+- After each move Nekotrail checks that `git worktree list` shows the new folder, the branch and its head commit are unchanged, and the uncommitted files are the same files with the same content.
 - Results are per worktree: Checked, Moved with a difference to look at, or Not moved with the reason in plain words (a locked worktree, submodules, another disk). Try again retries only the ones that didn't move.
 - Workspaces imported earlier and left in Conductor's folder get a one-time notice offering the move, on the welcome screen and above the chat. Dismiss it and ⌘K still has the move.
 - First launch and the welcome card say the same thing when they find Conductor's data, and open the sheet.
-- The sheet notes that nekotrail can't read Conductor Cloud, which goes read-only on 13 November and shuts down on 20 November 2026: use Conductor's Transfer to local on each Cloud workspace first, then import.
-- New guide, [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md): what imports, what doesn't, Conductor Cloud, the move, and Conductor's concepts and shortcuts in nekotrail. The README links it, lists all sixteen agents, Linear and hand-off, and gives the `xattr` install step until the app is notarized (the release notes say the same).
+- The sheet notes that Nekotrail can't read Conductor Cloud, which goes read-only on 13 November and shuts down on 20 November 2026: use Conductor's Transfer to local on each Cloud workspace first, then import.
+- New guide, [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md): what imports, what doesn't, Conductor Cloud, the move, and Conductor's concepts and shortcuts in Nekotrail. The README links it, lists all sixteen agents, Linear and hand-off, and gives the `xattr` install step until the app is notarized (the release notes say the same).
 
 **Design ship-gate fixes**
 - The sheet, notices and first run quote what Conductor said (it will delete all user data when its app shuts down in early 2027) instead of saying it deletes the folder, and the guide links Conductor's announcement.
@@ -32,18 +32,18 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Welcome shows one Conductor card at a time, and its button says Import from Conductor, as first run and ⌘K do.
 - A worktree that didn't move shows its reason in normal text with the red icon, and commands in it show as code.
 - The list of worktrees shows a soft edge where more rows scroll, and the footer stays on one line next to the buttons.
-- Skipped items read "already in nekotrail, or the folder is gone".
+- Skipped items read "already in Nekotrail, or the folder is gone".
 
 ## 0.20.0 (2026-11-07)
 
 **Hand off to another agent**
 - New Hand off to another agent (a chat's + menu, ⌘K, or /handoff): another agent, Codex, Gemini or any you have installed, carries on the task in the same workspace and branch, so you don't explain it again.
-- Pick the agent and its model, then read the brief nekotrail wrote before anything is sent, and edit it if you like. It has the original task, what you said since, the agent's last messages, the files changed against the target branch (every repo of a multi-repo task), the last checks, the commands still failing, its last steps, and its todo list or plan.
+- Pick the agent and its model, then read the brief Nekotrail wrote before anything is sent, and edit it if you like. It has the original task, what you said since, the agent's last messages, the files changed against the target branch (every repo of a multi-repo task), the last checks, the commands still failing, its last steps, and its todo list or plan.
 - The brief is built on your Mac from the chat itself, with no model asked to summarise, and stays under about 6,000 characters: older steps and long messages are shortened first. Things that look like tokens, keys, passwords or emails are hidden, as in Export session, and paths in your home folder show as ~.
-- When an agent runs out of usage, or nekotrail stops it going in circles, the card in the chat offers the hand-off.
+- When an agent runs out of usage, or Nekotrail stops it going in circles, the card in the chat offers the hand-off.
 - The new chat keeps this chat's mode. An agent that can't ask before each change starts in Plan instead of Ask before changes, so a hand-off never gives an agent more room. Spend caps and protected files apply to it as before.
 - The old chat ends with "Handed off to Codex" and the new one starts with "Continued from Claude", each opening the other. The brief sits folded at the top of the new chat, and Export session notes the hand-off.
-- From a terminal: `nekotrail handoff <workspace> --to codex` opens the hand-off in nekotrail with its brief to read, and `--now` sends it straight away. `.` is the workspace you're in.
+- From a terminal: `nekotrail handoff <workspace> --to codex` opens the hand-off in Nekotrail with its brief to read, and `--now` sends it straight away. `.` is the workspace you're in.
 - The old "Continue in" button on an out-of-usage card, which pasted the raw transcript into the message box, is replaced by the hand-off.
 
 **Design ship-gate fixes**
@@ -58,11 +58,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.19.0 (2026-11-07)
 
 **Linear issues**
-- New Integrations pane in Settings: connect Linear with a personal API key. The key is kept in your Keychain (on Linux, your keyring), never in nekotrail's database, logs or exports. Test shows whose key it is.
+- New Integrations pane in Settings: connect Linear with a personal API key. The key is kept in your Keychain (on Linux, your keyring), never in Nekotrail's database, logs or exports. Test shows whose key it is.
 - New workspace has a Linear source: your open issues first, with search (type ENG-123 to find any issue), Mine or Anyone, a team and a state.
 - Picking an issue starts the workspace on Linear's branch name for it, names the workspace after it ("ENG-123 Fix the login loop"), and puts the issue's title, description and link in the first message.
-- The PR nekotrail opens for that workspace says "Fixes ENG-123", so Linear links it.
-- The issue moves to In Progress when the agent's first turn starts, if it hasn't started yet. Switch this off in Settings, Integrations. nekotrail never comments on Linear.
+- The PR Nekotrail opens for that workspace says "Fixes ENG-123", so Linear links it.
+- The issue moves to In Progress when the agent's first turn starts, if it hasn't started yet. Switch this off in Settings, Integrations. Nekotrail never comments on Linear.
 - From your terminal: `nekotrail new --linear ENG-123`, with an optional task after it.
 - A bad key, a rate limit or no network each show a plain message, and never hold up the app.
 - Linear API keys are hidden in exported sessions and away alerts, like other keys.
@@ -76,15 +76,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 **VS Code and Cursor extension**
 - New extension (`extensions/vscode`): lists the open repo's workspaces with state, agent, PR and needs-you. Click one to see its changes in the editor's diff view, or open its worktree in a new window.
-- New task from selection sends the selected code and its file and line to nekotrail. nekotrail asks "Start Claude from your editor?" and nothing runs until you press Start agent.
+- New task from selection sends the selected code and its file and line to Nekotrail. Nekotrail asks "Start Claude from your editor?" and nothing runs until you press Start agent.
 - Send selection to workspace chat puts the code in a workspace's message box; you add to it and press Send.
-- A status bar item shows how many workspaces need you. The extension talks only to nekotrail on your machine, over the terminal command's private socket, and sends no telemetry.
+- A status bar item shows how many workspaces need you. The extension talks only to Nekotrail on your machine, over the terminal command's private socket, and sends no telemetry.
 
 **Away alerts**
 - New away alerts (Settings, Notifications): get a short message on your phone or in a team chat through ntfy, Slack, Discord, a webhook or Pushover. Off until you add one.
 - Pick the events for each destination: needs you, turn finished, PR checks failed or green, PR merged, queue done, a spend cap, a runaway agent stopped, and a morning summary of the queue.
 - Each message names the workspace, its repo and what happened, with a link that opens it on your Mac. It never contains your code, prompts, commands or diffs. "Include the agent's last line" is off by default, and hides secrets in that line as Export session does.
-- Addresses and tokens are kept in your Keychain (on Linux, your keyring), never in nekotrail's database or logs.
+- Addresses and tokens are kept in your Keychain (on Linux, your keyring), never in Nekotrail's database or logs.
 - Several updates within a minute arrive as one message, and quiet hours hold messages until they end. "Send a test" checks a destination, and the last error shows under it.
 
 **Design ship-gate fixes**
@@ -100,7 +100,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 **Spend you can trust**
 - New Usage view (sidebar, ⌘K): tokens, API-equivalent cost, turns and time per day, repo, agent and model, each agent's usage limit and when it resets, and Export CSV. Kept on your Mac only.
 - Costs say they are API-equivalent: on a subscription you pay a flat fee. Agents that report no cost show turns and tokens, never $0.
-- Spend caps, for every repo or one repo: a daily cap and a cap per task, in dollars, turns or tokens. When one is reached, the queue starts nothing new and autopilot stops, and nekotrail says so. A running turn always finishes, and your own messages always go through.
+- Spend caps, for every repo or one repo: a daily cap and a cap per task, in dollars, turns or tokens. When one is reached, the queue starts nothing new and autopilot stops, and Nekotrail says so. A running turn always finishes, and your own messages always go through.
 - Runaway protection: when the queue or autopilot sees the same command fail 4 times in a row, a file go back and forth, or 3 turns that change nothing, it stops giving the agent turns. The task moves to Needs you with what it saw.
 
 **A first run that gets you to your first answer**
@@ -114,7 +114,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Copy or save it as Markdown, or save one HTML file that works offline in light and dark, with no scripts and nothing loaded from the web.
 - Before you share, a preview lets you leave out tool outputs and file contents. Things that look like tokens, keys, passwords, .env values or emails are hidden, and you can show any one of them again. Paths in your home folder show as ~.
 - Add to PR description puts a short summary (what changed, how it was tested, which agent, cost) in the PR form. Nothing is posted until you press Push and create PR.
-- A small "Made with nekotrail" line ends each export. Switch it off in Settings, General.
+- A small "Made with Nekotrail" line ends each export. Switch it off in Settings, General.
 - Fix: Export prompts in Settings can save its file again.
 
 **Design ship-gate fixes**
@@ -134,7 +134,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.16.0 (2026-11-07)
 
 **Tasks across repos**
-- New workspace, "Several repos": pick 2 to 5 repos and nekotrail makes a workspace in each, all on one branch. The sidebar shows them as one task.
+- New workspace, "Several repos": pick 2 to 5 repos and Nekotrail makes a workspace in each, all on one branch. The sidebar shows them as one task.
 - One chat works across all of them: the agent runs in the main repo and can read and change the others. Claude, Codex, Gemini and Copilot can do this; agents that only open one folder aren't offered.
 - Changes and Checks have a repo switcher, and Ports lists each repo of the task by name.
 - Create PRs opens one PR per repo, and every description links to the others ("Part of a change across: org/api#12, org/web#34").
@@ -142,9 +142,9 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Archive takes the whole task, and every repo keeps its branch. Protected files and repo trust hold per repo.
 
 **Task queue**
-- New Queue (sidebar, ⌘K, `nekotrail queue add "task"`): line up tasks and nekotrail runs 3 at a time, each in its own workspace, starting the next when one finishes or needs you. Set how many run at once overall and per repo.
+- New Queue (sidebar, ⌘K, `nekotrail queue add "task"`): line up tasks and Nekotrail runs 3 at a time, each in its own workspace, starting the next when one finishes or needs you. Set how many run at once overall and per repo.
 - Each task picks its repo, branch, agent, model and permissions, and what happens after: run checks, open a draft PR, or autopilot to green.
-- When an agent says it is out of usage, its tasks wait until the reset time it gave, or switch to the fallback agent you picked. With no time given, nekotrail waits 30 minutes and longer each time, and only one task tries again first.
+- When an agent says it is out of usage, its tasks wait until the reset time it gave, or switch to the fallback agent you picked. With no time given, Nekotrail waits 30 minutes and longer each time, and only one task tries again first.
 - Tasks set to Ask before changes wait for you to start them. Drag to reorder, pause and resume, retry failed tasks. The queue survives a restart.
 - Coming back after a while shows what the queue did: "8 done, 2 need you, 1 failed".
 
@@ -160,7 +160,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.15.0 (2026-11-07)
 
 **Import terminal sessions**
-- Bring in the Claude Code, Codex and Gemini chats you ran in a terminal: ⌘K, "Import terminal sessions". nekotrail only reads the CLIs' folders and never changes them.
+- Bring in the Claude Code, Codex and Gemini chats you ran in a terminal: ⌘K, "Import terminal sessions". Nekotrail only reads the CLIs' folders and never changes them.
 - Sessions are grouped by the repo and folder they ran in, with sessions, messages, dates and size shown before anything comes in. Tick a whole repo, a folder or single chats.
 - A worktree's chats land in a workspace pointing at that folder. Your main checkout's chats land in a read-only History workspace, and no worktree is made.
 - Imported chats keep their session, so a new message continues it. They show up in ⌘⇧F search, and importing again only adds new sessions.
@@ -191,7 +191,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 **Checks: tests, lint and typecheck**
 - New Checks tab (⌘5): runs your test, lint and typecheck commands in the background and lists each failure with its file, line and the code around it. The raw output is one click away.
 - "Fix with agent" sends one failure to the agent with its code; "Fix all" sends them all in one message.
-- No checks yet? nekotrail suggests them from the repo (npm, bun, pnpm, yarn, cargo, go, pytest, ruff, mypy, make) and saves the ones you tick.
+- No checks yet? Nekotrail suggests them from the repo (npm, bun, pnpm, yarn, cargo, go, pytest, ruff, mypy, make) and saves the ones you tick.
 - A `checks` section in `nekotrail.json` shares checks with the team. Like its scripts, they ask before they run.
 - "Run after every agent turn" puts the result in the chat. If a check that passed before now fails, the workspace moves to Needs you. A dot on each sidebar row shows passing, failing or running.
 
@@ -211,15 +211,15 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Each workspace gets 10 ports of its own (4100 to 4109, 4110 to 4119, ...), kept across restarts and given back when you archive it. Five workspaces can run the same app without fighting over 3000.
 - Terminals, scripts and agents get `NEKOTRAIL_PORT`, `NEKOTRAIL_PORT_1` to `_9`, and `PORT`. A `PORT` you set yourself is never replaced. Name ports in `nekotrail.json`: `"ports": {"web": "PORT", "api": "API_PORT"}`.
 - The new Ports button shows what listens on every workspace's ports, opens one in your browser or Preview, and frees a port by stopping a server that workspace started.
-- If your dev server ignores `PORT` and lands on its default, or finds another workspace already there, nekotrail says so and shows the fix. Preview opens the workspace's port until your app prints an address.
+- If your dev server ignores `PORT` and lands on its default, or finds another workspace already there, Nekotrail says so and shows the fix. Preview opens the workspace's port until your app prints an address.
 
-**Drive nekotrail from your terminal**
-- New `nekotrail` command: `nekotrail .` opens a repo, `nekotrail new "fix the login bug" --agent codex` starts an agent in a new workspace, and `nekotrail ls`, `open` and `status` show your workspaces and what needs you. Install it from Settings, General. nekotrail starts if it isn't running.
+**Drive Nekotrail from your terminal**
+- New `nekotrail` command: `nekotrail .` opens a repo, `nekotrail new "fix the login bug" --agent codex` starts an agent in a new workspace, and `nekotrail ls`, `open` and `status` show your workspaces and what needs you. Install it from Settings, General. Nekotrail starts if it isn't running.
 - `nekotrail://open?workspace=...` links jump to a workspace. `nekotrail://new?repo=...&prompt=...` links ask first and show the full task, so a web page can never start an agent on its own.
 - The command reaches the app through a socket only your user can open, never a network port.
 
 **Linux (new, experimental)**
-- nekotrail runs on Linux (x86_64), shipped as a `.deb` and an `.AppImage` that update themselves from inside the app.
+- Nekotrail runs on Linux (x86_64), shipped as a `.deb` and an `.AppImage` that update themselves from inside the app.
 - On Linux, shortcuts use Ctrl where the Mac uses ⌘. Switching workspace is Alt+1 to Alt+9 and Open in editor is Ctrl+Shift+O. The terminal copies and pastes with Ctrl+Shift+C / Ctrl+Shift+V.
 - On Linux, discarded files go to the desktop's Trash, Open in finds your editors and terminals on PATH, and agents keep the computer from idling to sleep.
 
@@ -237,7 +237,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Review drafts show a suggested change as code, the way GitHub does, instead of the raw suggestion block. Discard is gone from read-only reviews, and Submit review says why it is off (for example a request for changes with no summary).
 - ⌘F rings the current message with a rounded outline that sits clear of the text.
 - Ports: the popover grows to fit every workspace, free ports have no dead buttons, and freeing a port uses a stop icon.
-- "Start this task?" from a nekotrail:// link lists the repo, folder, branch and agent on their own lines, gives the task more room, and says when there is more to scroll.
+- "Start this task?" from a Nekotrail:// link lists the repo, folder, branch and agent on their own lines, gives the task more room, and says when there is more to scroll.
 - An archived workspace says "Archived, read only" next to Restore.
 - Search results show replies as plain text, without markdown marks like bold stars and backticks.
 - Checks: the bar lines up with the cards, Fix all is the main button when something fails, a running or waiting check says so instead of showing its last result, and Allow these commands and Add checks are the main buttons on their cards. With no checks yet, the empty page says it once and keeps its text to a readable width.
@@ -252,7 +252,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Claude and OpenCode can't edit protected files, in any mode. Other agents are refused whenever they ask first, and every agent's turn is checked afterwards.
 - If a turn changes a protected file anyway, the chat says which one, the workspace moves to Needs you, and "Put it back" restores just those files. The agent's copies go to the Trash.
 - New "Commands the agent ran" view for each workspace, in the ⋯ menu and ⌘K.
-- The first time you pick Full auto, nekotrail explains what it means and asks once.
+- The first time you pick Full auto, Nekotrail explains what it means and asks once.
 
 **Twelve more agents**
 - Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo join Claude, Codex, Gemini and OpenCode. Pick one for a workspace or chat; each uses your own login, and setup shows its install command if it's missing.
@@ -282,11 +282,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.12.1 (2026-11-06)
 
 **Sponsor**
-- nekotrail is free and open source. If it saves you time, you can now sponsor it on GitHub Sponsors: Settings, next to the version, or "Sponsor nekotrail" in ⌘K.
+- Nekotrail is free and open source. If it saves you time, you can now sponsor it on GitHub Sponsors: Settings, next to the version, or "Sponsor Nekotrail" in ⌘K.
 
 **Faster, quieter GitHub checks**
 - The PR bar, sidebar, board and autopilot share one GitHub check: one `gh` call per repo for all its workspaces. It runs every 20 s while checks run or autopilot is on, every 5 min otherwise, and pauses while the window is hidden.
-- PR state updates right after you push, open a PR, merge, or an agent finishes a turn. Running out of GitHub API quota no longer shows errors; nekotrail waits for the reset and keeps the last answer.
+- PR state updates right after you push, open a PR, merge, or an agent finishes a turn. Running out of GitHub API quota no longer shows errors; Nekotrail waits for the reset and keeps the last answer.
 
 **Share MCP servers and skills**
 - The MCP sheet (`/mcp`) shows every server your agents have and copies one into another agent in one click. It shows exactly what goes in, backs up your settings file first, and changes nothing else in it.
@@ -298,7 +298,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - The MCP sheet shows one column per agent (Claude, Codex, Gemini, OpenCode) with a tick where an agent already has a server or skill and an Add button where it doesn't, so rows line up and never wrap.
 - Servers an agent can't take say "Can't add" right in the row; open it to see why.
 - If a settings file changes between the preview and Add, the sheet shows the preview again from the file as it is now, with the reason next to the button.
-- A settings file nekotrail can't read gets a Try again button, and the sheet stays anchored at the top as you move between the list and a preview.
+- A settings file Nekotrail can't read gets a Try again button, and the sheet stays anchored at the top as you move between the list and a preview.
 
 ## 0.12.0 (2026-11-06)
 
@@ -361,7 +361,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.11.0 (2026-11-06)
 
 **Updates**
-- nekotrail now tells you when a new version is out: a small card with the cat, what's new, and Update or Not now. "Not now" waits a day before asking about that version again; a newer one asks right away.
+- Nekotrail now tells you when a new version is out: a small card with the cat, what's new, and Update or Not now. "Not now" waits a day before asking about that version again; a newer one asks right away.
 - Update downloads in the background while you keep working. If agents or terminal commands are running, it says how many and lets you restart now or once everything is idle.
 - Check for updates any time from ⌘K or Settings, next to the version.
 - If you're on 0.10.1 or earlier, install this release by hand once from the release page. After that, updates come to you.
@@ -424,7 +424,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## 0.5.0 (2026-11-06)
 
 **Agents that work as a team**
-- Autopilot: turn it on from the PR menu and nekotrail keeps the PR moving on its own. Failing checks go to the agent with their logs, conflicts get merged and resolved, requested changes get answered. It stops after 3 agent turns or when the PR is green, and tells you with a ting and a notification.
+- Autopilot: turn it on from the PR menu and Nekotrail keeps the PR moving on its own. Failing checks go to the agent with their logs, conflicts get merged and resolved, requested changes get answered. It stops after 3 agent turns or when the PR is green, and tells you with a ting and a notification.
 - Continue in the other agent: when Claude or Codex hits its usage limit (or isn't installed), one click opens the other agent with the conversation so far, ready to send.
 - Overlap warning: the PR bar tells you when another workspace in the same repo changed the same files, before it turns into a merge conflict.
 
@@ -497,7 +497,7 @@ The Conductor-replacement release: everything a daily Conductor user reaches for
 - First-run check for git, GitHub, Claude Code and Codex, with the command for anything missing.
 - Clone from GitHub; Conductor import shows what it will bring over first.
 - Secret files like `.env.local` can no longer be committed by an agent.
-- Spend in the sidebar counts only real nekotrail usage.
+- Spend in the sidebar counts only real Nekotrail usage.
 
 ## 0.1.0 (2026-11-05)
 

@@ -1,6 +1,6 @@
-<p align="center"><img src="public/mascot-happy.svg" width="140" alt="nekotrail cat"></p>
+<p align="center"><img src="public/mascot-happy.svg" width="140" alt="Nekotrail cat"></p>
 
-<h1 align="center">nekotrail</h1>
+<h1 align="center">Nekotrail</h1>
 
 <p align="center">
   <a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><img src="https://img.shields.io/github/v/release/Harshil-Jani/nekotrail?label=release&color=ff9a4d" alt="Latest release"></a>
@@ -12,7 +12,7 @@
 
 <p align="center">Run many coding agents at once on your Mac. Each one gets its own branch and folder, and each one ends as a pull request.</p>
 
-<p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="nekotrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
+<p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="Nekotrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
 
 <p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a></p>
 
@@ -20,9 +20,9 @@
 
 ---
 
-nekotrail is an open-source, local-first desktop app for running coding agents in parallel: Claude Code, Codex, Gemini CLI, OpenCode and 12 more, sixteen in all. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
+Nekotrail is an open-source, local-first desktop app for running coding agents in parallel: Claude Code, Codex, Gemini CLI, OpenCode and 12 more, sixteen in all. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
 
-**Moving from Conductor?** nekotrail imports your repos, active workspaces and chats from the Conductor app on your Mac, then moves your worktrees out of Conductor's folder into its own with `git worktree move`, and checks each one. It uses the same keyboard shortcuts as Conductor, and imported chats continue the same agent session. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) for what comes over, what doesn't, and Conductor Cloud.
+**Moving from Conductor?** Nekotrail imports your repos, active workspaces and chats from the Conductor app on your Mac, then moves your worktrees out of Conductor's folder into its own with `git worktree move`, and checks each one. It uses the same keyboard shortcuts as Conductor, and imported chats continue the same agent session. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) for what comes over, what doesn't, and Conductor Cloud.
 
 **The night sky.** Every workspace is named after a star in one of eight cat constellations. Starting a workspace lights its star; merging its PR makes it shine, and lines appear between neighbouring stars once both have shipped. Ship enough and a whole cat appears in your sky. One of them, Felis, is a real constellation: astronomer Jérôme Lalande drew a cat among the stars in 1799.
 
@@ -39,7 +39,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 **Approve the plan, or split it.** Approve with one click (⌘⇧↵), or split a numbered plan into parallel workspaces.
 <img src="docs/screenshots/plan.png" width="900" alt="Plan card with Approve and build, Split into 3 workspaces, a todo list and queued messages">
 
-**Or approve each change.** In "Ask before changes" mode, every edit and command waits for your Allow (↵), Deny (⌫) or Allow for this chat. Here it's OpenCode, which nekotrail drives over the Agent Client Protocol.
+**Or approve each change.** In "Ask before changes" mode, every edit and command waits for your Allow (↵), Deny (⌫) or Allow for this chat. Here it's OpenCode, which Nekotrail drives over the Agent Client Protocol.
 <img src="docs/screenshots/opencode.png" width="900" alt="An OpenCode chat in Ask before changes mode, waiting on an edit with Deny, Allow for this chat and Allow">
 
 **Review the agent like a pull request.** Click a line number (shift-click or drag for more lines) to comment. Send review hands every comment to the agent in one message, with the file, line and code. Comments on lines the agent has since changed are marked Outdated. GitHub review comments show inline too.
@@ -82,7 +82,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 
 - **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. Your workspaces, branches and chats stay on your disk, in folders you own.
 - **Bring any agent.** It drives sixteen agents through their official CLIs, with your own logins, settings and subscriptions: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo. Setup shows the install command for any you don't have. Agents that speak the Agent Client Protocol (ACP) are one registry entry.
-- **Hand off without starting over.** When one agent runs out of usage or goes in circles, hand the task to another in the same workspace and branch, with a brief nekotrail writes from the chat and you read first.
+- **Hand off without starting over.** When one agent runs out of usage or goes in circles, hand the task to another in the same workspace and branch, with a brief Nekotrail writes from the chat and you read first.
 - **Your Conductor work, kept safe.** It imports your repos, active workspaces and chats from the Conductor app on your Mac, and moves your worktrees out of Conductor's folder with `git worktree move`, checking each one after. Nothing is copied or deleted: git renames each folder. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md).
 
 ## What it does
@@ -122,13 +122,13 @@ The cat reflects the real state of your work, so its moods carry information:
 
 ## Install
 
-Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so macOS blocks it on first launch. Run this once in Terminal to clear the download quarantine flag, then open it as usual:
+Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag Nekotrail to Applications. The app isn't notarized yet, so macOS blocks it on first launch. Run this once in Terminal to clear the download quarantine flag, then open it as usual:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/nekotrail.app
 ```
 
-**Updates.** nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the latest release from the download link once by hand: those versions can't update themselves yet.
+**Updates.** Nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the latest release from the download link once by hand: those versions can't update themselves yet.
 
 ### Linux (new, experimental)
 
@@ -141,7 +141,7 @@ Since 0.14.0, each release also carries an x86_64 `.deb` and `.AppImage`. This i
 - Not on Linux yet: the Conductor import (Conductor is Mac-only), vibrancy, and the Dock badge (most Linux desktops don't show one). Annotate in Preview uses WebKitGTK's own snapshot and is the least tested part.
 - Requirements as below, plus WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, pulled in by the `.deb`).
 
-nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS (or Linux, see above), [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one agent CLI, such as [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai). Setup lists all sixteen with their install commands.
+Nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS (or Linux, see above), [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one agent CLI, such as [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai). Setup lists all sixteen with their install commands.
 
 To build it yourself:
 
@@ -157,7 +157,7 @@ bun run tauri dev
 
 ## Keyboard
 
-Conductor's shortcuts still work, so muscle memory carries over. The full list is in Settings (⌘,), under Shortcuts, and [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) maps Conductor's concepts to nekotrail's.
+Conductor's shortcuts still work, so muscle memory carries over. The full list is in Settings (⌘,), under Shortcuts, and [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) maps Conductor's concepts to Nekotrail's.
 
 | Keys | Action |
 |---|---|
@@ -180,14 +180,14 @@ Conductor's shortcuts still work, so muscle memory carries over. The full list i
 ```
 
 Committed values win over the ones saved in the app. Because anyone who can push to the repo or open a PR
-can change this file, nekotrail shows you its commands and runs them only after you approve them. It asks
+can change this file, Nekotrail shows you its commands and runs them only after you approve them. It asks
 again whenever they change. An archive command you never approved is skipped.
 
 The same goes for agent config a repo commits that would run commands as soon as a chat starts: hooks,
 `apiKeyHelper` and `env` in `.claude/settings.json`, servers in `.mcp.json`, and `mcp_servers`,
 `shell_environment_policy.set` and `.codex/rules` for Codex, hooks, MCP servers and risky `.env` variables for
 Gemini, and MCP servers, plugins, custom tools, formatters and `allow` permissions for OpenCode. Claude and
-Codex skip their own trust prompt when run headless, so nekotrail lists what would run before the first message.
+Codex skip their own trust prompt when run headless, so Nekotrail lists what would run before the first message.
 Until you trust it, Claude, Codex and OpenCode run with that repo config off (`claude --setting-sources user`,
 Codex with the folder marked untrusted), and Gemini asks before it runs, while your own settings and MCP
 servers stay on.
@@ -233,10 +233,10 @@ Early (0.21). Built and used daily on macOS. Linux x86_64 builds are new and exp
 
 ## Sponsor
 
-nekotrail is free, open source and local-first, with no account and no paid tier. If it saves you time, you can support its development on [GitHub Sponsors](https://github.com/sponsors/Harshil-Jani) or with a one-off coffee on [Buy Me a Coffee](https://buymeacoffee.com/harshiljani). In the app: Settings, next to the version, or "Sponsor nekotrail" and "Buy me a coffee" in ⌘K.
+Nekotrail is free, open source and local-first, with no account and no paid tier. If it saves you time, you can support its development on [GitHub Sponsors](https://github.com/sponsors/Harshil-Jani) or with a one-off coffee on [Buy Me a Coffee](https://buymeacoffee.com/harshiljani). In the app: Settings, next to the version, or "Sponsor Nekotrail" and "Buy me a coffee" in ⌘K.
 
 <p><a href="https://github.com/sponsors/Harshil-Jani"><img src="docs/sponsor/github-sponsors.svg" height="40" alt="Sponsor on GitHub"></a> <a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="40" alt="Buy me a coffee"></a></p>
 
 ## License
 
-MIT. The open-source components it ships with, and their licenses, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). nekotrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.
+MIT. The open-source components it ships with, and their licenses, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Nekotrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.
