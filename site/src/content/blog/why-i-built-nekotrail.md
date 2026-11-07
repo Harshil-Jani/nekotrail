@@ -55,7 +55,7 @@ It also means no lock-in. Race two agents on one task, or hand a half-done task 
 
 ## Why open source
 
-MIT, on GitHub. Read what it runs, build it yourself, fork it if you disagree with me. Code you have can't be shut down on you. The changelog is public and every release is tagged.
+MIT, on GitHub. Read what it runs, build it yourself, fork it if you disagree with me. The changelog is public and every release is tagged.
 
 ## The cat
 
