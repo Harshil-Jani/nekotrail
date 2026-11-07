@@ -6,21 +6,21 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 ## Unreleased
 
 **New look**
-- A new theme, Moonlight: midnight indigo surfaces, moonlight lavender for buttons, selection and focus, and indigo in light mode. Every text colour passes WCAG AA in both appearances.
-- The cat is now the Starlight tabby: silver fur, indigo stripes and a merge tail with gold commit stars. Its eyes still follow your pointer, and it still naps, works and worries.
-- Lantern gold is kept for what needs you: the Needs you section, unread dots, an agent asking for your OK, the away banner and your Preview annotations. Warnings are amber-orange, so the two never get mixed up.
-- The night sky is moonlit, lit stars glow starlight and merged ones shine gold.
-- New app icon, logo, wordmark (with a gold star on the i), favicon, social preview and VS Code extension icons, and the website, README screenshots and clips in the new look.
+- New Moonlight theme: midnight indigo in dark mode, indigo in light mode. All text meets WCAG AA contrast in both.
+- The cat is now the Starlight tabby: silver fur, indigo stripes, gold stars on its tail. It still naps, works, worries and watches your pointer.
+- Gold now means "needs you": the Needs you list, unread dots, an agent asking for your OK, the away banner and your Preview notes. Warnings are orange.
+- The night sky is moonlit. Lit stars glow, and merged ones shine gold.
+- New app icon, logo, favicon and VS Code extension icons.
 
-**Ready for launch**
-- Settings now has a Buy me a coffee link next to Sponsor, and ⌘K has "Buy me a coffee", for a one-off thank you without a GitHub account.
-- The README shows Sponsor on GitHub and Buy me a coffee buttons, and the repo's Sponsor button lists both.
-- New CONTRIBUTING, SECURITY and code of conduct files, plus bug report and feature request forms, so you know how to build, test, report a problem or a vulnerability, and propose a change.
-- A public [roadmap](docs/ROADMAP.md) of what's next and what we're not building, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) listing every open-source component the app ships with and its license.
+**The NekoTrail name**
+- The app now writes its name as NekoTrail everywhere you read it: title bar, menus, Settings, ⌘K, alerts, exports and the VS Code extension.
+- What you type or set up keeps the lowercase name, so nothing breaks: the `nekotrail` command, `nekotrail.json`, `nekotrail://` links and the app file. Updates install over the app you have.
+- The Mac app now requires macOS 13 or newer, as the download page already said.
 
-**Brand**
-- The app now writes its name as NekoTrail everywhere you read it: window title, macOS menu bar and About panel, first run, Settings, ⌘K, notifications and alerts, error messages, the terminal command's help and replies, exports and the "Made with NekoTrail" line, and the VS Code extension's view, commands and messages. Names you type or that other tools read stay lowercase: the `nekotrail` command, `nekotrail.json`, `nekotrail://` links, the extension's settings and the app's folders, so nothing you set up breaks. The app file (nekotrail.app) and the Linux package and launcher entry also keep the lowercase name, so updates install over the app you have.
-- The Mac app now asks for macOS 13 or newer, which is what the download page already said.
+**Support and contribute**
+- Buy me a coffee: a one-off thank you, no GitHub account needed. Find it next to Sponsor in Settings, and in ⌘K.
+- On GitHub: a [roadmap](docs/ROADMAP.md), a contributing guide, a security policy, a code of conduct and forms for bugs and feature requests.
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every open-source component the app ships with, and its license.
 
 ## 0.21.0 (2026-11-07)
 
