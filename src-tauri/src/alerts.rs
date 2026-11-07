@@ -548,6 +548,12 @@ fn clip(s: &str, max: usize) -> String {
 
 const JSON: (&str, &str) = ("Content-Type", "application/json");
 
+/// The app icon (the cat in its Moonlight tile, 180 px), as the site already serves it. ntfy,
+/// Discord and Slack fetch it to put next to an alert. It is the site's touch icon
+/// (scripts/brand.ts draws it), so it is live as long as the site is: an image Slack cannot fetch
+/// would make it refuse the whole message.
+pub const ICON_URL: &str = "https://harshil-jani.github.io/nekotrail/apple-touch-icon.png";
+
 /// The request a service gets for a message.
 pub fn request(service: Service, s: &Secret, m: &Message) -> Result<Req, String> {
     let text = |sep: &str| -> String {
@@ -567,15 +573,29 @@ pub fn request(service: Service, s: &Secret, m: &Message) -> Result<Req, String>
         Service::Ntfy => {
             let (base, topic) = ntfy_split(&s.url).ok_or("The ntfy topic URL is incomplete.")?;
             bearer(&mut headers);
-            let mut b = json!({"topic": topic, "title": clip(&m.title, 200), "message": clip(&m.body, 3000), "priority": if m.urgent { 4 } else { 3 }});
+            let mut b = json!({"topic": topic, "title": clip(&m.title, 200), "message": clip(&m.body, 3000), "priority": if m.urgent { 4 } else { 3 }, "icon": ICON_URL});
             if let Some(l) = &m.link {
                 b["click"] = json!(l);
             }
             (base, b)
         }
-        Service::Slack => (s.url.clone(), json!({"text": clip(&format!("*{}*\n{}", slack_escape(&m.title), slack_escape(&text("\n"))), 3000)})),
+        Service::Slack => {
+            // `text` is what the phone's notification and older clients show; the blocks add the
+            // cat beside "NekoTrail" (an incoming webhook cannot change its own avatar).
+            let full = clip(&format!("*{}*\n{}", slack_escape(&m.title), slack_escape(&text("\n"))), 3000);
+            (s.url.clone(), json!({
+                "text": full,
+                "blocks": [
+                    {"type": "context", "elements": [
+                        {"type": "image", "image_url": ICON_URL, "alt_text": "NekoTrail"},
+                        {"type": "mrkdwn", "text": "*NekoTrail*"},
+                    ]},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": full}},
+                ],
+            }))
+        }
         Service::Discord => (s.url.clone(), json!({
-            "username": "NekoTrail", "content": clip(&format!("**{}**\n{}", m.title, text("\n")), 2000),
+            "username": "NekoTrail", "avatar_url": ICON_URL, "content": clip(&format!("**{}**\n{}", m.title, text("\n")), 2000),
             // A workspace called "@everyone" pings nobody.
             "allowed_mentions": {"parse": []},
         })),
@@ -593,7 +613,7 @@ pub fn request(service: Service, s: &Secret, m: &Message) -> Result<Req, String>
             }).collect();
             (s.url.clone(), json!({
                 "source": "nekotrail", "event": m.event.map(|e| e.key()).unwrap_or("several"),
-                "title": m.title, "message": m.body, "link": m.link, "urgent": m.urgent, "items": items,
+                "title": m.title, "message": m.body, "link": m.link, "urgent": m.urgent, "icon": ICON_URL, "items": items,
             }))
         }
         Service::Pushover => {
@@ -1152,6 +1172,7 @@ mod tests {
         assert!(r.headers.contains(&("Authorization".into(), "Bearer tk_abcdef".into())));
         let b = body(&r);
         assert_eq!((b["topic"].as_str(), b["priority"].as_u64(), b["click"].as_str()), (Some("cat-alerts"), Some(4), Some("nekotrail://open?workspace=w1")));
+        assert_eq!(b["icon"].as_str(), Some(ICON_URL));
         // Slack: one text field, reserved characters escaped.
         let mut m2 = m.clone();
         m2.title = "A <b> & c".into();
@@ -1159,14 +1180,20 @@ mod tests {
         assert_eq!(r.url, SLACK);
         let t = body(&r)["text"].as_str().unwrap().to_string();
         assert!(t.starts_with("*A &lt;b&gt; &amp; c*\n") && t.contains("Open on your Mac: nekotrail://open?workspace=w1"), "{t}");
+        // The blocks carry the cat and the same text; `text` stays as the fallback.
+        let b = body(&r);
+        assert_eq!(b["blocks"][0]["type"], "context");
+        assert_eq!(b["blocks"][0]["elements"][0], json!({"type": "image", "image_url": ICON_URL, "alt_text": "NekoTrail"}));
+        assert_eq!(b["blocks"][1]["text"]["text"].as_str(), Some(t.as_str()));
         // Discord: mentions off.
         let r = request(Service::Discord, &Secret { url: "https://discord.com/api/webhooks/1/abc".into(), ..Default::default() }, &m).unwrap();
         assert_eq!(body(&r)["allowed_mentions"], json!({"parse": []}));
+        assert_eq!((body(&r)["username"].as_str(), body(&r)["avatar_url"].as_str()), (Some("NekoTrail"), Some(ICON_URL)));
         assert!(body(&r)["content"].as_str().unwrap().starts_with("**Fix w1 has a plan"));
         // Generic webhook: structured, with each item, no last line unless asked.
         let r = request(Service::Webhook, &Secret { url: "https://example.org/hook".into(), ..Default::default() }, &m).unwrap();
         let b = body(&r);
-        assert_eq!((b["source"].as_str(), b["event"].as_str()), (Some("nekotrail"), Some("needs_you")));
+        assert_eq!((b["source"].as_str(), b["event"].as_str(), b["icon"].as_str()), (Some("nekotrail"), Some("needs_you"), Some(ICON_URL)));
         assert_eq!(b["items"][0]["repo"], "pawprint-web");
         assert!(b["items"][0].get("last_line").is_none());
         assert!(!r.headers.iter().any(|(k, _)| k == "Authorization"));

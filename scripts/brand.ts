@@ -317,6 +317,7 @@ function main() {
   write("site/public/brand/icon-macos.svg", fs.readFileSync(path.join(BRAND, "icon/nekotrail-icon.svg")));
   fs.writeFileSync(path.join(tmp, "small.svg"), mark.small);
   rsvg(path.join(tmp, "small.svg"), "site/public/favicon-32.png", 32, 32);
+  // Also the icon away alerts show in ntfy, Slack and Discord (alerts.rs ICON_URL): keep the path.
   rsvg("brand/icon/nekotrail-icon.svg", "site/public/apple-touch-icon.png", 180, 180);
   // App (Vite public folder: the favicon of the web preview)
   write("public/favicon.svg", mark.small);
