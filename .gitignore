@@ -24,5 +24,23 @@ dist-ssr
 *.sw?
 
 # Impeccable design-round scratch (decision pages, sketches)
-.impeccable/mocks/
-.impeccable/*.json
+.impeccable/
+
+# Rust build output (src-tauri/.gitignore covers src-tauri/target)
+/target/
+.target*/
+
+# Secrets and signing keys never belong in the repo
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+
+# Local agent worktrees and settings
+.claude/worktrees/
+.claude/settings.local.json
+
+# Packaged extension
+*.vsix
