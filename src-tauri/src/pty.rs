@@ -148,6 +148,17 @@ impl Ptys {
         }
     }
 
+    /// Stop every terminal whose id starts with `prefix`. A workspace's terminals are all named
+    /// `<workspace id>:<name>` (`:term`, the extra tabs `:term-<time>`, `:run`, `:setup`, actions),
+    /// so `"<workspace id>:"` closes them all. Returns how many were closed.
+    pub fn close_prefix(&self, prefix: &str) -> usize {
+        let ids: Vec<String> = self.0.lock().unwrap().keys().filter(|k| k.starts_with(prefix)).cloned().collect();
+        for id in &ids {
+            self.close(id);
+        }
+        ids.len()
+    }
+
     pub fn is_open(&self, id: &str) -> bool {
         self.0.lock().unwrap().contains_key(id)
     }
@@ -298,5 +309,27 @@ mod tests {
         assert_eq!(ptys.busy(), 0);
         assert!(!ptys.is_open("sh") && !ptys.is_open("run"));
         drop(rx);
+    }
+
+    #[test]
+    fn close_prefix_closes_every_tab_of_one_workspace_and_no_other() {
+        let d = tempfile::tempdir().unwrap();
+        let cwd = d.path().to_str().unwrap();
+        let ptys = Ptys::default();
+        for id in ["w1:term", "w1:term-mh2k9x", "w1:run", "w10:term"] {
+            ptys.open(id, cwd, &[], Some("sleep 30"), 80, 24, |_| {}, |_| {}).unwrap();
+        }
+        let pids: HashMap<String, u32> = ptys.pids().into_iter().collect();
+        assert_eq!(ptys.close_prefix("w1:"), 3);
+        assert!(!ptys.is_open("w1:term") && !ptys.is_open("w1:term-mh2k9x") && !ptys.is_open("w1:run"));
+        assert!(ptys.is_open("w10:term"), "another workspace whose id starts the same keeps its terminal");
+        // The processes are gone, not just forgotten.
+        let alive = |pid: u32| unsafe { libc::kill(pid as i32, 0) } == 0;
+        for _ in 0..100 {
+            if !alive(pids["w1:term-mh2k9x"]) { break; }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!alive(pids["w1:term-mh2k9x"]), "the extra tab's process still runs");
+        ptys.close_all();
     }
 }

@@ -995,7 +995,7 @@ fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
     let main_checkout = ws.imported_from.as_deref() == Some(terminal::FROM_HISTORY)
         || st.db().repo(&ws.repo_id).is_ok_and(|r| Path::new(&r.root_path) == path);
     if main_checkout {
-        st.ptys.close(&format!("{id}:term"));
+        close_workspace_terminals(st, &id);
         return st.db().set_workspace_state(&id, "archived").map_err(e);
     }
     if path.exists() {
@@ -1021,13 +1021,21 @@ fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
         let _ = git::prune_checkpoints(root, &guard::prefix(&id), 0);
         let _ = git::git(root, &["update-ref", "-d", &git::legacy_checkpoint_ref(&id)]);
     }
-    st.ptys.close(&format!("{id}:term"));
+    close_workspace_terminals(st, &id);
     st.checks.stop(&id);
     st.checks.forget(&id);
     st.db().set_workspace_state(&id, "archived").map_err(e)?;
     // A queued task that ran here starts fresh if you retry it.
     queuerun::update_in(st, |q| q.forget_workspace(&id));
     Ok(())
+}
+
+/// Stop every terminal of a workspace: the first tab, every extra tab (`<id>:term-<time>`, named
+/// by the window), the Run and Setup scripts and named actions. Closing only `<id>:term` left the
+/// other tabs' shells running until the app quit (v0.23 QA). Also forgets its Run port failure.
+fn close_workspace_terminals(st: &AppState, id: &str) {
+    st.ptys.close_prefix(&format!("{id}:"));
+    st.port_failures.lock().unwrap().remove(id);
 }
 
 /// Restores the workspace, and every other workspace of its multi-repo task.
@@ -2283,10 +2291,8 @@ async fn relocate_imported(st: State<'_, AppState>, ids: Option<Vec<String>>) ->
             out.push(o);
             continue;
         }
-        // Terminals hold the old folder open; close them first.
-        for key in [format!("{id}:term"), format!("{id}:run"), format!("{id}:setup")] {
-            st.ptys.close(&key);
-        }
+        // Terminals hold the old folder open; close them first (extra tabs and actions too).
+        close_workspace_terminals(&st, &id);
         match rescue::move_checked(Path::new(&repo.root_path), Path::new(&ws.path), &to) {
             Ok((problems, n)) => {
                 st.db().set_path(&id, &o.to).map_err(e)?;

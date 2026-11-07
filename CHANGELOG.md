@@ -37,6 +37,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - A first message that is only a greeting ("Hey there") no longer names the workspace ("There"). It keeps the branch name until a message says what the task is; existing ones are fixed on the next launch.
 - `caffeinate` no longer stays behind as a zombie process after every turn.
 - Stop on a Claude turn reads as Stopped, not "Ended with an error". Claude answers Ctrl-C with an error of its own; the app now remembers you pressed Stop, so the chat isn't flagged as needing you, no away alert goes out, and whatever the agent started is stopped too.
+- Archiving a workspace closes every terminal it had: extra tabs, the Run and Setup scripts and actions, not only the first tab. Before, each extra tab's shell kept running until you quit.
 
 **Design ship-gate fixes**
 - A chat stays at its newest line when something below it grows after it is drawn (a diagram, your queued messages, the working row), so what the agent does next is never hidden under the fold.
