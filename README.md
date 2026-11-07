@@ -78,7 +78,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 
 ## Why
 
-- **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. It can't be shut down or acquired away.
+- **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. Your workspaces, branches and chats stay on your disk, in folders you own.
 - **Bring any agent.** It drives sixteen agents through their official CLIs, with your own logins, settings and subscriptions: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo. Setup shows the install command for any you don't have. Agents that speak the Agent Client Protocol (ACP) are one registry entry.
 - **Hand off without starting over.** When one agent runs out of usage or goes in circles, hand the task to another in the same workspace and branch, with a brief nekotrail writes from the chat and you read first.
 - **Your Conductor work, kept safe.** It imports your repos, active workspaces and chats from the Conductor app on your Mac, and moves your worktrees out of Conductor's folder with `git worktree move`, checking each one after. Nothing in Conductor's folder is deleted. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md).
