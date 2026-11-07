@@ -23,32 +23,32 @@ W, H = 1040, 650   # card image (16:10)
 PAD = 22           # room for the shadow, same on every side
 R = 18             # corner radius
 
-# name: (x, y, w, h) in the 1600x1000 source, all 16:10
+# name: (x, y, w, h) in the 1600x1000 source, all 16:10 (sidebar 264px wide)
 CROPS = {
-    "new-workspace": (330, 150, 1000, 625),
-    "plan":          (420, 230, 1040, 650),
-    "changes":       (290, 60, 1120, 700),
-    "rewind":        (300, 110, 1000, 625),
-    "preview":       (296, 0, 1120, 700),
-    "compare":       (280, 200, 1040, 650),
-    "scorecard":     (300, 200, 1000, 625),
-    "night-sky":     (320, 10, 1216, 760),
-    "model-picker":  (260, 375, 1000, 625),
-    "opencode":      (420, 110, 1040, 650),
-    "stacked":       (300, 0, 1300, 812),
-    "board":         (300, 0, 1300, 812),
-    "storage":       (300, 180, 1000, 625),
-    "palette":       (280, 130, 1040, 650),
-    "mcp":           (176, 40, 1248, 780),
+    "new-workspace": (315, 150, 1000, 625),
+    "plan":          (390, 230, 1040, 650),
+    "changes":       (260, 60, 1120, 700),
+    "rewind":        (285, 110, 1000, 625),
+    "preview":       (264, 0, 1120, 700),
+    "compare":       (265, 200, 1040, 650),
+    "scorecard":     (285, 200, 1000, 625),
+    "night-sky":     (264, 10, 1216, 760),
+    "model-picker":  (245, 375, 1000, 625),
+    "opencode":      (390, 110, 1040, 650),
+    "stacked":       (264, 0, 1300, 812),
+    "board":         (264, 0, 1300, 812),
+    "storage":       (285, 180, 1000, 625),
+    "palette":       (265, 130, 1040, 650),
+    "mcp":           (161, 40, 1248, 780),
     "welcome":       (420, 60, 1040, 650),
 }
 
 # Buttons and icons. Neutral greys from GitHub's own UI, plus the brand's Moonlight for the one
 # primary button (brand/palette.json): change these two lines if the palette changes.
 THEMES = {
-    "light": {"primary": ("#292966", "#292966", "#ffffff"), "secondary": ("#f6f8fa", "#d0d7de", "#1f2328"),
+    "light": {"primary": ("#3D3D85", "#3D3D85", "#ffffff"), "secondary": ("#f6f8fa", "#d0d7de", "#1f2328"),
               "heart": "#bf3989", "tile": ("#f6f8fa", "#d0d7de"), "glyph": "#1f2328"},
-    "dark": {"primary": ("#CCCCFF", "#CCCCFF", "#101026"), "secondary": ("#21262d", "#3d444d", "#f0f6fc"),
+    "dark": {"primary": ("#CCCCFF", "#CCCCFF", "#1A1A4A"), "secondary": ("#21262d", "#3d444d", "#f0f6fc"),
              "heart": "#db61a2", "tile": ("#161b22", "#30363d"), "glyph": "#e6edf3"},
 }
 FONT = ('font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, &quot;Noto Sans&quot;, '
