@@ -3,7 +3,8 @@
 //!
 //! It only reads the database (opened read-only) and never moves files: imported
 //! workspaces keep their existing worktree folders, and chats resume through the
-//! agent's own session id (`claude --resume`, `codex exec resume`).
+//! agent's own session id (`claude --resume`, `codex exec resume`). Moving those folders
+//! out of Conductor's is a separate step, in `rescue`.
 
 use crate::store::{new_id, Repo, Session, Store, Workspace};
 use anyhow::Result;
