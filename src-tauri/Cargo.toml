@@ -60,6 +60,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
 # Away alerts keep their tokens and webhook URLs in the login keychain.
 keyring = { version = "3", features = ["apple-native"] }
+# Banners with a subtitle and the mascot on the right (notice.rs); already in the tree through the notification plugin.
+mac-notification-sys = "0.6"
 
 # On Linux, Annotate snapshots the WebKitGTK view instead (also already in the tree through wry; png
 # lets cairo write the snapshot out).

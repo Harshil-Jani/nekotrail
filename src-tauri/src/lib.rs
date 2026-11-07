@@ -22,6 +22,7 @@ pub mod proc;
 #[cfg(debug_assertions)]
 mod e2e;
 pub mod names;
+pub mod notice;
 pub mod ports;
 pub mod preview;
 pub mod prompts;
@@ -5314,7 +5315,7 @@ pub fn run() {
             sessions, new_session, update_session, session_events, queued, clear_queue, send, stop,
             restore_checkpoint, checkpoint_preview, live_checkpoints, repo_guard, put_back_protected, workspace_files, save_attachment, preview_probe, preview_snapshot, workspace_ports, ports_status, free_port,
             set_workspace_title, set_workspace_status, rename_branch, set_repo_prefs, set_session_effort, hide_session,
-            app_settings, set_app_setting,
+            app_settings, set_app_setting, notice::notice_mode, notice::system_notify,
             pty_run, pty_attach, open_in_targets, line_counts,
             remove_queued, fork_session, handoff_brief, handoff_start, show_session, add_dir, doctor, github_repos, clone_repo, import_preview, repo_brief, repo_issues, start_chat, set_pair, workspace_stats, usage_summary, model_catalog, mcp_list, mcp_share_overview, mcp_share_preview, mcp_share_apply, skill_share, rules_overview, rules_plan, rules_apply, rules_open, rules_save, task_rules, set_task_rules, prompts_list, prompts_save, prompts_duplicate, prompts_export, prompts_import, prompt_context, export_save, sections, create_section, rename_section, delete_section, set_section, resource_usage, imported_outside, relocate_imported, conductor_rescue_plan, session_events_tail, set_autopilot, autopilot_status, usage_report, usage_export, budgets_set, collisions, stack_parent, restack_workspace, agent_scorecard, answer_approval, installed_agents, workspace_storage, clean_workspace, free_disk_mb, read_file, write_file, discard_file, pr_review_comments, review_comments, add_review_comments, remove_review_comments,
             review_requests, start_review, review_plan, submit_review, update_review_comment,

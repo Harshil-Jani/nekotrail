@@ -93,7 +93,9 @@
     "longDescription": "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request. Open source and local-first: it drives the agent CLIs you already use, such as Claude Code, Codex, Gemini CLI and OpenCode, with your own logins.",
     "createUpdaterArtifacts": true,
     "resources": {
-      "resources/THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt"
+      "resources/THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt",
+      "notice/cat-happy.png": "notice/cat-happy.png",
+      "notice/cat-idle.png": "notice/cat-idle.png"
     },
     "macOS": {
       "bundleName": "NekoTrail",
