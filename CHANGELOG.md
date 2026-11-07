@@ -3,7 +3,7 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.23.0 (2026-11-07)
 
 **Notifications**
 - Notifications wear the NekoTrail cat. Each one reads as the task (not the workspace's star name), then the repo and branch, then what happened in a plain sentence, with the mascot on the right on macOS. No emoji, and a one-word leftover like "back" is never the whole message.
