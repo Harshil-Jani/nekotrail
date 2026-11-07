@@ -40,10 +40,11 @@ function rustCrates(): Map<string, Component> {
   const where = new Map(meta.packages.map((p) => [`${p.name} ${p.version}`, p]));
   const out = new Map<string, Component>();
   for (const target of TARGETS) {
-    const tree = run(["cargo", "tree", "-e", "normal", "--prefix", "none", "--format", "{p}|{l}", "--target", target], tauri);
+    const tree = run(["cargo", "tree", "--color", "never", "-e", "normal", "--prefix", "none", "--format", "{p}|{l}", "--target", target], tauri);
     for (const line of tree.split("\n")) {
       if (!line || line.includes("(proc-macro)")) continue;
-      const [p, l] = line.replace(" (*)", "").split("|");
+      // CI sets CARGO_TERM_COLOR; strip any colour codes before reading the line.
+      const [p, l] = line.replace(/\x1b\[[0-9;]*m/g, "").replace(" (*)", "").split("|");
       const [name, v] = p.trim().split(" ");
       if (name === "nekotrail") continue;
       const version = v.replace(/^v/, "");

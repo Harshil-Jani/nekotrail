@@ -16,6 +16,8 @@ git rev-parse -q --verify "refs/tags/v$v" >/dev/null && { echo "v$v already exis
 echo "Checking: type-check and build..."
 bun run build >/dev/null || { echo "The build or type check failed. Nothing was tagged." >&2; exit 1; }
 rm -rf dist
+echo "Checking: licence texts (the release build runs this first, with CI's coloured cargo output)..."
+CARGO_TERM_COLOR=always bun run licenses >/dev/null || { echo "The licence script failed. Nothing was tagged." >&2; exit 1; }
 echo "Checking: clippy (CI runs it with -D warnings)..."
 (cd src-tauri && cargo clippy -q --all-targets -- -D warnings >/dev/null 2>&1) || { echo "Clippy found problems (run: cd src-tauri && cargo clippy --all-targets -- -D warnings). Nothing was tagged." >&2; exit 1; }
 echo "Checking: Rust tests..."

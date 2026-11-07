@@ -3,6 +3,11 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.23.1 (2026-11-07)
+
+**Fixes**
+- The macOS build of 0.23.0 failed before it was published, so 0.23.1 carries everything listed under 0.23.0.
+
 ## 0.23.0 (2026-11-07)
 
 **Notifications**
