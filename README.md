@@ -29,7 +29,7 @@
 
 <br>
 
-<img src="docs/readme/hero.webp" width="100%" alt="NekoTrail switching between parallel workspaces: a Claude chat, a Codex chat and the board of every workspace">
+<img src="docs/readme/gifs/hero.gif" width="100%" alt="The board while three agents work: cards move to In review and then Done as their PRs open and merge, then the night sky, where the merged workspace's star starts to shine">
 
 <p><sub>Every task gets a <b>workspace</b>: a git worktree on its own branch, plus a chat, a diff, a live preview, a terminal and a PR bar with GitHub status.</sub></p>
 
@@ -68,7 +68,7 @@ One import moves your worktrees with <code>git worktree move</code> and checks e
 
 ## Tour
 
-Screenshots use sample data. Light and dark follow your Mac.
+Screenshots and clips use sample data. Light and dark follow your Mac.
 
 <table>
 <tr>
@@ -85,9 +85,33 @@ Approve with <kbd>⌘⇧↵</kbd>, or split it into parallel workspaces.
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/changes.png" width="100%" alt="Changes tab with draft review comments on lines, an Outdated comment, GitHub comments inline and the Send review button"><br>
+<img src="docs/readme/gifs/review.gif" width="100%" alt="In the Changes tab, a comment is added on line 22, then Send review puts it in the chat and the agent starts on it"><br>
 <b>Review it like a PR.</b><br>
 Click a line number to comment. Send review hands every comment to the agent in one message.
+</td>
+<td width="50%" valign="top">
+<img src="docs/readme/gifs/compare.gif" width="100%" alt="Compare agents: Claude's and Codex's results side by side with files, turns, time and cost; Keep this one on the Codex workspace archives the other"><br>
+<b>Race Claude and Codex.</b><br>
+Same task, two workspaces. Compare files, time and cost; keep the winner.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/readme/gifs/handoff.gif" width="100%" alt="Claude is out of usage; Hand off to another agent opens the brief, and a new Codex chat carries on in the same branch"><br>
+<b>Hand off without starting over.</b><br>
+Out of usage? Codex picks up in the same branch, from a brief you read first.
+</td>
+<td width="50%" valign="top">
+<img src="docs/readme/gifs/queue.gif" width="100%" alt="The queue running three tasks at once: one finishes and the next starts, another stops to wait for your OK in gold, and Open goes to it"><br>
+<b>Queue the night's work.</b><br>
+Tasks run a few at a time and wait out usage limits. One that needs you turns gold.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/readme/gifs/conductor.gif" width="100%" alt="The Conductor import with Move into NekoTrail chosen: six worktrees move, and each one is checked after it moves"><br>
+<b>Bring your Conductor work over.</b><br>
+One import moves every worktree into NekoTrail's folder and checks each one.
 </td>
 <td width="50%" valign="top">
 <img src="docs/readme/cards/rewind.png" width="100%" alt="Rewind sheet: 2 files go back to how they were before the message, 1 commit comes off the branch"><br>
@@ -102,27 +126,15 @@ Every message you send saves your files first. Rewind puts them back, and can be
 Draw on the running page and send it to the agent as a screenshot.
 </td>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/compare.png" width="100%" alt="Compare agents: a Claude and a Codex workspace side by side"><br>
-<b>Race Claude and Codex.</b><br>
-Same task, two workspaces. Compare files, time and cost; keep the winner.
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
 <img src="docs/readme/cards/scorecard.png" width="100%" alt="Agent scorecard comparing Claude and Codex"><br>
 <b>See which agent works for you.</b><br>
 Clean finishes, turn time, API-equivalent cost and merged workspaces, from your own history.
-</td>
-<td width="50%" valign="top">
-<img src="docs/readme/cards/night-sky.png" width="100%" alt="Night sky with constellations"><br>
-<b>Light up the night sky.</b><br>
-Every workspace is a star in a cat constellation. Merged PRs make it shine.
 </td>
 </tr>
 </table>
 
 <details>
-<summary><b>Eight more screens</b></summary>
+<summary><b>Nine more screens</b></summary>
 <br>
 <table>
 <tr>
@@ -171,6 +183,14 @@ Type <code>/mcp</code> to see every agent's servers and copy one to another agen
 <b>First launch checks your setup.</b><br>
 It shows the command for anything missing and offers the Conductor import.
 </td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/readme/cards/night-sky.png" width="100%" alt="Night sky with constellations"><br>
+<b>Light up the night sky.</b><br>
+Every workspace is a star in a cat constellation. Merged PRs make it shine.
+</td>
+<td width="50%" valign="top"></td>
 </tr>
 </table>
 </details>
