@@ -15,8 +15,15 @@ use tauri::{AppHandle, Listener, Manager};
 /// Events the window listens to that the journeys check.
 const RECORDED: [&str; 9] = ["running", "queue", "agent", "pty", "pty-exit", "workspaces-changed", "needs", "task-queue", "window-ready"];
 
-/// Every recorded event, oldest first: `{"n": index, "event": name, "payload": ...}`.
-static SEEN: LazyLock<Mutex<Vec<Value>>> = LazyLock::new(Default::default);
+/// Every recorded event, oldest first: `{"n": index, "event": name, "payload": ...}`. `cleared`
+/// events were dropped by `seen_clear`; `events[i]` has index `cleared + i`.
+#[derive(Default)]
+struct Seen {
+    cleared: usize,
+    events: Vec<Value>,
+}
+
+static SEEN: LazyLock<Mutex<Seen>> = LazyLock::new(Default::default);
 
 /// Record the window's events from now on.
 pub fn start(app: &AppHandle) {
@@ -24,8 +31,8 @@ pub fn start(app: &AppHandle) {
         app.listen_any(name, move |ev| {
             let payload: Value = serde_json::from_str(ev.payload()).unwrap_or(Value::Null);
             let mut seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
-            let n = seen.len();
-            seen.push(json!({"n": n, "event": name, "payload": payload}));
+            let n = seen.cleared + seen.events.len();
+            seen.events.push(json!({"n": n, "event": name, "payload": payload}));
         });
     }
 }
@@ -65,20 +72,28 @@ pub fn handle(app: &AppHandle, line: &str) -> Res<Value> {
         "file_diff" => to_value(block_on(crate::file_diff(app.clone(), s("id")?, s("file")?, req["uncommitted"].as_bool()))),
         "inbox" => to_value(Ok(crate::remote_take(st()))),
         "archive" => to_value(block_on(crate::archive_workspace(st(), s("id")?, req["force"].as_bool().unwrap_or(false)))),
+        // Events from index `since` on. A test reads how many there are as `since` + the length,
+        // so cleared events still count: they come back as `{"n": i, "event": "cleared"}`.
         "seen" => {
             let since = req["since"].as_u64().unwrap_or(0) as usize;
             let seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
-            Ok(Value::Array(seen.iter().skip(since).cloned().collect()))
+            let gone = (since..seen.cleared).map(|i| json!({"n": i, "event": "cleared"}));
+            let kept = seen.events.iter().skip(since.saturating_sub(seen.cleared)).cloned();
+            Ok(Value::Array(gone.chain(kept).collect()))
         }
-        // Long soaks: forget what was recorded so far (indices stay valid), so the recorder's own
+        // How many events were recorded so far, cleared ones included: the `since` for what comes next.
+        "seen_count" => {
+            let seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
+            Ok(json!(seen.cleared + seen.events.len()))
+        }
+        // Long soaks: free what was recorded so far (indices stay valid), so the recorder's own
         // growth doesn't read as the app's memory growing.
         "seen_clear" => {
             let mut seen = SEEN.lock().unwrap_or_else(|p| p.into_inner());
-            let n = seen.len();
-            for (i, e) in seen.iter_mut().enumerate() {
-                *e = json!({"n": i, "event": "cleared"});
-            }
-            Ok(json!({"cleared": n}))
+            let n = seen.events.len();
+            seen.cleared += n;
+            seen.events = Vec::new();
+            Ok(json!({"cleared": seen.cleared}))
         }
         other => Err(format!("e2e: no op called {other}")),
     }
