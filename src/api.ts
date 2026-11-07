@@ -589,7 +589,8 @@ export const api = {
   newSession: (workspaceId: string, agent: Agent) => invoke<Session>("new_session", { workspaceId, agent }),
   updateSession: (id: string, title: string, model: string | null, permissionMode: PermissionMode) =>
     invoke<void>("update_session", { id, title, model, permissionMode }),
-  sessionEventsTail: (id: string, limit: number) => invoke<{ events: ChatEvent[]; total: number }>("session_events_tail", { id, limit }),
+  /** `last_seq`: the chat's newest message id when the tail was read (live events carry `seq` and `prev` to merge against it). */
+  sessionEventsTail: (id: string, limit: number) => invoke<{ events: ChatEvent[]; total: number; last_seq?: number }>("session_events_tail", { id, limit }),
   sessionEvents: (id: string) => invoke<ChatEvent[]>("session_events", { id }),
   /** ⌘⇧F: search every chat, archived workspaces included. `indexing` is set while older messages are still being indexed. */
   searchChats: (query: string, filter: SearchFilter) => invoke<{ groups: SearchGroup[]; indexing: SearchProgress | null }>("search_chats", { query, filter }),

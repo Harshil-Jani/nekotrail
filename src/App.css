@@ -300,6 +300,14 @@ html.native .ws.selected { background: var(--select); }
 /* Each row sits in a block wrapper, so align-self alone never applied: margin-left pushes your messages right. */
 .msg-user-wrap { align-self: flex-end; margin-left: auto; width: fit-content; max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .msg-user-wrap .msg.user { max-width: 100%; }
+/* Your messages on their way (sending, or queued while the agent works), after the last message. */
+.pending { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s3); }
+.pending-msg .msg.user { opacity: 0.72; box-shadow: inset 0 0 0 0.5px var(--line-strong); }
+.pending-state { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.pending-state .spinner { width: 10px; height: 10px; }
+.pending-state .icon { width: 22px; height: 22px; }
+.pending-clear { align-self: flex-end; }
+.pending-clear button { font-size: 11.5px; }
 .rewind { border: none; padding: 2px 4px; font-size: 11.5px; font-weight: 500; color: var(--muted); opacity: 0; transition: opacity 0.15s var(--ease), color 0.15s var(--ease); }
 .msg-user-wrap:hover .rewind, .rewind:focus-visible, .msg.rewound .rewind { opacity: 1; }
 .rewind:hover { color: var(--text); background: none; }

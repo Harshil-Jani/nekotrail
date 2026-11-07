@@ -1,7 +1,7 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Clock, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -21,6 +21,7 @@ import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
 import { fuzzy, getChangesSelection, loadPrompts, type Builtins, type PromptEntry } from "../prompts";
 import { FillBar, SavePromptSheet, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
+import { droppedFrom, forgetOutgoing, mergeLive, pendingRows, readOutbox, reconcileOutbox, refetchSize, restoreOutbox, reuseRows, settleOutbox, type LiveEvent, type Outgoing } from "../chatSync";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
 export function matchFiles(files: string[], q: string, max = 8): string[] {
@@ -598,6 +599,8 @@ const Thread = memo(function Thread({ visible, hidden, total, current, flash, bu
 
 const PAGE = 150; // rows rendered at a time; older rows load on demand
 const TAIL = 600; // events fetched when a chat opens
+const ALL = 1_000_000_000; // a tail that holds the whole chat
+const NEXT_START_MS = 30_000; // how long a queued message may take to start (a checkpoint on a big repo)
 
 export function Chat({
   workspaceId,
@@ -646,12 +649,27 @@ export function Chat({
   const loadOlder = async () => {
     if (!active) return;
     anchor.current = scroller.current ? scroller.current.scrollHeight - scroller.current.scrollTop : null;
-    const all = await api.sessionEvents(active);
-    setEvents(all);
-    setOlder(0);
+    await openTail(active, ALL);
     setLimit(Number.MAX_SAFE_INTEGER);
   };
   const [queue, setQueue] = useState<string[]>([]);
+  const [queueFor, setQueueFor] = useState<string | null>(null); // the chat whose queue `queue` is
+  // Messages you sent that the chat doesn't show as yours yet, kept per chat on disk until it does,
+  // so a message queued while the agent works is on screen at once and never silently lost.
+  const [box, setBox] = useState<{ sid: string; list: Outgoing[] } | null>(null);
+  // `create`: a message sent before the chat's saved outbox was read starts one.
+  const updBox = (sid: string, f: (l: Outgoing[]) => Outgoing[], create = false) =>
+    setBox((b) => {
+      if (b ? b.sid !== sid : !create) return b; // another chat is showing now, or not loaded yet
+      const list = f(b?.list ?? []);
+      return b && list === b.list ? b : { sid, list };
+    });
+  useEffect(() => {
+    if (!box) return;
+    const key = `nekotrail.outbox.${box.sid}`;
+    if (box.list.length) localStorage.setItem(key, JSON.stringify(box.list));
+    else localStorage.removeItem(key);
+  }, [box]);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState<string | null>(null); // text for the "Save as prompt" sheet
   const [menu, setMenu] = useState(false);
@@ -836,13 +854,35 @@ export function Chat({
    * Load the chat's latest events. Big chats open with the last TAIL; older ones load on request.
    * For a search hit, enough is loaded to include it, and the view scrolls to it and flashes it.
    */
-  const openTail = async (sid: string) => {
+  const openTail = async (sid: string, size?: number) => {
+    const s = sync.current;
+    if (!s || s.sid !== sid) return;
     const j = pendingJump.current?.sessionId === sid ? pendingJump.current : null;
     pendingJump.current = null;
-    const n = j ? Math.max(TAIL, j.total - j.index + 40) : TAIL;
-    const { events, total } = await api.sessionEventsTail(sid, n);
+    const n = Math.max(size ?? TAIL, j ? j.total - j.index + 40 : 0);
+    const gen = ++s.loads;
+    s.loading = true;
+    let res: Awaited<ReturnType<typeof api.sessionEventsTail>>;
+    try {
+      res = await api.sessionEventsTail(sid, n);
+    } finally {
+      // A newer load (or another chat) took over: its answer is the one that counts.
+      if (gen === s.loads) s.loading = false;
+    }
+    if (s.dead || gen !== s.loads) return;
+    const { events, total } = res;
+    const first = total - events.length;
+    s.count = total;
+    if (typeof res.last_seq === "number") s.last = res.last_seq;
+    else { s.last = null; s.buffer = []; } // an older backend: the tail is the truth, as before
     setEvents(events);
-    setOlder(total - events.length);
+    setOlder(first);
+    // Messages sent before this load that the tail shows as yours went through.
+    setBox((b) => {
+      if (b?.sid === sid) { const list = settleOutbox(b.list, events, first); return list === b.list ? b : { sid, list }; }
+      return { sid, list: restoreOutbox(readOutbox(localStorage.getItem(`nekotrail.outbox.${sid}`)), events, first) };
+    });
+    s.flush();
     if (!j) return;
     const rowOf: number[] = [];
     const rs = toRows(events, rowOf);
@@ -852,32 +892,102 @@ export function Chat({
     setFlash({ row, nonce: Date.now() });
   };
 
+  /**
+   * The open chat's link to its live events. The listener is attached before the tail loads, and
+   * whatever arrives meanwhile waits in `buffer`; then both are merged by message id (`mergeLive`),
+   * so nothing emitted around the load is lost or shown twice. A gap loads the tail again.
+   * Events are applied once per frame, not once each.
+   */
+  const sync = useRef<{
+    sid: string; last: number | null; count: number; buffer: LiveEvent<ChatEvent>[];
+    loading: boolean; loads: number; dead: boolean; flush: () => void;
+  } | null>(null);
+  const loadedRef = useRef(0);
+  const nextStarting = useRef(0); // when the backend said the next queued message is starting
+  loadedRef.current = events.length;
+
   useEffect(() => {
     if (!active) return;
+    const sid = active;
+    let frame = 0;
+    const s = { sid, last: null as number | null, count: 0, buffer: [] as LiveEvent<ChatEvent>[], loading: true, loads: 0, dead: false, flush: () => {} };
+    const apply = () => {
+      frame = 0;
+      if (s.dead || s.loading || !s.buffer.length) return;
+      const r = mergeLive(s.last, s.buffer);
+      s.buffer = r.rest;
+      s.last = r.last;
+      if (r.add.length) {
+        const first = s.count;
+        s.count += r.add.length;
+        setEvents((e) => [...e, ...r.add]);
+        updBox(sid, (l) => settleOutbox(l, r.add, first));
+      }
+      if (r.gap) openTail(sid, refetchSize(loadedRef.current, TAIL)).catch((e) => setError(errText(e)));
+    };
+    // Hidden windows get no animation frames; a timer keeps the chat current there.
+    s.flush = () => { if (!frame) frame = document.hidden ? window.setTimeout(apply, 50) : requestAnimationFrame(apply); };
+    sync.current = s;
     setEvents([]);
     setOlder(0);
-    openTail(active).catch((e) => setError(errText(e)));
-    api.queued(active).then(setQueue);
-    const un1 = listen<{ session_id: string; event: ChatEvent }>("agent", ({ payload }) => {
-      if (payload.session_id === active) setEvents((e) => [...e, payload.event]);
+    setBox(null);
+    setQueue([]);
+    setQueueFor(null);
+    api.queued(sid).then((q) => { if (!s.dead) { setQueue(q); setQueueFor(sid); } }).catch(() => {});
+    const un1 = listen<{ session_id: string; event: ChatEvent; seq?: number | null; prev?: number | null }>("agent", ({ payload }) => {
+      if (payload.session_id !== sid) return;
+      s.buffer.push({ event: payload.event, seq: payload.seq, prev: payload.prev });
+      s.flush();
     });
+    un1.then(() => (s.dead ? undefined : openTail(sid))).catch((e) => { if (!s.dead) setError(errText(e)); });
     const un2 = listen<{ session_id: string; queued: string[] }>("queue", ({ payload }) => {
-      if (payload.session_id === active) setQueue(payload.queued);
+      if (payload.session_id === sid) { setQueue(payload.queued); setQueueFor(sid); }
     });
-    // App already reloads its snapshot on every "running" event; only the chat tabs are ours to refresh.
-    const un3 = listen("running", () => {
-      api.sessions(workspaceId).then(setSessions);
+    // App already reloads its snapshot on "running" events; only the chat tabs are ours to refresh.
+    // Turn end and the next queued turn come a moment apart: one reload for both.
+    let tabs = 0;
+    const un3 = listen<{ session_id?: string; running?: boolean; more_queued?: boolean }>("running", ({ payload }) => {
+      // The turn ended and the next queued message is starting (git runs before it shows as yours).
+      if (payload.session_id === sid) nextStarting.current = payload.running === false && payload.more_queued ? Date.now() : 0;
+      clearTimeout(tabs);
+      tabs = window.setTimeout(() => { api.sessions(workspaceId).then((l) => { if (!s.dead) setSessions(l); }).catch(() => {}); }, 250);
     });
     const un4 = listen<{ session_id: string; context_tokens: number }>("usage", ({ payload }) => {
-      if (payload.session_id === active) setLiveTokens(payload.context_tokens);
+      if (payload.session_id === sid) setLiveTokens(payload.context_tokens);
     });
     return () => {
+      s.dead = true;
+      if (frame) { cancelAnimationFrame(frame); clearTimeout(frame); }
+      clearTimeout(tabs);
       un1.then((f) => f());
       un2.then((f) => f());
       un3.then((f) => f());
       un4.then((f) => f());
     };
   }, [active]);
+
+  // The outbox follows the backend's queue; a message that left it without showing up as yours,
+  // with the agent idle, was dropped: it goes back into the message box with a note.
+  useEffect(() => {
+    if (active && box?.sid === active && queueFor === active) updBox(active, (l) => reconcileOutbox(l, queue, Date.now()));
+  }, [queue, queueFor, box, active]);
+  useEffect(() => {
+    if (!box || box.sid !== queueFor || !box.list.some((o) => o.leftAt !== undefined) || busy) return;
+    const check = () => {
+      const now = Date.now();
+      const gone = droppedFrom(box.list, now - nextStarting.current < NEXT_START_MS, now);
+      if (!gone.length) return;
+      const ids = new Set(gone.map((o) => o.id));
+      updBox(box.sid, (l) => l.filter((o) => !ids.has(o.id)));
+      const text = gone.map((o) => o.text).join("\n\n");
+      setDraft((d) => (d.trim() ? `${text}\n\n${d}` : text));
+      setError(gone.length === 1 ? "Your queued message didn't go to the agent. It's back in the message box." : "Your queued messages didn't go to the agent. They're back in the message box.");
+    };
+    check();
+    const t = setInterval(check, 1000);
+    return () => clearInterval(t);
+  }, [box, busy, queueFor]);
+  const pending = useMemo(() => pendingRows(box?.sid === active ? box.list : [], queue), [box, queue, active]);
 
   // A git action (Create PR, Review...) messaged one of this workspace's chats: show it.
   useEffect(() => {
@@ -891,7 +1001,7 @@ export function Chat({
   useEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [events.length]);
+  }, [events.length, pending.length]);
   useEffect(() => { stick.current = true; }, [active]);
 
   useEffect(() => {
@@ -913,7 +1023,9 @@ export function Chat({
     requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
   }, [append?.nonce]);
 
-  const rows = useMemo(() => toRows(events), [events]);
+  // Unchanged rows keep their objects, so a streamed event only redraws the rows it changed.
+  const prevRows = useRef<Row[]>([]);
+  const rows = useMemo(() => (prevRows.current = reuseRows(prevRows.current, toRows(events))), [events]);
   const [liveTokens, setLiveTokens] = useState<number | null>(null);
   useEffect(() => setLiveTokens(null), [active]);
   // Latest context size: live while a turn runs, else from the last finished turn.
@@ -957,8 +1069,8 @@ export function Chat({
     if (!active || !(search ?? "").trim() || older === 0 || findingOlder) return;
     setFindingOlder(true);
     const sid = active;
-    api.sessionEvents(sid)
-      .then((all) => { if (live.current.active === sid) { setEvents(all); setOlder(0); } })
+    // Through the tail, so live events that arrive during the load are merged, not wiped.
+    openTail(sid, ALL)
       .catch((e) => setError(errText(e)))
       .finally(() => setFindingOlder(false));
   }, [search, older, active]);
@@ -1073,12 +1185,38 @@ export function Chat({
     setError(null);
     setSlash(null);
     if (text.startsWith("/") && (await runSlash(text))) return;
+    // On screen at once (as "Sending", then "Queued" while the agent works), until the chat shows it as yours.
+    const sid = active;
+    const id = crypto.randomUUID();
+    updBox(sid, (l) => [...l, { id, text, state: "sending", at: Date.now(), base: sync.current?.sid === sid ? sync.current.count : 0 }], true);
     try {
-      await api.send(active, text);
+      await api.send(sid, text);
+      updBox(sid, (l) => l.map((o) => (o.id === id && o.state === "sending" ? { ...o, state: "sent" } : o)));
       onRunningChange();
     } catch (e) {
+      // Not sent: the words go back in the message box, with why.
+      updBox(sid, (l) => l.filter((o) => o.id !== id));
+      setDraft((d) => (d.trim() ? `${text}\n\n${d}` : text));
       setError(errText(e));
     }
+  };
+  /** Take a queued message out (Remove), or back into the message box (Edit). */
+  const unqueue = async (index: number, text: string, edit: boolean) => {
+    if (!active) return;
+    const sid = active;
+    try {
+      await api.removeQueued(sid, index);
+      updBox(sid, (l) => forgetOutgoing(l, text));
+      if (edit) { setDraft((d) => (d.trim() ? `${text}\n\n${d}` : text)); input.current?.focus(); }
+    } catch (e) { setError(errText(e)); }
+  };
+  const clearQueue = async () => {
+    if (!active) return;
+    const sid = active, gone = queue;
+    try {
+      await api.clearQueue(sid);
+      updBox(sid, (l) => gone.reduce(forgetOutgoing, l));
+    } catch (e) { setError(errText(e)); }
   };
 
   const update = async (patch: Partial<Pick<Session, "model" | "permission_mode" | "title" | "effort">>) => {
@@ -1338,7 +1476,7 @@ export function Chat({
             <p>{history ? "Your terminal chats from this repo's main checkout land here." : "This workspace is archived. Its branch is kept."}</p>
           </div>
         )}
-        {rows.length === 0 && !readOnly && (
+        {rows.length === 0 && pending.length === 0 && !readOnly && (
           <div className="empty">
             <Mascot size={64} mood="sleep" />
             <h2>{reviewPr ? `Ask about #${reviewPr}` : session?.agent_session_id ? "Pick up where you left off" : "What should we build?"}</h2>
@@ -1364,11 +1502,32 @@ export function Chat({
             </button>
           )}
           <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} flash={flash?.row ?? null} busy={busy} latestPlanIdx={latestPlanIdx} />
+          {pending.length > 0 && (
+            <ol className="pending" aria-label="Messages waiting to send">
+              {pending.map((p) => (
+                <li key={p.key} className="msg-user-wrap pending-msg">
+                  <div className="msg user">{p.text}</div>
+                  <span className="pending-state">
+                    {p.state === "sending"
+                      ? <><span className="spinner" aria-hidden />Sending</>
+                      : <><Clock size={12} aria-hidden />Queued: sends when the agent finishes</>}
+                    {p.index !== null && !readOnly && (
+                      <>
+                        <button className="icon" title="Move back to the message box to edit" aria-label="Edit queued message" onClick={() => unqueue(p.index!, p.text, true)}><Pencil size={13} /></button>
+                        <button className="icon" title="Remove from queue" aria-label="Remove queued message" onClick={() => unqueue(p.index!, p.text, false)}><X size={13} /></button>
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+              {queue.length > 1 && !readOnly && <li className="pending-clear"><button className="quiet" onClick={clearQueue}>Clear queue</button></li>}
+            </ol>
+          )}
         </div>
         </RewindCtx.Provider>
       </div>
 
-      {((todos && todos.length > 0) || queue.length > 0) && <div className="chat-dock">
+      {todos && todos.length > 0 && <div className="chat-dock">
       {todos && todos.length > 0 && (
         <div className="todos">
           <button className="todos-head" onClick={() => setTodosOpen((o) => !o)} aria-expanded={todosOpen}>
@@ -1387,24 +1546,6 @@ export function Chat({
               ))}
             </ul>
           )}
-        </div>
-      )}
-      {queue.length > 0 && (
-        <div className="queue">
-          <div className="queue-head">
-            <span className="spinner" />
-            <span>{queue.length} queued. They run one by one when the agent finishes.</span>
-            <span className="spacer" />
-            <button className="quiet" onClick={() => active && api.clearQueue(active)}>Clear queue</button>
-          </div>
-          {queue.map((q, i) => (
-            <div className="queue-item" key={i}>
-              <span className="num muted">{i + 1}</span>
-              <span className="queue-text">{q}</span>
-              <button className="icon" title="Move back to the composer to edit" aria-label="Edit queued message" onClick={() => { if (active) { api.removeQueued(active, i); setDraft(q); input.current?.focus(); } }}><Pencil size={13} /></button>
-              <button className="icon" title="Remove from queue" aria-label="Remove queued message" onClick={() => active && api.removeQueued(active, i)}><X size={13} /></button>
-            </div>
-          ))}
         </div>
       )}
       </div>}
