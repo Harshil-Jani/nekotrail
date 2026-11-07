@@ -257,6 +257,17 @@ await journey("a message sent after the turn ended runs at once", async () => {
   if ((await userTexts(sid)).at(-1) !== "and update the readme") fail("the third message isn't in the chat");
 });
 
+await journey("a file the agent writes shows in Changes, with its line", async () => {
+  await $("send", { session_id: sid, text: "[write] create a file called notes.txt with one line" });
+  await idle(sid);
+  const files = (await $("changes", { id: ws })) as { path: string; status: string; additions: number }[];
+  const f = files.find((c) => c.path === "notes.txt");
+  if (!f) fail(`Changes lists ${JSON.stringify(files.map((c) => c.path))}, not notes.txt`);
+  if (f.additions !== 1) fail(`notes.txt shows ${f.additions} added lines, not 1`);
+  const diff = String(await $("file_diff", { id: ws, file: "notes.txt" }));
+  if (!diff.includes("one line from the agent")) fail(`the diff doesn't show the line: ${diff.slice(0, 300)}`);
+});
+
 await journey("an agent that stays alive after answering still ends the turn", async () => {
   writeFileSync(agentLog, "");
   const t = Date.now();
@@ -279,6 +290,19 @@ await journey("Stop ends a turn that never answers, tools it started included", 
   const pids = agentTurns().filter((l) => l.startsWith("start") || l.startsWith("child")).map((l) => Number(l.split(" ")[1]));
   if (pids.length < 2) fail(`the fake agent didn't log its pids: ${agentTurns().join(" / ")}`);
   await until("the agent and the tool it started to be gone", async () => pids.every((p) => !alive(p)), 12_000);
+});
+
+await journey("Stop on an agent that reports the interrupt itself reads as Stopped, not an error", async () => {
+  // The real claude CLI catches SIGINT and prints its own error result; found in the v0.23 QA pass.
+  writeFileSync(agentLog, "");
+  await $("send", { session_id: sid, text: "[interrupt] write a long answer" });
+  await until("the turn to start", () => running(sid));
+  await until("the agent to start", async () => agentTurns().length > 0);
+  await sleep(300);
+  await $("stop", { session_id: sid });
+  await idle(sid, 15_000);
+  const last = (await events(sid)).at(-1);
+  if (!(last?.kind === "done" && last.stopped)) fail(`the chat ends with ${JSON.stringify(last).slice(0, 200)}: it shows "Ended with an error", not "Stopped"`);
 });
 
 await journey("the terminal answers while a turn runs", async () => {
@@ -306,6 +330,26 @@ await journey("a big paste into a busy terminal freezes nothing", async () => {
   await $("pty_write", { id, data: "echo free-$((1+1))\r" }, 5000);
   await until("the other terminal's output", async () =>
     (await seenSince(n)).some((e) => e.event === "pty" && e.payload.id === id && String(e.payload.data).includes("free-2")));
+});
+
+await journey("closing a terminal ends its shell, and leaves no zombie", async () => {
+  const w = await $("workspace", { id: ws });
+  const id = `${ws}:term-close`;
+  const shells = () => spawnSync("ps", ["-A", "-o", "pid=,ppid=,stat="], { encoding: "utf8" }).stdout.trim().split("\n")
+    .map((l) => l.trim().split(/\s+/)).filter((f) => Number(f[1]) === app!.pid);
+  const before = new Set(shells().map((f) => f[0]));
+  await $("pty_open", { id, cwd: w.path });
+  const n = (await seenSince(0)).length;
+  await $("pty_write", { id, data: "echo close-$((4+4))\r" });
+  await until("the new terminal's output", async () =>
+    (await seenSince(n)).some((e) => e.event === "pty" && e.payload.id === id && String(e.payload.data).includes("close-8")));
+  const mine = shells().filter((f) => !before.has(f[0])).map((f) => Number(f[0]));
+  if (!mine.length) fail("couldn't find the terminal's shell process");
+  await $("pty_close", { id });
+  await until("the shell to be gone, not left as a zombie", async () => {
+    const now = shells();
+    return mine.every((p) => !now.some((f) => Number(f[0]) === p));
+  }, 5000);
 });
 
 await journey("a Codex chat runs a turn to the end", async () => {

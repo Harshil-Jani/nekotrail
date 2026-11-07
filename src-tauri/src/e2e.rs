@@ -60,6 +60,9 @@ pub fn handle(app: &AppHandle, line: &str) -> Res<Value> {
         "queue_view" => block_on(crate::queuerun::queue_view(app.clone())),
         "pty_open" => to_value(block_on(crate::pty_open(app.clone(), st(), s("id")?, s("cwd")?, 80, 24))),
         "pty_write" => to_value(block_on(crate::pty_write(st(), s("id")?, s("data")?))),
+        "pty_close" => to_value(block_on(crate::pty_close(st(), s("id")?))),
+        "changes" => to_value(block_on(crate::changes(app.clone(), s("id")?, req["uncommitted"].as_bool()))),
+        "file_diff" => to_value(block_on(crate::file_diff(app.clone(), s("id")?, s("file")?, req["uncommitted"].as_bool()))),
         "inbox" => to_value(Ok(crate::remote_take(st()))),
         "archive" => to_value(block_on(crate::archive_workspace(st(), s("id")?, req["force"].as_bool().unwrap_or(false)))),
         "seen" => {

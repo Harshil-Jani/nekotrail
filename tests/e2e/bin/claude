@@ -5,6 +5,9 @@
 #   [slow]    answers after 3 s (time to send another message while it works)
 #   [linger]  stays alive after its result, holding stdout open (what stream-json input mode does)
 #   [hang]    never answers, and starts a child that would outlive it (for Stop)
+#   [interrupt] works until interrupted, then reports it as the real CLI does on SIGINT (claude 2.1.x:
+#             a result line with is_error true, subtype error_during_execution, then exit 0)
+#   [write]   writes notes.txt with one line in its working folder, as an edit would (for Changes)
 # Every turn is logged to $FAKE_AGENT_LOG as "start|end <pid> <prompt>".
 case "$1" in --version) echo "2.1.0 (Claude Code)"; exit 0 ;; esac
 prompt="" session="fake-$$"
@@ -23,7 +26,12 @@ case "$prompt" in *"[hang]"*)
   sleep 600 & [ -n "${FAKE_AGENT_LOG:-}" ] && echo "child $! $prompt" >> "$FAKE_AGENT_LOG"
   exec sleep 600 ;;
 esac
+case "$prompt" in *"[interrupt]"*)
+  trap 'printf '"'"'{"type":"result","subtype":"error_during_execution","is_error":true,"terminal_reason":"aborted_streaming","duration_ms":4677,"num_turns":1,"session_id":"%s"}\n'"'"' "$session"; log end; kill $w 2>/dev/null; exit 0' INT
+  sleep 600 & w=$!; wait $w ;;
+esac
 case "$prompt" in *"[slow]"*) sleep 3 ;; esac
+case "$prompt" in *"[write]"*) printf 'one line from the agent\n' > notes.txt ;; esac
 printf '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]},"session_id":"%s"}\n' "$session"
 log end
 printf '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.01,"duration_ms":40,"num_turns":1,"result":"ok","session_id":"%s","modelUsage":{"claude-opus-fake":{"costUSD":0.01,"outputTokens":3,"contextWindow":200000}}}\n' "$session"
