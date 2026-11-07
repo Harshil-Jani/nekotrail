@@ -43,7 +43,9 @@ pub fn issue_title(identifier: &str, title: &str) -> String {
 
 /// A short title from a prompt: its first line or sentence that says something, without markdown,
 /// `@file` refs, URLs or a leading slash command, in sentence case, cut at a word near 48 chars.
-/// Empty when nothing is left (a bare `/mcp`, a lone URL).
+/// Empty when nothing is left (a bare `/mcp`, a lone URL) or the prompt is only a greeting or
+/// small talk ("Hey there", "thanks!"): the workspace then keeps its branch name until a message
+/// that names a task arrives.
 pub fn task_title(text: &str) -> String {
     let mut fenced = false;
     for raw in text.lines() {
@@ -56,6 +58,10 @@ pub fn task_title(text: &str) -> String {
             continue;
         }
         let (clean, removed) = clean_line(line);
+        // "Hey there" is not a task (it became "There" before): try the next line, if any.
+        if is_small_talk(&clean) {
+            continue;
+        }
         let sentence = first_sentence(&clean);
         let t = tidy(&drop_lead_in(sentence), removed);
         // A line that is only a screenshot's name or a timestamp names nothing: try the next one.
@@ -195,9 +201,27 @@ fn first_sentence(s: &str) -> &str {
     s
 }
 
+/// A line made only of greetings, thanks and filler ("Hey there!", "hi claude, how are you?",
+/// "ok thanks"). Says nothing about a task, so it never names a workspace.
+pub fn is_small_talk(line: &str) -> bool {
+    const WORDS: [&str; 52] = [
+        "hey", "hi", "hii", "hello", "hiya", "howdy", "yo", "sup", "there", "all", "everyone", "folks", "buddy", "friend",
+        "claude", "codex", "gemini", "good", "morning", "afternoon", "evening", "day", "how", "are", "you", "doing",
+        "is", "it", "going", "what's", "whats", "up", "thanks", "thank", "thx", "ty", "cheers", "ok", "okay", "k",
+        "cool", "great", "nice", "awesome", "yes", "yep", "no", "nope", "sure", "please", "test", "ping",
+    ];
+    let words: Vec<String> = line
+        .split(|c: char| c.is_whitespace() || (c.is_ascii_punctuation() && c != '\''))
+        .map(|w| w.trim_matches('\'').to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect();
+    !words.is_empty() && words.iter().all(|w| WORDS.contains(&w.as_str()))
+}
+
 /// Politeness that says nothing about the task: "Hey, can you please fix X" is "fix X".
 fn drop_lead_in(s: &str) -> String {
-    const LEADS: [&str; 12] = ["hey", "hi", "hello", "ok", "okay", "so", "please", "can you", "could you", "would you", "i want you to", "i need you to"];
+    // Longer leads first, so "hey there" goes as one and doesn't leave "there" behind.
+    const LEADS: [&str; 15] = ["hey there", "hi there", "hello there", "hey", "hi", "hello", "ok", "okay", "so", "please", "can you", "could you", "would you", "i want you to", "i need you to"];
     let mut s = s.trim();
     loop {
         let hit = LEADS.iter().find(|l| {
@@ -371,7 +395,25 @@ mod tests {
         assert_eq!(task_title("https://example.com"), "");
         assert_eq!(task_title("@src/App.tsx"), "");
         assert_eq!(task_title("```\nonly code\n```"), "");
-        assert_eq!(task_title("Please."), "Please");
+        // Only politeness: nothing to name the task by.
+        assert_eq!(task_title("Please."), "");
+    }
+
+    #[test]
+    fn greetings_keep_the_branch_name() {
+        // v0.22.2 named a workspace "There" after "Hey there".
+        for hello in ["Hey there", "hey there!", "Hi", "hello", "Hi Claude, how are you?", "good morning", "What's up?", "thanks!", "ok thank you", "test", "yo"] {
+            assert_eq!(task_title(hello), "", "{hello:?}");
+            assert!(is_small_talk(hello), "{hello:?}");
+        }
+        // A greeting in front of a task still gives the task.
+        assert_eq!(task_title("Hey there, fix the login redirect"), "Fix the login redirect");
+        assert_eq!(task_title("Hi!\nAdd dark mode to settings"), "Add dark mode to settings");
+        assert_eq!(task_title("Hello, can you add a health check?"), "Add a health check");
+        // Real words that happen to be short are kept.
+        assert_eq!(task_title("Fix CI"), "Fix CI");
+        assert_eq!(task_title("Thanks page is broken"), "Thanks page is broken");
+        assert!(!is_small_talk("there is a bug in the parser"));
     }
 
     #[test]

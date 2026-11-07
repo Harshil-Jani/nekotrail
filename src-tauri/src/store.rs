@@ -693,13 +693,21 @@ impl Store {
                 n += 1;
             }
         }
-        // Titles older versions took from a screenshot's name or a timestamp ("2026-11-05 at 5.42.16…")
-        // are derived again; with nothing better they are cleared, so the branch or star shows.
+        // Titles older versions took from a screenshot's name or a timestamp ("2026-11-05 at 5.42.16…"),
+        // or from a greeting ("There" from "Hey there"), are derived again; with nothing better they
+        // are cleared, so the branch or star shows.
         let noisy: Vec<(String, String)> = {
             let mut st = self.conn.prepare("SELECT id, title FROM workspaces WHERE title_source=?1 AND title<>''")?;
             st.query_map([crate::title::AUTO], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
         };
-        for (id, old) in noisy.into_iter().filter(|(_, t)| crate::title::is_noise(t)) {
+        for (id, old) in noisy {
+            let greeted = user_prompts(&self.conn, &id, 1)?
+                .first()
+                .and_then(|p| p.lines().map(str::trim).find(|l| !l.is_empty()).map(crate::title::is_small_talk))
+                .unwrap_or(false);
+            if !greeted && !crate::title::is_noise(&old) {
+                continue;
+            }
             let t = self.prompt_title(&id)?;
             if t != old {
                 let source = if t.is_empty() { "" } else { crate::title::AUTO };
@@ -1470,6 +1478,25 @@ mod tests {
         assert_eq!(get(&bare), (String::new(), String::new()));
         // Typed by hand: left alone, whatever it says.
         assert_eq!(get(&typed), ("2026-11-05".into(), "user".into()));
+        assert_eq!(s.backfill_titles().unwrap(), 0);
+    }
+
+    #[test]
+    fn titles_taken_from_a_greeting_are_derived_again() {
+        let s = Store::in_memory().unwrap();
+        let r = sample_repo();
+        s.insert_repo(&r).unwrap();
+        let hello = titled_ws(&s, &r, "mochi", "", &["Hey there"]);
+        let then_task = titled_ws(&s, &r, "comet", "", &["Hi", "Fix the login redirect"]);
+        let task = titled_ws(&s, &r, "dash", "", &["There is a bug in the parser"]);
+        // As v0.22.2 titled them.
+        s.conn.execute("UPDATE workspaces SET title='There', title_source='auto' WHERE id IN (?1, ?2)", params![hello, then_task]).unwrap();
+        s.conn.execute("UPDATE workspaces SET title='There is a bug in the parser', title_source='auto' WHERE id=?1", params![task]).unwrap();
+        assert_eq!(s.backfill_titles().unwrap(), 2);
+        let get = |id: &str| { let w = s.workspace(id).unwrap(); (w.title, w.title_source) };
+        assert_eq!(get(&hello), (String::new(), String::new()), "only a greeting: the branch name shows");
+        assert_eq!(get(&then_task), ("Fix the login redirect".into(), "auto".into()));
+        assert_eq!(get(&task), ("There is a bug in the parser".into(), "auto".into()));
         assert_eq!(s.backfill_titles().unwrap(), 0);
     }
 
