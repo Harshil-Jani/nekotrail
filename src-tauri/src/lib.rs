@@ -110,6 +110,17 @@ fn write_stdin(runs: &Arc<Ordered<Runs>>, id: &str, lines: &[String]) -> bool {
     lines.iter().all(|l| stdin.write_all(l.as_bytes()).is_ok()) && stdin.flush().is_ok()
 }
 
+/// The chat's next waiting message. Its queue goes once empty, so chats that ever queued
+/// something don't each keep an entry for the life of the app.
+fn pop_queued(runs: &mut Runs, id: &str) -> Option<String> {
+    let q = runs.queued.get_mut(id)?;
+    let next = q.pop_front();
+    if q.is_empty() {
+        runs.queued.remove(id);
+    }
+    next
+}
+
 /// Stop was pressed on this chat's turn `pid` (`Runs::stopping`).
 fn stop_pressed(runs: &Arc<Ordered<Runs>>, id: &str, pid: u32) -> bool {
     runs.lock().unwrap().stopping.get(id) == Some(&pid)
@@ -151,7 +162,7 @@ fn resume_chat_queues(app: &AppHandle) {
                 if runs.running.contains_key(&id) {
                     continue;
                 }
-                let Some(next) = runs.queued.get_mut(&id).and_then(|q| q.pop_front()) else { continue };
+                let Some(next) = pop_queued(&mut runs, &id) else { continue };
                 runs.running.insert(id.clone(), RESERVED);
                 next
             };
@@ -979,6 +990,7 @@ fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
         || st.db().repo(&ws.repo_id).is_ok_and(|r| Path::new(&r.root_path) == path);
     if main_checkout {
         close_workspace_terminals(st, &id);
+        forget_workspace_caches(st, &ws);
         return st.db().set_workspace_state(&id, "archived").map_err(e);
     }
     if path.exists() {
@@ -1005,6 +1017,7 @@ fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
         let _ = git::git(root, &["update-ref", "-d", &git::legacy_checkpoint_ref(&id)]);
     }
     close_workspace_terminals(st, &id);
+    forget_workspace_caches(st, &ws);
     st.checks.stop(&id);
     st.checks.forget(&id);
     st.db().set_workspace_state(&id, "archived").map_err(e)?;
@@ -1019,6 +1032,22 @@ fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
 fn close_workspace_terminals(st: &AppState, id: &str) {
     st.ptys.close_prefix(&format!("{id}:"));
     st.port_failures.lock().unwrap().remove(id);
+}
+
+/// An archived workspace leaves the in-memory caches kept per workspace (its line counts, the
+/// last PR event it got, its branch's PR), so they don't grow with every workspace ever made.
+/// A restore fills them again on the next count and poll.
+fn forget_workspace_caches(st: &AppState, ws: &Workspace) {
+    {
+        let mut lines = st.lines.lock().unwrap();
+        lines.0.remove(&ws.id);
+        lines.1.remove(&ws.id);
+    }
+    let mut c = st.prs.lock().unwrap();
+    c.sent.remove(&ws.id);
+    let key = (ws.repo_id.clone(), ws.branch.clone());
+    c.by_branch.remove(&key);
+    c.asked.remove(&key);
 }
 
 /// Restores the workspace, and every other workspace of its multi-repo task.
@@ -4673,7 +4702,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             runs.approvals.retain(|_, (sid, _, _)| sid != &id);
             runs.cancelled.remove(&id);
             runs.stopping.remove(&id);
-            let next = runs.queued.get_mut(&id).and_then(|q| q.pop_front());
+            let next = pop_queued(&mut runs, &id);
             // The next message keeps the chat claimed, so a send in between queues behind it
             // instead of jumping ahead.
             if next.is_some() {
