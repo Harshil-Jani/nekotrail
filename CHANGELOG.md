@@ -11,6 +11,10 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - New CONTRIBUTING, SECURITY and code of conduct files, plus bug report and feature request forms, so you know how to build, test, report a problem or a vulnerability, and propose a change.
 - A public [roadmap](docs/ROADMAP.md) of what's next and what we're not building, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) listing every open-source component the app ships with and its license.
 
+**Brand**
+- The app now writes its name as NekoTrail everywhere you read it: window title, macOS menu bar and About panel, first run, Settings, ⌘K, notifications and alerts, error messages, the terminal command's help and replies, exports and the "Made with NekoTrail" line, and the VS Code extension's view, commands and messages. Names you type or that other tools read stay lowercase: the `nekotrail` command, `nekotrail.json`, `nekotrail://` links, the extension's settings and the app's folders, so nothing you set up breaks. The app file (nekotrail.app) and the Linux package and launcher entry also keep the lowercase name, so updates install over the app you have.
+- The Mac app now asks for macOS 13 or newer, which is what the download page already said.
+
 ## 0.21.0 (2026-11-07)
 
 **Moving from Conductor**
