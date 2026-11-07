@@ -3413,8 +3413,11 @@ async fn update_session(st: State<'_, AppState>, id: String, title: String, mode
 /// The latest `limit` events of a chat and the total count, so a 7,000-message chat opens instantly.
 #[tauri::command]
 async fn session_events_tail(st: State<'_, AppState>, id: String, limit: i64) -> Res<Value> {
-    let (events, total) = st.db().events_tail(&id, limit).map_err(e)?;
-    Ok(json!({"events": events, "total": total}))
+    let db = st.db();
+    let (events, total) = db.events_tail(&id, limit).map_err(e)?;
+    // Read under the same lock as the tail: live events with a higher id are the ones it lacks.
+    let last_seq = db.last_seq(&id).map_err(e)?;
+    Ok(json!({"events": events, "total": total, "last_seq": last_seq}))
 }
 
 /// ⌘⇧F: every chat in every workspace (archived ones too), grouped by workspace, plus how far
@@ -3855,8 +3858,11 @@ async fn preview_snapshot(webview: tauri::Webview) -> Res<tauri::ipc::Response> 
     Ok(tauri::ipc::Response::new(preview::snapshot_png(webview).await?))
 }
 
+/// Send a stored chat event to the window. `seq` is its message id and `prev` the chat's message
+/// before it, so the window can merge live events with a loaded tail without losing or repeating any.
 fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
-    let _ = app.emit("agent", json!({"session_id": session_id, "event": ev}));
+    let (seq, prev) = store::take_last_append(session_id).map_or((Value::Null, Value::Null), |(s, p)| (json!(s), json!(p)));
+    let _ = app.emit("agent", json!({"session_id": session_id, "event": ev, "seq": seq, "prev": prev}));
 }
 
 /// Rename a fresh workspace's branch after its first task, while nothing has been pushed:

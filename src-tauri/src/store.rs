@@ -373,6 +373,28 @@ pub struct Store {
     pub(crate) conn: Connection,
 }
 
+thread_local! {
+    /// (session, message id, the chat's previous message id) of the last `append_event` on this
+    /// thread. Every caller emits the event it just stored on the same thread, right after, so
+    /// `emit_event` can stamp the event with its id without changing every call site.
+    static LAST_APPEND: std::cell::RefCell<Option<(String, i64, i64)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The id and previous id of the event this thread just stored for `session_id`, once.
+pub fn take_last_append(session_id: &str) -> Option<(i64, i64)> {
+    LAST_APPEND.with(|l| {
+        let mut l = l.borrow_mut();
+        match l.as_ref() {
+            Some((s, seq, prev)) if s == session_id => {
+                let out = (*seq, *prev);
+                *l = None;
+                Some(out)
+            }
+            _ => None,
+        }
+    })
+}
+
 fn repo_from(r: &Row) -> rusqlite::Result<Repo> {
     Ok(Repo {
         id: r.get(0)?,
@@ -976,12 +998,23 @@ impl Store {
     // ---- messages ----
 
     pub fn append_event(&self, session_id: &str, event: &serde_json::Value) -> Result<()> {
+        LAST_APPEND.with(|l| l.borrow_mut().take());
+        // The chat's previous message id, read under the same lock as the insert, so the window can
+        // tell a missed event (its `prev` is newer than the last one it has) from a repeat.
+        let prev = self.last_seq(session_id)?;
         self.conn.execute(
             "INSERT INTO messages (session_id, event, created_at) VALUES (?1,?2,?3)",
             params![session_id, event.to_string(), now()],
         )?;
-        crate::search::index(&self.conn, self.conn.last_insert_rowid(), event)?;
+        let seq = self.conn.last_insert_rowid();
+        crate::search::index(&self.conn, seq, event)?;
+        LAST_APPEND.with(|l| *l.borrow_mut() = Some((session_id.to_string(), seq, prev)));
         Ok(())
+    }
+
+    /// The newest message id of a chat (0 when it has none): where a freshly loaded tail ends.
+    pub fn last_seq(&self, session_id: &str) -> Result<i64> {
+        Ok(self.conn.query_row("SELECT COALESCE(MAX(id), 0) FROM messages WHERE session_id=?1", [session_id], |r| r.get(0))?)
     }
 
     /// Append many events in one transaction (history import).
@@ -1314,6 +1347,14 @@ mod tests {
         assert_eq!((card[0].0.as_str(), card[0].1, card[0].2, card[0].3), ("claude", 1, 1, 1000));
         let (tail, total) = s.events_tail(&sess.id, 1).unwrap();
         assert_eq!((tail.len(), tail[0]["is_error"].as_bool(), total), (1, Some(true), 3));
+        // Each stored event hands its id, and the chat's id before it, to the emit right after it, once.
+        let before = s.last_seq(&sess.id).unwrap();
+        assert!(before > 0);
+        s.append_event(&sess.id, &serde_json::json!({"kind": "note", "text": "seq"})).unwrap();
+        assert_eq!(take_last_append("another chat"), None, "only for the chat it was stored in");
+        let (seq, prev) = take_last_append(&sess.id).unwrap();
+        assert_eq!((prev, seq), (before, s.last_seq(&sess.id).unwrap()));
+        assert_eq!(take_last_append(&sess.id), None, "handed out once");
         // "Rules for this task" go with the first user message only.
         assert!(!s.has_user_message(&sess.id).unwrap());
         assert_eq!(s.latest_chat(&w.id).unwrap(), None, "no chat has a message from you yet");
