@@ -3,7 +3,7 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.22.2 (2026-11-07)
 
 **Fixes**
 - Typing in the terminal works again, and the app no longer freezes after you open a workspace. Starting a workspace's terminal held the database and waited on itself, which stalled everything that reads it, including the Queue.
