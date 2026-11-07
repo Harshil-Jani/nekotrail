@@ -22,6 +22,12 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - On GitHub: a [roadmap](docs/ROADMAP.md), a contributing guide, a security policy, a code of conduct and forms for bugs and feature requests.
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every open-source component the app ships with, and its license.
 
+**Design ship-gate fixes**
+- The Queue's "needs you" count in the sidebar is gold, like every other thing waiting on you. It was orange, the warning colour.
+- Website: the brand kit shows its logos on first load instead of an empty space until you scroll.
+- Website: on phones, the Copy button no longer covers the end of the Terminal commands on the download page.
+- Website: the Buy Me a Coffee cup shows on the sponsor page in dark mode.
+
 ## 0.21.0 (2026-11-07)
 
 **Moving from Conductor**
