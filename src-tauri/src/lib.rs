@@ -71,7 +71,7 @@ struct Runs {
     /// Chats where Stop was pressed while their turn was still starting: it doesn't start.
     cancelled: std::collections::HashSet<String>,
     /// session id -> prompts waiting for the current turn to finish. Saved in the settings table
-    /// on every change (`save_chat_queue`), so quitting or a crash doesn't lose them.
+    /// on every change (`save_chat_queue`), so after a quit or a crash they run all the same.
     queued: HashMap<String, VecDeque<String>>,
     /// session id -> context the agent must hear before the next prompt (e.g. "files were rewound")
     notes: HashMap<String, String>,
@@ -120,23 +120,39 @@ fn save_chat_queue(st: &AppState) {
     let _ = if all.is_empty() { st.db().delete_setting(CHAT_QUEUE) } else { st.db().set_setting(CHAT_QUEUE, &json!(all).to_string()) };
 }
 
-/// Messages that were waiting when nekotrail last closed go back in their chat's message box
-/// (through the window's inbox), to send again or drop. They don't start by themselves: the turn
-/// they were waiting for was cut short.
-fn restore_chat_queue(store: &Store, inbox: &remote::Inbox) {
-    let Some(raw) = store.setting(CHAT_QUEUE).ok().flatten() else { return };
+/// Messages that were waiting when nekotrail last closed, by chat, to put back in their queues.
+fn saved_chat_queue(store: &Store) -> HashMap<String, VecDeque<String>> {
+    let raw = store.setting(CHAT_QUEUE).ok().flatten().unwrap_or_default();
     let saved: HashMap<String, Vec<String>> = serde_json::from_str(&raw).unwrap_or_default();
-    for (session, texts) in saved {
-        if let Ok(s) = store.session(&session)
-            && !texts.is_empty() {
-                inbox.push(remote::Job::Draft {
-                    workspace_id: s.workspace_id,
-                    text: texts.join("\n\n"),
-                    note: Some(format!("{} waiting when NekoTrail closed {} back in the message box. Send when ready.", plural(texts.len(), "message", "messages"), if texts.len() == 1 { "is" } else { "are" })),
-                });
+    saved.into_iter().filter(|(s, q)| !q.is_empty() && store.session(s).is_ok()).map(|(s, q)| (s, q.into())).collect()
+}
+
+/// After a launch: chats with messages still waiting from before run them, oldest first, as
+/// "Messages you send now run next" promised. The chat says why a turn starts on its own.
+fn resume_chat_queues(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let st = app.state::<AppState>();
+        let ids: Vec<String> = st.runs.lock().unwrap().queued.keys().cloned().collect();
+        for id in ids {
+            let next = {
+                let mut runs = st.runs.lock().unwrap();
+                if runs.running.contains_key(&id) {
+                    continue;
+                }
+                let Some(next) = runs.queued.get_mut(&id).and_then(|q| q.pop_front()) else { continue };
+                runs.running.insert(id.clone(), RESERVED);
+                next
+            };
+            save_chat_queue(&st);
+            let rest: Vec<String> = st.runs.lock().unwrap().queued.get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default();
+            let _ = app.emit("queue", json!({"session_id": id, "queued": rest}));
+            let _ = post_event(&app, &st, &id, &json!({"kind": "note", "text": "NekoTrail closed before your waiting messages ran. Running them now, in order."}));
+            if let Err(why) = start_turn_claimed(app.clone(), &st, id.clone(), next.clone(), true) {
+                let _ = post_event(&app, &st, &id, &json!({"kind": "error", "text": format!("This waiting message didn't run: {why}\n\n{next}")}));
             }
-    }
-    let _ = store.delete_setting(CHAT_QUEUE);
+        }
+    });
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -179,8 +195,7 @@ impl Drop for Starting<'_> {
                 plural(stuck.len(), "message", "messages"),
                 stuck.join("\n\n")
             )});
-            let _ = self.st.db().append_event(&self.id, &ev);
-            emit_event(&self.app, &self.id, &ev);
+            let _ = post_event(&self.app, self.st, &self.id, &ev);
             let _ = self.app.emit("queue", json!({"session_id": self.id, "queued": []}));
         }
         let _ = self.app.emit("running", json!({"session_id": self.id, "running": false}));
@@ -1289,8 +1304,7 @@ async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, igno
             return Err("NekoTrail couldn't tell what these files looked like before the turn, so it left them alone.".into());
         }
         let ev = json!({"kind": "guard_restored", "files": done, "checkpoint": checkpoint});
-        st.db().append_event(&id, &ev).map_err(e)?;
-        emit_event(&app, &id, &ev);
+        post_event(&app, st, &id, &ev)?;
         let _ = app.emit("workspaces-changed", json!({}));
         let note = format!(
             "[Note from NekoTrail: the user put back protected files you changed: {}. They are protected for this repo. Don't change them again; ask the user if you need to.]",
@@ -2833,8 +2847,7 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
         let last = st.db().sessions(id).ok().and_then(|mut s| s.pop());
         if let Some(sid) = last {
             let ev = json!({"kind": "stop", "reason": "budget", "text": note});
-            let _ = st.db().append_event(&sid.id, &ev);
-            emit_event(app, &sid.id, &ev);
+            let _ = post_event(app, &st, &sid.id, &ev);
         }
         say("budget", &note);
         alerts::fire(app, alerts::Event::CapReached, Some(id), None, "autopilot stopped at a spend cap");
@@ -3617,8 +3630,7 @@ async fn answer_approval(app: AppHandle, st: State<'_, AppState>, request_id: St
         return Err("The agent isn't waiting any more.".into());
     }
     let ev = json!({"kind": "approval_answer", "request_id": request_id, "allow": allow, "always": always});
-    st.db().append_event(&sid, &ev).map_err(e)?;
-    emit_event(&app, &sid, &ev);
+    post_event(&app, &st, &sid, &ev)?;
     Ok(())
 }
 
@@ -3756,7 +3768,7 @@ fn handoff_begin(app: &AppHandle, st: &AppState, id: &str, to: &str, model: Opti
     };
     let from = handoff::marker_from(&src.agent, &src.id, &about.task, about.reason);
     let back = handoff::marker_to(to, &s.id);
-    {
+    let stamp = {
         let db = st.db();
         db.insert_session(&s).map_err(e)?;
         // Folders added with /add-dir go along.
@@ -3765,9 +3777,9 @@ fn handoff_begin(app: &AppHandle, st: &AppState, id: &str, to: &str, model: Opti
             db.set_extra_dirs(&s.id, &dirs).map_err(e)?;
         }
         db.append_event(&s.id, &from).map_err(e)?;
-        db.append_event(id, &back).map_err(e)?;
-    }
-    emit_event(app, id, &back);
+        db.append_event(id, &back).map_err(e)?
+    };
+    emit_event(app, id, &back, stamp);
     let _ = app.emit("focus-session", json!({"workspace_id": s.workspace_id, "session_id": s.id}));
     start_turn(app.clone(), st, s.id.clone(), text.to_string())?;
     Ok(s)
@@ -3940,8 +3952,7 @@ fn rewind_to(app: &AppHandle, st: &AppState, id: String, checkpoint: String) -> 
         None => "Rewound files to an earlier point".to_string(),
     };
     let ev = json!({"kind": "rewind", "text": text, "undo": undo, "files": files});
-    st.db().append_event(&id, &ev).map_err(e)?;
-    emit_event(app, &id, &ev);
+    post_event(app, st, &id, &ev)?;
     let _ = app.emit("workspaces-changed", json!({}));
     st.runs.lock().unwrap().notes.insert(
         id,
@@ -3988,9 +3999,16 @@ async fn preview_snapshot(webview: tauri::Webview) -> Res<tauri::ipc::Response> 
 
 /// Send a stored chat event to the window. `seq` is its message id and `prev` the chat's message
 /// before it, so the window can merge live events with a loaded tail without losing or repeating any.
-fn emit_event(app: &AppHandle, session_id: &str, ev: &Value) {
-    let (seq, prev) = store::take_last_append(session_id).map_or((Value::Null, Value::Null), |(s, p)| (json!(s), json!(p)));
-    let _ = app.emit("agent", json!({"session_id": session_id, "event": ev, "seq": seq, "prev": prev}));
+fn emit_event(app: &AppHandle, session_id: &str, ev: &Value, stamp: store::Stamp) {
+    let _ = app.emit("agent", json!({"session_id": session_id, "event": ev, "seq": stamp.seq, "prev": stamp.prev}));
+}
+
+/// Store a chat event and send it to the window, stamped. The database lock is let go before the
+/// emit.
+fn post_event(app: &AppHandle, st: &AppState, session_id: &str, ev: &Value) -> Res<()> {
+    let stamp = st.db().append_event(session_id, ev).map_err(e)?;
+    emit_event(app, session_id, ev, stamp);
+    Ok(())
 }
 
 /// Rename a fresh workspace's branch after its first task, while nothing has been pushed:
@@ -4288,12 +4306,10 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
         st.db().setting(&rules::task_key(&ws.id)).ok().flatten().unwrap_or_default()
     };
     let user = json!({"kind": "user", "text": text, "checkpoint": checkpoint});
-    st.db().append_event(&id, &user).map_err(e)?;
-    emit_event(&app, &id, &user);
+    post_event(&app, st, &id, &user)?;
     if !task_rules.trim().is_empty() {
         let ev = json!({"kind": "note", "text": "Rules for this task went in front of this message."});
-        st.db().append_event(&id, &ev).map_err(e)?;
-        emit_event(&app, &id, &ev);
+        post_event(&app, st, &id, &ev)?;
     }
     let text_with_rules = rules::with_task_rules(&task_rules, &text);
     let prompt = match st.runs.lock().unwrap().notes.remove(&id) {
@@ -4313,8 +4329,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             "This agent can only work in one folder, and this task spans {} repos. Start a new chat with Claude, Codex, Gemini or Copilot.",
             linked.len() + 1
         )});
-        st.db().append_event(&id, &ev).map_err(e)?;
-        emit_event(&app, &id, &ev);
+        post_event(&app, st, &id, &ev)?;
         return Ok(false);
     }
     // Repo trust holds per repo. An agent that can't switch an untrusted repo's settings off
@@ -4323,22 +4338,19 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
         && let Some(w) = linked.iter().find(|w| untrusted_agent_config(st, w, harness).is_some()) {
             let name = st.db().repo(&w.repo_id).map(|r| r.name).unwrap_or_default();
             let ev = json!({"kind": "error", "text": format!("{name} has agent settings that run commands, and this agent can't run with them switched off. Send again and choose Trust for {name}, or use Claude or Codex for this task.")});
-            st.db().append_event(&id, &ev).map_err(e)?;
-            emit_event(&app, &id, &ev);
+            post_event(&app, st, &id, &ev)?;
             return Ok(false);
         }
     let project_config = untrusted_agent_config(st, &ws, harness).is_none();
     if !project_config
         && let Some(why) = harness.needs_trusted_config() {
             let ev = json!({"kind": "error", "text": why});
-            st.db().append_event(&id, &ev).map_err(e)?;
-            emit_event(&app, &id, &ev);
+            post_event(&app, st, &id, &ev)?;
             return Ok(false);
         }
     if !project_config && session.agent_session_id.is_none() {
         let note = json!({"kind": "note", "text": "This repo's own agent settings (hooks, MCP servers, env) are off for this chat until you trust them."});
-        st.db().append_event(&id, &note).map_err(e)?;
-        emit_event(&app, &id, &note);
+        post_event(&app, st, &id, &note)?;
     }
     let spec = agent::TurnSpec {
         project_config,
@@ -4361,16 +4373,14 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     if st.runs.lock().unwrap().cancelled.remove(&id) {
         let ev = json!({"kind": "done", "is_error": true, "stopped": true});
-        st.db().append_event(&id, &ev).map_err(e)?;
-        emit_event(&app, &id, &ev);
+        post_event(&app, st, &id, &ev)?;
         return Ok(false);
     }
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(err) => {
             let ev = json!({"kind": "error", "text": format!("Couldn't start {}: {err}", session.agent), "fix": "install", "agent": session.agent});
-            st.db().append_event(&id, &ev).map_err(e)?;
-            emit_event(&app, &id, &ev);
+            post_event(&app, st, &id, &ev)?;
             return Ok(false);
         }
     };
@@ -4480,8 +4490,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
                             "input": agent::summarize_input(&tool, &req["input"]),
                             "description": req["description"], "can_always": req["permission_suggestions"].is_array(),
                         });
-                        let _ = st.db().append_event(&id, &ev);
-                        emit_event(&app, &id, &ev);
+                        let _ = post_event(&app, &st, &id, &ev);
                         let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{tool}: {}", ev["input"].as_str().unwrap_or(""))}));
                         alerts::fire(&app, alerts::Event::NeedsYou, Some(&workspace_id), Some(&id), alerts::needs_text("approval"));
                         // A queued task waiting for your OK frees its slot for the next one.
@@ -4509,8 +4518,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
                     if let Some(rid) = ev["request_id"].as_str() {
                         st.runs.lock().unwrap().approvals.insert(rid.to_string(), (id.clone(), Value::Null, Value::Null));
                     }
-                    let _ = st.db().append_event(&id, &ev);
-                    emit_event(&app, &id, &ev);
+                    let _ = post_event(&app, &st, &id, &ev);
                     let _ = app.emit("needs", json!({"workspace_id": workspace_id, "session_id": id, "needs": "approval", "title": format!("{}: {}", ev["tool"].as_str().unwrap_or("tool"), ev["input"].as_str().unwrap_or(""))}));
                     alerts::fire(&app, alerts::Event::NeedsYou, Some(&workspace_id), Some(&id), alerts::needs_text("approval"));
                     queuerun::poke(&app);
@@ -4569,8 +4577,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
                         said.push_str(t);
                         said.push('\n');
                     }
-                let _ = st.db().append_event(&id, &ev);
-                emit_event(&app, &id, &ev);
+                let _ = post_event(&app, &st, &id, &ev);
             }
             if end {
                 break;
@@ -4594,8 +4601,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
                     limit_text = ev["text"].as_str().map(String::from);
                 }
             }
-            let _ = st.db().append_event(&id, &ev);
-            emit_event(&app, &id, &ev);
+            let _ = post_event(&app, &st, &id, &ev);
         }
         // You pressed Stop: whatever the agent started goes too. Background tools often ignore
         // SIGINT and would outlive it. (A turn that ended by itself keeps what it started.)
@@ -4615,8 +4621,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             && let Ok(hits) = guard::check(Path::new(&ws_dir), &rules, &guard_base)
             && !hits.is_empty() {
                 let ev = json!({"kind": "guard", "files": hits, "checkpoint": guard_base.checkpoint, "ignored": guard_base.ignored, "level": harness.guard_level()});
-                let _ = st.db().append_event(&id, &ev);
-                emit_event(&app, &id, &ev);
+                let _ = post_event(&app, &st, &id, &ev);
                 let names: Vec<&str> = hits.iter().map(|h| h.path.as_str()).collect();
                 guard_hit = Some(format!("Changed a protected file: {}", names.join(", ")));
             }
@@ -4625,8 +4630,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             if let Ok(hits) = guard::check(Path::new(&w.path), rules, base)
                 && !hits.is_empty() {
                     let ev = json!({"kind": "guard", "files": hits, "checkpoint": base.checkpoint, "ignored": base.ignored, "level": harness.guard_level(), "workspace_id": w.id, "repo": repo_name});
-                    let _ = st.db().append_event(&id, &ev);
-                    emit_event(&app, &id, &ev);
+                    let _ = post_event(&app, &st, &id, &ev);
                     let names: Vec<String> = hits.iter().map(|h| format!("{repo_name}/{}", h.path)).collect();
                     let line = names.join(", ");
                     guard_hit = Some(match guard_hit.take() {
@@ -4702,8 +4706,7 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             // It never vanishes: if it can't start, the chat shows it with the reason.
             if let Err(why) = start_turn_claimed(app.clone(), &st, id.clone(), text.clone(), true) {
                 let ev = json!({"kind": "error", "text": format!("This waiting message didn't run: {why}\n\n{text}")});
-                let _ = st.db().append_event(&id, &ev);
-                emit_event(&app, &id, &ev);
+                let _ = post_event(&app, &st, &id, &ev);
             }
         } else if run_checks {
             let _ = start_checks(&app, &st, &workspace_id, None, Some(id.clone()));
@@ -4853,8 +4856,7 @@ fn start_checks(app: &AppHandle, st: &AppState, ws_id: &str, names: Option<Vec<S
         let ev = json!({"kind": "checks", "results": done.iter().map(|r| json!({
             "name": r.name, "status": r.status, "passed": r.passed, "failed": r.failed, "regressed": r.regressed,
         })).collect::<Vec<_>>()});
-        let _ = st.db().append_event(&session, &ev);
-        emit_event(&app, &session, &ev);
+        let _ = post_event(&app, &st, &session, &ev);
         if !regressed.is_empty() {
             let _ = st.db().set_unread(&ws_id, true);
             let title = format!("{} passed before and {} now", regressed.join(" and "), if regressed.len() == 1 { "fails" } else { "fail" });
@@ -5110,8 +5112,8 @@ async fn busy_work(st: State<'_, AppState>) -> Res<Value> {
 /// Queued prompts leave memory so no new turn starts in between; they stay saved for after.
 #[tauri::command]
 async fn stop_all_work(st: State<'_, AppState>) -> Res<()> {
-    // Waiting messages stay saved (`save_chat_queue`) and come back in their message boxes after
-    // the relaunch; clearing them here only keeps a new turn from starting in between.
+    // Waiting messages stay saved (`save_chat_queue`) and run after the relaunch; clearing them
+    // here only keeps a new turn from starting in between.
     let pids: Vec<u32> = {
         let mut runs = st.runs.lock().unwrap();
         runs.queued.clear();
@@ -5247,9 +5249,8 @@ pub fn run() {
     let mut task_queue = queue::Queue::from_json(store.setting(queue::SETTING).ok().flatten().as_deref());
     task_queue.after_restart();
     let _ = store.set_setting(queue::SETTING, &task_queue.to_json());
-    // Chat messages that were waiting at quit go back in their message boxes.
-    let inbox = remote::Inbox::default();
-    restore_chat_queue(&store, &inbox);
+    // Chat messages that were waiting at quit go back in their queues, and run (`resume_chat_queues`).
+    let runs = Arc::new(Ordered::new(Runs { queued: saved_chat_queue(&store), ..Default::default() }));
 
     // Network and repo calls run beside the window instead of before it (`gh api user` alone is ~0.5s, more offline).
     let branch_prefix: Arc<OnceLock<String>> = Default::default();
@@ -5272,7 +5273,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Ordered::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox, port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Ordered::new(task_queue) })
+        .manage(AppState { store: Ordered::new(store), runs, ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Ordered::new(task_queue) })
         .setup(move |app| {
             // The window is made here rather than from the config at launch, so an e2e run can go
             // without one: nothing appears on screen and nothing in the Dock.
@@ -5285,6 +5286,7 @@ pub fn run() {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), cfg)?.build()?;
             }
             pr_poll_loop(app.handle().clone());
+            resume_chat_queues(app.handle());
             search_backfill_loop(app.handle().clone());
             queuerun::start_loop(app.handle().clone());
             alerts::start(app.handle().clone());

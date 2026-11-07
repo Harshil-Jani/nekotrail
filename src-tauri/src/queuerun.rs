@@ -185,8 +185,7 @@ fn new_session(st: &AppState, ws_id: &str, agent: &str, task: &queue::Task) -> R
 
 fn note(app: &AppHandle, st: &AppState, session_id: &str, text: &str) {
     let ev = json!({"kind": "note", "text": text});
-    let _ = st.db().append_event(session_id, &ev);
-    crate::emit_event(app, session_id, &ev);
+    let _ = crate::post_event(app, st, session_id, &ev);
 }
 
 /// What the chat last said, for a turn that couldn't start.
@@ -339,8 +338,7 @@ pub fn watch_turn(app: &AppHandle, st: &AppState, session_id: &str, workspace_id
     let found = runaway::check(&events, &snaps, &cfg)?;
     let note = runaway::note(&found);
     let ev = json!({"kind": "stop", "reason": "loop", "text": note, "evidence": found.evidence});
-    let _ = st.db().append_event(session_id, &ev);
-    crate::emit_event(app, session_id, &ev);
+    let _ = crate::post_event(app, st, session_id, &ev);
     let halt = Halt { note, evidence: found.evidence };
     let key = crate::autopilot_key(workspace_id);
     if st.db().setting(&key).ok().flatten().is_some() {

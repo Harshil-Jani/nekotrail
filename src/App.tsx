@@ -1100,7 +1100,7 @@ export default function App() {
         showWorkspace(job.workspace_id);
         setTab("chat");
         setAppend({ text: job.text, nonce: Date.now() });
-        say(job.note ?? "Your selection is in the message box. Add anything else and send.");
+        say("Your selection is in the message box. Add anything else and send.");
         return;
     }
   };

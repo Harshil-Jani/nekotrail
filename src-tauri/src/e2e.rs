@@ -54,6 +54,7 @@ pub fn handle(app: &AppHandle, line: &str) -> Res<Value> {
         "send" => to_value(block_on(crate::send(app.clone(), st(), s("session_id")?, s("text")?))),
         "stop" => to_value(block_on(crate::stop(st(), s("session_id")?))),
         "queued" => to_value(block_on(crate::queued(st(), s("session_id")?))),
+        "events_tail" => block_on(crate::session_events_tail(st(), s("session_id")?, req["limit"].as_i64().unwrap_or(50))),
         "events" => to_value(block_on(crate::session_events(st(), s("session_id")?))),
         "snapshot" => to_value(block_on(crate::snapshot(st(), false))),
         "queue_view" => block_on(crate::queuerun::queue_view(app.clone())),

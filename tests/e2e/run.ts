@@ -206,6 +206,18 @@ await journey("a greeting gets an answer, the turn ends, the spinner stops", asy
   if (!off) fail(`the window never got running:false (it got: ${[...new Set(seen.map((e) => e.event))].join(", ")})`);
   const w = await $("workspace", { id: ws });
   if (w.title !== "") fail(`a greeting named the workspace "${w.title}"`);
+  // What the window merges live events by: each one stamped with its id and the one before it,
+  // the chain unbroken, and the loaded tail ending where the live events start.
+  const live = seen.filter((e) => e.event === "agent" && e.payload.session_id === sid).map((e) => e.payload);
+  if (live.length < 3) fail(`only ${live.length} live chat events`);
+  for (const [i, p] of live.entries()) {
+    if (typeof p.seq !== "number" || typeof p.prev !== "number") fail(`a live event without seq/prev: ${JSON.stringify(p).slice(0, 200)}`);
+    if (i > 0 && p.prev !== live[i - 1].seq) fail(`event ${p.seq} says it follows ${p.prev}, but ${live[i - 1].seq} came before it`);
+  }
+  const userEv = live.find((p) => p.event.kind === "user");
+  if (userEv?.event.text !== "Hey there") fail(`the live user event says ${JSON.stringify(userEv?.event.text)}, not what was sent`);
+  const tail = await $("events_tail", { session_id: sid, limit: 50 });
+  if (tail.last_seq !== live.at(-1).seq) fail(`the tail ends at ${tail.last_seq}, the live events at ${live.at(-1).seq}`);
 });
 
 await journey("the terminal starts, shows a prompt and runs what you type", async () => {
@@ -234,6 +246,9 @@ await journey("a message sent while the agent works is queued, then runs next, i
   if ((await $("queued", { session_id: sid })).length !== 0) fail("the queue isn't empty after both ran");
   const w = await $("workspace", { id: ws });
   if (!/health check/i.test(w.title)) fail(`the workspace title is "${w.title}", not from the first real task`);
+  const ends = (await seenSince(0)).filter((e) => e.event === "running" && e.payload.session_id === sid && e.payload.running === false && "ok" in e.payload);
+  const [first, second] = ends.slice(-2).map((e) => e.payload);
+  if (first?.more_queued !== true || second?.more_queued !== false) fail(`running:false more_queued went ${first?.more_queued}, ${second?.more_queued}; expected true, then false`);
 });
 
 await journey("a message sent after the turn ended runs at once", async () => {
@@ -313,7 +328,7 @@ await journey("two messages sent at the same moment run one after the other", as
   if (!texts.includes("[slow] first of two") || !texts.includes("[slow] second of two")) fail(`chat shows ${JSON.stringify(texts.slice(-2))}`);
 });
 
-await journey("messages waiting when the app crashes come back in the message box", async () => {
+await journey("messages waiting when the app crashes still run, in order, once", async () => {
   const w2 = await $("create_workspace", { repo_id: (await $("snapshot")).repos[0].id });
   const s2 = (await $("new_session", { workspace_id: w2.id, agent: "claude" })).id;
   await $("send", { session_id: s2, text: "[hang] long job" });
@@ -324,13 +339,17 @@ await journey("messages waiting when the app crashes come back in the message bo
   app!.kill("SIGKILL");
   await until("the app to be gone", async () => app!.exitCode !== null || app!.signalCode !== null, 5000);
   crashing = false;
-  await launch();
-  const jobs = (await $("inbox")) as any[];
-  const draft = jobs.find((j) => j.kind === "draft" && j.workspace_id === w2.id);
-  if (!draft) fail(`nothing came back after the restart: ${JSON.stringify(jobs)}`);
-  if (draft.text !== "then tidy up\n\nand write the notes") fail(`the message box gets ${JSON.stringify(draft.text)}`);
-  if ((await $("queued", { session_id: s2 })).length !== 0) fail("they also wait in the queue, and would run twice");
   spawnSync("pkill", ["-f", "long job"]);
+  writeFileSync(agentLog, "");
+  await launch();
+  await until("both waiting messages to run", async () => agentTurns().filter((l) => l.startsWith("end")).length >= 2 && !(await running(s2)), 20_000);
+  const ran = agentTurns().filter((l) => l.startsWith("start")).map((l) => l.split(" ").slice(2).join(" "));
+  if (ran.join("|") !== "then tidy up|and write the notes") fail(`after the restart these ran: ${JSON.stringify(ran)}`);
+  if ((await $("queued", { session_id: s2 })).length !== 0) fail("the queue isn't empty after they ran");
+  const texts = await userTexts(s2);
+  if (texts.filter((t) => t === "then tidy up").length !== 1) fail(`"then tidy up" shows ${texts.filter((t) => t === "then tidy up").length} times`);
+  if (!(await events(s2)).some((e) => e.kind === "note" && /closed before/.test(e.text))) fail("the chat doesn't say why a turn started on its own");
+  if (((await $("inbox")) as any[]).some((j) => j.kind === "draft")) fail("they also went into the message box, so they would show twice");
 });
 
 await journey("a waiting message whose turn can't start is shown, never dropped", async () => {
