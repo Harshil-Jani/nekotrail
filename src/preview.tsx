@@ -12,6 +12,7 @@
  * step; try comes with one repo). ?tour opens the coach-mark tour on any workspace.
  * Linear: ?new=r1&from=linear (your open issues), &linear=off (not connected), &linear=empty (no issues),
  * &linear=error (Linear is rate limiting). Settings: ?settings=integrations, with &linear=off or &linear=error.
+ * Working row: ?ws=w1&tab=chat&thinking plays a turn; &thinking=start|reading|edits|still|answer holds one state.
  * Conductor: ?rescue=import (found, not imported: the sheet), ?rescue=notice (imported, not moved: the notice;
  * add &ws=w1 for the in-workspace banner), ?rescue=move, ?rescue=moving, ?rescue=done, ?rescue=partial.
  * All names, numbers and PRs here are made up for screenshots.
@@ -29,6 +30,7 @@ import { startAppearance } from "./appearance";
 import { AGENTS } from "./agents";
 import type { Agent } from "./api";
 import { handoffMode } from "./handoff";
+import { turnClock } from "./activity";
 
 // A fresh install: no first-run marks, so the welcome flow and the clock start as they would.
 const fresh = new URLSearchParams(location.search).has("fresh");
@@ -214,6 +216,49 @@ if (guard) {
     "Run 4: --- FAIL: TestSLABreach (0.02s) sla_test.go:41: got 4h0m0s, want 4h0m0s business",
   ] } as any);
   if (stop === "budget") events.push({ kind: "stop", reason: "budget", text: "Autopilot stopped. This task reached its cap: $5.12 of $5.00 (API-equivalent)." } as any);
+}
+// ?ws=w1&tab=chat&thinking: Mochi's Claude chat is working on a new message, with the row that says
+// what it does. Bare: it plays a turn (Thinking, then reads, a command, two edits). Or one still state:
+// &thinking=start (Thinking, nothing yet), =reading (three reads at once), =edits (Editing 2 files),
+// =still (no event for a minute: "Still working · 1m 12s"), =answer (text on screen, the row steps aside).
+const thinkingQ = new URLSearchParams(location.search);
+const thinkingMode = thinkingQ.has("thinking") ? (thinkingQ.get("thinking") || "live") : null;
+if (thinkingMode) {
+  const at = Date.now();
+  events.push({ kind: "user", checkpoint: "def456", text: "The 502s are gone. Now add a test that fails if the idle timeout drops below the load balancer's again." } as any);
+  const turnKey = `s1:${events.length - 1}`;
+  const steps: Record<string, any[]> = {
+    start: [],
+    reading: [
+      { kind: "tool", id: "k1", name: "Read", input: "/code/pawprint-api/internal/server/http.go" },
+      { kind: "tool", id: "k2", name: "Read", input: "/code/pawprint-api/internal/server/http_test.go" },
+      { kind: "tool", id: "k3", name: "Read", input: "/code/pawprint-api/deploy/alb.yaml" },
+    ],
+    edits: [
+      { kind: "text", text: "I'll read the timeout from one place so the test and the server can't drift apart." },
+      { kind: "tool", id: "k4", name: "Edit", input: "/code/pawprint-api/internal/server/config.go" },
+      { kind: "tool_result", id: "k4", output: "", is_error: false },
+      { kind: "tool", id: "k5", name: "Edit", input: "/code/pawprint-api/internal/server/http_test.go" },
+    ],
+    still: [{ kind: "tool", id: "k6", name: "Bash", input: "cd /code/pawprint-api && go test ./... -race -count=1" }],
+    answer: [{ kind: "text", text: "Found the second place the timeout was set, in `deploy/alb.yaml`. Fixing both now." }],
+  };
+  if (thinkingMode === "live") {
+    // Played as the backend would send them, a few seconds apart.
+    const play: [number, any][] = [
+      [3000, steps.reading[0]], [3300, steps.reading[1]], [3600, steps.reading[2]],
+      [6000, { kind: "tool_result", id: "k1", output: "", is_error: false }], [6000, { kind: "tool_result", id: "k2", output: "", is_error: false }], [6000, { kind: "tool_result", id: "k3", output: "", is_error: false }],
+      [7000, { kind: "tool", id: "k7", name: "Bash", input: "go test ./internal/server/... -run TestIdleTimeout" }],
+      [11000, { kind: "tool_result", id: "k7", output: "ok", is_error: false }],
+      [12000, steps.edits[1]], [13500, steps.edits[2]], [14000, steps.edits[3]],
+    ];
+    for (const [ms, ev] of play) setTimeout(() => emit("agent", { session_id: "s1", event: ev }), ms);
+  } else {
+    events.push(...(steps[thinkingMode] ?? []));
+    // "still": a minute and twelve seconds in, the last event a minute ago. The rest: four seconds in.
+    if (thinkingMode === "still") turnClock.seed(turnKey, at - 72_000, at - 61_000, events.length);
+    else turnClock.seed(turnKey, at - 4_000, at, events.length);
+  }
 }
 // Shell commands for the "Commands the agent ran" sheet (?commands=w1): a long one, a failed one, one cut off mid-turn.
 const codexEvents = [
@@ -806,7 +851,7 @@ mockIPC(
       case "checks_output": return args.name === "test" ? checkOutput : "";
       case "checks_run": case "checks_stop": case "checks_trust": return null;
       case "snapshot": if (fresh) return { repos: [...freshRepos], workspaces: [...freshWorkspaces], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
-        return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
+        return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: [...(opencode ? ["s9"] : []), ...(thinkingMode ? ["s1"] : [])], running_workspaces: [...(opencode ? ["w3", "w2"] : ["w3"]), ...(thinkingMode ? ["w1"] : [])], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       // Made-up org logos for the sample repos (a paw and a leaf), as the cache would hand them over; ?noavatar for the letter.
       case "repo_avatar": return new URLSearchParams(location.search).has("noavatar") ? null : sampleLogo(args.id === "r2" ? "#1f7a5c" : "#c2410c", args.id === "r2" ? "leaf" : "paw");
