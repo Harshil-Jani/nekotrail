@@ -1,53 +1,61 @@
 @import "./tokens.css";
 /*
- * nekotrail.site: the app's design system (DESIGN.md, src/App.css) at web-page scale.
- * Same tokens, same cat-orange accent, light and dark following the system. The night sky stays dark
- * in both appearances, as it does in the app.
+ * The NekoTrail site: the app's design system (DESIGN.md, src/App.css) at web-page scale.
+ * Same Moonlight tokens, light and dark following the system. The night sky is dark in both
+ * appearances; stars are the only things allowed to glow.
  */
 :root {
   color-scheme: light dark;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px; --s8: 48px; --s9: 72px; --s10: 112px;
 
-  --bg: light-dark(#ffffff, #1e1e1e);
-  --surface: light-dark(#f5f5f7, #262628);
-  --raised: light-dark(#ffffff, #3a3a3c);
-  --hover: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.06));
-  --line: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.09));
-  --line-strong: light-dark(rgba(0, 0, 0, 0.16), rgba(255, 255, 255, 0.16));
+  /* Moonlight. Every colour comes from tokens.css (generated from brand/palette.json). */
+  --bg: var(--ui-bg1);
+  --surface: var(--ui-bg2);
+  --raised: var(--ui-bg3);
+  --hover: light-dark(rgba(41, 41, 102, 0.06), rgba(204, 204, 255, 0.08));
+  --line: var(--ui-border);
+  --line-strong: var(--ui-border-strong);
 
-  --text: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.88));
-  --muted: light-dark(rgba(0, 0, 0, 0.6), rgba(255, 255, 255, 0.6));
-  --faint: light-dark(rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.28));
+  --text: var(--ui-text);
+  --text2: var(--ui-text2);
+  --muted: var(--ui-muted);
+  --faint: light-dark(rgba(20, 20, 58, 0.3), rgba(204, 204, 255, 0.3));
 
-  /* Brand colours come from tokens.css (generated from brand/palette.json). */
-  --accent: var(--brand-accent);
-  --accent-hover: color-mix(in srgb, var(--brand-accent) 88%, white);
-  --accent-press: color-mix(in srgb, var(--brand-accent) 90%, var(--brand-accent-deep));
-  --accent-text: light-dark(var(--brand-accent-text-light), var(--brand-accent-text-dark));
-  --accent-on-sky: var(--brand-accent-text-dark);
-  --accent-ink: var(--brand-cat-ink);
-  --accent-soft: light-dark(color-mix(in srgb, var(--brand-accent) 14%, transparent), color-mix(in srgb, var(--brand-accent) 16%, transparent));
-  --accent-ring: color-mix(in srgb, var(--brand-accent) 45%, transparent);
-  --good: light-dark(#1a7f37, #32d74b);
-  --bad: light-dark(#d70015, #ff453a);
-  --purple: light-dark(#8944ab, #bf5af2);
+  /* Moonlight is the brand colour; on light it deepens to indigo. */
+  --accent: var(--ui-primary);
+  --accent-hover: var(--ui-primary-hover);
+  --accent-press: color-mix(in srgb, var(--ui-primary) 88%, var(--ui-text));
+  --accent-text: var(--ui-primary-text);
+  --accent-on-sky: var(--night-primary-text);
+  --accent-ink: var(--ui-primary-ink);
+  --accent-soft: light-dark(rgba(61, 61, 133, 0.1), rgba(204, 204, 255, 0.14));
+  --accent-ring: color-mix(in srgb, var(--ui-focus) 55%, transparent);
+  /* Lantern gold: the one warm colour, for stars that shine and what needs attention. */
+  --lantern: var(--ui-accent);
+  --lantern-text: var(--ui-accent-text);
+  --lantern-soft: light-dark(rgba(176, 122, 0, 0.1), rgba(255, 210, 122, 0.12));
+  --good: var(--ui-success);
+  --bad: var(--ui-danger);
+  --warn: var(--ui-warning);
+  --purple: light-dark(#7a3fa8, #d3a6ff);
 
-  --sky-top: var(--brand-night);
-  --sky-glow: var(--brand-dusk);
-  --sky-bottom: var(--brand-midnight);
-  --sky-star: var(--brand-paper);
-  --sky-heading: var(--brand-paper);
-  --window-bg: #1e1e1e;
-  --window-bar: #2a2a2c;
-  --code-bg: light-dark(#f5f5f7, #161618);
-  --btn-hover: light-dark(#f7f7f8, #444446);
+  /* The night sky: a lighter indigo in light mode, deep midnight in dark. Text on it is always light. */
+  --sky-top: var(--ui-sky-top);
+  --sky-mid: var(--ui-sky-mid);
+  --sky-bottom: var(--ui-sky-bottom);
+  --sky-star: var(--ui-star);
+  --sky-heading: var(--ui-sky-text);
+  --sky-text: var(--ui-sky-text);
+  --sky-muted: var(--ui-sky-text2);
+  --window-bg: var(--night-sky-top);
+  --window-bar: #161634;
+  --code-bg: light-dark(var(--ui-bg2), var(--ui-bg0));
+  --btn-hover: light-dark(#f7f7fc, #272754);
   /* Third-party marks keep their owners' colours. */
   --gh-sponsors: #db61a2;
   --bmc-bg: #ffdd00;
   --bmc-bg-hover: #ffe433;
   --bmc-ink: #0d0c22;
-  --sky-text: rgba(255, 255, 255, 0.92);
-  --sky-muted: rgba(255, 255, 255, 0.66);
 
   --r-xs: 4px; --r: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 12px; --r-2xl: 16px;
   --shadow-control: 0 0.5px 1.5px light-dark(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.4));
@@ -107,8 +115,11 @@ p { text-wrap: pretty; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow-control); }
 .btn.primary:hover { background: var(--accent-hover); }
 .btn.primary:active { background: var(--accent-press); }
+.sky .btn.primary { background: var(--night-primary); color: var(--night-primary-ink); }
+.sky .btn.primary:hover { background: var(--night-primary-hover); }
+.sky .btn.primary:active { background: color-mix(in srgb, var(--night-primary) 88%, var(--night-sky-top)); }
 .btn.small { height: 32px; padding: 0 12px; font-size: 14px; border-radius: var(--r); }
-.btn.on-sky { background: rgba(255, 255, 255, 0.08); color: var(--sky-text); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.22); }
+.btn.on-sky { background: rgba(255, 255, 255, 0.08); color: var(--sky-text); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28); }
 .btn.on-sky:hover { background: rgba(255, 255, 255, 0.14); }
 .btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
@@ -118,7 +129,7 @@ p { text-wrap: pretty; }
 .announce a:hover { text-decoration: underline; }
 .nav {
   position: sticky; top: 0; z-index: 50;
-  background: light-dark(rgba(255, 255, 255, 0.78), rgba(30, 30, 30, 0.78));
+  background: light-dark(rgba(253, 253, 255, 0.8), rgba(16, 16, 38, 0.8));
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 0.5px solid var(--line);
 }
@@ -126,7 +137,8 @@ p { text-wrap: pretty; }
 .brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
 .brand .mark { width: 30px; height: auto; flex-shrink: 0; }
 .brand .wordmark { height: 17px; width: auto; color: var(--text); }
-.brand .wordmark .wm-star, .wordmark .wm-star { fill: var(--accent); }
+.brand .wordmark .wm-star, .wordmark .wm-star { fill: var(--lantern); }
+.sky .wordmark .wm-star { fill: var(--brand-lantern); }
 .nav-links { display: flex; align-items: center; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .nav-links a { display: inline-block; padding: 6px 10px; border-radius: var(--r); color: var(--muted); text-decoration: none; font-size: 14.5px; font-weight: 500; }
 .nav-links a:hover { color: var(--text); background: var(--hover); }
@@ -144,7 +156,7 @@ p { text-wrap: pretty; }
 .menu[open] summary { background: var(--hover); }
 .menu-panel {
   position: absolute; right: 0; top: calc(100% + 8px); min-width: 220px; padding: 6px;
-  background: light-dark(rgba(255, 255, 255, 0.96), rgba(44, 44, 46, 0.96)); backdrop-filter: blur(30px);
+  background: light-dark(rgba(253, 253, 255, 0.96), rgba(26, 26, 58, 0.96)); backdrop-filter: blur(30px);
   border-radius: var(--r-lg); box-shadow: var(--shadow-pop), 0 0 0 0.5px var(--line-strong);
 }
 .menu-panel a { display: block; padding: 9px 12px; border-radius: var(--r); color: var(--text); text-decoration: none; font-size: 15px; }
@@ -157,7 +169,7 @@ p { text-wrap: pretty; }
 /* ---------- the night sky ---------- */
 .sky {
   position: relative; overflow: hidden; color: var(--sky-text);
-  background: radial-gradient(120% 90% at 50% 0%, var(--sky-glow) 0%, var(--sky-top) 55%, var(--sky-bottom) 100%);
+  background: radial-gradient(120% 70% at 50% 108%, var(--sky-bottom) 0%, var(--sky-mid) 45%, var(--sky-top) 85%);
 }
 .sky .stars { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .sky .stars circle { fill: var(--sky-star); }
@@ -167,8 +179,8 @@ p { text-wrap: pretty; }
 @keyframes shoot { 0%, 92% { opacity: 0; transform: translate(0, 0) rotate(-24deg); } 93% { opacity: 1; } 100% { opacity: 0; transform: translate(-260px, 116px) rotate(-24deg); } }
 .sky svg.constellation { position: absolute; top: 140px; left: max(24px, calc(50% - 640px)); width: 190px; height: auto; pointer-events: none; overflow: visible; }
 @media (max-width: 1100px) { .sky svg.constellation { display: none; } }
-.sky .constellation line { stroke: var(--accent); stroke-width: 1.2; stroke-opacity: 0.55; stroke-dasharray: 200; stroke-dashoffset: 200; animation: draw 1.4s var(--ease) forwards; animation-delay: var(--delay, 0s); }
-.sky .constellation circle { fill: var(--accent); opacity: 0; animation: lit 0.6s var(--ease) forwards; animation-delay: var(--delay, 0s); }
+.sky .constellation line { stroke: var(--night-star); stroke-width: 1.2; stroke-opacity: 0.55; stroke-dasharray: 200; stroke-dashoffset: 200; animation: draw 1.4s var(--ease) forwards; animation-delay: var(--delay, 0s); }
+.sky .constellation circle { fill: var(--night-star); filter: drop-shadow(0 0 4px var(--night-star-glow)); opacity: 0; animation: lit 0.6s var(--ease) forwards; animation-delay: var(--delay, 0s); }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes lit { to { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) {
@@ -199,7 +211,7 @@ p { text-wrap: pretty; }
 @keyframes blink { 0%, 100% { scale: 1 1; } 45%, 55% { scale: 1 0.1; } }
 @keyframes glint-off { 0% { opacity: 0; } 100% { opacity: 1; } }
 .hero h1 { font-size: clamp(32px, 5vw, 56px); letter-spacing: -0.035em; color: var(--sky-heading); max-width: 18ch; margin: 0 auto; }
-.hero h1 em { display: block; font-style: normal; color: var(--accent); }
+.hero h1 em { display: block; font-style: normal; color: var(--night-primary); }
 .hero .lede { font-size: clamp(17px, 2vw, 20px); color: var(--sky-muted); max-width: 640px; margin: var(--s5) auto 0; line-height: 1.5; }
 .hero .ctas { display: flex; flex-wrap: wrap; gap: var(--s3); justify-content: center; margin-top: var(--s7); }
 .hero .fine { font-size: 13.5px; color: var(--sky-muted); margin: var(--s4) 0 0; }
@@ -209,10 +221,10 @@ p { text-wrap: pretty; }
 .hero-shot .window { position: relative; z-index: 1; margin: 0 auto; max-width: 1080px; }
 
 /* ---------- product window frame ---------- */
-.window { border-radius: var(--r-xl); overflow: hidden; background: var(--window-bg); box-shadow: var(--shadow-window), 0 0 0 0.5px rgba(255, 255, 255, 0.14); }
-.window-bar { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; background: var(--window-bar); border-bottom: 0.5px solid rgba(255, 255, 255, 0.08); }
-.window-bar i { width: 11px; height: 11px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
-.window-bar span { flex: 1; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.5); margin-right: 50px; }
+.window { border-radius: var(--r-xl); overflow: hidden; background: var(--window-bg); box-shadow: var(--shadow-window), 0 0 0 0.5px rgba(204, 204, 255, 0.18); }
+.window-bar { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; background: var(--window-bar); border-bottom: 0.5px solid rgba(204, 204, 255, 0.1); }
+.window-bar i { width: 11px; height: 11px; border-radius: 50%; background: rgba(204, 204, 255, 0.2); }
+.window-bar span { flex: 1; text-align: center; font-size: 12px; color: var(--night-sky-text2); margin-right: 50px; }
 .window video, .window img { width: 100%; aspect-ratio: 1200 / 750; object-fit: cover; background: var(--window-bg); }
 .window img.still { aspect-ratio: 16 / 10; }
 
@@ -236,14 +248,14 @@ p { text-wrap: pretty; }
 .rail-lead { color: var(--text); font-weight: 600; }
 .rail-done { display: none !important; }
 .rail.complete .rail-todo { display: none; }
-.rail.complete .rail-done { display: block !important; color: var(--accent-text); }
+.rail.complete .rail-done { display: block !important; color: var(--lantern-text); }
 .rail svg { width: 200px; height: auto; overflow: visible; }
-.rail-lines line { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: var(--len); stroke-dashoffset: var(--len); transition: stroke-dashoffset 0.5s var(--ease); }
+.rail-lines line { stroke: var(--lantern); stroke-width: 2; stroke-linecap: round; stroke-dasharray: var(--len); stroke-dashoffset: var(--len); transition: stroke-dashoffset 0.5s var(--ease); }
 .rail-lines line.on { stroke-dashoffset: 0; }
 .rail-star .core { fill: var(--bg); stroke: var(--muted); stroke-width: 1.5; transition: fill 0.3s var(--ease), stroke 0.3s var(--ease); }
-.rail-star .halo { fill: var(--accent); opacity: 0; transition: opacity 0.4s var(--ease); }
+.rail-star .halo { fill: var(--lantern); opacity: 0; transition: opacity 0.4s var(--ease); }
 .rail-star text { font: 500 14px var(--sans); fill: var(--muted); opacity: 0.7; transition: fill 0.3s var(--ease); }
-.rail-star.on .core { fill: var(--accent); stroke: var(--accent); }
+.rail-star.on .core { fill: var(--lantern); stroke: var(--lantern); }
 .rail-star.on .halo { opacity: 0.16; }
 .rail-star.on text { fill: var(--text); opacity: 0.85; }
 .rail-star.current text { fill: var(--text); opacity: 1; font-weight: 650; }
@@ -267,7 +279,7 @@ p { text-wrap: pretty; }
 .feature .more { display: inline-block; margin-top: var(--s5); font-weight: 600; font-size: 15px; text-decoration: none; }
 .feature .more:hover { text-decoration: underline; }
 .star-mark { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--faint); transition: background-color 0.4s var(--ease), box-shadow 0.4s var(--ease); }
-.feature.lit .star-mark { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.feature.lit .star-mark { background: var(--lantern); box-shadow: 0 0 0 4px var(--lantern-soft); }
 
 /* ---------- sections ---------- */
 .section { padding: var(--s10) 0; }
@@ -282,7 +294,7 @@ p { text-wrap: pretty; }
 .section:not(.alt) .card { background: var(--surface); box-shadow: none; }
 .card h3 { font-size: 16px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
 .card p { margin: 6px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
-.card h3 .star-mark { background: var(--accent); width: 7px; height: 7px; }
+.card h3 .star-mark { background: var(--lantern); width: 7px; height: 7px; }
 
 .principles { display: grid; gap: var(--s6); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .principles h3 { font-size: 20px; }
@@ -481,7 +493,7 @@ p { text-wrap: pretty; }
 .bk-tile { display: grid; place-items: center; aspect-ratio: 2 / 1; border-radius: var(--r-xl); padding: 7% 10%; box-shadow: inset 0 0 0 0.5px var(--line); }
 .bk-tile.light { background: var(--brand-paper); }
 .bk-tile.dark { background: var(--brand-night); }
-.bk-tile.sky { background: radial-gradient(120% 100% at 50% 0%, var(--sky-glow), var(--sky-top) 60%, var(--sky-bottom)); }
+.bk-tile.sky { background: radial-gradient(120% 90% at 50% 110%, var(--night-sky-bottom), var(--night-sky-mid) 45%, var(--night-sky-top) 85%); }
 .bk-tile img { max-height: 100%; width: auto; max-width: 60%; object-fit: contain; }
 .bk-tile.wide img { max-width: 100%; }
 .bk-tile.sky.wide { padding: 0; overflow: hidden; }
@@ -517,7 +529,7 @@ p { text-wrap: pretty; }
 @media (max-width: 860px) { .bk-rules { grid-template-columns: 1fr; } }
 .bk-clear { margin: 0; }
 .bk-clear-box { position: relative; background: var(--brand-paper); border-radius: var(--r-xl); padding: 7%; box-shadow: inset 0 0 0 0.5px var(--line); }
-.bk-clear-box img { position: relative; width: 100%; outline: 1.5px dashed color-mix(in srgb, var(--brand-accent) 70%, transparent); outline-offset: clamp(10px, 3.2vw, 34px); }
+.bk-clear-box img { position: relative; width: 100%; outline: 1.5px dashed color-mix(in srgb, var(--brand-accent-deep) 70%, transparent); outline-offset: clamp(10px, 3.2vw, 34px); }
 .bk-clear figcaption, .bk-min p { margin-top: var(--s4); color: var(--muted); font-size: 14.5px; }
 .bk-min { display: grid; gap: var(--s4); }
 .bk-min-row { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); border-radius: var(--r-lg); background: var(--brand-paper); box-shadow: inset 0 0 0 0.5px var(--line); color: var(--brand-night); font-size: 14px; }

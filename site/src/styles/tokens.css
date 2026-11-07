@@ -51,7 +51,11 @@
   --ui-sky-text: light-dark(#FFFFFF, #FFFFFF);
   --ui-sky-text2: light-dark(#E6E6FF, #CFCFF0);
 
-  /* The night sky stays dark in both appearances. */
+  /* On the night sky (dark in both appearances): its colours and the moonlight button. */
+  --night-primary: #CCCCFF;
+  --night-primary-hover: #DCDCFF;
+  --night-primary-ink: #1A1A4A;
+  --night-primary-text: #CCCCFF;
   --night-star: #EEEEFF;
   --night-star-glow: #CCCCFF;
   --night-sky-top: #08081A;
