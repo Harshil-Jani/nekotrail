@@ -48,7 +48,7 @@ jobs:
             echo "Download the \`.dmg\` below, open it and drag NekoTrail to Applications. The app is not notarized yet, so macOS blocks it on first launch. Run \`xattr -dr com.apple.quarantine /Applications/nekotrail.app\` once in Terminal, then open it as usual."
             echo "$eof"
           } >> "$GITHUB_OUTPUT"
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -114,7 +114,7 @@ jobs:
           awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
       # The release already exists (the macOS job made it), so tauri-action only adds the Linux
       # assets and merges latest.json. The bundle target (deb) comes from tauri.linux.conf.json.
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
