@@ -239,4 +239,4 @@ nekotrail is free, open source and local-first, with no account and no paid tier
 
 ## License
 
-MIT. nekotrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.
+MIT. The open-source components it ships with, and their licenses, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). nekotrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.
