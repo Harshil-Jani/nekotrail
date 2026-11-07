@@ -4,20 +4,23 @@ nekotrail imports your repos, workspaces and chats from the Conductor app on you
 worktrees out of Conductor's folder and into its own, so nothing you haven't committed depends on
 Conductor any more.
 
-**Why now.** Meta acquired Conductor on 4 November 2026, and new downloads stopped that day. Conductor Cloud
-goes read-only on 13 November 2026 and shuts down on 20 November 2026, when its data is deleted. The
-Conductor app on your Mac gets critical fixes until early 2027 and then winds down, and Conductor says user
-data will be deleted when it shuts down. Your Conductor worktrees live inside Conductor's folder, so
-uncommitted work in them goes with it.
+**Why now.** Conductor is joining Meta, and since 4 November 2026 new users can't sign up or download it.
+Conductor Cloud goes read-only on 13 November 2026 and shuts down on 20 November 2026, when Conductor
+starts deleting Cloud data. The Conductor app on your Mac gets new models and critical fixes until early
+2027 and then winds down, and Conductor says it will "delete all Conductor user data when the app shuts
+down". Your worktrees live inside Conductor's folder, so moving them out means your work, including
+anything you haven't committed, no longer depends on Conductor. All of this is from
+[Conductor's announcement](https://conductor.build/announcement).
 
 ## The short version
 
 1. [Download nekotrail](https://github.com/Harshil-Jani/nekotrail/releases/latest) and open it (see
    [Install](../README.md#install)).
-2. On first launch it finds Conductor's data and offers **Import from Conductor**. Later, it is on the
-   welcome screen and in ⌘K.
+2. On first launch it finds Conductor's data and offers **Import from Conductor**. Later, the same button
+   is on the welcome screen, and in ⌘K.
 3. The import sheet lists every worktree it would move, with its repo, branch, size and how many
-   uncommitted files it has. **Move into nekotrail** is picked for you. Press **Import and move**.
+   uncommitted files it has. **Move into nekotrail** is picked for you. Press **Import and move**, or
+   pick **Import only** to leave the worktrees where they are for now.
 4. Each worktree is moved with `git worktree move` and checked. The sheet says which ones moved, and
    why any didn't.
 
@@ -52,12 +55,12 @@ Importing only reads Conductor's database, and running it again only adds what i
 ## Conductor Cloud
 
 nekotrail can't read Conductor Cloud. Cloud goes read-only on 13 November 2026 and shuts down on
-20 November 2026, when its data is deleted. Before then, export or transfer your Cloud workspaces to the
-Conductor app on your Mac (Conductor offers this), then import them into nekotrail as above.
+20 November 2026. Before then, in Conductor, right-click each Cloud workspace and choose **Transfer to
+local**, which moves it and its chats to the Conductor app on your Mac. Then import into nekotrail as above.
 
 If a Cloud workspace's branch is pushed to GitHub, you can also start a nekotrail workspace from that
 branch or its pull request with ⌘⇧N. Anything that only lived in the Cloud workspace and was never
-pushed is only recoverable through Conductor's own export.
+pushed can only be saved through Conductor's own export (Settings, Account, Export data).
 
 ## The move, step by step
 
@@ -67,16 +70,15 @@ Conductor keeps each worktree inside its own folder. nekotrail moves imported wo
 - **What runs:** only `git worktree move <old folder> <new folder>`, from the repo. Git renames the folder
   and updates its own records, so the branch, its commits, staged and unstaged changes, untracked files,
   and ignored files such as `node_modules` and `.env` all come along.
-- **What never happens:** nothing in Conductor's folder is deleted, copied over or cleaned. A worktree that
-  can't move stays exactly where it was.
+- **What never happens:** nekotrail never deletes, copies or cleans anything. Git renames each worktree's
+  folder, and a worktree that can't move stays exactly where it was.
 - **The check after each move:** `git worktree list` shows the new folder, the branch and its head commit
   are the same as just before the move, and the uncommitted files are the same files with the same
   content (git's status list, `git diff HEAD`, and each untracked file's content).
 - **Results:** each worktree reads Checked, Moved with a difference to look at, or Not moved with the
   reason in plain words. **Try again** retries only the ones that didn't move.
 - **Skipped for now:** a workspace with an agent working in it. Move it once the turn ends.
-- **Afterwards:** Conductor no longer finds these folders. Your work
-  is in nekotrail's folder.
+- **Afterwards:** your work is in nekotrail's folder, and Conductor no longer finds these folders.
 
 Reasons a move can fail, and what to do:
 
@@ -86,8 +88,8 @@ Reasons a move can fail, and what to do:
 | It has submodules | Git can't move a worktree with submodules. Commit and push from it, then start a fresh nekotrail workspace on that branch. |
 | It is on a different disk from your home folder | Git moves a worktree only within one disk. Commit and push, then start a fresh workspace on that branch. |
 
-If you chose **Import only** at first, nekotrail shows a one-time notice offering the move, and ⌘K always
-has **Move workspaces out of Conductor's folder** while any are left.
+If you chose **Import only** at first, nekotrail shows a one-time notice offering the move, and ⌘K offers
+**Move … out of Conductor's folder** while any are left.
 
 To check a repo yourself at any time:
 

@@ -20,7 +20,7 @@
 
 nekotrail is an open-source, local-first desktop app for running coding agents in parallel: Claude Code, Codex, Gemini CLI, OpenCode and 12 more, sixteen in all. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
 
-**Moving from Conductor?** nekotrail imports your repos, active workspaces and chats from the Conductor app on your Mac, then moves your worktrees out of Conductor's folder into its own with `git worktree move`, and checks each one. Conductor's shortcuts still work, and imported chats continue the same agent session. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) for what comes over, what doesn't, and Conductor Cloud.
+**Moving from Conductor?** nekotrail imports your repos, active workspaces and chats from the Conductor app on your Mac, then moves your worktrees out of Conductor's folder into its own with `git worktree move`, and checks each one. It uses the same keyboard shortcuts as Conductor, and imported chats continue the same agent session. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) for what comes over, what doesn't, and Conductor Cloud.
 
 **The night sky.** Every workspace is named after a star in one of eight cat constellations. Starting a workspace lights its star; merging its PR makes it shine, and lines appear between neighbouring stars once both have shipped. Ship enough and a whole cat appears in your sky. One of them, Felis, is a real constellation: astronomer Jérôme Lalande drew a cat among the stars in 1799.
 
@@ -81,7 +81,7 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 - **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. Your workspaces, branches and chats stay on your disk, in folders you own.
 - **Bring any agent.** It drives sixteen agents through their official CLIs, with your own logins, settings and subscriptions: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo. Setup shows the install command for any you don't have. Agents that speak the Agent Client Protocol (ACP) are one registry entry.
 - **Hand off without starting over.** When one agent runs out of usage or goes in circles, hand the task to another in the same workspace and branch, with a brief nekotrail writes from the chat and you read first.
-- **Your Conductor work, kept safe.** It imports your repos, active workspaces and chats from the Conductor app on your Mac, and moves your worktrees out of Conductor's folder with `git worktree move`, checking each one after. Nothing in Conductor's folder is deleted. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md).
+- **Your Conductor work, kept safe.** It imports your repos, active workspaces and chats from the Conductor app on your Mac, and moves your worktrees out of Conductor's folder with `git worktree move`, checking each one after. Nothing is copied or deleted: git renames each folder. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md).
 
 ## What it does
 
@@ -120,7 +120,7 @@ The cat reflects the real state of your work, so its moods carry information:
 
 ## Install
 
-Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so macOS blocks it on first launch. Run this once in Terminal, then open it as usual:
+Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so macOS blocks it on first launch. Run this once in Terminal to clear the download quarantine flag, then open it as usual:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/nekotrail.app
