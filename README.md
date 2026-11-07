@@ -91,7 +91,7 @@ Click a line number to comment. Send review hands every comment to the agent in 
 </td>
 <td width="50%" valign="top">
 <img src="docs/readme/gifs/compare.gif" width="100%" alt="Compare agents: Claude's and Codex's results side by side with files, turns, time and cost; Keep this one on the Codex workspace archives the other"><br>
-<b>Race Claude and Codex.</b><br>
+<b>Compare Claude and Codex.</b><br>
 Same task, two workspaces. Compare files, time and cost; keep the winner.
 </td>
 </tr>
