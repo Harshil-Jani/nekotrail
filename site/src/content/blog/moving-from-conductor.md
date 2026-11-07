@@ -1,12 +1,12 @@
 ---
-title: "Moving from Conductor to Nekotrail"
-description: "What Nekotrail imports from the Conductor app, how it moves your worktrees out of Conductor's folder, and what to do about Conductor Cloud."
+title: "Moving from Conductor to NekoTrail"
+description: "What NekoTrail imports from the Conductor app, how it moves your worktrees out of Conductor's folder, and what to do about Conductor Cloud."
 date: 2026-11-07T10:00:00Z
 clip: conductor
 clipLabel: "The Conductor import sheet: what moves, then every worktree moved and checked"
 ---
 
-Install Nekotrail, click **Import from Conductor**, press **Import and move**. Your repos, workspaces and chats come over, and your worktrees move out of Conductor's folder. The rest of this post is what happens underneath.
+Install NekoTrail, click **Import from Conductor**, press **Import and move**. Your repos, workspaces and chats come over, and your worktrees move out of Conductor's folder. The rest of this post is what happens underneath.
 
 ## Why move now
 
@@ -16,9 +16,9 @@ What matters is where your work lives. Conductor keeps each worktree inside its 
 
 ## The steps
 
-1. [Download Nekotrail](https://github.com/Harshil-Jani/nekotrail/releases/latest). Until it's notarized, run `xattr -dr com.apple.quarantine /Applications/nekotrail.app` once.
+1. [Download NekoTrail](https://github.com/Harshil-Jani/nekotrail/releases/latest). Until it's notarized, run `xattr -dr com.apple.quarantine /Applications/nekotrail.app` once.
 2. Open it. It finds Conductor's data and offers **Import from Conductor** (also on Welcome and in ⌘K).
-3. Keep **Move into Nekotrail** picked and press **Import and move**.
+3. Keep **Move into NekoTrail** picked and press **Import and move**.
 
 The sheet lists every worktree first: repo, branch, size, uncommitted files.
 
@@ -43,7 +43,7 @@ git worktree move <old folder> <new folder>
 
 It's the same folder under a new path, so branch, commits, staged and unstaged changes, untracked files, `node_modules` and `.env` all come along.
 
-Nothing in Conductor's folder is deleted. After each move, Nekotrail checks:
+Nothing in Conductor's folder is deleted. After each move, NekoTrail checks:
 
 - `git worktree list` shows the new folder.
 - Branch and head commit are unchanged.
@@ -64,11 +64,11 @@ Chose Import only? ⌘K keeps **Move workspaces out of Conductor's folder** unti
 
 - **Cloud workspaces.** See below.
 - **Archived workspaces.** Their branches are in your repo; ⌘⇧N starts from any branch.
-- **Conductor settings and checkpoints.** Nekotrail saves its own checkpoints from now on.
+- **Conductor settings and checkpoints.** NekoTrail saves its own checkpoints from now on.
 
 ## Conductor Cloud
 
-Nekotrail can't read Cloud. Before 20 November 2026, right-click each Cloud workspace in Conductor and choose **Transfer to local**, then import. A pushed branch also works: start a workspace from it or its PR with ⌘⇧N.
+NekoTrail can't read Cloud. Before 20 November 2026, right-click each Cloud workspace in Conductor and choose **Transfer to local**, then import. A pushed branch also works: start a workspace from it or its PR with ⌘⇧N.
 
 ## Once you're here
 

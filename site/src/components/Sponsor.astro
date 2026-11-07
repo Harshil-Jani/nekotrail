@@ -4,9 +4,9 @@
 import { href } from "../lib/site";
 import SponsorButtons from "./SponsorButtons.astro";
 interface Props { line?: string }
-const { line = "Nekotrail is free. Saved you time? Chip in." } = Astro.props;
+const { line = "NekoTrail is free. Saved you time? Chip in." } = Astro.props;
 ---
-<aside class="sponsor-card" aria-label="Sponsor Nekotrail">
+<aside class="sponsor-card" aria-label="Sponsor NekoTrail">
   <img class="cat" src={href("brand/mascot-parcel.svg")} alt="" width="56" height="56" loading="lazy" />
   <p class="line">{line}</p>
   <div class="row"><SponsorButtons /></div>

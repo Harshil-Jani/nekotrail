@@ -14,7 +14,7 @@ interface Props {
   noindex?: boolean;
 }
 const { title, description = SITE.description, path, ogType = "website", published, announce = false, noindex = false } = Astro.props;
-const fullTitle = path === "" ? title : `${title} | Nekotrail`;
+const fullTitle = path === "" ? title : `${title} | NekoTrail`;
 const canonical = absolute(path);
 const og = absolute("og.png");
 const version = appVersion();
@@ -41,9 +41,9 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
     <link rel="icon" href={href("favicon.svg")} type="image/svg+xml" />
     <link rel="icon" href={href("favicon-32.png")} type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href={href("apple-touch-icon.png")} />
-    <link rel="alternate" type="application/rss+xml" title="Nekotrail blog" href={href("rss.xml")} />
+    <link rel="alternate" type="application/rss+xml" title="NekoTrail blog" href={href("rss.xml")} />
     <link rel="sitemap" href={href("sitemap-index.xml")} />
-    <meta property="og:site_name" content="Nekotrail" />
+    <meta property="og:site_name" content="NekoTrail" />
     <meta property="og:type" content={ogType} />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
@@ -51,7 +51,7 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
     <meta property="og:image" content={og} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Nekotrail: run many coding agents at once on your Mac" />
+    <meta property="og:image:alt" content="NekoTrail: run many coding agents at once on your Mac" />
     {published && <meta property="article:published_time" content={published.toISOString()} />}
     {published && <meta property="article:author" content={SITE.author} />}
     <meta name="twitter:card" content="summary_large_image" />
@@ -71,9 +71,9 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
     )}
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href={href()} aria-label="Nekotrail home">
+        <a class="brand" href={href()} aria-label="NekoTrail home">
           <img src={href("brand/n-cat.svg")} alt="" width="28" height="28" />
-          Nekotrail
+          NekoTrail
         </a>
         <nav aria-label="Site">
           <ul class="nav-links">
@@ -88,7 +88,7 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
           </ul>
         </nav>
         <span class="spacer"></span>
-        <a class="nav-gh" href={SITE.repo} rel="noopener" aria-label="Nekotrail on GitHub">
+        <a class="nav-gh" href={SITE.repo} rel="noopener" aria-label="NekoTrail on GitHub">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d={ghMark} /></svg>
         </a>
         <a class="btn small primary nav-download" href={href("download/")}>Download</a>
@@ -115,7 +115,7 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
           <div class="about">
             <a class="brand" href={href()}>
               <img src={href("brand/n-cat.svg")} alt="" width="28" height="28" />
-              Nekotrail
+              NekoTrail
             </a>
             <p>Many coding agents, one Mac. Free, MIT. v{version}</p>
           </div>
@@ -146,7 +146,7 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
         </div>
         <div class="legal">
           <span>MIT licensed. Made by {SITE.author}.</span>
-          <span>Nekotrail is an independent project, not affiliated with Conductor, Anthropic, OpenAI or Google.</span>
+          <span>NekoTrail is an independent project, not affiliated with Conductor, Anthropic, OpenAI or Google.</span>
         </div>
       </div>
     </footer>
