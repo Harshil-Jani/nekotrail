@@ -1,6 +1,6 @@
 [package]
 name = "nekotrail"
-version = "0.22.1"
+version = "0.22.2"
 description = "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request."
 authors = ["Harshil Jani"]
 license = "MIT"
