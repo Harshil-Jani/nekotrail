@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useDismiss } from "../useDismiss";
 import { MessageSquareText, ArrowLeft, ArrowRight, Eye, History, HardDrive, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, FolderGit2, Gauge, FolderInput, FolderOpen, GitFork, Kanban, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings, Settings2, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
@@ -145,6 +146,7 @@ export function Sidebar(p: Props) {
   const [collapsed, setCollapsedState] = useState<string[]>(() => getSettings().collapsed);
   // The "Workspaces" ⋯ menu (grouping, repo filter, sections, add repo) and the repo row's right-click menu.
   const [listMenu, setListMenu] = useState(false);
+  const listRef = useDismiss<HTMLSpanElement>(listMenu, () => setListMenu(false));
   const [repoCtx, setRepoCtx] = useState<{ r: Repo; x: number; y: number } | null>(null);
   useEffect(() => {
     const sync = () => { setFilterState(getSettings().repoFilter); setCollapsedState(getSettings().collapsed); };
@@ -161,6 +163,8 @@ export function Sidebar(p: Props) {
   const [moveOpen, setMoveOpen] = useState(false);
   const [over, setOver] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** A section you just added stays up while empty, so you can see it worked and drag into it. */
+  const [freshSec, setFreshSec] = useState<string | null>(null);
   // A section being named. `id` null is a new one; `move` puts that workspace into it once it exists.
   const [editing, setEditing] = useState<{ id: string | null; name: string; move?: string } | null>(null);
   // "Add sidebar section" from the palette opens the same inline field.
@@ -170,6 +174,7 @@ export function Sidebar(p: Props) {
     return () => window.removeEventListener("nekotrail-new-section", open);
   }, [p.groupBy]);
   const [secMenu, setSecMenu] = useState<string | null>(null);
+  const secRef = useDismiss<HTMLSpanElement>(secMenu !== null, () => setSecMenu(null));
   useEffect(() => {
     if (!repoCtx) return;
     const close = () => setRepoCtx(null);
@@ -211,6 +216,7 @@ export function Sidebar(p: Props) {
     if (target) await api.renameSection(target, name);
     else {
       const sec = await api.createSection(name);
+      setFreshSec(sec.id);
       if (editing.move) await api.setSection(editing.move, sec.id);
     }
     p.onChanged();
@@ -232,10 +238,10 @@ export function Sidebar(p: Props) {
         <span className="repo-meta num">{count || ""}</span>
         {menu && (
           <span className="repo-actions">
-            <span className="git-menu">
-              <button className="icon" tabIndex={-1} aria-label={`${name} options`} onClick={() => setSecMenu((m) => (m === id ? null : id))}><Ellipsis size={14} /></button>
+            <span className="git-menu" ref={secMenu === id ? secRef : undefined}>
+              <button className="icon" tabIndex={-1} aria-label={`${name} options`} aria-expanded={secMenu === id} onClick={() => setSecMenu((m) => (m === id ? null : id))}><Ellipsis size={14} /></button>
               {secMenu === id && (
-                <span className="menu sec-menu" role="menu" onMouseLeave={() => setSecMenu(null)}>
+                <span className="menu sec-menu" role="menu">
                   <button role="menuitem" onClick={() => { setSecMenu(null); setEditing({ id, name }); }}><Pencil size={14} /><span>Rename section</span></button>
                   <button role="menuitem" onClick={async () => {
                     setSecMenu(null);
@@ -455,7 +461,8 @@ export function Sidebar(p: Props) {
               )}
               {p.sections.map((sec) => {
                 const ws = live.filter((w) => w.section_id === sec.id && !w.pinned);
-                if (q && ws.length === 0) return null; // filtering: an empty section is just noise
+                // An empty section is noise; it shows while you drag (so you can drop into it), rename it, or just made it.
+                if (ws.length === 0 && (q || !(dragging || freshSec === sec.id || editing?.id === sec.id))) return null;
                 return (
                   <section key={sec.id} className="repo">
                     {sectionHead(sec.id, sec.name, ws.length, null, true)}
@@ -476,10 +483,10 @@ export function Sidebar(p: Props) {
         {p.repos.length > 0 && (
           <div className="side-label">
             <span>Workspaces</span>
-            <span className="git-menu">
+            <span className="git-menu" ref={listRef}>
               <button className={`icon${filter.length || p.groupBy !== "repo" ? " on" : ""}`} tabIndex={-1} aria-label="Workspace list options" title="Group, filter, sections and repos" aria-expanded={listMenu} onClick={() => setListMenu((o) => !o)}><Ellipsis size={14} /></button>
               {listMenu && (
-                <span className="menu list-menu" role="menu" onMouseLeave={() => setListMenu(false)}>
+                <span className="menu list-menu" role="menu">
                   <div className="menu-label">Group by</div>
                   <button role="menuitemradio" aria-checked={p.groupBy === "repo"} onClick={() => { setListMenu(false); p.onGroupBy("repo"); }}>{p.groupBy === "repo" ? <Check size={14} /> : <span className="check-space" />}<span>Repo</span></button>
                   <button role="menuitemradio" aria-checked={p.groupBy === "status"} onClick={() => { setListMenu(false); p.onGroupBy("status"); }}>{p.groupBy === "status" ? <Check size={14} /> : <span className="check-space" />}<span>Status</span></button>

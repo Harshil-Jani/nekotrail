@@ -1622,7 +1622,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
   cursor: default;
 }
 .ports-pop .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.ports-pop .faint { color: var(--faint); }
+.ports-pop .faint { color: var(--muted); } /* --faint read 2.2:1 here; muted clears 4.5:1 */
 .ports-pop .bad-text { color: var(--bad-text); }
 .ports-pop code { font-size: 11.5px; }
 .ports-head { display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s4) var(--s2); border-bottom: 0.5px solid var(--line); }
@@ -2019,7 +2019,7 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .tq-form textarea { width: 100%; resize: vertical; min-height: 68px; padding: var(--s2) 10px; border-radius: var(--r-md); line-height: 1.45; }
 .tq-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2) var(--s3); }
 .tq-form-grid label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.tq-form-grid label > span { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tq-form-grid label > span:not(.mselect) { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tq-form-grid select, .tq-form-grid input { width: 100%; min-width: 0; }
 .tq-then { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: 12.5px; }
 .tq-then > .muted { font-size: 11px; font-weight: 600; }
@@ -2446,7 +2446,9 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .section-head .fold { order: 2; opacity: 0; margin: 0; }
 .section-head:hover .fold, .section-head .fold:focus-visible, .section-head .fold[aria-expanded="false"] { opacity: 1; }
 .section-head .repo-meta { order: 3; margin-left: auto; }
-.section-head .repo-actions { order: 4; margin-left: 0; }
+/* In a section head the ... sits in the row, not over it: absolute, it covered the fold chevron and ate its clicks. */
+.section-head .repo-actions { order: 4; margin-left: 0; position: static; transform: none; padding-left: 0; background: none; }
+.repo-actions:has([aria-expanded="true"]) { opacity: 1; }
 .section-head .repo-name { order: 1; }
 .repo:first-child > .section-head, .repo:first-child > .status-head { margin-top: var(--s1); }
 
@@ -2649,3 +2651,46 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .nw-perm-menu { min-width: 220px; }
 /* A long prompt scrolls under a clean 12px edge instead of running into the source tabs. */
 .nw-prompt { margin-top: var(--s3); padding-top: var(--s1); }
+
+/* Agent marks: board cards, queue rows, hand-off choices, chat tabs. */
+.card-agents { margin-left: auto; display: inline-flex; gap: 4px; color: var(--muted); align-self: flex-start; padding-top: 2px; }
+.tq-meta .agent-logo { margin-right: 6px; vertical-align: -2px; color: var(--muted); }
+.seg.handoff-agents button { display: inline-flex; align-items: center; gap: 6px; }
+.ws-tabbar .chat-tab > button[role="tab"] { min-width: 0; max-width: 100%; }
+.chat-tab-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal.settings:focus { outline: none; }
+
+/* The smallest window (900x560): Changes keeps every control whole. The file list gets room for its
+   tabs and review buttons; the file header drops button labels to icons before anything is cut. */
+.diff-view { grid-template-columns: clamp(232px, 22vw, 280px) 1fr; }
+.seg.scope { display: flex; width: 100%; }
+.seg.scope button { flex: 1 1 auto; padding: 0 8px; white-space: nowrap; }
+.review-ctl button { white-space: nowrap; }
+.diff-view .file-head { container-type: inline-size; }
+.diff-view .file-head code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-view .file-head button, .diff-view .file-head .chip { flex-shrink: 0; white-space: nowrap; }
+@container (max-width: 560px) {
+  .file-head .fh-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .file-head button.quiet { padding: 0 6px; }
+}
+/* Chat tabs shrink (title ellipsised) before the strip has to scroll. */
+.ws-tabbar .chat-tab { flex: 0 1 auto; min-width: 72px; }
+.file-list-sum { position: relative; padding-right: 36px; }
+.file-list-sum .file-refresh { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; padding: 0; justify-content: center; color: var(--muted); }
+
+/* MenuSelect: the app's own select. Looks like a field (same height, fill and hairline as an input),
+   opens the same menu as the agent and permissions pickers. */
+.mselect { position: relative; display: inline-flex; min-width: 0; }
+.mselect-row { display: contents; }
+button.mselect-btn { height: 26px; max-width: 100%; padding: 0 8px; gap: 6px; background: var(--raised); color: var(--text); font-size: 13px; font-weight: 400;
+  box-shadow: 0 0 0 0.5px var(--line-strong), var(--shadow-control); }
+button.mselect-btn:hover { background: var(--btn-hover); color: var(--text); }
+.mselect-btn .picker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; flex: 1 1 auto; }
+.mselect-btn > svg:last-child { flex: none; color: var(--muted); }
+.mselect-btn .agent-logo { color: var(--text); }
+.menu.mselect-menu { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; min-width: max(100%, 200px); max-height: 50vh; }
+.mselect-menu button > svg, .mselect-menu button > .agent-logo, .mselect-menu button > .check-space { flex: none; }
+.tq-form-grid .mselect, .tq-form-grid .mselect-btn { width: 100%; }
+.fr-fields .mselect-btn { min-width: 180px; max-width: 320px; font-size: 13px; font-weight: 400; color: var(--text); }
+.gs-filters .mselect-btn { height: 24px; font-size: 12px; }
+.gs-filters .mselect.set .mselect-btn { color: var(--accent-text); font-weight: 600; }

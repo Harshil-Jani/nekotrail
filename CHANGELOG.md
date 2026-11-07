@@ -10,6 +10,27 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - Values from .env files, and any that look like a secret, stay hidden until you click the eye. Nothing is saved or sent anywhere.
 - Moving from Conductor now brings its environment variables into Repo settings too, without replacing any you already set.
 
+**Menus that get out of the way**
+- Every pop-up menu closes when you click anywhere else or press Esc, and Esc puts you back on the button that opened it. Opening one menu closes any other.
+- The workspace ... menu opens below the tabs, so a click on Changes or Checks never lands on a menu item.
+- The fold arrow on a sidebar section (This week, Waiting on review) is clickable again; the section's ... button no longer sits on top of it.
+- An empty section stays out of the sidebar until you drag a workspace, then shows so you can drop into it.
+
+**Agents you can tell apart**
+- Chat tabs, the Hand off choices, Queue rows and Board cards show each agent's logo.
+- The Queue's Add form, the search filters and the first-run Try it step use the app's own menus instead of system pop-ups.
+
+**Smallest window and polish**
+- At 900 by 560, Changes keeps Discard, Commit and Send review whole: the file header switches to icon buttons, chat tab titles end in an ellipsis.
+- Settings takes focus when it opens and keeps Tab inside it.
+- Faint text in the Ports pop-up is easier to read.
+- The command palette lists "Show archived workspaces" once.
+
+**Quieter chat**
+- One Done line per reply. Extra ones that stacked up at the end of a chat are gone, and Usage no longer counts that reply twice.
+- What a turn would cost at API prices is hidden now. Turn it back on in Settings, Chat.
+- The arrow next to a repo in the sidebar folds it, like a click on its name.
+
 ## 0.25.1 (2026-11-08)
 
 **New workspace, tidied up**

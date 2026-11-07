@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { keepTabInside } from "../useDismiss";
 import { Coffee, Heart, Minus, Plus, Volume2, X } from "lucide-react";
 import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
@@ -253,6 +254,13 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
     api.setAppSetting(key, v);
   };
   const setB = (key: "caffeinate" | "auto_branch", on: boolean) => setRaw(key, on ? "on" : "off");
+  const box = useRef<HTMLDivElement>(null);
+  // The sheet takes focus when it opens and hands it back to where you were when it closes.
+  useEffect(() => {
+    const back = document.activeElement as HTMLElement | null;
+    box.current?.focus();
+    return () => { if (back?.isConnected) back.focus(); };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -265,7 +273,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
   };
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal settings" role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+      <div ref={box} tabIndex={-1} className="modal settings" role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()} onKeyDown={keepTabInside}>
         <div className="row settings-head">
           <h2>Settings</h2>
           <span className="spacer" />

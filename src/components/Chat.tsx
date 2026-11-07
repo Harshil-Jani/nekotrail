@@ -2,7 +2,7 @@ import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, u
 import { createPortal } from "react-dom";
 import { PromptRail } from "./PromptRail";
 import { listen } from "@tauri-apps/api/event";
-import { MessageSquare, ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Clock, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Clock, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -19,6 +19,7 @@ import { handoffOffer, markerText } from "../handoff";
 import { HandoffSheet } from "./HandoffSheet";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { AgentMenuItems } from "./AgentMenuItems";
+import { useDismiss } from "../useDismiss";
 import { AgentLogo } from "./AgentLogo";
 import { okFullAuto } from "../fullAuto";
 import { fuzzy, getChangesSelection, loadPrompts, type Builtins, type PromptEntry } from "../prompts";
@@ -760,6 +761,7 @@ export function Chat({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState<string | null>(null); // text for the "Save as prompt" sheet
   const [menu, setMenu] = useState(false);
+  const menuRef = useDismiss<HTMLSpanElement>(menu, () => { setMenu(false); setMoreAgents(false); });
   const [moreAgents, setMoreAgents] = useState(false);
   const installedAgents = useInstalledAgents();
   const [error, setError] = useState<string | null>(null);
@@ -825,6 +827,7 @@ export function Chat({
   const [expandAll, setExpandAll] = useState(false);
   // The composer's + menu, and the file picker it opens.
   const [cmenu, setCmenu] = useState(false);
+  const cmenuRef = useDismiss<HTMLSpanElement>(cmenu, () => setCmenu(false));
   const fileInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState<string | null>(null);
   const [hitIdx, setHitIdx] = useState(0);
@@ -1533,9 +1536,10 @@ export function Chat({
         <div className="chat-tab-strip" role="tablist" aria-label="Chats">
         {sessions.map((s) => (
           <span key={s.id} className={`chat-tab ${s.id === active ? "active" : ""}`}>
-            <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} title={s.id === active ? `${s.title}. Chat (${keyHint("⌘1")})` : s.title}>
-              {running.has(s.id) ? <span className="spinner" /> : <MessageSquare className="chat-tab-icon" size={13} aria-hidden />}
-              {s.agent !== "claude" ? `${agentName(s.agent)} · ` : ""}{s.title}
+            <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} aria-label={`${agentName(s.agent)}: ${s.title}`}
+              title={s.id === active ? `${agentName(s.agent)}: ${s.title}. Chat (${keyHint("⌘1")})` : `${agentName(s.agent)}: ${s.title}`}>
+              {running.has(s.id) ? <span className="spinner" /> : <AgentLogo agent={s.agent} size={13} className="chat-tab-icon" />}
+              <span className="chat-tab-title">{s.title}</span>
             </button>
             {sessions.length > 1 && !running.has(s.id) && !readOnly && (
               <button className="tab-close" aria-label={`Close ${s.title}`} title="Close chat. Its history is kept." onClick={() => closeChat(s.id)}><X size={12} /></button>
@@ -1543,10 +1547,10 @@ export function Chat({
           </span>
         ))}
         </div>
-        {!readOnly && <span className="newchat">
+        {!readOnly && <span className="newchat" ref={menuRef}>
           <button className="icon" title={keyHint("Start a chat (⌘T)")} aria-label="Start a chat" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><Plus size={15} /></button>
           {menu && (
-            <span className="newchat-menu" role="menu" onMouseLeave={() => setMenu(false)}>
+            <span className="newchat-menu" role="menu">
               {chatAgents.shown.map((a) => (
                 <button key={a} role="menuitem" onClick={() => { setMenu(false); newChat(a); }}><AgentLogo agent={a} size={13} />Start a {AGENT_INFO[a].name} chat</button>
               ))}
@@ -1809,10 +1813,10 @@ export function Chat({
               chip shows only when it isn't the default, and the context ring only once it is filling up. */}
           <div className="composer-bar">
             <input ref={fileInput} type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
-            <span className="git-menu composer-menu-wrap">
+            <span className="git-menu composer-menu-wrap" ref={cmenuRef}>
               <button className="icon composer-more" aria-label="Attach, prompts and permissions" title="Attach files, save as prompt, permissions" aria-expanded={cmenu} onClick={() => setCmenu((o) => !o)}><Plus size={16} /></button>
               {cmenu && (
-                <span className="menu composer-menu" role="menu" onMouseLeave={() => setCmenu(false)}>
+                <span className="menu composer-menu" role="menu">
                   {session && <div className="menu-label">{agentName(session.agent)} chat</div>}
                   <button role="menuitem" onClick={() => { setCmenu(false); fileInput.current?.click(); }}><Paperclip size={14} /><span>Attach files</span></button>
                   <button role="menuitem" disabled={!draft.trim()} onClick={() => { setCmenu(false); setSaving(draft); }}><BookmarkPlus size={14} /><span>Save message as a prompt</span></button>

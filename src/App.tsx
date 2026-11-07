@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -44,6 +44,7 @@ import { loadPrompts, type PromptEntry } from "./prompts";
 import { TrustSheet } from "./components/TrustSheet";
 import { UpdateSheet } from "./components/UpdateSheet";
 import { useUpdater } from "./useUpdater";
+import { useDismiss } from "./useDismiss";
 import { ask, ConfirmHost } from "./components/Confirm";
 import { PortsPopover } from "./components/PortsPopover";
 import { chime, getSettings, saveSettings, ting } from "./settings";
@@ -465,6 +466,23 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useDismiss<HTMLSpanElement>(moreOpen, () => setMoreOpen(false));
+  // The ... menu drops below the tab bar, not over it: over it, a click meant for Changes or Checks
+  // landed on Run or Rename instead.
+  useLayoutEffect(() => {
+    const m = moreRef.current?.querySelector<HTMLElement>(".ws-menu");
+    const bar = document.querySelector(".ws-tabbar");
+    if (!moreOpen || !m || !moreRef.current) return;
+    const place = () => {
+      const from = moreRef.current!.getBoundingClientRect().bottom;
+      const below = bar ? bar.getBoundingClientRect().bottom + 4 : from + 4;
+      m.style.top = `${Math.max(below, from + 4) - moreRef.current!.getBoundingClientRect().top}px`;
+      m.style.maxHeight = `${window.innerHeight - Math.max(below, from + 4) - 8}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [moreOpen]);
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
   const [commandsFor, setCommandsFor] = useState<string | null>(params.get("commands")); // workspace id
@@ -1414,7 +1432,6 @@ export default function App() {
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", keywords: "archive restore old", icon: <Archive size={15} />, run: () => { setSidebarHidden(() => false); setShowArchived((v) => !v); } },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
-      { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
       { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => { setSettingsPane(undefined); setSettingsOpen(true); } },
       { id: "about", group: "App", label: "About NekoTrail", keywords: "version license licence open source third-party privacy credits", icon: <Gear size={15} />, run: () => { setSettingsPane("about"); setSettingsOpen(true); } },
       { id: "prompts", group: "App", label: "Manage prompts", keywords: "prompt library snippets saved templates import export", icon: <BookText size={15} />, run: () => { setSettingsPane("prompts"); setSettingsOpen(true); } },
@@ -1662,10 +1679,10 @@ export default function App() {
                     <span className="tb-ports-wrap">
                       {portsOpen && <PortsPopover selected={viewWs?.id ?? ws.id} task={members.map((m) => m.id)} label={wsLabel} repoOf={(id) => repoNameOf(workspaces.find((w) => w.id === id)?.repo_id ?? "")} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
                     </span>
-                    <span className="git-menu">
+                    <span className="git-menu" ref={moreRef}>
                       <button className="icon tb-more" aria-label="More actions" title="Run, open, ports and more" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
                       {moreOpen && (
-                        <span className="menu ws-menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+                        <span className="menu ws-menu" role="menu">
                           {runLive
                             ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the run script</span><kbd>{keyHint("⌘R")}</kbd></button>
                             : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>{keyHint("⌘R")}</kbd></button>}

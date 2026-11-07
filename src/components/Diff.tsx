@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDismiss } from "../useDismiss";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ChevronDown, ExternalLink, Lock, MessageSquarePlus, Pencil, RefreshCw, Save, Search, Send, Undo2, X } from "lucide-react";
+import { ChevronDown, Columns2, ExternalLink, Rows2, Lock, MessageSquarePlus, Pencil, RefreshCw, Save, Search, Send, Undo2, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { api, errText, type FileChange, type ReviewPlan, type ReviewVerdict } from "../api";
 import { keyHint, mod } from "../platform";
@@ -639,6 +640,7 @@ export function Diff({
     api.updateReviewComment(id, cid, text).catch((err) => { setComments(before); setNotice(`Couldn't save the comment: ${errText(err)}`); });
   }, []);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const reviewRef = useDismiss<HTMLDivElement>(reviewOpen, () => setReviewOpen(false));
   const [submitOpen, setSubmitOpen] = useState(false);
   useEffect(() => { setReviewOpen(false); setSubmitOpen(false); }, [workspaceId]);
   const [jump, setJump] = useState<string | null>(null);
@@ -803,11 +805,11 @@ export function Diff({
       <div className="file-list">
         <div className="file-list-head">
           {scope}
-          <span className="spacer" /><button className="icon" onClick={load} title="Refresh changes" aria-label="Refresh changes"><RefreshCw size={15} /></button>
         </div>
         <div className="file-list-sum num">
           {files.length} {files.length === 1 ? "file" : "files"}{add > 0 && <> <span className="add">+{add}</span></>}{del > 0 && <> <span className="del">-{del}</span></>}
           {files.length > 0 && <span className="muted"> · {seen} viewed</span>}
+          <button className="icon file-refresh" onClick={load} title="Refresh changes" aria-label="Refresh changes"><RefreshCw size={13} /></button>
         </div>
         {notice && <div className="banner error file-notice" role="alert">{notice}</div>}
         {(files.length > 7 || query) && (
@@ -847,7 +849,7 @@ export function Diff({
             </div>
           );
         })}
-        <div className="review-bar">
+        <div className="review-bar" ref={reviewRef}>
           {ghTop.length > 0 && !reviewPr && (
             <button onClick={() => onSendReview(githubPrompt(gh))}>
               <Send size={14} /> Send {ghTop.length} GitHub {ghTop.length === 1 ? "comment" : "comments"}
@@ -939,17 +941,18 @@ export function Diff({
             <div className="file-head">
               <code>{open}</code>
               <span className="spacer" />
-              <button className="quiet" onClick={toggleSplit} title="Switch diff layout">{split ? "Show unified" : "Show side by side"}</button>
+              <button className="quiet" onClick={toggleSplit} title="Switch diff layout" aria-label={split ? "Show unified" : "Show side by side"}>{split ? <Rows2 size={13} /> : <Columns2 size={13} />}<span className="fh-label">{split ? "Show unified" : "Show side by side"}</span></button>
               {reviewPr > 0
                 ? <span className="chip read-only" title="This workspace reviews someone else's PR. Nothing is pushed from it."><Lock size={11} />Read only</span>
-                : <button className="quiet" onClick={() => setEditing(open)}><Pencil size={13} />Edit file</button>}
+                : <button className="quiet" onClick={() => setEditing(open)} aria-label="Edit file"><Pencil size={13} /><span className="fh-label">Edit file</span></button>}
               {!reviewPr && <button
                 className="quiet"
+                aria-label="Discard"
                 onClick={() => discard(open)}
                 disabled={!dirty.has(open) || discarding !== null}
                 title={dirty.has(open) ? "Discard the uncommitted changes to this file" : "Only uncommitted changes can be discarded. This file's changes are committed."}
               >
-                {discarding === open ? <span className="spinner" /> : <Undo2 size={13} />}Discard
+                {discarding === open ? <span className="spinner" /> : <Undo2 size={13} />}<span className="fh-label">Discard</span>
               </button>}
             </div>
             <DiffLines

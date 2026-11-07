@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GitPullRequest, Plus } from "lucide-react";
-import { displayName, statusOf, subName, STATUS_LABEL, type Repo, type Sky, type Workspace, type WsStatus } from "../api";
+import { AgentLogo } from "./AgentLogo";
+import { api, displayName, statusOf, subName, STATUS_LABEL, type Agent, type Repo, type Sky, type Workspace, type WsStatus } from "../api";
 
 const COLUMNS = ["backlog", "in_progress", "in_review", "done"] as const;
 const HINT: Record<(typeof COLUMNS)[number], string> = {
@@ -32,6 +33,15 @@ export function Board({
   const [over, setOver] = useState<string | null>(null);
   const live = workspaces.filter((w) => w.state === "active" && (!repoFilter.length || repoFilter.includes(w.repo_id)));
   const repoName = (id: string) => repos.find((r) => r.id === id)?.name ?? "";
+  // Which agents work in each workspace, so a card shows their marks (one chat per agent is the norm).
+  const [agents, setAgents] = useState<Record<string, readonly Agent[]>>({});
+  const ids = live.map((w) => w.id).join(",");
+  useEffect(() => {
+    let on = true;
+    Promise.all(live.map((w) => api.sessions(w.id).then((ss) => [w.id, [...new Set(ss.map((x) => x.agent))]] as const).catch(() => [w.id, [] as Agent[]] as const)))
+      .then((all) => { if (on) setAgents(Object.fromEntries(all)); });
+    return () => { on = false; };
+  }, [ids]);
   return (
     <div className="board">
       <div className="board-head" data-tauri-drag-region>
@@ -89,6 +99,7 @@ export function Board({
                       <span className="card-top">
                         {running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.unread ? <span className="unread" aria-label="Unread" /> : null}
                         <span className="card-title">{displayName(sky, w)}</span>
+                        {(agents[w.id]?.length ?? 0) > 0 && <span className="card-agents">{agents[w.id].map((a) => <AgentLogo key={a} agent={a} size={13} />)}</span>}
                       </span>
                       <span className="card-meta muted">{subName(sky, w) && `${subName(sky, w)} · `}{repoName(w.repo_id)} · {w.branch}</span>
                       <span className="card-foot num">
