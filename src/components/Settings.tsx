@@ -45,8 +45,8 @@ const SHORTCUTS: [string, string][] = [
   ["Tab / ⇧Tab", "Next / previous blank in a prompt"],
 ];
 
-export type Pane = "general" | "appearance" | "notifications" | "agents" | "integrations" | "prompts" | "shortcuts";
-const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["integrations", "Integrations"], ["prompts", "Prompts"], ["shortcuts", "Shortcuts"]];
+export type Pane = "general" | "appearance" | "notifications" | "agents" | "integrations" | "prompts" | "shortcuts" | "about";
+const PANES: [Pane, string][] = [["general", "General"], ["appearance", "Appearance"], ["notifications", "Notifications"], ["agents", "Agents"], ["integrations", "Integrations"], ["prompts", "Prompts"], ["shortcuts", "Shortcuts"], ["about", "About"]];
 
 const SIZES = [10, 11, 12, 13, 14, 15, 16, 18];
 const CODE_SAMPLE = "const purr = (cat) => cat.nap ?? 0; // {}[]|0O1lI";
@@ -119,6 +119,55 @@ function AppearancePane({ s, set }: { s: S; set: <K extends keyof S>(k: K, v: S[
         <FontPicker label="Terminal" fonts={fonts} font={s.termFont} size={s.termSize} defaultSize={TERM_SIZE} onFont={(f) => set("termFont", f)} onSize={(n) => set("termSize", n)} />
       </div>
       <div className="font-sample term" style={{ fontFamily: fontStack(s.termFont, TERM_STACK), fontSize: s.termSize }} aria-hidden="true">{TERM_SAMPLE}</div>
+    </section>
+  </>;
+}
+
+const LINKS: [string, string][] = [
+  ["Website", "https://harshil-jani.github.io/nekotrail/"],
+  ["GitHub", "https://github.com/Harshil-Jani/nekotrail"],
+  ["Privacy", "https://github.com/Harshil-Jani/nekotrail/blob/main/PRIVACY.md"],
+  ["MIT License", "https://github.com/Harshil-Jani/nekotrail/blob/main/LICENSE"],
+];
+
+/** Settings, About: version, licence, links, and the licence texts of every bundled component. */
+function AboutPane({ version }: { version: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const show = async () => {
+    setBusy(true);
+    try { setText(await api.thirdPartyLicenses()); setError(null); } catch (e) { setError(String(e)); }
+    setBusy(false);
+  };
+  return <>
+    <section>
+      <h3>NekoTrail</h3>
+      <div className="setting">
+        <span>Version</span>
+        <span className="num">{version}</span>
+      </div>
+      <p className="muted setting-note">Free and open source under the MIT License. Copyright (c) 2026 Harshil Jani.</p>
+      <div className="setting">
+        <span>Links</span>
+        <span className="setting-links">
+          {LINKS.map(([label, url]) => <button key={label} className="link" onClick={() => openUrl(url).catch(() => {})}>{label}</button>)}
+        </span>
+      </div>
+      <p className="muted setting-note">NekoTrail sends no telemetry. The Privacy page lists every network connection it makes.</p>
+    </section>
+    <section>
+      <h3>Open source licences</h3>
+      <p className="muted setting-note">NekoTrail is built on open-source Rust crates and JavaScript packages. Their licence texts and copyright notices ship with the app.</p>
+      <div className="setting">
+        <span>Third-party licences</span>
+        <span className="row">
+          <button onClick={() => api.openThirdPartyLicenses().catch((e) => setError(String(e)))}>Open as file</button>
+          {text === null && <button onClick={show} disabled={busy}>{busy ? "Loading…" : "Show licences"}</button>}
+        </span>
+      </div>
+      {error && <p className="setting-note bad" role="status">{error}</p>}
+      {text !== null && <pre className="licenses-text" tabIndex={0} aria-label="Open source licences">{text}</pre>}
     </section>
   </>;
 }
@@ -347,6 +396,8 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
         {pane === "integrations" && <LinearSettings />}
 
         {pane === "prompts" && <PromptsPane workspaceId={workspaceId} repoName={repoName} />}
+
+        {pane === "about" && <AboutPane version={version} />}
 
         {pane === "shortcuts" && (
         <section>

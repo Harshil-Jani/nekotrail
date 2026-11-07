@@ -407,6 +407,8 @@ export const api = {
   linkConfirm: (token: string, ok: boolean) => invoke<void>("link_confirm", { token, ok }),
   cliInstall: () => invoke<{ path: string; hint: string | null }>("cli_install"),
   cliStatus: () => invoke<{ path: string | null }>("cli_status"),
+  thirdPartyLicenses: () => invoke<string>("third_party_licenses"),
+  openThirdPartyLicenses: () => invoke<void>("open_third_party_licenses"),
   githubProfile: () => invoke<GithubUser>("github_profile"),
   repoGithub: (id: string) => invoke<RepoGithub>("repo_github", { id }),
   /** The owner's avatar as a data URL (cached on disk), or null without a GitHub remote. */

@@ -1370,6 +1370,7 @@ export default function App() {
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
       { id: "settings", group: "App", label: "Open settings", hint: keyHint("⌘,"), keywords: "preferences notifications sound", icon: <Gear size={15} />, run: () => { setSettingsPane(undefined); setSettingsOpen(true); } },
+      { id: "about", group: "App", label: "About NekoTrail", keywords: "version license licence open source third-party privacy credits", icon: <Gear size={15} />, run: () => { setSettingsPane("about"); setSettingsOpen(true); } },
       { id: "prompts", group: "App", label: "Manage prompts", keywords: "prompt library snippets saved templates import export", icon: <BookText size={15} />, run: () => { setSettingsPane("prompts"); setSettingsOpen(true); } },
 
     );

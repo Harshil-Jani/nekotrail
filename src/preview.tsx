@@ -1144,6 +1144,8 @@ mockIPC(
           prompt: linkMode === "long" ? "The iOS app crashes on launch for users upgrading from 2.3 when the keychain still holds the old token format.\n\n1. Reproduce it with the 2.3 fixture in test/fixtures/keychain-2.3.json.\n2. Migrate the token on first launch instead of reading it as the new format.\n3. Add a test that upgrades from 2.3 and launches twice.\n4. Don't touch the Android code.\n\nOpen a draft PR when the tests pass, and list anything you weren't sure about in its description so a reviewer can check it." : "Fix the flaky login test on CI" }];
       case "link_confirm": return null;
       case "cli_status": return { path: new URLSearchParams(location.search).get("cli") === "installed" ? "/usr/local/bin/nekotrail" : null };
+      case "third_party_licenses": return "NekoTrail 0.22.2: open source licences\n" + "=".repeat(78) + "\n\nNekoTrail is free and open source under the MIT License (the first text below).\nIt ships with 381 Rust crates and 228 JavaScript packages, each under its own license.\n\n" + "-".repeat(78) + "\nserde 1.0.228 (Rust crate, MIT OR Apache-2.0)\n  Source: https://crates.io/crates/serde/1.0.228\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software...";
+      case "open_third_party_licenses": return null;
       case "cli_install": if (new URLSearchParams(location.search).get("cli") === "fail") throw "Couldn't write /usr/local/bin/nekotrail: permission denied. Run it again and allow the admin prompt."; return { path: "/usr/local/bin/nekotrail", hint: null };
       case "workspace_ports": return { base: blockOf(args.id), main: blockOf(args.id) };
       case "ports_status": {

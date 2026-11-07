@@ -1,3 +1,4 @@
+pub mod about;
 pub mod acp;
 pub mod alerts;
 pub mod avatar;
@@ -5020,7 +5021,8 @@ pub fn run() {
             queuerun::queue_view, queuerun::queue_add, queuerun::queue_remove, queuerun::queue_move, queuerun::queue_retry, queuerun::queue_start_now,
             queuerun::queue_set_paused, queuerun::queue_set_limits, queuerun::queue_clear_finished, queuerun::queue_summary, queuerun::queue_summary_seen,
             alerts::alerts_view, alerts::alerts_add, alerts::alerts_save, alerts::alerts_set_secret, alerts::alerts_remove, alerts::alerts_test,
-            linear::linear_status, linear::linear_connect, linear::linear_test, linear::linear_disconnect, linear::linear_set_move, linear::linear_teams, linear::linear_issues
+            linear::linear_status, linear::linear_connect, linear::linear_test, linear::linear_disconnect, linear::linear_set_move, linear::linear_teams, linear::linear_issues,
+            about::third_party_licenses, about::open_third_party_licenses
         ])
         .run(context())
         .expect("error while running NekoTrail");

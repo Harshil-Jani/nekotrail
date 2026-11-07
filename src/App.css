@@ -1092,6 +1092,7 @@ kbd { background: transparent !important; border: none !important; padding: 0 !i
 @media (prefers-reduced-motion: reduce) { .sky-star.shining circle:nth-child(3) { animation: none; } }
 .setting-note { margin: -2px 0 4px; font-size: 12px; }
 .setting-note.bad { color: var(--bad); }
+.licenses-text { margin: var(--s2) 0 0; max-height: 360px; overflow: auto; padding: var(--s3); border-radius: var(--r-md); background: var(--surface); color: var(--text2); box-shadow: 0 0 0 0.5px var(--line); font-family: var(--mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .setting-note code { user-select: text; overflow-wrap: anywhere; }
 input.switch { width: 32px; height: 18px; flex-shrink: 0; border-radius: 9px; background: var(--press); box-shadow: inset 0 0 0 0.5px var(--line-strong); padding: 0; margin: 0; }
 input.switch:checked { background: var(--accent); box-shadow: none; }
