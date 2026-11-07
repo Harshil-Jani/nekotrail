@@ -1,7 +1,7 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Clock, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
+import { MessageSquare, ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Clock, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -1442,8 +1442,8 @@ export function Chat({
         <div className="chat-tab-strip" role="tablist" aria-label="Chats">
         {sessions.map((s) => (
           <span key={s.id} className={`chat-tab ${s.id === active ? "active" : ""}`}>
-            <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} title={s.title}>
-              {running.has(s.id) && <span className="spinner" />}
+            <button role="tab" aria-selected={s.id === active} onClick={() => setActive(s.id)} title={s.id === active ? `${s.title}. Chat (${keyHint("⌘1")})` : s.title}>
+              {running.has(s.id) ? <span className="spinner" /> : <MessageSquare className="chat-tab-icon" size={13} aria-hidden />}
               {s.agent !== "claude" ? `${agentName(s.agent)} · ` : ""}{s.title}
             </button>
             {sessions.length > 1 && !running.has(s.id) && !readOnly && (

@@ -29,6 +29,9 @@ try:
         pg.click(".ws-chats .chat-tab.active button"); pg.wait_for_timeout(300)
         check("Changes -> click the open chat's tab shows the chat", chat_shown())
         pg.click("nav.view-tabs button:has-text('Terminal')"); pg.wait_for_timeout(300)
+        # 2026-11-08: off the chat, the chat tab looked like plain text; it must keep its icon and outline.
+        marked = pg.evaluate("() => { const t = document.querySelector('.ws-chats .chat-tab.active'); return !!t && !!t.querySelector('.chat-tab-icon, .spinner') && getComputedStyle(t).boxShadow !== 'none' }")
+        check("On Terminal, the chat tab still looks like a tab (icon + outline)", marked)
         pg.locator(".ws-chats .chat-tab button[role=tab]").last.click(); pg.wait_for_timeout(300)
         check("Terminal -> click another chat's tab shows the chat", chat_shown())
         b.close()
