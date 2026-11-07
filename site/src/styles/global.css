@@ -349,7 +349,7 @@ p { text-wrap: pretty; }
 .dl ol { padding-left: 1.2em; }
 .dl .btn { margin-top: var(--s3); }
 .steps { counter-reset: step; list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s6); }
-.steps > li { counter-increment: step; display: grid; grid-template-columns: 36px 1fr; gap: var(--s4); }
+.steps > li { counter-increment: step; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: var(--s4); }
 .steps > li::before { content: counter(step); width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px; }
 .steps h3 { font-size: 18px; margin-top: 3px; }
 .dl-title { font-size: 26px; display: flex; align-items: center; gap: 10px; margin-bottom: var(--s6); }
