@@ -183,7 +183,7 @@ export function Welcome({
     <div className="welcome">
       <Mascot size={88} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={onPet} title="Pet the cat" />
       <h1>{setup?.ghOk && me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Welcome to NekoTrail."}</h1>
-      <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
+      <p className="lede">Your coding agents, all at once. Each task gets its own branch and folder.</p>
       {setupRed && setupCard}
 
       {/* The import sheet also moves workspaces imported earlier, so one Conductor card is enough. */}

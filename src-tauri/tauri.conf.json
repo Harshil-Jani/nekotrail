@@ -58,14 +58,18 @@
         "base-uri": "'none'",
         "form-action": "'none'"
       },
-      "dangerousDisableAssetCspModification": ["style-src"]
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
     },
     "macOSPrivateApi": true
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["nekotrail"]
+        "schemes": [
+          "nekotrail"
+        ]
       }
     },
     "updater": {
@@ -88,7 +92,8 @@
     "createUpdaterArtifacts": true,
     "macOS": {
       "bundleName": "NekoTrail",
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
     },
     "icon": [
       "icons/32x32.png",

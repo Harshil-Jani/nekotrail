@@ -3,6 +3,12 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.22.1 (2026-11-07)
+
+**Fixes**
+- macOS stops asking again and again for access to your Desktop or Documents folder. The app is now signed as one whole app, so macOS remembers your Allow. After an update, it may ask once more.
+- The welcome screen uses the new tagline.
+
 ## 0.22.0 (2026-11-07)
 
 **New look**
