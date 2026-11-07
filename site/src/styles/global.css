@@ -342,6 +342,8 @@ p { text-wrap: pretty; }
 .btn.bmc:hover { background: var(--bmc-bg-hover); }
 .btn.bmc img { width: 13px; height: 19px; }
 .btn.bmc .cup { filter: none; }
+/* The cup's outline is near-black, so on a dark card it needs its own yellow tile (as Buy Me a Coffee shows it). */
+.bmc-tile { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--r); background: var(--bmc-bg); flex: none; }
 
 /* final call to action */
 .cta-band { padding: var(--s10) 0; text-align: center; }
