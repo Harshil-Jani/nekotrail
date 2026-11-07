@@ -1,0 +1,13 @@
+---
+// The sponsorship nudge: one line and two buttons, never in the way. Used near the footer on Home and
+// at the end of each blog post. Logos are the official GitHub Octicon heart-fill and Buy Me a Coffee's cup.
+import { href } from "../lib/site";
+import SponsorButtons from "./SponsorButtons.astro";
+interface Props { line?: string }
+const { line = "nekotrail is free. Saved you time? Chip in." } = Astro.props;
+---
+<aside class="sponsor-card" aria-label="Sponsor nekotrail">
+  <img class="cat" src={href("brand/mascot-parcel.svg")} alt="" width="56" height="56" loading="lazy" />
+  <p class="line">{line}</p>
+  <div class="row"><SponsorButtons /></div>
+</aside>

@@ -26,3 +26,6 @@ dist-ssr
 # Impeccable design-round scratch (decision pages, sketches)
 .impeccable/mocks/
 .impeccable/*.json
+
+# Astro site build cache
+site/.astro
