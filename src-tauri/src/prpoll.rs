@@ -579,6 +579,19 @@ echo "{{\"data\":{{\"rateLimit\":{{\"remaining\":4000,\"resetAt\":\"2030-01-01T0
         (gh.to_string_lossy().to_string(), log)
     }
 
+    /// Linux can refuse to run a script that another test thread's fork still holds open for
+    /// writing ("Text file busy"). Retry that one error briefly; anything else is returned.
+    #[cfg(unix)]
+    fn fetch_retry(gh: &str, dir: &str, branches: &[String]) -> Result<Parsed, Problem> {
+        for _ in 0..40 {
+            match fetch_repo(gh, dir, branches, None) {
+                Err(Problem::Other(e)) if e.contains("os error 26") => std::thread::sleep(std::time::Duration::from_millis(50)),
+                r => return r,
+            }
+        }
+        fetch_repo(gh, dir, branches, None)
+    }
+
     #[cfg(unix)]
     fn runs(log: &std::path::Path) -> usize {
         std::fs::read_to_string(log).map(|s| s.lines().count()).unwrap_or(0)
@@ -606,20 +619,20 @@ echo "{{\"data\":{{\"rateLimit\":{{\"remaining\":4000,\"resetAt\":\"2030-01-01T0
         let repo = tmp.path().join("hot-repo");
         std::fs::create_dir(&repo).unwrap();
         let branches: Vec<String> = (0..5).map(|i| format!("me/task-{i}")).collect();
-        let p = fetch_repo(&gh, repo.to_str().unwrap(), &branches, None).unwrap();
+        let p = fetch_retry(&gh, repo.to_str().unwrap(), &branches).unwrap();
         assert_eq!(runs(&log), 1);
         assert_eq!(p.prs.len(), 5);
         assert!(is_hot(&p.prs["me/task-0"]));
         // 45 branches (two of them twice) take two runs: 40, then 3.
         let mut many: Vec<String> = (0..43).map(|i| format!("b/{i}")).collect();
         many.extend(["b/1".to_string(), "b/2".to_string()]);
-        let p = fetch_repo(&gh, repo.to_str().unwrap(), &many, None).unwrap();
+        let p = fetch_retry(&gh, repo.to_str().unwrap(), &many).unwrap();
         assert_eq!(runs(&log), 3);
         assert_eq!(p.prs.len(), 43);
         // Signed out, and no gh at all.
         let nologin = tmp.path().join("nologin");
         std::fs::create_dir(&nologin).unwrap();
-        assert_eq!(fetch_repo(&gh, nologin.to_str().unwrap(), &branches, None), Err(Problem::NotLoggedIn));
+        assert_eq!(fetch_retry(&gh, nologin.to_str().unwrap(), &branches), Err(Problem::NotLoggedIn));
         assert_eq!(fetch_repo("/no/such/gh", repo.to_str().unwrap(), &branches, None), Err(Problem::NoGh));
     }
 
@@ -648,7 +661,7 @@ echo "{{\"data\":{{\"rateLimit\":{{\"remaining\":4000,\"resetAt\":\"2030-01-01T0
                 }
                 for id in s.due(now, &keys) {
                     let i: usize = id.parse().unwrap();
-                    let p = fetch_repo(&gh, dirs[i].to_str().unwrap(), &branches, None).unwrap();
+                    let p = fetch_retry(&gh, dirs[i].to_str().unwrap(), &branches).unwrap();
                     let hot = autopilot_repo == Some(i) || p.prs.values().any(is_hot);
                     s.record(&id, now, hot, Ok(None));
                 }
