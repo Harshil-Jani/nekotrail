@@ -67,7 +67,7 @@ mac-notification-sys = "0.6"
 # lets cairo write the snapshot out).
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0"
-cairo-rs = { version = "0.18", default-features = false, features = ["png"] }
+cairo-rs = { version = "0.22", default-features = false, features = ["png"] }
 # Away alerts keep their tokens and webhook URLs in the Secret Service (GNOME Keyring, KWallet).
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
