@@ -1,4 +1,5 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
@@ -610,6 +611,7 @@ export function Chat({
   history,
   taskRepos,
   handoff,
+  tabsSlot,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -634,6 +636,8 @@ export function Chat({
   taskRepos?: string[];
   /** Open the hand-off sheet (⌘K, `nekotrail handoff`): for `sessionId`, or the chat showing. */
   handoff?: { nonce: number; sessionId?: string; agent?: Agent | null; model?: string | null };
+  /** The workspace's tab row: the chat tabs go there, beside the other views. Without it they sit above the chat. */
+  tabsSlot?: HTMLElement | null;
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -1249,6 +1253,7 @@ export function Chat({
 
   return (
     <div className={`chat ${readOnly ? "read-only" : ""}`}>
+      {((tabs: React.ReactNode) => (tabsSlot ? createPortal(tabs, tabsSlot) : tabs))(
       <div className="chat-tabs">
         {/* Only the tabs scroll sideways: the + menu sits outside the scroller, so it isn't clipped. */}
         <div className="chat-tab-strip" role="tablist" aria-label="Chats">
@@ -1292,7 +1297,7 @@ export function Chat({
         <span className="spacer" />
         {copied && <span className="muted chat-flag">Copied</span>}
         {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title={keyHint("Collapse tool output (⌃O)")}>Hide tool output</button>}
-      </div>
+      </div>)}
 
       {search !== null && (
         <div className="chat-search">

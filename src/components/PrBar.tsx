@@ -214,6 +214,16 @@ export function PrBar({
     window.addEventListener("nekotrail-pr-draft", on);
     return () => window.removeEventListener("nekotrail-pr-draft", on);
   }, [ws.id, ws.title]);
+  // "Rename branch" in the workspace's ⋯ menu: the field opens here. A branch with a PR keeps its name.
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== ws.id) return;
+      if (pr) onSay("This branch has a PR, so it keeps its name.");
+      else setRenaming(ws.branch);
+    };
+    window.addEventListener("nekotrail-rename-branch", on);
+    return () => window.removeEventListener("nekotrail-rename-branch", on);
+  }, [ws.id, ws.branch, pr]);
   useEffect(() => {
     if (ws.parent_id) api.stackParent(ws.id).then(setParent).catch(() => setParent(null));
   }, [ws.id, ws.parent_id, parentPr?.state, parentPr?.number, parentPr?.baseRefName]);
