@@ -32,7 +32,9 @@ pub const SETTING: &str = "ai_names";
 
 const SYSTEM: &str = "You name a coding task from the first message a developer sent to a coding agent. \
 The message may be in Hinglish, Hindi or any other language: always answer in plain English. \
-Keep product names, proper nouns and key technical terms (like CAP, PACELC, OAuth); drop filler words. \
+Build the name from the most specific nouns in the message: company and product names it mentions, and key technical terms (like CAP, PACELC, OAuth). \
+Drop filler words, and generic verbs like apply, add or implement when the nouns say enough. \
+The repository name is context only: don't repeat it unless the message names it. \
 Reply with only one JSON object and nothing else: \
 {\"branch\": \"2 to 5 lowercase ascii words joined by hyphens, at most 40 characters, no prefix, no slash\", \
 \"title\": \"2 to 6 words in Title Case, at most 40 characters\"}. \
