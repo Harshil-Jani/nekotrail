@@ -1,0 +1,92 @@
+---
+// The short version is written for the site. The concept and shortcut tables come from
+// docs/MOVING-FROM-CONDUCTOR.md at build time, so they stay in step with the repo's full guide.
+import Base from "../layouts/Base.astro";
+import Clip from "../components/Clip.astro";
+import { SITE, href, readRepoFile } from "../lib/site";
+import { renderMarkdown } from "../lib/markdown";
+
+const md = readRepoFile("docs/MOVING-FROM-CONDUCTOR.md");
+/** One "## Heading" section of the guide, without its heading. */
+const section = (title: string) => {
+  const m = md.match(new RegExp(`^## ${title}\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, "m"));
+  return m ? renderMarkdown(m[1].trim(), "docs") : "";
+};
+const concepts = section("Concepts");
+const shortcuts = section("Shortcuts");
+const fullGuide = `${SITE.repo}/blob/main/docs/MOVING-FROM-CONDUCTOR.md`;
+const sections = [
+  { id: "steps", title: "Three steps" },
+  { id: "what-moves", title: "What moves" },
+  { id: "the-move", title: "The move" },
+  { id: "conductor-cloud", title: "Conductor Cloud" },
+  { id: "concepts", title: "Concepts" },
+  { id: "shortcuts", title: "Shortcuts" },
+];
+---
+<Base
+  title="Moving from Conductor"
+  description="A local Conductor alternative: import your repos, workspaces and chats from the Conductor app, and move your worktrees out of Conductor's folder with git worktree move."
+  path="moving-from-conductor/"
+>
+  <div class="sky">
+    <div class="wrap">
+      <header class="page-head sky-head">
+        <span class="eyebrow" style="color:#ffbd8a">Guide</span>
+        <h1>Moving from Conductor</h1>
+        <p class="lede">Your worktrees live in Conductor's folder. Move them out before it shuts down.</p>
+        <p style="margin-top:24px"><a class="btn primary" href={href("download/")}>Download nekotrail</a></p>
+      </header>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="with-toc" style="padding-top:48px">
+      <aside class="toc" aria-label="On this page">
+        <nav>
+          <p>On this page</p>
+          <ul>{sections.map((s) => <li><a href={`#${s.id}`}>{s.title}</a></li>)}</ul>
+        </nav>
+      </aside>
+      <article class="prose">
+        <div class="note" style="margin-bottom:32px">
+          <p><strong>Dates.</strong> Meta acquired Conductor on 4 November 2026. Cloud goes read-only 13 November and shuts down 20 November 2026. The Mac app winds down in early 2027.</p>
+        </div>
+
+        <h2 id="steps">Three steps</h2>
+        <ol>
+          <li><a href={href("download/")}>Install nekotrail</a> and open it.</li>
+          <li>Click <strong>Import from Conductor</strong> (first launch, Welcome, or ⌘K).</li>
+          <li>Keep <strong>Move into nekotrail</strong> picked. Press <strong>Import and move</strong>.</li>
+        </ol>
+        <Clip name="conductor" label="The Conductor import sheet lists what moves, then shows every worktree moved and checked" title="nekotrail: Bring your work over from Conductor" />
+
+        <h2 id="what-moves">What moves</h2>
+        <ul>
+          <li>Repos, with their scripts and custom prompts.</li>
+          <li>Active workspaces: name, branch, pin, notes.</li>
+          <li>Claude and Codex chats. They continue the same session.</li>
+        </ul>
+        <p>Not imported: Cloud workspaces, archived workspaces, Conductor's settings and checkpoints.</p>
+
+        <h2 id="the-move">The move</h2>
+        <ul>
+          <li>Only <code>git worktree move</code>. Nothing in Conductor's folder is deleted.</li>
+          <li>Each move is checked: same branch, head commit and uncommitted files.</li>
+          <li>Can't move? It stays put, with the reason and the fix.</li>
+        </ul>
+        <p>New home: <code>~/nekotrail/workspaces/&lt;repo&gt;/&lt;name&gt;</code></p>
+
+        <h2 id="conductor-cloud">Conductor Cloud</h2>
+        <p>nekotrail can't read Cloud. Export Cloud workspaces to the Conductor Mac app first, then import.</p>
+
+        <h2 id="concepts">Concepts</h2>
+        <Fragment set:html={concepts} />
+
+        <h2 id="shortcuts">Shortcuts</h2>
+        <Fragment set:html={shortcuts} />
+
+        <p style="margin-top:40px">Every detail, including failed moves: <a href={fullGuide} rel="noopener">the full guide</a>.</p>
+      </article>
+    </div>
+  </div>
+</Base>

@@ -1,0 +1,46 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import Clip from "../../components/Clip.astro";
+import Sponsor from "../../components/Sponsor.astro";
+import { href, formatDate } from "../../lib/site";
+
+export async function getStaticPaths() {
+  const posts = (await getCollection("blog", ({ data }) => !data.draft)).sort((a, b) => +b.data.date - +a.data.date);
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, newer: posts[i - 1] ?? null, older: posts[i + 1] ?? null },
+  }));
+}
+const { post, newer, older } = Astro.props;
+const { Content } = await render(post);
+const words = (post.body ?? "").split(/\s+/).filter(Boolean).length;
+const minutes = Math.max(1, Math.round(words / 230));
+---
+<Base title={post.data.title} description={post.data.description} path={`blog/${post.id}/`} ogType="article" published={post.data.date}>
+  <div class="wrap" style="max-width:780px">
+    <header class="post-head">
+      <a class="back" href={href("blog/")}>← Blog</a>
+      <h1 style="margin-top:20px">{post.data.title}</h1>
+      <div class="meta">
+        <img src={href("brand/n-cat.svg")} alt="" width="32" height="32" />
+        <span>{post.data.author} · <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time> · {minutes} min read</span>
+      </div>
+    </header>
+    {post.data.clip && (
+      <div style="margin-bottom:40px">
+        <Clip name={post.data.clip} label={post.data.clipLabel ?? post.data.title} />
+      </div>
+    )}
+    <article class="prose">
+      <Content />
+    </article>
+    <footer class="post-foot">
+      <Sponsor line="Useful? Keep nekotrail free." />
+      <nav class="post-nav" aria-label="More posts">
+        {older && <a class="prev" href={href(`blog/${older.id}/`)}><span>Older</span>{older.data.title}</a>}
+        {newer && <a class="next" href={href(`blog/${newer.id}/`)}><span>Newer</span>{newer.data.title}</a>}
+      </nav>
+    </footer>
+  </div>
+</Base>

@@ -1,0 +1,315 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../layouts/Base.astro";
+import Stars from "../components/Stars.astro";
+import Clip from "../components/Clip.astro";
+import Sponsor from "../components/Sponsor.astro";
+import { SITE, AGENTS, href, appVersion, readRepoFile, formatDate } from "../lib/site";
+import { parseChangelog } from "../lib/markdown";
+
+const version = appVersion();
+const releases = parseChangelog(readRepoFile("CHANGELOG.md")).filter((r) => r.date).slice(0, 3);
+const posts = (await getCollection("blog", ({ data }) => !data.draft)).sort((a, b) => +b.data.date - +a.data.date).slice(0, 3);
+
+const features = [
+  {
+    id: "parallel", star: "Mochi", eyebrow: "Parallel workspaces",
+    title: "One task, one worktree.",
+    text: "Each task gets its own branch, folder, chat, diff and terminal.",
+    points: ["Agents never touch each other or your main checkout.", "10 ports per workspace, so no fights over 3000."],
+    clip: "parallel", label: "Switching between workspaces where agents work at the same time, then the board of every workspace", window: "nekotrail: Fix 502s after deploy",
+  },
+  {
+    id: "compare", star: "Biscuit", eyebrow: "Compare agents",
+    title: "Race two agents.",
+    text: "Same task, Claude and Codex side by side. Keep the better diff.",
+    points: ["Compare files, turns, time and cost.", "Second opinion: the other agent reviews, read-only."],
+    clip: "compare", label: "The Compare agents sheet with a Claude and a Codex workspace side by side", window: "nekotrail: Compare agents",
+  },
+  {
+    id: "handoff", star: "Tofu", eyebrow: "Hand off",
+    title: "Claude stops. Codex continues.",
+    text: "Another agent picks up in the same branch, from a brief you read first.",
+    points: ["Built on your Mac from the chat. No model summarises.", "Never gives the next agent more permissions."],
+    clip: "handoff", label: "Claude is out of usage; the hand-off sheet opens with the brief, and Codex carries on", window: "nekotrail: Hand off to another agent",
+    more: { label: "How the brief works", href: "blog/hand-off-claude-to-codex/" },
+  },
+  {
+    id: "review", star: "Dumpling", eyebrow: "Review",
+    title: "Review it like a PR.",
+    text: "Comment on any line. Send every comment back as one review.",
+    points: ["Rewind your files to any message.", "Protected files the agent can't change."],
+    image: "changes", label: "The Changes tab with draft review comments on lines and the Send review button", window: "nekotrail: Changes",
+  },
+  {
+    id: "conductor", star: "Pudding", eyebrow: "Moving from Conductor",
+    title: "Leave Conductor, keep everything.",
+    text: "One click imports your repos, workspaces and chats, then moves your worktrees out.",
+    points: ["Only git worktree move. Nothing is deleted.", "Each move is checked: branch, commit, uncommitted files."],
+    clip: "conductor", label: "The Conductor import sheet lists what moves, then shows every worktree moved and checked", window: "nekotrail: Bring your work over from Conductor",
+    more: { label: "Read the move guide", href: "moving-from-conductor/" },
+  },
+  {
+    id: "sky", star: "Muffin", eyebrow: "The night sky",
+    title: "Every workspace lights a star.",
+    text: "Merged PRs make stars shine. Ship enough and a cat appears.",
+    points: ["The sidebar cat shows real state: working, asleep, worried."],
+    clip: "sky", label: "The night sky view with The Loaf, The Pounce and The Kitten constellations", window: "nekotrail: Night sky",
+  },
+];
+
+// Three short groups instead of one long list.
+const groups = [
+  {
+    title: "Run work",
+    items: [
+      ["Task queue", "Line up tasks. A few run at once."],
+      ["Plan approval", "Approve a plan, or split it into workspaces."],
+      ["Stacks", "Build a workspace on an unmerged one."],
+      ["Command line", "nekotrail new \"fix the bug\" --agent codex"],
+    ],
+  },
+  {
+    title: "Stay in control",
+    items: [
+      ["Spend caps", "Daily and per-task limits the queue respects."],
+      ["Usage view", "Tokens, cost and time, kept on your Mac."],
+      ["Checks", "Tests and lint after every agent turn."],
+      ["Phone alerts", "ntfy, Slack, Discord. Never your code."],
+    ],
+  },
+  {
+    title: "Ship it",
+    items: [
+      ["GitHub and Linear", "Start from an issue. Autopilot drives the PR to green."],
+      ["Preview", "Your running app inside the workspace."],
+      ["MCP and prompts", "Share servers and prompts across agents."],
+      ["VS Code and Cursor", "Send a selection to nekotrail as a task."],
+    ],
+  },
+];
+
+const gallery = [
+  ["new-workspace", "Start a workspace", "from a task, issue, PR or branch."],
+  ["plan", "Approve the plan", "or split it."],
+  ["rewind", "Rewind", "to before any message."],
+  ["preview", "Annotate", "your running app for the agent."],
+  ["workspace-light", "Light and dark", "follow your Mac."],
+];
+// Rail: The Loaf, drawn top to bottom, one star per feature section.
+const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400]];
+---
+<Base
+  title="nekotrail: run Claude Code, Codex and 14 more coding agents in parallel"
+  description="A free, open-source Mac app that runs coding agents in parallel git worktrees with your own subscriptions. A local Conductor alternative: one-click import, no account."
+  path=""
+  announce
+>
+  <section class="sky hero" aria-labelledby="hero-title">
+    <Stars count={140} seed={11} constellation />
+    <div class="wrap" style="position:relative">
+      <img class="mascot" src={href("brand/mascot-working.svg")} alt="" width="76" height="76" />
+      <h1 id="hero-title">Many coding agents. <em>One Mac.</em></h1>
+      <p class="lede">Claude Code, Codex and 14 more, in parallel git worktrees. Each task ends as a PR.</p>
+      <div class="ctas">
+        <a class="btn primary" href={href("download/")}>
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V2.25A.75.75 0 0 1 8 1.5ZM2.75 12.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          Download for Mac
+        </a>
+        <a class="btn on-sky" href={SITE.repo} rel="noopener">View on GitHub</a>
+      </div>
+      <p class="fine">Free. MIT. No account. macOS 13+, <a href={href("download/#linux")}>Linux experimental</a>. v{version}</p>
+    </div>
+    <div class="wrap hero-shot">
+      <Clip name="parallel" eager label="nekotrail switching between workspaces where different agents work at the same time, then the board of every workspace" title="nekotrail" />
+    </div>
+  </section>
+
+  <section class="agents wrap" aria-labelledby="agents-title">
+    <p id="agents-title">Uses your own agent logins and subscriptions</p>
+    <ul class="chips">{AGENTS.map((a) => <li>{a}</li>)}</ul>
+  </section>
+
+  <section class="features wrap" aria-label="Features">
+    <div class="features-grid">
+      <div class="rail" aria-hidden="true">
+        <svg viewBox="0 0 120 440">
+          {railStars.slice(1).map(([x, y], i) => (
+            <line x1={railStars[i][0]} y1={railStars[i][1]} x2={x} y2={y} data-step={i + 1} />
+          ))}
+          {railStars.map(([x, y], i) => (
+            <g>
+              <circle class="halo" cx={x} cy={y} r="9" data-step={i} />
+              <circle cx={x} cy={y} r="3.5" data-step={i} />
+              <text x={x + (x > 60 ? -8 : 10)} y={y + 4} text-anchor={x > 60 ? "end" : "start"}>{features[i].star}</text>
+            </g>
+          ))}
+          <text class="caption" x="60" y="436" text-anchor="middle">The Loaf</text>
+        </svg>
+      </div>
+      <div>
+        {features.map((f, i) => (
+          <article class={`feature reveal${i % 2 ? " flip" : ""}`} id={f.id} data-step={i} aria-labelledby={`${f.id}-title`}>
+            <div class="copy">
+              <span class="eyebrow"><span class="star-mark"></span>{f.eyebrow}</span>
+              <h2 id={`${f.id}-title`}>{f.title}</h2>
+              <p>{f.text}</p>
+              <ul>{f.points.map((p) => <li>{p}</li>)}</ul>
+              {f.more && <a class="more" href={href(f.more.href)}>{f.more.label} →</a>}
+            </div>
+            <div class="visual">
+              {f.clip ? (
+                <Clip name={f.clip} label={f.label} title={f.window} />
+              ) : (
+                <figure class="window" style="margin:0">
+                  <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>{f.window}</span></div>
+                  <img class="still" src={href(`shots/${f.image}.webp`)} alt={f.label} width="1600" height="1000" loading="lazy" decoding="async" />
+                </figure>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" aria-labelledby="more-title">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <h2 id="more-title">The rest of the job</h2>
+        <p>From a queued task to a merged PR.</p>
+      </div>
+      <div class="groups">
+        {groups.map((g) => (
+          <div class="group reveal">
+            <h3>{g.title}</h3>
+            <ul>{g.items.map(([t, d]) => <li><b>{t}</b><span>{d}</span></li>)}</ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="tour-title">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <h2 id="tour-title">A closer look</h2>
+        <p>Sample data. Scroll sideways.</p>
+      </div>
+      <div class="gallery" tabindex="0" role="region" aria-label="Screenshots of nekotrail">
+        {gallery.map(([img, b, t]) => (
+          <figure>
+            <img src={href(`shots/${img}.webp`)} alt={`${b} ${t}`} width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption><b>{b}</b> {t}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" aria-labelledby="why-title">
+    <div class="wrap">
+      <div class="section-head center reveal">
+        <h2 id="why-title">Yours, not ours</h2>
+      </div>
+      <div class="principles">
+        <div class="reveal">
+          <div class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 6 3 10l4 4M13 6l4 4-4 4" /></svg></div>
+          <h3>Open source</h3>
+          <p>MIT on GitHub. Nobody can shut it down on you.</p>
+        </div>
+        <div class="reveal">
+          <div class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="10" rx="2" /><path d="M7 17h6" /></svg></div>
+          <h3>Local</h3>
+          <p>Plain worktrees and chats, on your disk. No account.</p>
+        </div>
+        <div class="reveal">
+          <div class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="7" r="3" /><path d="M4 17c1-3 3.3-4.5 6-4.5s5 1.5 6 4.5" /></svg></div>
+          <h3>Your logins</h3>
+          <p>Official agent CLIs, your logins. No proxy, no markup.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="changelog-title">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <h2 id="changelog-title">Changelog</h2>
+        <p>Small, tagged releases. The app updates itself.</p>
+      </div>
+      <ul class="releases">
+        {releases.map((r) => (
+          <li>
+            <a href={href(`changelog/#${r.id}`)}>
+              <span class="v">{r.version}</span>
+              <div><h3>{r.titles[0] ?? `Release ${r.version}`}</h3></div>
+              <time datetime={r.date}>{formatDate(new Date(r.date + "T00:00:00Z"))}</time>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p style="margin-top:24px"><a class="btn small" href={href("changelog/")}>View all releases</a></p>
+    </div>
+  </section>
+
+  <section class="section alt" aria-labelledby="blog-title">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <h2 id="blog-title">From the blog</h2>
+      </div>
+      <ul class="posts">
+        {posts.map((p) => (
+          <li>
+            <a href={href(`blog/${p.id}/`)}>
+              <h3>{p.data.title}</h3>
+              <div class="meta">{formatDate(p.data.date)} · {p.data.author}</div>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" aria-label="Sponsor">
+    <div class="wrap"><Sponsor /></div>
+  </section>
+
+  <section class="sky cta-band" aria-labelledby="cta-title">
+    <Stars count={90} seed={29} />
+    <div class="wrap" style="position:relative">
+      <img class="mascot" src={href("brand/mascot-happy.svg")} alt="" width="64" height="64" loading="lazy" />
+      <h2 id="cta-title">Start your first workspace.</h2>
+      <p>Open a repo, type a task, press Enter.</p>
+      <div class="ctas">
+        <a class="btn primary" href={href("download/")}>Download for Mac</a>
+        <a class="btn on-sky" href={href("moving-from-conductor/")}>Moving from Conductor</a>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // The constellation on the left lights one star per feature as it scrolls into view.
+    const steps = document.querySelectorAll<HTMLElement>(".feature[data-step]");
+    const light = (n: number) => {
+      document.querySelectorAll<SVGElement>(".rail [data-step]").forEach((el) => {
+        el.classList.toggle("on", Number(el.dataset.step) <= n);
+      });
+    };
+    if ("IntersectionObserver" in window) {
+      let max = -1;
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          e.target.classList.add("lit");
+          max = Math.max(max, Number((e.target as HTMLElement).dataset.step));
+          light(max);
+        }
+      }, { rootMargin: "0px 0px -40% 0px" });
+      steps.forEach((s) => io.observe(s));
+    } else {
+      steps.forEach((s) => s.classList.add("lit"));
+      light(steps.length);
+    }
+  </script>
+</Base>

@@ -1,0 +1,16 @@
+---
+import Base from "../layouts/Base.astro";
+import Stars from "../components/Stars.astro";
+import { href } from "../lib/site";
+---
+<Base title="Page not found" description="This page doesn't exist." path="404/" noindex>
+  <section class="sky cta-band" style="min-height:60vh">
+    <Stars count={80} seed={404} />
+    <div class="wrap" style="position:relative">
+      <img class="mascot" src={href("brand/mascot-sleep.svg")} alt="" width="64" height="64" />
+      <h1 style="color:#fff;font-size:40px">No star here.</h1>
+      <p>This page doesn't exist, or it moved.</p>
+      <div class="ctas"><a class="btn primary" href={href()}>Go home</a><a class="btn on-sky" href={href("changelog/")}>Changelog</a></div>
+    </div>
+  </section>
+</Base>
