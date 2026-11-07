@@ -10,7 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="MIT"></a>
 </p>
 
-<p align="center">Run Claude Code, Codex and 14 more coding agents at once on your Mac. Each task gets its own git worktree and branch. Free, MIT, local, no account.</p>
+<p align="center"><b>Your coding agents, all at once.</b><br>Claude Code, Codex and 14 more on your logins, each in its own worktree. Free, MIT, no account.</p>
 
 <p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="NekoTrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
 
