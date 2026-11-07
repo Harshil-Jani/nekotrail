@@ -3,6 +3,14 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Ready for launch**
+- Settings now has a Buy me a coffee link next to Sponsor, and ⌘K has "Buy me a coffee", for a one-off thank you without a GitHub account.
+- The README shows Sponsor on GitHub and Buy me a coffee buttons, and the repo's Sponsor button lists both.
+- New CONTRIBUTING, SECURITY and code of conduct files, plus bug report and feature request forms, so you know how to build, test, report a problem or a vulnerability, and propose a change.
+- A public [roadmap](docs/ROADMAP.md) of what's next and what we're not building, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) listing every open-source component the app ships with and its license.
+
 ## 0.21.0 (2026-11-07)
 
 **Moving from Conductor**
