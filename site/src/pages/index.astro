@@ -30,7 +30,7 @@ const features = [
     id: "handoff", star: "Tofu", eyebrow: "Hand off",
     title: "Claude stops. Codex continues.",
     text: "Another agent picks up in the same branch, from a brief you read first.",
-    points: ["Built on your Mac from the chat. No model summarises.", "Never gives the next agent more permissions."],
+    points: ["Built from the chat on your Mac. No model writes it.", "Never gives the next agent more permissions."],
     clip: "handoff", label: "Claude is out of usage; the hand-off sheet opens with the brief, and Codex carries on", window: "nekotrail: Hand off to another agent",
     more: { label: "How the brief works", href: "blog/hand-off-claude-to-codex/" },
   },
@@ -44,7 +44,7 @@ const features = [
   {
     id: "conductor", star: "Pudding", eyebrow: "Moving from Conductor",
     title: "Leave Conductor, keep everything.",
-    text: "One click imports your repos, workspaces and chats, then moves your worktrees out.",
+    text: "Import your repos, workspaces and chats. Your worktrees move out of Conductor's folder.",
     points: ["Only git worktree move. Nothing is deleted.", "Each move is checked: branch, commit, uncommitted files."],
     clip: "conductor", label: "The Conductor import sheet lists what moves, then shows every worktree moved and checked", window: "nekotrail: Bring your work over from Conductor",
     more: { label: "Read the move guide", href: "moving-from-conductor/" },
@@ -63,7 +63,7 @@ const groups = [
   {
     title: "Run work",
     items: [
-      ["Task queue", "Line up tasks. A few run at once."],
+      ["Task queue", "Line up tasks. 3 run at once by default."],
       ["Plan approval", "Approve a plan, or split it into workspaces."],
       ["Stacks", "Build a workspace on an unmerged one."],
       ["Command line", "nekotrail new \"fix the bug\" --agent codex"],
@@ -73,9 +73,9 @@ const groups = [
     title: "Stay in control",
     items: [
       ["Spend caps", "Daily and per-task limits the queue respects."],
-      ["Usage view", "Tokens, cost and time, kept on your Mac."],
-      ["Checks", "Tests and lint after every agent turn."],
-      ["Phone alerts", "ntfy, Slack, Discord. Never your code."],
+      ["Usage view", "Tokens, time and API-equivalent cost, on your Mac."],
+      ["Checks", "Tests, lint and typecheck, after each turn if you like."],
+      ["Phone alerts", "ntfy, Slack, Discord. No code by default."],
     ],
   },
   {
@@ -83,7 +83,7 @@ const groups = [
     items: [
       ["GitHub and Linear", "Start from an issue. Autopilot drives the PR to green."],
       ["Preview", "Your running app inside the workspace."],
-      ["MCP and prompts", "Share servers and prompts across agents."],
+      ["MCP and prompts", "Copy MCP servers between agents. Reuse saved prompts."],
       ["VS Code and Cursor", "Send a selection to nekotrail as a task."],
     ],
   },
@@ -110,7 +110,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
     <div class="wrap" style="position:relative">
       <img class="mascot" src={href("brand/mascot-working.svg")} alt="" width="76" height="76" />
       <h1 id="hero-title">Many coding agents. <em>One Mac.</em></h1>
-      <p class="lede">Claude Code, Codex and 14 more, in parallel git worktrees. Each task ends as a PR.</p>
+      <p class="lede">Run Claude Code, Codex and 14 more at once. Each task gets its own git worktree.</p>
       <div class="ctas">
         <a class="btn primary" href={href("download/")}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V2.25A.75.75 0 0 1 8 1.5ZM2.75 12.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
