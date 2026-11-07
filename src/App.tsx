@@ -1375,6 +1375,8 @@ export default function App() {
       queueInfo.paused
         ? { id: "queue-resume", group: "App", label: "Resume the queue", keywords: "task queue start", icon: <Play size={15} />, run: () => api.queueSetPaused(false).catch((e) => say(errText(e), true)) }
         : { id: "queue-pause", group: "App", label: "Pause the queue", keywords: "task queue stop hold", icon: <Pause size={15} />, run: () => api.queueSetPaused(true).then(() => say("Paused the queue. Running tasks finish; nothing new starts.")).catch((e) => say(errText(e), true)) },
+      { id: "group-by", group: "Go", label: groupBy === "repo" ? "Group sidebar by status" : "Group sidebar by repo", keywords: "sidebar group sort status repo", icon: <ListChecks size={15} />, run: () => { const g = groupBy === "repo" ? "status" : "repo"; setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); } },
+      { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", keywords: "archive restore old", icon: <Archive size={15} />, run: () => { setSidebarHidden(() => false); setShowArchived((v) => !v); } },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
@@ -1481,6 +1483,8 @@ export default function App() {
         onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(displayName(sky, w)); }}
         onArchive={(id) => archive({ id })}
         onBoard={() => setView("board")}
+        boardOpen={view === "board"}
+        onSettings={() => setSettingsOpen(true)}
         queue={queueInfo}
         queueOpen={view === "queue"}
         onQueue={() => setView("queue")}

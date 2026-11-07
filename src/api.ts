@@ -302,14 +302,34 @@ export const starName = (sky: Sky, w: Workspace) => {
   return star ? `${star.name}${w.name.match(/-(\d+)$/)?.[0].replace("-", " ") ?? ""}` : w.name;
 };
 
-/** What the sidebar and header call a workspace: its task title, else its star. */
-export const displayName = (sky: Sky, w: Workspace) => w.title || starName(sky, w);
+/** Same rule as title.rs `is_noise`: a title that is only a date, a time or a screenshot's name says nothing. */
+export const isNoiseTitle = (t: string) => {
+  const filler = new Set(["at", "am", "pm", "screenshot", "screen", "shot", "recording", "image", "img", "photo", "pasted", "untitled"]);
+  const media = /\.(png|jpe?g|gif|webp|heic|tiff|bmp|mov|mp4|webm|pdf)$/i;
+  return !t.split(/\s+/).some((raw) => {
+    const w = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
+    return (w.match(/\p{L}/gu)?.length ?? 0) >= 2 && !filler.has(w) && !media.test(w);
+  });
+};
 
-/** The secondary line under a titled workspace: its star. Empty when the star is already the title, and for History, whose star means nothing. */
-export const subName = (sky: Sky, w: Workspace) => (w.title && !isHistory(w) ? starName(sky, w) : "");
+/** The task title, unless it was derived and says nothing (an older version named some workspaces after a screenshot). */
+const titleOf = (w: Workspace) => (w.title && (w.title_source === "user" || !isNoiseTitle(w.title)) ? w.title : "");
+
+/** What to call an untitled workspace: its branch when that was named after the task, else its star. */
+const untitled = (sky: Sky, w: Workspace) => {
+  const tail = w.branch.split("/").pop() ?? "";
+  const star = starFor(sky, w.name);
+  return tail && w.title && !isHistory(w) && (!star || tail.replace(/-\d+$/, "") !== star.slug) ? tail : starName(sky, w);
+};
+
+/** What the sidebar and header call a workspace: its task title, else its branch or star. */
+export const displayName = (sky: Sky, w: Workspace) => titleOf(w) || untitled(sky, w);
+
+/** The secondary name of a titled workspace (tooltips): its star. Empty when the star is already the title, and for History, whose star means nothing. */
+export const subName = (sky: Sky, w: Workspace) => (titleOf(w) && !isHistory(w) ? starName(sky, w) : "");
 
 /** The name inside a sentence. A task title is quoted so "Fix login is done" reads as a name: “Fix login” is done. */
-export const nameInText = (sky: Sky, w: Workspace) => (w.title ? `“${w.title}”` : starName(sky, w));
+export const nameInText = (sky: Sky, w: Workspace) => (titleOf(w) ? `“${titleOf(w)}”` : untitled(sky, w));
 
 /** Status set by hand, else derived: merged PR = done, open PR = in review, else in progress. */
 export const statusOf = (w: Workspace, prState?: string | null): Exclude<WsStatus, ""> =>
@@ -389,6 +409,8 @@ export const api = {
   cliStatus: () => invoke<{ path: string | null }>("cli_status"),
   githubProfile: () => invoke<GithubUser>("github_profile"),
   repoGithub: (id: string) => invoke<RepoGithub>("repo_github", { id }),
+  /** The owner's avatar as a data URL (cached on disk), or null without a GitHub remote. */
+  repoAvatar: (id: string) => invoke<string | null>("repo_avatar", { id }),
   sky: () => invoke<Sky>("sky"),
   snapshot: (includeArchived = false) =>
     invoke<{ repos: Repo[]; workspaces: Workspace[]; running: string[]; running_workspaces: string[]; lit: string[]; shining: string[]; costs: Record<string, number> }>("snapshot", { includeArchived }),

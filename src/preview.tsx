@@ -808,6 +808,8 @@ mockIPC(
       case "snapshot": if (fresh) return { repos: [...freshRepos], workspaces: [...freshWorkspaces], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
         return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: opencode ? ["s9"] : [], running_workspaces: opencode ? ["w3", "w2"] : ["w3"], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
+      // Made-up org logos for the sample repos (a paw and a leaf), as the cache would hand them over; ?noavatar for the letter.
+      case "repo_avatar": return new URLSearchParams(location.search).has("noavatar") ? null : sampleLogo(args.id === "r2" ? "#1f7a5c" : "#c2410c", args.id === "r2" ? "leaf" : "paw");
       case "repo_github": return { nameWithOwner: "pawprint/" + args.id, description: "", stargazerCount: args.id === "r1" ? 1240 : 86, url: "", owner_avatar: "", isPrivate: false };
       case "sky": return SKY;
       case "conductor_available": return !fresh || freshFound === "conductor";
@@ -1190,6 +1192,13 @@ async function fakeSnapshot(): Promise<ArrayBuffer> {
   return blob.arrayBuffer();
 }
 
+/** A sample org logo as a data URL, the way repo_avatar returns the cached picture. */
+function sampleLogo(bg: string, shape: "paw" | "leaf") {
+  const mark = shape === "paw"
+    ? '<circle cx="32" cy="38" r="9" fill="#fff"/><circle cx="20" cy="26" r="4.5" fill="#fff"/><circle cx="28" cy="20" r="4.5" fill="#fff"/><circle cx="36" cy="20" r="4.5" fill="#fff"/><circle cx="44" cy="26" r="4.5" fill="#fff"/>'
+    : '<path d="M18 46c0-16 10-28 28-28 0 18-12 28-28 28z" fill="#fff"/><path d="M20 44l18-18" stroke="' + bg + '" stroke-width="2.5" stroke-linecap="round"/>';
+  return "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${bg}"/>${mark}</svg>`);
+}
 const previewUrl = new URLSearchParams(location.search).get("previewUrl");
 if (previewUrl) setTimeout(() => emit("pty", { id: "w1:run", data: `listening on ${previewUrl}\r\n` }), 400);
 

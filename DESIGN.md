@@ -20,7 +20,7 @@ NekoTrail follows Apple's macOS Human Interface Guidelines: it should feel like 
 ## Components
 
 - **Window:** overlay title bar. The traffic lights sit in the sidebar head (84px left inset). The 52px toolbar and sidebar head are drag regions.
-- **Sidebar:** a source list with 11px section headers, inset rounded rows and grey selection. Repo actions appear on hover.
+- **Sidebar:** a calm source list, after Conductor. Top: Search, Board, Queue and Usage as plain icon rows. Quiet 11px section labels (Pinned, your sections, Workspaces with its ⋯ menu). Repo rows carry the owner's GitHub avatar (rounded square, cached on disk, letter fallback) and a + to create a workspace. Workspace rows are one line, 32px, indented under their repo: a muted branch icon, the title in the secondary label colour, and one trailing mark (spinner, lantern dot, red checks dot, or the PR icon). Everything else is in the row's tooltip and right-click menu. Selection is a soft filled rounded row. Footer: you, Archived, Settings.
 - **Toolbar:** title and subtitle on the left; Compare, Run, Open in and a "⋯" menu on the right.
 - **Tabs:** Chat, Changes, Terminal, Preview and Checks form a segmented control. Preview shows the workspace's local dev server; Annotate marks it up in lantern gold with a dark halo, so the marks read on any page. Checks lists test, lint and typecheck results as grouped cards; a red dot on the tab and the sidebar row means one fails. Chat and terminal sessions are compact rounded tabs.
 - **Buttons:** push buttons are 26px. The primary action is accent-filled. Quiet and icon buttons are borderless with a hover fill. Merge is system green.

@@ -671,6 +671,20 @@ impl Store {
                 n += 1;
             }
         }
+        // Titles older versions took from a screenshot's name or a timestamp ("2026-11-05 at 5.42.16…")
+        // are derived again; with nothing better they are cleared, so the branch or star shows.
+        let noisy: Vec<(String, String)> = {
+            let mut st = self.conn.prepare("SELECT id, title FROM workspaces WHERE title_source=?1 AND title<>''")?;
+            st.query_map([crate::title::AUTO], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+        };
+        for (id, old) in noisy.into_iter().filter(|(_, t)| crate::title::is_noise(t)) {
+            let t = self.prompt_title(&id)?;
+            if t != old {
+                let source = if t.is_empty() { "" } else { crate::title::AUTO };
+                self.conn.execute("UPDATE workspaces SET title=?2, title_source=?3 WHERE id=?1", params![id, t, source])?;
+                n += 1;
+            }
+        }
         Ok(n)
     }
 
@@ -1394,6 +1408,28 @@ mod tests {
         assert_eq!(get(&untitled).0, "Add rate limiting");
         assert_eq!(get(&typed).0, "Gateway work");
         assert_eq!(s.prompt_title(&empty).unwrap(), "");
+    }
+
+    #[test]
+    fn noisy_titles_are_derived_again() {
+        let s = Store::in_memory().unwrap();
+        let r = sample_repo();
+        s.insert_repo(&r).unwrap();
+        let shot = "@.context/attachments/Screenshot 2026-11-05 at 5.42.16 PM.png the logo is missing";
+        let better = titled_ws(&s, &r, "mochi", "", &[shot]);
+        let bare = titled_ws(&s, &r, "comet", "", &["Screenshot 2026-11-05 at 5.42.16 PM.png"]);
+        let typed = titled_ws(&s, &r, "dash", "", &[shot]);
+        // As an older version titled them.
+        s.conn.execute("UPDATE workspaces SET title='2026-11-05 at 5.42.16 PM.png', title_source='auto' WHERE id IN (?1, ?2)", params![better, bare]).unwrap();
+        s.conn.execute("UPDATE workspaces SET title='2026-11-05', title_source='user' WHERE id=?1", params![typed]).unwrap();
+        assert_eq!(s.backfill_titles().unwrap(), 2);
+        let get = |id: &str| { let w = s.workspace(id).unwrap(); (w.title, w.title_source) };
+        assert_eq!(get(&better), ("The logo is missing".into(), "auto".into()));
+        // Nothing better in the prompts: no title, so the branch or star shows.
+        assert_eq!(get(&bare), (String::new(), String::new()));
+        // Typed by hand: left alone, whatever it says.
+        assert_eq!(get(&typed), ("2026-11-05".into(), "user".into()));
+        assert_eq!(s.backfill_titles().unwrap(), 0);
     }
 
     fn turn_setup(s: &Store, agent: &str, model: Option<&str>) -> (Repo, Workspace, Session) {

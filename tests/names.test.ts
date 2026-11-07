@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { displayName, nameInText, starName, subName, type Sky, type Workspace } from "../src/api";
+import { displayName, isNoiseTitle, nameInText, starName, subName, type Sky, type Workspace } from "../src/api";
 
 const sky: Sky = {
   stars: [{ slug: "mochi", name: "Mochi", constellation: "felis", x: 0, y: 0 }],
@@ -28,5 +28,23 @@ describe("workspace names", () => {
     expect(starName(sky, ws("mochi-2"))).toBe("Mochi 2");
     expect(subName(sky, ws("mochi-2", "Add dark mode"))).toBe("Mochi 2");
     expect(displayName(sky, ws("tokyo"))).toBe("tokyo");
+  });
+  test("a derived title that is only a screenshot's name or a timestamp gives way to the branch", () => {
+    const w = { ...ws("mochi", "2026-11-05 at 5.42.16 PM.png"), branch: "harshil/sidebar-logo" };
+    expect(displayName(sky, w)).toBe("sidebar-logo");
+    expect(subName(sky, w)).toBe("");
+    expect(nameInText(sky, w)).toBe("sidebar-logo");
+    // A branch still named after the star: the star.
+    expect(displayName(sky, { ...ws("mochi", "image.png"), branch: "harshil/mochi" })).toBe("Mochi");
+    // Typed by hand: shown as typed.
+    expect(displayName(sky, ws("mochi", "2026-11-05", "user"))).toBe("2026-11-05");
+  });
+  test("noise is only dates, times and screenshot words", () => {
+    expect(isNoiseTitle("2026-11-05 at 5.42.16…")).toBe(true);
+    expect(isNoiseTitle("image.png")).toBe(true);
+    expect(isNoiseTitle("Screenshot 2026-11-05")).toBe(true);
+    expect(isNoiseTitle("PR Issues")).toBe(false);
+    expect(isNoiseTitle("Fix 502s after deploy")).toBe(false);
+    expect(isNoiseTitle("ログインのバグを直して")).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod alerts;
+pub mod avatar;
 pub mod agent;
 pub mod agentcfg;
 pub mod budget;
@@ -3345,6 +3346,19 @@ async fn repo_github(app: AppHandle, id: String) -> Res<Value> {
     .await
 }
 
+/// The repo owner's GitHub avatar as a data URL, from the remote URL and a cache on disk (no `gh`
+/// needed). Null when the repo has no GitHub remote, or nothing was ever fetched and the network is down.
+#[tauri::command]
+async fn repo_avatar(app: AppHandle, id: String) -> Res<Option<String>> {
+    let remote = {
+        let st = app.state::<AppState>();
+        let Ok(r) = st.db().repo(&id) else { return Ok(None) };
+        r.remote_url.clone().or_else(|| git::remote_url(Path::new(&r.root_path)))
+    };
+    let (Some(owner), Some(data)) = (remote.as_deref().and_then(avatar::github_owner), remote::data_dir()) else { return Ok(None) };
+    Ok(avatar::get(&data.join("avatars"), &owner).await)
+}
+
 #[derive(Serialize)]
 struct Sky {
     stars: &'static [names::Star],
@@ -4975,7 +4989,7 @@ pub fn run() {
             review_requests, start_review, review_plan, submit_review, update_review_comment,
             repo_prs, commit_push, pull_target, merge_pr, failing_logs, send_to_workspace,
             pty_open, pty_write, pty_resize, pty_close, conductor_available, import_conductor, terminal_scan, terminal_import,
-            github_profile, repo_github, sky, busy_work, stop_all_work, search_chats, search_open,
+            github_profile, repo_github, repo_avatar, sky, busy_work, stop_all_work, search_chats, search_open,
             remote_take, link_confirm, cli_install, cli_status,
             checks_list, checks_run, checks_stop, checks_trust, checks_statuses, checks_output,
             stage_status, stage_diff, stage_apply, stage_everything, head_commit, commit_staged, undo_commit, draft_commit_message, split_plan, split_commit,
