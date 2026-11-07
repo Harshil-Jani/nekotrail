@@ -552,6 +552,10 @@ mod server {
         conn.set_read_timeout(Some(Duration::from_secs(10)))?;
         let mut line = String::new();
         BufReader::new((&conn).take(MAX_REQUEST)).read_line(&mut line)?;
+        #[cfg(debug_assertions)]
+        if crate::e2e_mode() && line.trim_start().starts_with("{\"e2e\"") {
+            return conn.write_all(answer(&crate::e2e::handle(app, &line)).as_bytes());
+        }
         let res = decode(&line).and_then(|req| handle(app, req));
         conn.write_all(answer(&res).as_bytes())
     }

@@ -1,0 +1,27 @@
+#!/bin/sh
+# A stand-in for the `claude` CLI, for scripts/e2e.sh. Prints the same stream-json a real
+# `claude -p ... --output-format stream-json --verbose` turn prints. What it does depends on
+# markers in the prompt:
+#   [slow]    answers after 3 s (time to send another message while it works)
+#   [linger]  stays alive after its result, holding stdout open (what stream-json input mode does)
+#   [hang]    never answers (for Stop)
+# Every turn is logged to $FAKE_AGENT_LOG as "start|end <pid> <prompt>".
+case "$1" in --version) echo "2.1.0 (Claude Code)"; exit 0 ;; esac
+prompt="" session="fake-$$"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p) [ $# -gt 1 ] && case "$2" in --*) ;; *) prompt="$2"; shift ;; esac ;;
+    --resume) session="$2"; shift ;;
+  esac
+  shift
+done
+log() { [ -n "${FAKE_AGENT_LOG:-}" ] && printf '%s %s %s\n' "$1" "$$" "$(printf '%s' "$prompt" | tr '\n' ' ')" >> "$FAKE_AGENT_LOG"; return 0; }
+log start
+printf '{"type":"system","subtype":"init","session_id":"%s","model":"claude-opus-fake"}\n' "$session"
+case "$prompt" in *"[hang]"*) exec sleep 600 ;; esac
+case "$prompt" in *"[slow]"*) sleep 3 ;; esac
+printf '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]},"session_id":"%s"}\n' "$session"
+log end
+printf '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.01,"duration_ms":40,"num_turns":1,"result":"ok","session_id":"%s","modelUsage":{"claude-opus-fake":{"costUSD":0.01,"outputTokens":3,"contextWindow":200000}}}\n' "$session"
+case "$prompt" in *"[linger]"*) exec sleep 600 ;; esac
+exit 0

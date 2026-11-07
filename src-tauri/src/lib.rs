@@ -18,6 +18,8 @@ pub mod linear;
 #[cfg(unix)]
 pub mod linux;
 pub mod lockorder;
+#[cfg(debug_assertions)]
+mod e2e;
 pub mod names;
 pub mod ports;
 pub mod preview;
@@ -3690,17 +3692,22 @@ async fn show_session(st: State<'_, AppState>, id: String) -> Res<Session> {
 /// Send a prompt. If the agent is busy, the prompt waits in the queue and runs next.
 #[tauri::command]
 async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<()> {
-    {
-        let mut runs = st.runs.lock().unwrap();
-        if runs.running.contains_key(&id) {
-            let q = runs.queued.entry(id.clone()).or_default();
-            q.push_back(text);
-            let _ = app.emit("queue", json!({"session_id": id, "queued": q}));
-            return Ok(());
-        }
-    }
+    let Some(text) = queue_if_busy(&app, &st, &id, text) else { return Ok(()) };
     // Starting a turn runs git (checkpoint, branch name) and spawns the CLI.
     blocking(app.clone(), move |st| start_turn(app, st, id, text)).await
+}
+
+/// While the chat's agent works, `text` waits in its queue (None). Otherwise it comes back, to
+/// start a turn with.
+fn queue_if_busy(app: &AppHandle, st: &AppState, id: &str, text: String) -> Option<String> {
+    let mut runs = st.runs.lock().unwrap();
+    if !runs.running.contains_key(id) {
+        return Some(text);
+    }
+    let q = runs.queued.entry(id.to_string()).or_default();
+    q.push_back(text);
+    let _ = app.emit("queue", json!({"session_id": id, "queued": q}));
+    None
 }
 
 #[tauri::command]
@@ -5022,9 +5029,21 @@ fn migrate_old_data(data: &Path) {
     }
 }
 
+/// Started by scripts/e2e.sh: a debug build with `NEKOTRAIL_E2E=1`. No window, and the socket
+/// answers the test door (e2e.rs). Always false in release builds.
+fn e2e_mode() -> bool {
+    cfg!(debug_assertions) && std::env::var("NEKOTRAIL_E2E").as_deref() == Ok("1")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     load_login_env();
+    // e2e: the login shell rebuilt PATH, which could put a real `claude` ahead of the fake one.
+    if e2e_mode()
+        && let Ok(path) = std::env::var("NEKOTRAIL_E2E_PATH") {
+            // SAFETY: still at startup, before any other thread reads the environment.
+            unsafe { std::env::set_var("PATH", path) };
+        }
     let home = dirs::home_dir().expect("home dir").join("nekotrail");
     let data = dirs::data_dir().expect("data dir").join("dev.nekotrail.app");
     migrate_old_data(&data);
@@ -5064,6 +5083,16 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .manage(AppState { store: Ordered::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Ordered::new(task_queue) })
         .setup(move |app| {
+            // The window is made here rather than from the config at launch, so an e2e run can go
+            // without one: nothing appears on screen and nothing in the Dock.
+            if e2e_mode() {
+                #[cfg(target_os = "macos")]
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                #[cfg(debug_assertions)]
+                e2e::start(app.handle());
+            } else if let Some(cfg) = app.config().app.windows.iter().find(|w| w.label == "main") {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), cfg)?.build()?;
+            }
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
             queuerun::start_loop(app.handle().clone());

@@ -1,0 +1,4 @@
+#!/bin/sh
+# No GitHub in the e2e run: every gh call fails fast, like gh with no login.
+echo "gh: not logged in (e2e)" >&2
+exit 1
