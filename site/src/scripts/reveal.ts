@@ -16,10 +16,12 @@ export function reveals() {
   }
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
-      if (!e.isIntersecting) continue;
+      // A tall block (the brand kit's asset grid is ~3,800px) never reaches 12% on screen, so it also
+      // reveals once 120px of it shows; otherwise it sat blank below the fold's first screen.
+      if (!e.isIntersecting || (e.intersectionRatio < 0.12 && e.intersectionRect.height < 120)) continue;
       e.target.classList.add("in");
       io.unobserve(e.target);
     }
-  }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+  }, { threshold: [0, 0.02, 0.05, 0.12], rootMargin: "0px 0px -6% 0px" });
   items.forEach((el) => io.observe(el));
 }
