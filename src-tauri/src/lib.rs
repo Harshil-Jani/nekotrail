@@ -17,6 +17,7 @@ pub mod importer;
 pub mod linear;
 #[cfg(unix)]
 pub mod linux;
+pub mod lockorder;
 pub mod names;
 pub mod ports;
 pub mod preview;
@@ -48,6 +49,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
+use lockorder::Ordered;
 use store::{new_id, Repo, Session, Store, Workspace};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -81,7 +83,7 @@ struct Runs {
 type SharedParser = Arc<Mutex<Box<dyn agent::Parser>>>;
 
 /// Write lines to a running turn's stdin. False when it is gone (the turn ended or stdin closed).
-fn write_stdin(runs: &Arc<Mutex<Runs>>, id: &str, lines: &[String]) -> bool {
+fn write_stdin(runs: &Arc<Ordered<Runs>>, id: &str, lines: &[String]) -> bool {
     use std::io::Write;
     if lines.is_empty() {
         return true;
@@ -93,7 +95,7 @@ fn write_stdin(runs: &Arc<Mutex<Runs>>, id: &str, lines: &[String]) -> bool {
 
 /// Send `signal` to the turn's process after `secs`, if that same process is still running.
 /// For agents that were asked to stop or to exit and might not.
-fn signal_later(runs: Arc<Mutex<Runs>>, id: String, pid: u32, secs: u64, signal: &'static str) {
+fn signal_later(runs: Arc<Ordered<Runs>>, id: String, pid: u32, secs: u64, signal: &'static str) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(secs));
         if runs.lock().unwrap().running.get(&id) == Some(&pid) {
@@ -107,8 +109,8 @@ fn signal_later(runs: Arc<Mutex<Runs>>, id: String, pid: u32, secs: u64, signal:
 type LineCache = (HashMap<String, (std::time::Instant, (u32, u32), Vec<String>)>, std::collections::HashSet<String>);
 
 pub struct AppState {
-    store: Mutex<Store>,
-    runs: Arc<Mutex<Runs>>,
+    store: Ordered<Store>,
+    runs: Arc<Ordered<Runs>>,
     ptys: pty::Ptys,
     home: PathBuf,
     /// Your GitHub login, or "purr". Looked up in the background so `gh` never delays the window.
@@ -129,7 +131,7 @@ pub struct AppState {
     /// Each workspace's test, lint and typecheck results, and the run going now.
     checks: checks::Checks,
     /// The task queue (`queue.rs`), saved in the settings table on every change.
-    queue: Mutex<queue::Queue>,
+    queue: Ordered<queue::Queue>,
 }
 
 /// What the PR poller knows. `by_branch` is keyed by (repo id, head branch): Null means "no PR".
@@ -148,7 +150,7 @@ struct PrCache {
 }
 
 impl AppState {
-    fn db(&self) -> std::sync::MutexGuard<'_, Store> {
+    fn db(&self) -> lockorder::Guard<'_, Store> {
         self.store.lock().unwrap()
     }
 
@@ -2134,11 +2136,7 @@ async fn relocate_imported(st: State<'_, AppState>, ids: Option<Vec<String>>) ->
         Some(want) => outside.into_iter().filter(|id| want.contains(id)).collect(),
         None => outside,
     };
-    let running: Vec<String> = {
-        let runs = st.runs.lock().unwrap();
-        let db = st.db();
-        ids.iter().filter(|id| db.sessions(id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(false)).cloned().collect()
-    };
+    let running: Vec<String> = ids.iter().filter(|id| agent_busy(&st, id)).cloned().collect();
     let mut out = vec![];
     for id in ids {
         let (ws, repo) = { let db = st.db(); let ws = db.workspace(&id).map_err(e)?; let repo = db.repo(&ws.repo_id).map_err(e)?; (ws, repo) };
@@ -2544,10 +2542,7 @@ async fn free_disk_mb(st: State<'_, AppState>) -> Res<u64> {
 async fn clean_workspace(app: AppHandle, id: String) -> Res<u64> {
     tauri::async_runtime::spawn_blocking(move || {
         let st = app.state::<AppState>();
-        let busy = {
-            let runs = st.runs.lock().unwrap();
-            st.db().sessions(&id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(false)
-        };
+        let busy = agent_busy(&st, &id);
         if busy {
             return Err("An agent is working in this workspace. Clean it when it's done.".to_string());
         }
@@ -2685,10 +2680,10 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     let key = autopilot_key(id);
     let Some(raw) = st.db().setting(&key).ok().flatten() else { return };
     let mut state: Value = serde_json::from_str(&raw).unwrap_or(json!({"tries": 0, "last": ""}));
-    let busy = {
-        let runs = st.runs.lock().unwrap();
-        st.db().sessions(id).map(|ss| ss.iter().any(|s| runs.running.contains_key(&s.id))).unwrap_or(true)
-    };
+    // Unknown counts as busy, as before. Two statements: in one, the first guard would still be
+    // held when agent_busy takes the database again.
+    let known = st.db().sessions(id).is_ok();
+    let busy = !known || agent_busy(&st, id);
     if busy {
         return;
     }
@@ -2726,7 +2721,8 @@ fn autopilot_tick(app: &AppHandle, id: &str) {
     if let Some(text) = queuerun::autopilot_cap(&st, &ws) {
         let _ = st.db().delete_setting(&key);
         let note = format!("Autopilot stopped. {text}");
-        if let Some(sid) = st.db().sessions(id).ok().and_then(|mut s| s.pop()) {
+        let last = st.db().sessions(id).ok().and_then(|mut s| s.pop());
+        if let Some(sid) = last {
             let ev = json!({"kind": "stop", "reason": "budget", "text": note});
             let _ = st.db().append_event(&sid.id, &ev);
             emit_event(app, &sid.id, &ev);
@@ -2789,7 +2785,8 @@ async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Re
 
 // ---------- the commit composer (Changes, Commit) ----------
 
-/// Is any chat in this workspace running a turn right now?
+/// Is any chat in this workspace running a turn right now? The database first, then the runs
+/// map, never the other way round (lockorder.rs).
 fn agent_busy(st: &AppState, workspace_id: &str) -> bool {
     let ids: Vec<String> = st.db().sessions(workspace_id).unwrap_or_default().into_iter().map(|s| s.id).collect();
     let runs = st.runs.lock().unwrap();
@@ -3192,7 +3189,8 @@ fn failing_logs_blocking(st: &AppState, id: &str) -> Res<String> {
 #[tauri::command]
 async fn send_to_workspace(app: AppHandle, st: State<'_, AppState>, id: String, text: String) -> Res<String> {
     terminal::refuse_in_history(&st.db().workspace(&id).map_err(e)?)?;
-    let sid = match st.db().sessions(&id).map_err(e)?.pop() {
+    let last = st.db().sessions(&id).map_err(e)?.pop();
+    let sid = match last {
         Some(s) => s.id,
         None => {
             let s = Session {
@@ -4408,8 +4406,14 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         };
         let title = guard_hit.clone().unwrap_or_else(|| st.db().session(&id).map(|s| s.title).unwrap_or_default());
         // A turn that ended well, with nothing queued and nothing to ask: run the checks if the repo wants that.
-        let run_checks = ok && !user_stopped && guard_hit.is_none() && needs.is_none() && next.is_none()
-            && st.db().workspace(&workspace_id).and_then(|w| st.db().repo(&w.repo_id)).is_ok_and(|r| r.prefs.checks_after_turn);
+        // One database lock per statement: `st.db().workspace(..).and_then(|w| st.db().repo(..))`
+        // kept the first guard alive while asking for the lock again, and every turn that ended
+        // well froze the app (v0.22.2). See lockorder.rs.
+        let checks_after_turn = {
+            let db = st.db();
+            db.workspace(&workspace_id).and_then(|w| db.repo(&w.repo_id)).is_ok_and(|r| r.prefs.checks_after_turn)
+        };
+        let run_checks = ok && !user_stopped && guard_hit.is_none() && needs.is_none() && next.is_none() && checks_after_turn;
         let needs = if guard_hit.is_some() { Some("protected".to_string()) } else if next.is_some() || user_stopped { None } else if !ok && needs.is_none() { Some("error".to_string()) } else { needs };
         // Nobody there (a queue task, autopilot): keep what this turn changed and stop an agent
         // going in circles. Not when you queued another message: then you are there.
@@ -4984,7 +4988,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Mutex::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Mutex::new(task_queue) })
+        .manage(AppState { store: Ordered::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Ordered::new(task_queue) })
         .setup(move |app| {
             pr_poll_loop(app.handle().clone());
             search_backfill_loop(app.handle().clone());
@@ -5234,7 +5238,7 @@ mod tests {
     fn repo_scripts_wait_for_approval_and_ask_again_when_changed() {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
-            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: Ordered::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
@@ -5276,7 +5280,7 @@ mod tests {
     fn repo_agent_config_stays_off_until_trusted_and_asks_again_when_changed() {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
-            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: Ordered::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: std::sync::Arc::new(std::sync::OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
@@ -5352,7 +5356,7 @@ mod tests {
     fn poller_asks_about_active_branches_and_archived_stack_parents() {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
-            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: Ordered::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
@@ -5403,7 +5407,7 @@ mod tests {
     fn history_workspace_never_touches_the_main_checkout() {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
-            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: Ordered::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
@@ -5435,7 +5439,7 @@ mod tests {
     fn review_workspaces_are_read_only_and_keep_their_details() {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
-            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: Ordered::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.path().to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.path().join("checks")), queue: Default::default(),
         };
@@ -5479,7 +5483,7 @@ mod tests {
 
     fn test_state(dir: &Path) -> AppState {
         AppState {
-            store: Mutex::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: Ordered::new(Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: dir.to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(dir.join("checks")), queue: Default::default(),
         }
@@ -5661,7 +5665,7 @@ mod tests {
         });
         let opened = done_rx.recv_timeout(Duration::from_secs(10)).expect("opening the terminal hung (database lock held twice)");
         opened.unwrap();
-        assert!(st.store.try_lock().is_ok(), "the database is free again once the shell is up");
+        assert!(st.store.is_free(), "the database is free again once the shell is up");
         let base = st.db().port_block("w1").unwrap().expect("a port block was handed out");
 
         // What you type goes to the shell (the same call the pty_write command makes).
@@ -5703,7 +5707,8 @@ mod tests {
                 None => st.db().delete_setting(queue::SETTING).unwrap(),
             }
             // As `run` loads it at launch.
-            *st.queue.lock().unwrap() = queue::Queue::from_json(st.db().setting(queue::SETTING).unwrap().as_deref());
+            let loaded = queue::Queue::from_json(st.db().setting(queue::SETTING).unwrap().as_deref());
+            *st.queue.lock().unwrap() = loaded;
             let v = queuerun::view(&st);
             assert_eq!(v["tasks"], json!([]), "{json:?}");
             assert_eq!(v["max_total"], queue::DEFAULT_LIMIT, "{json:?}");

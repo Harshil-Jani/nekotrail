@@ -1122,7 +1122,7 @@ mod tests {
     fn state(home: &Path) -> crate::AppState {
         use std::sync::{Arc, OnceLock};
         crate::AppState {
-            store: Mutex::new(crate::store::Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
+            store: crate::lockorder::Ordered::new(crate::store::Store::in_memory().unwrap()), runs: Default::default(), ptys: Default::default(),
             home: home.to_path_buf(), branch_prefix: Arc::new(OnceLock::from("me".to_string())), github: Default::default(), repo_meta: Default::default(), lines: Default::default(),
             prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: crate::checks::Checks::new(home.join("checks")), queue: Default::default(),
         }
