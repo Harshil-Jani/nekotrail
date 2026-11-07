@@ -514,7 +514,7 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 0.
 @keyframes rise { from { opacity: 0; transform: translateY(-6px) scale(0.99); } }
 
 /* ---------- settings (⌘,) ---------- */
-.modal.settings { width: min(624px, calc(100vw - 48px)); height: min(600px, 86vh); overflow: hidden; border: 0.5px solid var(--line-strong); }
+.modal.settings { width: min(680px, calc(100vw - 48px)); height: min(600px, 86vh); overflow: hidden; border: 0.5px solid var(--line-strong); }
 /* Four panes, Mac style: a centred segmented control on top, the pane scrolls, the footer stays. */
 .settings-head .icon { margin: -4px -8px 0 0; }
 .seg.settings-panes { align-self: center; }
