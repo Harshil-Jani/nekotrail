@@ -122,6 +122,8 @@ function toRows(events: ChatEvent[], rowOf?: number[]): Row[] {
         break;
       }
       case "done":
+        // Older chats can hold a run of Done lines from one turn (extra results, same total): keep one.
+        if (rows[rows.length - 1]?.type === "done") break;
         rows.push({ type: "done", ev });
         break;
       case "approval":
@@ -579,11 +581,11 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
       return <div className="msg error">{r.text}</div>;
     case "done":
       return (
-        <div className="msg done num" title={r.ev.cost_usd ? "API-equivalent: what this turn would cost at API prices. On a subscription you pay a flat fee." : undefined}>
+        <div className="msg done num" title={r.ev.cost_usd && getSettings().showCost ? "API-equivalent: what this turn would cost at API prices. On a subscription you pay a flat fee." : undefined}>
           {r.ev.stopped ? <Square size={14} /> : r.ev.is_error ? <X size={14} /> : <Check size={14} />}
           {r.ev.stopped ? "Stopped" : r.ev.is_error ? "Ended with an error" : "Done"}
           {r.ev.duration_ms ? ` · ${(r.ev.duration_ms / 1000).toFixed(1)}s` : ""}
-          {r.ev.cost_usd ? ` · $${r.ev.cost_usd.toFixed(2)} API-equivalent` : ""}
+          {r.ev.cost_usd && getSettings().showCost ? ` · $${r.ev.cost_usd.toFixed(2)} API-equivalent` : ""}
         </div>
       );
   }

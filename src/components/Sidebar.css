@@ -4,3 +4,7 @@
 .ws:hover .ws-archive, .ws:focus-visible .ws-archive { display: inline-flex; }
 .ws:hover:has(.ws-archive) .ws-trail, .ws:focus-visible:has(.ws-archive) .ws-trail { visibility: hidden; }
 .ws .ws-archive:hover { color: var(--text); background: var(--press, var(--hover)); }
+
+/* The repo row's fold arrow: a real click target, a little larger than the 12px icon. */
+.repo-head .chev-hit { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -5px 0; border-radius: var(--r); cursor: pointer; }
+.repo-head .chev-hit:hover { background: var(--hover); }

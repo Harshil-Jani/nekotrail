@@ -118,7 +118,10 @@ function RepoHead({ repo, onNew, onMenu, collapsed, onToggle, count }: { repo: R
         <Avatar src={pic ?? gh?.owner_avatar ?? ""} size={20} label={repo.name} />
       </button>
       <span className="repo-name" onClick={onToggle}>{repo.name}</span>
-      {collapsed ? <ChevronRight size={12} className="chev" aria-hidden /> : <ChevronDown size={12} className="chev" aria-hidden />}
+      {/* The arrow folds the group too (it was only a picture, so clicks on it did nothing). */}
+      <span className="chev-hit" onClick={onToggle} aria-hidden>
+        {collapsed ? <ChevronRight size={12} className="chev" /> : <ChevronDown size={12} className="chev" />}
+      </span>
       {collapsed && count > 0 && <span className="repo-meta num">{count}</span>}
       <button className="icon repo-new" tabIndex={-1} title={keyHint("Create workspace (⌘N)")} aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={15} /></button>
     </div>
@@ -379,7 +382,7 @@ export function Sidebar(p: Props) {
     </>
   );
   const queueTip = `Queue: ${queueLine(p.queue)}${p.queue.needs ? `. ${p.queue.needs} need you.` : ""}`;
-  const usageTip = p.usage && p.usage.today > 0 ? `Usage: $${p.usage.today.toFixed(2)} today, API-equivalent` : "Usage: spend, caps and limits";
+  const usageTip = p.usage && p.usage.today > 0 && getSettings().showCost ? `Usage: $${p.usage.today.toFixed(2)} today, API-equivalent` : "Usage: spend, caps and limits";
   const ramTip = ram ? `\nMemory: ${ram.total_mb >= 1024 ? `${(ram.total_mb / 1024).toFixed(2)} GB` : `${ram.total_mb} MB`} for NekoTrail, its agents, terminals and dev servers\n${ram.top.map((t) => `  ${t.name}  ${t.mb} MB`).join("\n")}` : "";
 
   return (

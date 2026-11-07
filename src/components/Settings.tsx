@@ -337,6 +337,10 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
             <span>{IS_MAC ? "Keep the Mac awake while agents work" : "Keep the computer awake while agents work"}</span>
             <input type="checkbox" className="switch" checked={backend?.caffeinate !== "off"} onChange={(e) => setB("caffeinate", e.target.checked)} />
           </label>
+          <label className="setting">
+            <span>Show what each turn would cost at API prices</span>
+            <input type="checkbox" className="switch" checked={s.showCost} onChange={(e) => set("showCost", e.target.checked)} />
+          </label>
         </section>
 
         <section>

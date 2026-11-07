@@ -4624,6 +4624,12 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
                     }
                     continue;
                 }
+                // Claude can send more `result` lines after the turn's answer (a background task
+                // finishing, with nothing new to say). They repeat the same total: one Done per turn,
+                // or the chat shows a stack of them and Usage counts the turn's cost again.
+                if ev["kind"] == "done" && saw_done {
+                    continue;
+                }
                 if ev["kind"] == "done" {
                     saw_done = true;
                     // Every finished turn: cost when the agent reports one, tokens, model and time.
