@@ -274,7 +274,7 @@ p { text-wrap: pretty; }
 .sponsor-card .cat { width: 56px; height: 56px; }
 .sponsor-card h2, .sponsor-card h3 { font-size: 19px; letter-spacing: -0.01em; }
 .sponsor-card p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
-.sponsor-card .line { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.sponsor-card .line { margin: 0; color: var(--text); font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
 .sponsor-card .row { display: flex; flex-wrap: wrap; gap: var(--s3); }
 @media (max-width: 860px) { .sponsor-card { grid-template-columns: auto 1fr; } .sponsor-card .row { grid-column: 1 / -1; } }
 
@@ -307,6 +307,8 @@ p { text-wrap: pretty; }
 .prose li::marker { color: var(--accent-text); }
 .prose blockquote { margin: 1.4em 0; padding: 0.2em 0 0.2em 1.1em; border-left: 3px solid var(--accent); color: var(--muted); }
 .prose img, .prose video { border-radius: var(--r-lg); box-shadow: 0 0 0 0.5px var(--line-strong); margin: 1.4em 0; }
+.prose .window { margin: 1.4em 0 !important; }
+.prose .window video, .prose .window img { margin: 0; border-radius: 0; box-shadow: none; }
 .prose hr { border: none; border-top: 0.5px solid var(--line-strong); margin: 2.4em 0; }
 .table-wrap { overflow-x: auto; margin: 1.2em 0 1.6em; border-radius: var(--r-lg); box-shadow: inset 0 0 0 0.5px var(--line-strong); }
 .prose table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.5; }
