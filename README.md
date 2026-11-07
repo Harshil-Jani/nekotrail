@@ -1,6 +1,6 @@
 <p align="center"><img src="public/mascot-happy.svg" width="140" alt="NekoTrail cat"></p>
 
-<h1 align="center">NekoTrail</h1>
+<h1 align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="brand/wordmark/nekotrail-wordmark-light.svg"><img src="brand/wordmark/nekotrail-wordmark-dark.svg" width="320" alt="NekoTrail"></picture></h1>
 
 <p align="center">
   <a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><img src="https://img.shields.io/github/v/release/Harshil-Jani/nekotrail?label=release&color=ff9a4d" alt="Latest release"></a>
