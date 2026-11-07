@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eye, History, HardDrive, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, FolderGit2, Gauge, FolderInput, FolderOpen, GitFork, Kanban, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings, Settings2, Trash2, X } from "lucide-react";
+import { MessageSquareText, ArrowLeft, ArrowRight, Eye, History, HardDrive, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, FolderGit2, Gauge, FolderInput, FolderOpen, GitFork, Kanban, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings, Settings2, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
 import { api, displayName, isHistory, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
@@ -52,6 +52,8 @@ type Props = {
   onRename: (id: string) => void;
   onArchive: (id: string) => void;
   onBoard: () => void;
+  /** Search inside every chat (the ⌘⇧F sheet), starting from what is typed here. */
+  onSearchChats?: (q: string) => void;
   boardOpen: boolean;
   onSettings: () => void;
   /** The task queue at a glance, for its row. */
@@ -383,9 +385,18 @@ export function Sidebar(p: Props) {
       <nav className="side-nav" aria-label="Go to">
         <label className="nav-row nav-search">
           <Search size={15} aria-hidden />
-          <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setQuery(""); e.currentTarget.blur(); } }}
-            id="workspace-search" aria-label="Filter workspaces" />
+          <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setQuery(""); e.currentTarget.blur(); }
+              if (e.key === "Enter" && query.trim() && p.onSearchChats) { e.preventDefault(); p.onSearchChats(query.trim()); }
+            }}
+            id="workspace-search" aria-label="Search workspaces, or press Enter to search inside every chat" title={keyHint("Type to filter workspaces. Press Enter to search every chat (⌘⇧F)")} />
         </label>
+        {query.trim() && p.onSearchChats && (
+          <button className="nav-row deep-search" onClick={() => p.onSearchChats!(query.trim())}>
+            <MessageSquareText size={15} aria-hidden /><span className="deep-search-label">Search all chats</span><kbd>↵</kbd>
+          </button>
+        )}
         <button className={`nav-row${p.boardOpen ? " on" : ""}`} onClick={p.onBoard} title={keyHint("Board (⌘⇧K)")} aria-current={p.boardOpen ? "page" : undefined}><Kanban size={15} aria-hidden />Board</button>
         {p.repos.length > 0 && <>
           <button className={`nav-row${p.queueOpen ? " on" : ""}`} onClick={p.onQueue} title={queueTip} aria-current={p.queueOpen ? "page" : undefined}>
@@ -431,6 +442,7 @@ export function Sidebar(p: Props) {
               )}
               {p.sections.map((sec) => {
                 const ws = live.filter((w) => w.section_id === sec.id && !w.pinned);
+                if (q && ws.length === 0) return null; // filtering: an empty section is just noise
                 return (
                   <section key={sec.id} className="repo">
                     {sectionHead(sec.id, sec.name, ws.length, null, true)}

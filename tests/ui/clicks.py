@@ -47,6 +47,19 @@ try:
         pg.locator(".prompt-list button").nth(3).click(); pg.wait_for_timeout(900); pg.mouse.move(400, 400); pg.wait_for_timeout(200)
         shown = pg.evaluate("() => { const r = document.querySelector('.messages .row-flash'); if (!r) return false; const b = r.getBoundingClientRect(), m = document.querySelector('.messages').getBoundingClientRect(); return b.top >= m.top && b.bottom <= m.bottom }")
         check("Clicking message 4 brings it on screen and lights its tick", shown and pg.evaluate(on) == 3)
+
+        # 2026-11-08: a finished turn shows its answer; its steps fold into one line that opens on click.
+        pg.goto(f"http://localhost:{PORT}/preview.html?ws=w1&tab=chat")
+        pg.wait_for_selector(".steps-fold", timeout=20000)
+        check("A finished turn folds its steps (no step rows drawn)", pg.locator(".messages .step").count() == 0)
+        pg.locator(".steps-fold").first.click(); pg.wait_for_timeout(300)
+        check("Clicking 'Worked for ... steps' shows the steps", pg.locator(".messages .step").count() > 0)
+
+        # 2026-11-08: the sidebar Search box reaches inside every chat (Enter opens the full search with the words typed).
+        pg.fill("#workspace-search", "timeout"); pg.wait_for_timeout(200)
+        check("Typing in sidebar Search offers 'Search all chats'", pg.locator(".deep-search").count() == 1)
+        pg.press("#workspace-search", "Enter"); pg.wait_for_timeout(1200)
+        check("Enter opens chat search with the words and finds matches", pg.locator(".gs-snippet").count() > 0)
         b.close()
 finally:
     srv.terminate()

@@ -1482,6 +1482,7 @@ export default function App() {
   return (
     <div className={`app ${resizing ? "resizing" : ""} ${sidebarHidden ? "no-sidebar" : ""}`}>
       <Sidebar
+        onSearchChats={(q) => { sessionStorage.setItem("nekotrail.search", q); setPalette(false); setSearchOpen(true); }}
         repos={repos}
         workspaces={listed}
         taskRepos={taskRepos}

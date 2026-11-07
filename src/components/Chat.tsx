@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PromptRail } from "./PromptRail";
 import { listen } from "@tauri-apps/api/event";
@@ -588,15 +588,71 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
   }
 }
 
+/**
+ * A finished turn shows its answer; the steps that led there (thinking, tool calls, notes the agent
+ * wrote on the way) fold into one "N steps" line. `group[i]` is the turn's first step row when row i
+ * folds, else -1. The answer is the run of text rows that ends the turn; anything that asks something
+ * of you (approvals, errors, checks, stops) never folds. A turn still running is never folded.
+ */
+export function stepGroups(rows: Row[]): { group: Int32Array; steps: Map<number, number>; ms: Map<number, number> } {
+  const group = new Int32Array(rows.length).fill(-1);
+  const steps = new Map<number, number>();
+  const ms = new Map<number, number>();
+  let start = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.type === "user") { start = i + 1; continue; }
+    if (r.type !== "done") continue;
+    let end = i; // the answer: text rows right before Done
+    while (end > start && rows[end - 1].type === "text") end--;
+    let first = -1, n = 0;
+    for (let j = start; j < end; j++) {
+      const t = rows[j].type;
+      if (t !== "tool" && t !== "thinking" && t !== "text") continue;
+      if (first < 0) first = j;
+      group[j] = first;
+      n++;
+    }
+    if (first >= 0) { steps.set(first, n); if (r.ev.duration_ms) ms.set(first, r.ev.duration_ms); }
+    start = i + 1;
+  }
+  return { group, steps, ms };
+}
+
+const fmtTook = (ms: number) => { const s = Math.round(ms / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+
 /** The rendered rows. Memoized so typing in the composer or an app refresh doesn't walk a long chat. */
-const Thread = memo(function Thread({ visible, hidden, total, current, flash, busy, latestPlanIdx }: {
+const Thread = memo(function Thread({ visible, hidden, total, current, flash, busy, latestPlanIdx, folds, open, onFold }: {
   visible: Row[]; hidden: number; total: number; current: number | undefined; flash: number | null; busy: boolean; latestPlanIdx: number;
+  folds: ReturnType<typeof stepGroups>; open: ReadonlySet<number>; onFold: (first: number) => void;
 }) {
-  return visible.map((r, k) => (
-    <div key={hidden + k} data-row={hidden + k} className={[current === hidden + k ? "row-current" : "", flash === hidden + k ? "row-flash" : ""].join(" ").trim() || undefined}>
-      <RowView r={r} pendingSpin={busy && hidden + k === total - 1} latestPlan={hidden + k === latestPlanIdx} />
-    </div>
-  ));
+  const { expandAll } = useContext(RewindCtx);
+  // A search hit or a jump inside folded steps opens them.
+  const forced = new Set<number>();
+  for (const at of [current, flash]) if (at != null && at >= 0 && folds.group[at] >= 0) forced.add(folds.group[at]);
+  const isOpen = (g: number) => expandAll || open.has(g) || forced.has(g);
+  return visible.map((r, k) => {
+    const i = hidden + k;
+    const g = folds.group[i] ?? -1;
+    const row = (
+      <div key={i} data-row={i} data-step={folds.group[i] >= 0 ? "" : undefined} className={[current === i ? "row-current" : "", flash === i ? "row-flash" : ""].join(" ").trim() || undefined}>
+        <RowView r={r} pendingSpin={busy && i === total - 1} latestPlan={i === latestPlanIdx} />
+      </div>
+    );
+    if (g < 0) return row;
+    const head = i === g || (k === 0 && i > g); // the group's first row on screen carries the toggle
+    const n = folds.steps.get(g) ?? 0;
+    const took = folds.ms.get(g);
+    const toggle = head ? (
+      <button key={`f${g}`} className={`steps-fold${isOpen(g) ? " open" : ""}`} aria-expanded={isOpen(g)} onClick={() => onFold(g)}
+        title={isOpen(g) ? "Hide the steps" : keyHint("Show the steps. ⌃O shows every reply's steps")}>
+        <ChevronRight size={13} className="chev" />
+        <span>{took ? `Worked for ${fmtTook(took)}` : "Worked"} · {n} {n === 1 ? "step" : "steps"}</span>
+      </button>
+    ) : null;
+    if (!isOpen(g)) return toggle;
+    return toggle ? [toggle, row] : row;
+  });
 });
 
 /**
@@ -1131,6 +1187,10 @@ export function Chat({
   useEffect(() => setLimit(PAGE), [active]);
   const hidden = Math.max(0, rows.length - limit);
   const visible = useMemo(() => rows.slice(hidden), [rows, hidden]);
+  const folds = useMemo(() => stepGroups(rows), [rows]);
+  const [openFolds, setOpenFolds] = useState<ReadonlySet<number>>(new Set());
+  useEffect(() => setOpenFolds(new Set()), [active]);
+  const toggleFold = useCallback((g: number) => setOpenFolds((o) => { const n = new Set(o); if (!n.delete(g)) n.add(g); return n; }), []);
   // The prompt rail: every message you sent, and which one the screen is on.
   const sentPrompts = useMemo(() => rows.flatMap((r, i) => (r.type === "user" && !r.brief ? [{ row: i, text: r.text }] : [])), [rows]);
   const [curPrompt, setCurPrompt] = useState(-1);
@@ -1507,7 +1567,7 @@ export function Chat({
         </span>}
         <span className="spacer" />
         {copied && <span className="muted chat-flag">Copied</span>}
-        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title={keyHint("Collapse tool output (⌃O)")}>Hide tool output</button>}
+        {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title={keyHint("Hide every reply's steps (⌃O)")}>Hide all steps</button>}
       </div>)}
 
       {search !== null && (
@@ -1575,7 +1635,7 @@ export function Chat({
               Show {Math.min(PAGE, hidden)} earlier messages ({hidden} hidden)
             </button>
           )}
-          <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} flash={flash?.row ?? null} busy={busy} latestPlanIdx={latestPlanIdx} />
+          <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} flash={flash?.row ?? null} busy={busy} latestPlanIdx={latestPlanIdx} folds={folds} open={openFolds} onFold={toggleFold} />
           {working && active && <WorkingRow activity={activity} clockKey={`${active}:${older + activity.turn}`} count={older + events.length} />}
           {pending.length > 0 && (
             <ol className="pending" aria-label="Messages waiting to send">

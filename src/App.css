@@ -2564,3 +2564,17 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .prompt-list button.on:hover { background: var(--hover); }
 @keyframes prompt-list-in { from { opacity: 0; transform: translateX(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .prompt-list { animation: none; } }
+
+/* Sidebar search: typing filters workspaces; this row (or Enter) searches inside every chat. */
+.nav-row.deep-search { color: var(--accent); margin-top: 4px; }
+.nav-row.deep-search .deep-search-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.nav-row.deep-search kbd { flex: none; font-size: 11px; color: var(--muted); }
+
+/* Folded steps of a finished turn: one quiet line above the answer. */
+.steps-fold { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; border: none; background: transparent; box-shadow: none; padding: 4px 8px 4px 4px; margin: 2px 0; border-radius: var(--r); font-size: 12px; font-weight: 500; color: var(--muted); }
+.steps-fold:hover { background: var(--hover); color: var(--text); }
+.steps-fold .chev { transition: transform 0.12s; }
+.steps-fold.open .chev { transform: rotate(90deg); }
+.steps-fold.open:not(:hover) { background: transparent; }
+.messages [data-step] { border-left: 1px solid var(--line); padding-left: 12px; margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .steps-fold .chev { transition: none; } }
