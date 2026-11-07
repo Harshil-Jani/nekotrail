@@ -4,20 +4,27 @@
 //! A thread may hold more than one only in this order:
 //!
 //! ```text
-//! queue  ->  database  ->  runs
+//! queue  ->  runs  ->  database
 //! ```
 //!
-//! So: take the queue first if you need it, then the database, then the runs map. Never take the
-//! database while holding the runs map, and never take a lock you already hold (a std `Mutex` is
+//! So: take the queue first if you need it, then the runs map, then the database. Never take the
+//! runs map while holding the database, and never take a lock you already hold (a std `Mutex` is
 //! not reentrant: the second `lock()` on the same thread waits for itself forever). The usual fix
 //! is to copy out what you need, let the guard go, then take the next lock.
 //!
-//! Debug builds (tests, the e2e run) check this on every `lock()` and panic with both lock names
-//! instead of hanging, so a wrong order fails a test rather than freezing the app. Release builds
-//! skip the check.
+//! Better still, hold one at a time: copy out, let go, take the next. And hold none of them across
+//! a process, a network call, a pipe or terminal write, or `app.emit` where it can be avoided.
+//!
+//! Debug builds (tests, the e2e run) check the order on every `lock()` and panic with both lock
+//! names instead of hanging, so a wrong order fails a test rather than freezing the app. Release
+//! builds skip the check.
+//!
+//! A panic while one of these is held doesn't poison it for everyone after: `lock()` hands the
+//! value over anyway. Before, one panic made every later database call panic too, and the
+//! window's requests never got an answer.
 
 use std::ops::{Deref, DerefMut};
-use std::sync::{LockResult, Mutex, MutexGuard, PoisonError};
+use std::sync::{LockResult, Mutex, MutexGuard};
 
 /// A type that lives behind one of the ordered locks: its place in the order and its name.
 pub trait Ranked {
@@ -31,12 +38,12 @@ impl Ranked for crate::queue::Queue {
 }
 
 impl Ranked for crate::store::Store {
-    const RANK: u8 = 20;
+    const RANK: u8 = 30;
     const NAME: &'static str = "database";
 }
 
 impl Ranked for crate::Runs {
-    const RANK: u8 = 30;
+    const RANK: u8 = 20;
     const NAME: &'static str = "runs";
 }
 
@@ -65,7 +72,7 @@ fn check(rank: u8, name: &'static str) {
             let why = if held == name {
                 format!("lock order: this thread already holds the {name} lock and asked for it again, which waits forever")
             } else {
-                format!("lock order: taking the {name} lock while holding the {held} lock (the order is queue, database, runs)")
+                format!("lock order: taking the {name} lock while holding the {held} lock (the order is queue, runs, database)")
             };
             panic!("{why}. Copy out what you need and let the first guard go before taking the next.");
         }
@@ -82,13 +89,14 @@ impl<T: Ranked> Ordered<T> {
         self.inner.try_lock().is_ok()
     }
 
-    /// `Mutex::lock`, with the order checked first in debug builds.
+    /// `Mutex::lock`, with the order checked first in debug builds. Never fails: a lock a panicking
+    /// thread held is handed over as it is (the `LockResult` keeps `.lock().unwrap()` call sites).
     pub fn lock(&self) -> LockResult<Guard<'_, T>> {
         #[cfg(debug_assertions)]
         check(T::RANK, T::NAME);
         match self.inner.lock() {
             Ok(g) => Ok(Guard::held(g)),
-            Err(p) => Err(PoisonError::new(Guard::held(p.into_inner()))),
+            Err(p) => Ok(Guard::held(p.into_inner())),
         }
     }
 }
@@ -142,8 +150,8 @@ mod tests {
         let db = Ordered::new(Store::in_memory().unwrap());
         let runs: Ordered<crate::Runs> = Default::default();
         let _a = q.lock().unwrap();
-        let _b = db.lock().unwrap();
-        let _c = runs.lock().unwrap();
+        let _b = runs.lock().unwrap();
+        let _c = db.lock().unwrap();
     }
 
     #[test]
@@ -163,11 +171,25 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "taking the database lock while holding the runs lock")]
-    fn the_database_under_the_runs_lock_panics() {
+    #[should_panic(expected = "taking the runs lock while holding the database lock")]
+    fn the_runs_map_under_the_database_panics() {
+        // v0.22.2's snapshot did this while autopilot did the reverse: two threads, each waiting
+        // for the other's lock.
         let db = Ordered::new(Store::in_memory().unwrap());
         let runs: Ordered<crate::Runs> = Default::default();
-        let _r = runs.lock().unwrap();
         let _d = db.lock().unwrap();
+        let _r = runs.lock().unwrap();
+    }
+
+    #[test]
+    fn a_panic_while_holding_the_database_does_not_break_it_for_everyone_after() {
+        let db = std::sync::Arc::new(Ordered::new(Store::in_memory().unwrap()));
+        let d2 = db.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = d2.lock().unwrap();
+            panic!("a bug while the database is held");
+        })
+        .join();
+        assert!(db.lock().unwrap().setting("x").is_ok(), "still usable after the panic");
     }
 }

@@ -204,8 +204,9 @@ struct Snapshot {
 
 #[tauri::command]
 async fn snapshot(st: State<'_, AppState>, include_archived: bool) -> Res<Snapshot> {
-    let db = st.db();
+    // The runs map before the database, never under it (lockorder.rs).
     let running: Vec<String> = st.runs.lock().unwrap().running.keys().cloned().collect();
+    let db = st.db();
     let mut running_workspaces: Vec<String> =
         running.iter().filter_map(|id| db.session(id).ok().map(|s| s.workspace_id)).collect();
     running_workspaces.dedup();
@@ -2787,8 +2788,8 @@ async fn commit_push(st: State<'_, AppState>, id: String, message: String) -> Re
 
 // ---------- the commit composer (Changes, Commit) ----------
 
-/// Is any chat in this workspace running a turn right now? The database first, then the runs
-/// map, never the other way round (lockorder.rs).
+/// Is any chat in this workspace running a turn right now? One lock at a time: the sessions
+/// from the database, let go, then the runs map.
 fn agent_busy(st: &AppState, workspace_id: &str) -> bool {
     let ids: Vec<String> = st.db().sessions(workspace_id).unwrap_or_default().into_iter().map(|s| s.id).collect();
     let runs = st.runs.lock().unwrap();
