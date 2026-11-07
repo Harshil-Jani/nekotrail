@@ -117,7 +117,7 @@ function FilesPane({ ov, onSource, onEdit }: { ov: RulesOverview; onSource: (s: 
   const src = ov.source;
   return (
     <>
-      <p className="mcp-lead">Each agent reads its own rules file. Pick one as the source of truth, and nekotrail points the others at it.</p>
+      <p className="mcp-lead">Each agent reads its own rules file. Pick one as the source of truth, and NekoTrail points the others at it.</p>
       <label className="rules-source">
         <span>Source of truth</span>
         <select value={src} onChange={(e) => onSource(e.target.value)} aria-label="Source of truth">
@@ -319,7 +319,7 @@ function EditPane({ workspaceId, paths, path, readOnly, onPath, onDirty, onSaved
       {saved && <div className="mcp-done"><CircleCheck size={14} /> <span>{saved}</span></div>}
       {error && <div className="mcp-note bad">{error}</div>}
       {opened?.link && <div className="mcp-note warn"><code>{opened.path}</code> is a link to <code>{opened.link}</code>. <button className="link" onClick={() => onPath(opened.link!)}>Edit {opened.link}</button></div>}
-      {opened?.generated_from && <div className="mcp-note warn">nekotrail made this file from {opened.generated_from}, so the next sync replaces edits made here. <button className="link" onClick={() => onPath(opened.generated_from!)}>Edit {opened.generated_from}</button></div>}
+      {opened?.generated_from && <div className="mcp-note warn">NekoTrail made this file from {opened.generated_from}, so the next sync replaces edits made here. <button className="link" onClick={() => onPath(opened.generated_from!)}>Edit {opened.generated_from}</button></div>}
       <div className="rules-editor">
         <textarea value={text} onChange={(e) => setText(e.target.value)} readOnly={locked} spellCheck={false} aria-label={`Text of ${path}`} placeholder={`# Project rules\n\nHow to build, test and style code in this repo.`} />
         <div className="rules-preview" aria-label="Preview">{text.trim() ? <Markdown text={text} /> : <p className="muted">The preview shows here.</p>}</div>

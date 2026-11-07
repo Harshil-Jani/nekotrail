@@ -46,7 +46,7 @@ export function LinearSettings() {
       <h3>Linear</h3>
       <p className="muted setting-note">Start a workspace from a Linear issue: it gets the issue's branch name, its title, and the issue as its first message.</p>
       <p className="alert-privacy setting-note">
-        <Lock size={12} aria-hidden /><span>Your API key is kept in {KEYCHAIN}, never in nekotrail's database, logs or exports. nekotrail reads issues and, if you allow it below, moves one to In Progress. It never comments on Linear.</span>
+        <Lock size={12} aria-hidden /><span>Your API key is kept in {KEYCHAIN}, never in NekoTrail's database, logs or exports. NekoTrail reads issues and, if you allow it below, moves one to In Progress. It never comments on Linear.</span>
       </p>
       {status.connected ? (
         <div className="alert-dest">

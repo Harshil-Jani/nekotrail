@@ -38,7 +38,7 @@ export function TrustSheet({ repo, trust, agent, onAnswer }: { repo: string; tru
           </p>
         ) : (
           <p className="muted">
-            This repo's <code>nekotrail.json</code> asks nekotrail to run these commands on {HERE}. Anyone who can push to the
+            This repo's <code>nekotrail.json</code> asks NekoTrail to run these commands on {HERE}. Anyone who can push to the
             repo or open a PR can change them, so run them only if you trust what they do. You'll be asked again if they change.
           </p>
         )}

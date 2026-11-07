@@ -19,7 +19,7 @@ const preview: TerminalPreview = {
 };
 
 describe("terminal import", () => {
-  test("ticks only what is not in nekotrail yet", () => {
+  test("ticks only what is not in NekoTrail yet", () => {
     expect([...newKeys(preview)].sort()).toEqual(["claude:a", "codex:c"]);
   });
 

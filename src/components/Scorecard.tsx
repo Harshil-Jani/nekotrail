@@ -20,7 +20,7 @@ export function Scorecard({ onClose }: { onClose: () => void }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal scorecard" role="dialog" aria-modal="true" aria-label="Agent scorecard" onClick={(e) => e.stopPropagation()}>
         <div className="row"><h2>Agent scorecard</h2><span className="spacer" /><button className="icon" aria-label="Close" onClick={onClose}><X size={15} /></button></div>
-        <p className="muted">From turns you ran in nekotrail. Costs are the API prices the CLIs report; on a subscription you aren't billed per turn.</p>
+        <p className="muted">From turns you ran in NekoTrail. Costs are the API prices the CLIs report; on a subscription you aren't billed per turn.</p>
         {rows === null && <p className="muted"><span className="spinner" /> Counting…</p>}
         {rows?.length === 0 && <p className="muted">No finished turns yet. Run a few tasks, or a bake-off (Both), and come back.</p>}
         {rows && rows.length > 0 && (

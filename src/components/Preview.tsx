@@ -220,7 +220,7 @@ export function Preview({
     setBusy(true);
     try {
       const buf = await api.previewSnapshot();
-      if (!buf) throw new Error("Annotate works in the nekotrail app, not in a browser.");
+      if (!buf) throw new Error("Annotate works in the NekoTrail app, not in a browser.");
       const bmp = await createImageBitmap(new Blob([buf], { type: "image/png" }));
       // The snapshot is the whole window at screen pixels; keep just the preview. Measure how many
       // snapshot pixels one layout pixel is, so the crop stays right at any app zoom (80% to 150%).

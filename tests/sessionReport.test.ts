@@ -138,8 +138,8 @@ describe("markdown", () => {
     expect(md).toContain("- **Failed:** Ran `aws elbv2 describe-load-balancers`");
     expect(md).toContain("[#482 Fix 502s](https://github.com/pawprint/api/pull/482) (open)");
     expect(md).toContain("| 1m 1s | 1 | $0.42 |");
-    expect(md.trimEnd().endsWith("_Made with nekotrail_")).toBe(true);
-    expect(toMarkdown(buildReport(src(), { ...DEFAULT_OPTIONS, footer: false }))).not.toContain("Made with nekotrail");
+    expect(md.trimEnd().endsWith("_Made with NekoTrail_")).toBe(true);
+    expect(toMarkdown(buildReport(src(), { ...DEFAULT_OPTIONS, footer: false }))).not.toContain("Made with NekoTrail");
   });
 
   test("code spans and fences survive backticks", () => {
@@ -197,7 +197,7 @@ describe("html", () => {
     expect(html).not.toMatch(/(src|href)="(?!https:\/\/github\.com\/pawprint)/);
     expect(html).toContain('<span class="tag">Failed</span>');
     expect(html).toContain("<strong>30s</strong>");
-    expect(html).toContain("<footer>Made with nekotrail</footer>");
+    expect(html).toContain("<footer>Made with NekoTrail</footer>");
   });
 
   test("esc", () => {

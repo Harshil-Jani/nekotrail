@@ -83,7 +83,7 @@ describe("usage limits", () => {
   test("each agent's limit in one line", () => {
     expect(limitText("claude", undefined, now)).toBe("No usage limit reported");
     expect(limitText("claude", { until: now + 3600, reported: true, text: "" }, now, "en-US")).toMatch(/^Out of usage until \d{1,2}:\d{2}\s?[AP]M \(Claude said so\)$/);
-    expect(limitText("codex", { until: now + 1800, reported: false, text: "" }, now, "en-US")).toMatch(/^Out of usage\. Codex didn't say until when, so nekotrail tries again at /);
+    expect(limitText("codex", { until: now + 1800, reported: false, text: "" }, now, "en-US")).toMatch(/^Out of usage\. Codex didn't say until when, so NekoTrail tries again at /);
     expect(limitText("claude", { until: now - 60, reported: true, text: "" }, now, "en-US")).toMatch(/^Its limit was due to reset at .*\. The next turn shows whether it has$/);
   });
 });

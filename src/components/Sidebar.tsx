@@ -339,7 +339,7 @@ export function Sidebar(p: Props) {
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
         {p.ram && (
-          <span className="ram num" title={`Memory used by nekotrail, its agents, terminals and dev servers:\n${p.ram.top.map((t) => `${t.name}  ${t.mb} MB`).join("\n")}`}>
+          <span className="ram num" title={`Memory used by NekoTrail, its agents, terminals and dev servers:\n${p.ram.top.map((t) => `${t.name}  ${t.mb} MB`).join("\n")}`}>
             <MemoryStick size={13} />{p.ram.total_mb >= 1024 ? `${(p.ram.total_mb / 1024).toFixed(2)} GB` : `${p.ram.total_mb} MB`}
           </span>
         )}

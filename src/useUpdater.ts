@@ -128,7 +128,7 @@ export function useUpdater() {
       adopt(u);
       offer(u);
     } catch (e) {
-      setPhase({ kind: "error", title: "Couldn't check for updates", message: "nekotrail couldn't reach GitHub. Check your connection and try again.", detail: detailOf(e), retry: false });
+      setPhase({ kind: "error", title: "Couldn't check for updates", message: "NekoTrail couldn't reach GitHub. Check your connection and try again.", detail: detailOf(e), retry: false });
       setOpen(true);
     }
   }, []);

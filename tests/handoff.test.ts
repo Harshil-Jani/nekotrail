@@ -65,7 +65,7 @@ describe("when the chat offers a hand-off", () => {
 
   test("its line names the agent", () => {
     expect(reasonLine("limit", "claude")).toBe("Claude ran out of usage. Another agent can carry on in the same workspace with what Claude did.");
-    expect(reasonLine("loop", "codex")).toContain("nekotrail stopped Codex because it was going in circles");
+    expect(reasonLine("loop", "codex")).toContain("NekoTrail stopped Codex because it was going in circles");
     expect(reasonLine("budget", "claude")).toContain("The cap still holds");
     expect(reasonLine("asked", "claude")).toBeNull();
   });

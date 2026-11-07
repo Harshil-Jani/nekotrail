@@ -127,7 +127,7 @@ function TrustCard({ checks, onAllow }: { checks: [string, string][]; onAllow: (
   return (
     <section className="checks-card trust" aria-label="Checks from nekotrail.json">
       <div className="checks-card-head"><ShieldAlert size={15} className="warn" aria-hidden /><b>This repo's nekotrail.json has checks</b></div>
-      <p className="muted">They run on your Mac with your access, so nekotrail asks before running them. If the file changes, it asks again.</p>
+      <p className="muted">They run on your Mac with your access, so NekoTrail asks before running them. If the file changes, it asks again.</p>
       <ul className="checks-cmds">
         {checks.map(([n, c]) => <li key={n}><span>{n}</span><code>{c}</code></li>)}
       </ul>

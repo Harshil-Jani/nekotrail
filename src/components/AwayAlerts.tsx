@@ -126,7 +126,7 @@ export function AwayAlerts() {
         A short message on your phone or in a team chat, through ntfy, Slack, Discord, a webhook or Pushover. Off until you add a destination.
       </p>
       <p className="alert-privacy setting-note">
-        <Lock size={12} aria-hidden /><span>Each message names the workspace, its repo and what happened, with a link that opens it on {IS_MAC ? "this Mac" : "this computer"}. Never your code, prompts, commands or diffs; the agent's last line only where you turn it on. Addresses and tokens are kept in {KEYCHAIN}, never in nekotrail's database or logs.</span>
+        <Lock size={12} aria-hidden /><span>Each message names the workspace, its repo and what happened, with a link that opens it on {IS_MAC ? "this Mac" : "this computer"}. Never your code, prompts, commands or diffs; the agent's last line only where you turn it on. Addresses and tokens are kept in {KEYCHAIN}, never in NekoTrail's database or logs.</span>
       </p>
       {error && <p className="bad setting-note" role="alert">{error}</p>}
       {cfg.destinations.map((d) => <DestinationCard key={d.id} d={d} view={view} onChange={setDest} onView={setView} />)}

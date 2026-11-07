@@ -205,7 +205,7 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
                 )}
               </div>
               <h3 className="usage-sub">When an agent goes in circles</h3>
-              <p className="muted usage-explain">Checked after each turn the queue or autopilot runs. nekotrail stops giving it turns and the task needs you, with what it saw.</p>
+              <p className="muted usage-explain">Checked after each turn the queue or autopilot runs. NekoTrail stops giving it turns and the task needs you, with what it saw.</p>
               <div className="usage-runaway">
                 <label className="check"><input type="checkbox" checked={draft.runaway.on} onChange={(e) => setDraft({ ...draft, runaway: { ...draft.runaway, on: e.target.checked } })} />Stop an agent that goes in circles</label>
                 <Threshold disabled={!draft.runaway.on} before="The same command fails" after="times in a row" min={2} value={draft.runaway.same_failure} onChange={(v) => setDraft({ ...draft, runaway: { ...draft.runaway, same_failure: v } })} />
@@ -237,7 +237,7 @@ export function Usage({ repos, onSay }: { repos: Repo[]; onSay: (text: string, b
                 );
               })}
             </div>
-            <p className="muted usage-explain usage-under">From what each agent said when it ran out, in any chat. nekotrail only knows a limit once an agent says it hit one, so an agent shown without one may still be close.</p>
+            <p className="muted usage-explain usage-under">From what each agent said when it ran out, in any chat. NekoTrail only knows a limit once an agent says it hit one, so an agent shown without one may still be close.</p>
           </section>
         )}
 

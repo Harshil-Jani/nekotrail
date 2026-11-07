@@ -9,7 +9,7 @@ const withCode = (text: string) => text.split(/`([^`]+)`/).map((part, i) => (i %
 type Phase = "loading" | "choose" | "importing" | "moving" | "done" | "error";
 
 /** Conductor Cloud's dates, as Conductor announced them. */
-const CLOUD_NOTE = "nekotrail can't read Conductor Cloud, which goes read-only on 13 November and shuts down on 20 November 2026. Before then, right-click each Cloud workspace in Conductor and choose Transfer to local, then import it here.";
+const CLOUD_NOTE = "NekoTrail can't read Conductor Cloud, which goes read-only on 13 November and shuts down on 20 November 2026. Before then, right-click each Cloud workspace in Conductor and choose Transfer to local, then import it here.";
 
 /**
  * Bringing work over from Conductor. Its worktrees live inside Conductor's folder, which Conductor
@@ -87,7 +87,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
 
   const s = summary(outcomes);
   const resultOf = (it: RescueItem) => outcomes.find((o) => o.from === it.from || (it.id && o.id === it.id));
-  const title = phase === "done" && outcomes.length ? (s.bad ? "Moved, with some to look at" : "Your work is in nekotrail's folder") : mode === "move" ? "Move your workspaces out of Conductor's folder" : "Bring your work over from Conductor";
+  const title = phase === "done" && outcomes.length ? (s.bad ? "Moved, with some to look at" : "Your work is in NekoTrail's folder") : mode === "move" ? "Move your workspaces out of Conductor's folder" : "Bring your work over from Conductor";
 
   return (
     <div className="modal-backdrop" onClick={() => !busy && close()}>
@@ -110,7 +110,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
             <label className={`cs-choice ${choice === "move" ? "on" : ""}`}>
               <input type="radio" name="cs-choice" checked={choice === "move"} onChange={() => setChoice("move")} />
               <span>
-                <span className="cs-choice-title"><b>Move into nekotrail</b><span className="chip">Recommended</span></span>
+                <span className="cs-choice-title"><b>Move into NekoTrail</b><span className="chip">Recommended</span></span>
                 <small>Branches, commits and uncommitted changes come along, and each worktree is checked after it moves. Conductor won't find these folders any more.</small>
               </span>
             </label>
@@ -131,7 +131,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
         ) : items.length > 0 ? (
           <p className="cs-what"><b>{choice === "move" || phase !== "choose" ? "What moves:" : "What stays:"}</b> {whatMoves(items)}</p>
         ) : phase === "choose" && !importing ? (
-          <p className="muted">Every Conductor workspace you imported is already in nekotrail's folder. Nothing to move.</p>
+          <p className="muted">Every Conductor workspace you imported is already in NekoTrail's folder. Nothing to move.</p>
         ) : null)}
 
         {plan && items.length > 0 && (
@@ -173,7 +173,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
         {plan && phase === "choose" && importing && (
           <p className="muted cs-also">
             Also comes in: {plural(report!.repos, "repo")} with their scripts and prompts, and {plural(report!.sessions, "chat")} with their history. Chats continue the same agent session.
-            {report!.skipped > 0 ? ` ${report!.skipped} skipped: already in nekotrail, or the folder is gone.` : ""}
+            {report!.skipped > 0 ? ` ${report!.skipped} skipped: already in NekoTrail, or the folder is gone.` : ""}
           </p>
         )}
 
@@ -185,7 +185,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
         )}
 
         {phase === "importing" && <p className="row muted" role="status"><span className="spinner" />Importing repos, workspaces and chats…</p>}
-        {phase === "moving" && <p className="row muted" role="status"><span className="spinner" />Moving {plural(items.length, "worktree")} and checking each one. Keep nekotrail open.</p>}
+        {phase === "moving" && <p className="row muted" role="status"><span className="spinner" />Moving {plural(items.length, "worktree")} and checking each one. Keep NekoTrail open.</p>}
 
         <div className="row cs-actions">
           {phase === "choose" && <span className="muted cs-foot">Runs only <code>git worktree move</code>. Nothing is deleted.</span>}
@@ -215,7 +215,7 @@ export function MoveNotice({ count, onMove, onDismiss, compact }: { count: numbe
         <FolderInput size={14} aria-hidden />
         <span className="mn-text"><b>{where}</b> Move them so your work no longer depends on Conductor.</span>
         <span className="mn-actions">
-          <button onClick={onMove}>Move into nekotrail…</button>
+          <button onClick={onMove}>Move into NekoTrail…</button>
           <button className="icon" aria-label="Dismiss" title="Don't show this again. ⌘K still has the move." onClick={onDismiss}><X size={13} /></button>
         </span>
       </div>
@@ -224,12 +224,12 @@ export function MoveNotice({ count, onMove, onDismiss, compact }: { count: numbe
   return (
     <div className="import-card hero move-notice" role="status">
       <div className="row import-head">
-        <h2>Move your imported workspaces into nekotrail</h2>
+        <h2>Move your imported workspaces into NekoTrail</h2>
         <span className="spacer" />
         <button className="icon" aria-label="Dismiss" title="Don't show this again. ⌘K still has the move." onClick={onDismiss}><X size={14} /></button>
       </div>
       <p>{where} {why} Moving them takes seconds: branches, chats and uncommitted changes come along, and each one is checked after.</p>
-      <button className="primary" onClick={onMove}><FolderInput size={15} />Move into nekotrail…</button>
+      <button className="primary" onClick={onMove}><FolderInput size={15} />Move into NekoTrail…</button>
     </div>
   );
 }

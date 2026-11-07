@@ -137,7 +137,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
           <span className="tq-meta">{meta}</span>
           <span className={`tq-status ${tone}`}>{status}</span>
           {kind === "finished" && t.evidence && t.evidence.length > 0 && (
-            <ul className="tq-evidence" aria-label="What nekotrail saw">
+            <ul className="tq-evidence" aria-label="What NekoTrail saw">
               {t.evidence.map((line, i) => <li key={i}>{line}</li>)}
             </ul>
           )}
@@ -193,7 +193,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
           <div className="empty tq-empty">
             <ListOrdered size={24} aria-hidden />
             <h2>Line up tasks for later</h2>
-            <p>Add tasks before you stop for the day. nekotrail runs {view.max_total} at a time, each in its own workspace, and starts the next one when a task finishes or needs you.</p>
+            <p>Add tasks before you stop for the day. NekoTrail runs {view.max_total} at a time, each in its own workspace, and starts the next one when a task finishes or needs you.</p>
             <button className="primary" onClick={() => setAdding(true)}><Plus size={14} />Add task</button>
             <p className="tq-cli">From a terminal: <code>nekotrail queue add "fix the flaky test"</code></p>
           </div>

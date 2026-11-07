@@ -66,7 +66,7 @@ export function TerminalImport({ onClose, onImported }: { onClose: () => void; o
       <div className="modal terminal-import" role="dialog" aria-modal="true" aria-label="Import terminal sessions" onClick={(e) => e.stopPropagation()}>
         <div className="row"><SquareTerminal size={16} /><h2>Import terminal sessions</h2><span className="spacer" /><button className="icon" aria-label="Close" disabled={busy} onClick={onClose}><X size={15} /></button></div>
         <p className="muted">
-          Chats you had with Claude Code, Codex or Gemini in a terminal, by the repo they ran in. nekotrail only reads them: nothing in those folders changes, and no worktree is made.
+          Chats you had with Claude Code, Codex or Gemini in a terminal, by the repo they ran in. NekoTrail only reads them: nothing in those folders changes, and no worktree is made.
           A worktree's chats go in a workspace for that folder. Your main checkout's go in a read-only History workspace.
         </p>
         {error && <div className="banner error">{error}</div>}
@@ -92,7 +92,7 @@ export function TerminalImport({ onClose, onImported }: { onClose: () => void; o
                     <span className="ti-name"><b>{r.name}</b>{!r.repo_id && <span className="chip">New repo</span>}</span>
                     <span className="muted ti-sum">{summary(list)}</span>
                   </summary>
-                  {!r.repo_id && <p className="muted ti-note">Not in nekotrail yet. Importing adds {r.root}.</p>}
+                  {!r.repo_id && <p className="muted ti-note">Not in NekoTrail yet. Importing adds {r.root}.</p>}
                   {r.folders.map((f) => {
                     const fs = state(f.sessions);
                     const label = f.kind === "history" ? "History (main checkout, read-only)" : f.kind === "workspace" ? `Workspace on ${f.branch}` : `Worktree on ${f.branch}`;

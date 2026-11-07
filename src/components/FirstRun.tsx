@@ -78,8 +78,8 @@ function AgentsStep({ mood, purring, onPet, ready, onReady, onNext, onSkip }: {
   return (
     <>
       <Mascot size={64} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={onPet} title="Pet the cat" />
-      <h1>Welcome to nekotrail.</h1>
-      <p className="lede">Let's get you a first answer from an agent, in about 3 minutes. First, the agents on {IS_MAC ? "this Mac" : "this computer"}. nekotrail uses your own logins and subscriptions.</p>
+      <h1>Welcome to NekoTrail.</h1>
+      <p className="lede">Let's get you a first answer from an agent, in about 3 minutes. First, the agents on {IS_MAC ? "this Mac" : "this computer"}. NekoTrail uses your own logins and subscriptions.</p>
       <SetupCheck heading={IS_MAC ? "Agents on this Mac" : "Agents on this computer"} foldMissing onStatus={(s) => { onReady(s.ready); setGhOk(s.ghOk); }} />
       {can && !ghOk && <p className="muted fr-note">GitHub sign-in is only needed for pull requests. You can do it later.</p>}
       <div className="fr-actions">
@@ -122,7 +122,7 @@ function CodeStep({ repos, canImport, onAddRepo, onClone, onImportConductor, onI
   };
   const hero = primary === "conductor" && conductor ? {
     title: "Pick up where you left off in Conductor",
-    body: `Found ${conductor.repos} ${conductor.repos === 1 ? "repo" : "repos"}, ${conductor.workspaces} ${conductor.workspaces === 1 ? "workspace" : "workspaces"} and ${conductor.sessions} ${conductor.sessions === 1 ? "chat" : "chats"}. nekotrail brings them over and moves their folders out of Conductor's into its own, since Conductor says it will delete all user data when its app shuts down in early 2027. You see exactly what moves first, and chats continue where they left off.`,
+    body: `Found ${conductor.repos} ${conductor.repos === 1 ? "repo" : "repos"}, ${conductor.workspaces} ${conductor.workspaces === 1 ? "workspace" : "workspaces"} and ${conductor.sessions} ${conductor.sessions === 1 ? "chat" : "chats"}. NekoTrail brings them over and moves their folders out of Conductor's into its own, since Conductor says it will delete all user data when its app shuts down in early 2027. You see exactly what moves first, and chats continue where they left off.`,
   } : primary === "terminal" ? {
     title: "Bring in your terminal chats",
     body: `Found ${found.terminal} ${found.terminal === 1 ? "chat" : "chats"} you ran with Claude Code, Codex or Gemini in a terminal. You pick which ones, and their repos come along. Read-only.`,

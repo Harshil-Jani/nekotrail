@@ -291,7 +291,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
         <section>
           <h3>Exports</h3>
           <label className="setting">
-            <span>Add “Made with nekotrail” to exported sessions</span>
+            <span>Add “Made with NekoTrail” to exported sessions</span>
             <input type="checkbox" className="switch" checked={s.exportFooter} onChange={(e) => set("exportFooter", e.target.checked)} />
           </label>
         </section>
@@ -351,7 +351,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
         </div>
 
         <div className="row end settings-foot">
-          <span className="muted version num">nekotrail v{version}</span>
+          <span className="muted version num">NekoTrail v{version}</span>
           <span className="foot-dot" aria-hidden>·</span>
           <button className="link" onClick={() => openUrl("https://github.com/Harshil-Jani/nekotrail/blob/main/CHANGELOG.md").catch(() => {})}>What's new</button>
           <span className="foot-dot" aria-hidden>·</span>
@@ -366,7 +366,7 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
           )}
           {/* Sponsor links are a different kind of link from the version ones: set apart, each with its icon. */}
           <span className="foot-sep" aria-hidden />
-          <button className="link sponsor" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="nekotrail is free and open source. Sponsoring keeps it that way."><Heart size={12} aria-hidden />Sponsor</button>
+          <button className="link sponsor" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="NekoTrail is free and open source. Sponsoring keeps it that way."><Heart size={12} aria-hidden />Sponsor</button>
           <button className="link sponsor" onClick={() => openUrl("https://buymeacoffee.com/harshiljani").catch(() => {})} title="Buy the maintainer a coffee: a one-off thank you, no account needed."><Coffee size={12} aria-hidden />Buy me a coffee</button>
           <span className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>

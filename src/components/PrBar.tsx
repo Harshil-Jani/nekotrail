@@ -119,7 +119,7 @@ Then one line saying whether it is ready to merge.${repo?.prefs?.review_prompt ?
 3. Resolve each conflict keeping the intent of both sides, run the tests, and finish the rebase.
 4. \`git push --force-with-lease origin ${ws.branch}\`
 5. If this branch has a PR, run \`gh pr edit --base ${base}\`.
-Then tell me it's done, and I'll press "Move onto ${base}" once more to update nekotrail.`,
+Then tell me it's done, and I'll press "Move onto ${base}" once more to update NekoTrail.`,
 };
 
 type Action = { id: string; label: string; keys: string; icon: React.ReactNode; run: () => void; disabled?: boolean };
@@ -264,7 +264,7 @@ export function PrBar({
     if (!parent) return;
     const ok = await ask({
       title: `Move ${name} onto ${newBase}?`,
-      body: `The PR for ${parentText} merged into ${newBase}. nekotrail replays only this workspace's own commits on top of ${newBase}, updates the branch on GitHub (a force push with lease, so someone else's push is never overwritten) and points the PR at ${newBase}. Commit any uncommitted work first. If git hits a conflict, nothing changes and the agent gets the job instead.`,
+      body: `The PR for ${parentText} merged into ${newBase}. NekoTrail replays only this workspace's own commits on top of ${newBase}, updates the branch on GitHub (a force push with lease, so someone else's push is never overwritten) and points the PR at ${newBase}. Commit any uncommitted work first. If git hits a conflict, nothing changes and the agent gets the job instead.`,
       ok: `Move onto ${newBase}`,
     });
     if (!ok) return;

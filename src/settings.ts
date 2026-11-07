@@ -30,7 +30,7 @@ export type Settings = {
   /** Font for the terminal ("" is SF Mono) and its size in px. */
   termFont: string;
   termSize: number;
-  /** The "Made with nekotrail" line at the end of session exports. */
+  /** The "Made with NekoTrail" line at the end of session exports. */
   exportFooter: boolean;
 };
 

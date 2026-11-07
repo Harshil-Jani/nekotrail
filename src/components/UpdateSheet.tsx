@@ -55,7 +55,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
   switch (phase.kind) {
     case "available":
       art = <img className="update-parcel" src="/mascot-parcel.svg" alt="" width={84} height={72} />;
-      title = `nekotrail ${phase.version} is here`;
+      title = `NekoTrail ${phase.version} is here`;
       sub = <>You have {phase.current}. {phase.items.length ? "What's new:" : ""}</>;
       body = phase.items.length > 0 && (
         <ul className="update-notes">
@@ -70,7 +70,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
     case "downloading": {
       const pct = phase.total ? Math.min(100, Math.round((phase.got / phase.total) * 100)) : null;
       art = <Mascot size={48} mood="working" title="" />;
-      title = `Getting nekotrail ${phase.version}`;
+      title = `Getting NekoTrail ${phase.version}`;
       sub = "You can keep working. It installs when you restart.";
       body = (
         <div className="update-progress">
@@ -97,7 +97,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
     case "busy": {
       const n = phase.agents + phase.terminals;
       art = <Mascot size={64} mood="happy" title="" />;
-      title = `nekotrail ${phase.version} is ready`;
+      title = `NekoTrail ${phase.version} is ready`;
       if (n === 0) {
         sub = "Restart to finish updating. It takes a few seconds.";
         primaryBtn = { label: "Restart now", run: onRestartNow };
@@ -133,7 +133,7 @@ export function UpdateSheet({ phase, onUpdate, onNotNow, onRestartNow, onRestart
     case "latest":
       art = <Mascot size={64} mood="happy" title="" />;
       title = "You're on the latest";
-      sub = phase.version ? `nekotrail ${phase.version} is the newest version.` : "This is the newest version.";
+      sub = phase.version ? `NekoTrail ${phase.version} is the newest version.` : "This is the newest version.";
       primaryBtn = { label: "OK", run: onNotNow };
       break;
     case "dev":

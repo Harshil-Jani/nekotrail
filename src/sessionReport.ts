@@ -34,7 +34,7 @@ export type ReportOptions = {
   toolOutputs: boolean;
   /** Code: files the agent read or wrote, and the diff hunks. */
   fileContents: boolean;
-  /** The "Made with nekotrail" line (Settings, General). */
+  /** The "Made with NekoTrail" line (Settings, General). */
   footer: boolean;
 };
 
@@ -394,10 +394,10 @@ export function toMarkdown(r: Report): string {
   }
   for (const h of r.hunks) out.push(`### ${mdCode(h.path)}`, mdFence(h.text, "diff") + (h.more ? `\n\n_${plural(h.more, "more hunk")} not shown._` : ""));
 
-  out.push("## Checks", r.checks.length ? r.checks.map((c) => `- **${mdText(c.name)}** ${checkLine(c)} (${mdCode(c.command)})`).join("\n") : "No checks ran in nekotrail for this workspace.");
+  out.push("## Checks", r.checks.length ? r.checks.map((c) => `- **${mdText(c.name)}** ${checkLine(c)} (${mdCode(c.command)})`).join("\n") : "No checks ran in NekoTrail for this workspace.");
 
   out.push("## Pull request", r.pr ? `[#${r.pr.number} ${mdText(r.pr.title)}](${safeUrl(r.pr.url) ?? ""}) (${prState(r.pr)})` : "No PR yet.");
-  if (r.footer) out.push("---", "_Made with nekotrail_");
+  if (r.footer) out.push("---", "_Made with NekoTrail_");
   return `${out.join("\n\n")}\n`;
 }
 
@@ -423,10 +423,10 @@ export function prSummary(r: Report): string {
   if (lastAnswer) lines.push(firstPara(lastAnswer.text));
   if (r.files.length) lines.push(`${plural(r.files.length, "file")} changed (+${r.additions} −${r.deletions}): ${files}.`);
   lines.push("## How it was tested");
-  lines.push(r.checks.length ? r.checks.map((c) => `- ${mdText(c.name)}: ${checkLine(c)}`).join("\n") : "No checks ran in nekotrail. Say how you tested it here.");
+  lines.push(r.checks.length ? r.checks.map((c) => `- ${mdText(c.name)}: ${checkLine(c)}`).join("\n") : "No checks ran in NekoTrail. Say how you tested it here.");
   const agents = [...new Set(r.chats.filter((c) => c.items.length).map(chatLabel))].join(", ") || "none";
   lines.push(`Agent: ${agents}. ${plural(r.stats.turns, "turn")}, ${formatDuration(r.stats.durationMs)}, cost ${formatCost(r)}.`);
-  if (r.footer) lines.push("<sub>Made with nekotrail</sub>");
+  if (r.footer) lines.push("<sub>Made with NekoTrail</sub>");
   return lines.join("\n\n");
 }
 
@@ -537,7 +537,7 @@ export function toHtml(r: Report, md: MdToHtml): string {
   b.push(`<h2>Checks</h2>`);
   b.push(r.checks.length
     ? `<ul>${r.checks.map((c) => `<li><b>${esc(c.name)}</b> <span class="${c.status === "passed" ? "ok" : "no"}">${esc(checkLine(c))}</span> <code>${esc(c.command)}</code></li>`).join("")}</ul>`
-    : `<p class="note">No checks ran in nekotrail for this workspace.</p>`);
+    : `<p class="note">No checks ran in NekoTrail for this workspace.</p>`);
 
   b.push(`<h2>Pull request</h2>`);
   if (r.pr) {
@@ -545,7 +545,7 @@ export function toHtml(r: Report, md: MdToHtml): string {
     const label = `#${r.pr.number} ${r.pr.title}`;
     b.push(`<p>${url ? `<a href="${esc(url)}" rel="noopener noreferrer">${esc(label)}</a>` : esc(label)} (${esc(prState(r.pr))})</p>`);
   } else b.push(`<p class="note">No PR yet.</p>`);
-  if (r.footer) b.push(`<footer>Made with nekotrail</footer>`);
+  if (r.footer) b.push(`<footer>Made with NekoTrail</footer>`);
 
   return `<!doctype html>
 <html lang="en">

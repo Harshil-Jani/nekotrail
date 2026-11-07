@@ -571,7 +571,7 @@ export default function App() {
           loop: "was stopped: it was going in circles",
         };
         if (prefs.needsSound) ting();
-        if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, chatLine(w, payload.title) || "Open nekotrail to continue.");
+        if (prefs.needsNotify) notify(`${name} ${why[payload.needs] ?? "needs you"}`, chatLine(w, payload.title) || "Open NekoTrail to continue.");
         if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
           try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
         }
@@ -597,7 +597,7 @@ export default function App() {
       if (payload.needs === "checks") {
         // A check that passed before fails after the agent's turn.
         if (prefs.needsNotify) notify(`${name}: a check fails now`, payload.title || "Open the Checks tab to see what broke.");
-      } else if (prefs.needsNotify && away) notify(`${name} wants your OK`, payload.title || "Open nekotrail to allow or deny.");
+      } else if (prefs.needsNotify && away) notify(`${name} wants your OK`, payload.title || "Open NekoTrail to allow or deny.");
       if (prefs.needsBounce && (document.hidden || !document.hasFocus())) {
         try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
       }
@@ -1047,7 +1047,7 @@ export default function App() {
         // A web page can open a link, so a link never starts an agent without this answer.
         const agent = agentName(job.agent);
         const facts: [string, string][] = [
-          ["Repo", job.adds_repo ? `${job.repo}, new to nekotrail` : job.repo],
+          ["Repo", job.adds_repo ? `${job.repo}, new to NekoTrail` : job.repo],
           ["Folder", job.repo_path],
           ...(job.base ? [["From", job.base] as [string, string]] : []),
           ["Agent", job.plan ? `${agent}, in plan mode` : agent],
@@ -1059,7 +1059,7 @@ export default function App() {
         const go = await ask({
           title: `Start ${agent} from ${editor ? "your editor" : "a link"}?`,
           body: job.adds_repo
-            ? `${who} asks for a new workspace, and adds this repo to nekotrail first. The agent works on the task below.`
+            ? `${who} asks for a new workspace, and adds this repo to NekoTrail first. The agent works on the task below.`
             : `${who} asks for a new workspace. The agent works on the task below.`,
           facts,
           quote: job.prompt,
@@ -1217,7 +1217,7 @@ export default function App() {
     const { getVersion } = await import("@tauri-apps/api/app");
     const v = await getVersion().catch(() => "unknown");
     const text = [
-      `nekotrail ${v}`,
+      `NekoTrail ${v}`,
       IS_MAC
         ? `macOS: ${navigator.userAgent.match(/Mac OS X [\d_]+/)?.[0]?.replace(/_/g, ".") ?? "unknown"}`
         : `Linux: ${navigator.platform || "unknown"}`,
@@ -1338,7 +1338,7 @@ export default function App() {
       { id: "new-stack", group: "Create", label: "Create workspace stacked on another", keywords: "new stacked pr branch depends", icon: <SquareStack size={15} />, run: () => openNew("stack", ws?.id) },
       { id: "clone", group: "Create", label: "Clone repo from GitHub", keywords: "add repo", icon: <Download size={15} />, run: () => setCloning(true) },
       { id: "update", group: "App", label: "Check for updates", keywords: "upgrade new version release download", icon: <Download size={15} />, run: () => updater.checkNow(true) },
-        { id: "sponsor", group: "App", label: "Sponsor nekotrail", keywords: "donate support github sponsors fund", icon: <Heart size={15} />, run: () => openUrl("https://github.com/sponsors/Harshil-Jani").catch((e) => say(errText(e), true)) },
+        { id: "sponsor", group: "App", label: "Sponsor NekoTrail", keywords: "donate support github sponsors fund", icon: <Heart size={15} />, run: () => openUrl("https://github.com/sponsors/Harshil-Jani").catch((e) => say(errText(e), true)) },
         { id: "coffee", group: "App", label: "Buy me a coffee", keywords: "donate support sponsor coffee tip buymeacoffee", icon: <Coffee size={15} />, run: () => openUrl("https://buymeacoffee.com/harshiljani").catch((e) => say(errText(e), true)) },
       { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex, Gemini, OpenCode)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
@@ -1598,7 +1598,7 @@ export default function App() {
               <span className="spacer" />
               <div className="ws-actions">
                 {ws.state === "active" && isHistory(ws) ? (<>
-                  <span className="chip read-only" title="Chats you ran in this repo's main checkout from a terminal. nekotrail never changes that folder."><SquareTerminal size={11} />History, read only</span>
+                  <span className="chip read-only" title="Chats you ran in this repo's main checkout from a terminal. NekoTrail never changes that folder."><SquareTerminal size={11} />History, read only</span>
                   <button onClick={() => openNew()}><Plus size={16} />New workspace</button>
                   <button className="icon" aria-label="Archive" title={`Hide this history (${keyHint("⌘⇧A")}). Your main checkout stays as it is.`} onClick={() => archive()}><Archive size={15} /></button>
                 </>) : ws.state === "archived" ? (<>

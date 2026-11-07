@@ -56,7 +56,7 @@ function Eyes({ mood, look }: { mood: Mood; look: { x: number; y: number } }) {
 export function Mascot({
   size = 48,
   mood = "idle",
-  title = "nekotrail cat",
+  title = "NekoTrail cat",
   follow = false,
   purring = false,
   onClick,

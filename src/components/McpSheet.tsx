@@ -193,7 +193,7 @@ function SharePanel({ workspaceId, row, target, onBack, onDone }: { workspaceId:
       {preview && blockers.length === 0 && (
         <>
           <div className="mcp-snippet-head muted">
-            {preview.creates ? `${preview.file} doesn't exist yet, so nekotrail creates it with this:` : `This goes into ${preview.file}:`}
+            {preview.creates ? `${preview.file} doesn't exist yet, so NekoTrail creates it with this:` : `This goes into ${preview.file}:`}
           </div>
           <pre className="mcp-snippet">{preview.snippet}</pre>
           {secrets.some((s) => choices[s.id] === "copy") && <p className="muted mcp-small">Copied values are hidden here and written in full.</p>}

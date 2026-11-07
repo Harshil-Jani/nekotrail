@@ -51,7 +51,7 @@ export function reasonLine(reason: HandoffReason, from: Agent): string | null {
   const name = agentName(from);
   switch (reason) {
     case "limit": return `${name} ran out of usage. Another agent can carry on in the same workspace with what ${name} did.`;
-    case "loop": return `nekotrail stopped ${name} because it was going in circles. A fresh agent can take another look.`;
+    case "loop": return `NekoTrail stopped ${name} because it was going in circles. A fresh agent can take another look.`;
     case "budget": return `${name} stopped at a spend cap. The cap still holds for the agent you hand off to.`;
     default: return null;
   }

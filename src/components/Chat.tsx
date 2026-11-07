@@ -243,7 +243,7 @@ function GuardCard({ r }: { r: Extract<Row, { type: "guard" }> }) {
       </ul>
       {left.length > 0 ? (
         <div className="row">
-          <span className="muted">{r.level === "blocked" ? "It got past the block, likely through a script." : r.level === "asks" ? "It changed this without asking first, so nekotrail caught it after the turn." : "This agent can't be blocked up front, so nekotrail checks after each turn."}</span>
+          <span className="muted">{r.level === "blocked" ? "It got past the block, likely through a script." : r.level === "asks" ? "It changed this without asking first, so NekoTrail caught it after the turn." : "This agent can't be blocked up front, so NekoTrail checks after each turn."}</span>
           <span className="spacer" />
           {r.checkpoint && (
             <button className="accent" disabled={disabled || busy} title={disabled ? "Stop the agent first" : "Restore only these files from before the turn"}
@@ -495,7 +495,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
             <span>{r.text}</span>
           </div>
           {r.evidence.length > 0 && (
-            <ul className="stop-evidence" aria-label="What nekotrail saw">{r.evidence.map((line, i) => <li key={i}>{line}</li>)}</ul>
+            <ul className="stop-evidence" aria-label="What NekoTrail saw">{r.evidence.map((line, i) => <li key={i}>{line}</li>)}</ul>
           )}
           {r.reason === "loop" ? (
             <div className="stop-foot row">
@@ -1429,7 +1429,7 @@ export function Chat({
       {readOnly ? (
         history ? (
           <div className="chat-readonly muted row" role="note">
-            <span>This chat ran in your main checkout, so it is read-only here and nekotrail never changes that folder.</span>
+            <span>This chat ran in your main checkout, so it is read-only here and NekoTrail never changes that folder.</span>
             {session?.agent_session_id && (
               <button className="quiet" title="Paste it in a terminal to continue this session there." onClick={() => { navigator.clipboard.writeText(resumeCommand(session.agent, session.agent_session_id!, history)); setNote("Copied. Paste it in a terminal to continue this session."); }}>
                 <Copy size={13} />Copy resume command

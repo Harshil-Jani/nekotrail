@@ -197,7 +197,7 @@ if (location.search.includes("rewound")) events.push({ kind: "rewind", text: "Re
 const guard = new URLSearchParams(location.search).has("guard");
 if (guard) {
   events.splice(events.length - 1, 0,
-    { kind: "blocked", text: "OpenCode tried to change a protected file, so nekotrail said no.", files: [".env.production"] } as any,
+    { kind: "blocked", text: "OpenCode tried to change a protected file, so NekoTrail said no.", files: [".env.production"] } as any,
     { kind: "guard", files: [{ path: "migrations/0042_ticket_sla.sql", change: "changed" }], checkpoint: "g1", ignored: null, level: "asks" } as any,
     { kind: "guard", files: [{ path: ".env", change: "changed" }, { path: "infra/terraform/alb.tf", change: "changed" }, { path: "migrations/0043_backfill_sla_deadlines_for_open_tickets.sql", change: "added" }], checkpoint: "g2", ignored: "i2", level: "blocked" } as any,
     { kind: "guard", files: [{ path: "infra/terraform/alb.tf", change: "changed" }], checkpoint: "g3", ignored: null, level: "after" } as any,
@@ -1003,7 +1003,7 @@ mockIPC(
           skills: [
             { name: "release-notes", description: "Write release notes from merged PRs", has: ["claude", "codex", "gemini", "opencode"], share: [] },
             { name: "triage", description: "Label and prioritise new issues, then post a summary of what changed in the last day to the team channel", has: ["claude", "opencode"], share: [{ target: "agents", label: "Add to Codex and Gemini", link: "~/.agents/skills/triage", to: "~/.claude/skills/triage", ok: true, why: null }] },
-            { name: "db-migrate", description: "Plan and check a database migration", has: ["codex", "gemini", "opencode"], share: [{ target: "claude", label: "Add to Claude", link: "~/.claude/skills/db-migrate", to: "~/.agents/skills/db-migrate", ok: false, why: "~/.claude/skills/db-migrate already exists and isn't a link. nekotrail won't replace it." }] },
+            { name: "db-migrate", description: "Plan and check a database migration", has: ["codex", "gemini", "opencode"], share: [{ target: "claude", label: "Add to Claude", link: "~/.claude/skills/db-migrate", to: "~/.agents/skills/db-migrate", ok: false, why: "~/.claude/skills/db-migrate already exists and isn't a link. NekoTrail won't replace it." }] },
           ],
           files, opencode_skill_dirs: dirs, problems: [],
         };

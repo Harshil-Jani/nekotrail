@@ -162,7 +162,7 @@ export function limitText(agent: string, l: AgentLimit | undefined, now: number,
   if (l.until > now) {
     return l.reported
       ? `Out of usage until ${clockTime(l.until, now, locale)} (${name} said so)`
-      : `Out of usage. ${name} didn't say until when, so nekotrail tries again at ${clockTime(l.until, now, locale)}`;
+      : `Out of usage. ${name} didn't say until when, so NekoTrail tries again at ${clockTime(l.until, now, locale)}`;
   }
   return `Its limit was due to reset at ${clockTime(l.until, now, locale)}. The next turn shows whether it has`;
 }

@@ -97,7 +97,7 @@ export function SetupCheck({ compact = false, heading, foldMissing = false, onSt
           <ul>{rest.map(row)}</ul>
         </details>
       )}
-      {!agentOk && <p className="muted">You need at least one agent, such as Claude Code, Codex, Gemini CLI or OpenCode. nekotrail uses your own login and subscription.</p>}
+      {!agentOk && <p className="muted">You need at least one agent, such as Claude Code, Codex, Gemini CLI or OpenCode. NekoTrail uses your own login and subscription.</p>}
     </section>
   );
 }
@@ -182,7 +182,7 @@ export function Welcome({
   return (
     <div className="welcome">
       <Mascot size={88} mood={mood === "working" ? "working" : "happy"} follow purring={purring} onClick={onPet} title="Pet the cat" />
-      <h1>{setup?.ghOk && me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Welcome to nekotrail."}</h1>
+      <h1>{setup?.ghOk && me?.name ? `Hi ${me.name.split(" ")[0]}.` : "Welcome to NekoTrail."}</h1>
       <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
       {setupRed && setupCard}
 
@@ -198,7 +198,7 @@ export function Welcome({
           <p>
             Bring over {preview.repos > 0 ? `${preview.repos} ${preview.repos === 1 ? "repo" : "repos"}, ` : ""}
             {preview.workspaces} {preview.workspaces === 1 ? "workspace" : "workspaces"} and {preview.sessions} {preview.sessions === 1 ? "chat" : "chats"} with their history.{" "}
-            nekotrail moves their folders out of Conductor's into its own, and shows you exactly what moves first.
+            NekoTrail moves their folders out of Conductor's into its own, and shows you exactly what moves first.
           </p>
           <button className="primary" onClick={() => onImport()}>
             <FolderInput size={15} />Import from Conductor…
