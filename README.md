@@ -18,9 +18,9 @@
 
 ---
 
-nekotrail is an open-source, local-first desktop app for running Claude Code, Codex, Gemini CLI and OpenCode in parallel. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
+nekotrail is an open-source, local-first desktop app for running coding agents in parallel: Claude Code, Codex, Gemini CLI, OpenCode and 12 more, sixteen in all. Every task gets a **workspace**: a git worktree on its own branch, a chat with the agent, a diff view, a live preview of your app, a real terminal, notes, and a PR bar with live GitHub status.
 
-**Moving from Conductor?** nekotrail imports your repos, active workspaces and chats from a local Conductor install in one click, and Conductor's shortcuts still work. It only reads Conductor's data, and imported chats continue the same agent session.
+**Moving from Conductor?** nekotrail imports your repos, active workspaces and chats from the Conductor app on your Mac, then moves your worktrees out of Conductor's folder into its own with `git worktree move`, and checks each one. Conductor's shortcuts still work, and imported chats continue the same agent session. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) for what comes over, what doesn't, and Conductor Cloud.
 
 **The night sky.** Every workspace is named after a star in one of eight cat constellations. Starting a workspace lights its star; merging its PR makes it shine, and lines appear between neighbouring stars once both have shipped. Ship enough and a whole cat appears in your sky. One of them, Felis, is a real constellation: astronomer Jérôme Lalande drew a cat among the stars in 1799.
 
@@ -28,7 +28,7 @@ nekotrail is an open-source, local-first desktop app for running Claude Code, Co
 
 Screenshots use sample data from `preview.html`. Light and dark follow your Mac, or pick one in Settings.
 
-**Start a workspace.** Type the task and press Enter. Pick Claude, Codex, Gemini or OpenCode, or Claude + Codex to race them. Start from an issue, an open PR, an existing branch, or on top of another workspace.
+**Start a workspace.** Type the task and press Enter. Pick any of the sixteen agents, or Claude + Codex to race them. Start from a GitHub or Linear issue, an open PR, an existing branch, or on top of another workspace.
 <img src="docs/screenshots/new-workspace.png" width="900" alt="New workspace panel with the task box, the Claude, Codex, Gemini, OpenCode and Claude + Codex picker, and sources">
 
 **Choose the model and how hard it thinks.** One picker for the model and its intelligence level (⌘/).
@@ -73,23 +73,26 @@ Screenshots use sample data from `preview.html`. Light and dark follow your Mac,
 **Light up the night sky.** Every workspace lights a star; every merged PR makes it shine.
 <img src="docs/screenshots/night-sky.png" width="900" alt="Night sky with constellations">
 
-**First launch checks your setup.** It shows the command for anything missing and offers the Conductor import.
+**First launch checks your setup.** It shows the command for anything missing and offers the Conductor import, which moves your worktrees out of Conductor's folder.
 <img src="docs/screenshots/welcome.png" width="900" alt="Welcome screen in light mode with the setup check and Conductor import">
 
 ## Why
 
 - **Open source and local.** MIT licensed. It runs on your machine and talks only to the tools you already use. It can't be shut down or acquired away.
-- **Bring any agent.** It drives Claude Code, Codex, Gemini CLI and OpenCode through their official `claude`, `codex`, `gemini` and `opencode` CLIs, with your own logins, settings and subscriptions. OpenCode runs over the Agent Client Protocol (ACP), so more ACP agents are one registry entry.
-- **One click from Conductor.** It imports your repos, active workspaces and chats from a local Conductor install. It only reads Conductor's data and moves nothing, and imported chats continue the same agent session.
+- **Bring any agent.** It drives sixteen agents through their official CLIs, with your own logins, settings and subscriptions: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline and Kilo. Setup shows the install command for any you don't have. Agents that speak the Agent Client Protocol (ACP) are one registry entry.
+- **Hand off without starting over.** When one agent runs out of usage or goes in circles, hand the task to another in the same workspace and branch, with a brief nekotrail writes from the chat and you read first.
+- **Your Conductor work, kept safe.** It imports your repos, active workspaces and chats from the Conductor app on your Mac, and moves your worktrees out of Conductor's folder with `git worktree move`, checking each one after. Nothing in Conductor's folder is deleted. See [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md).
 
 ## What it does
 
 | | |
 |---|---|
-| Start | Open a local repo, clone one of your GitHub repos, or import from Conductor (it shows what it will bring over first). Start a workspace from a task, a GitHub issue, an open PR or a branch. |
+| Start | Open a local repo, clone one of your GitHub repos, or import from Conductor (it shows what it will bring over and move first). Start a workspace from a task, a GitHub or Linear issue, an open PR or a branch. |
 | Workspaces | One git worktree and branch per task, named after the task. Archive removes the folder and keeps the branch; restore brings it back. |
-| Chat | Claude Code, Codex, Gemini CLI or OpenCode, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
+| Chat | Any of the sixteen agents, several chats per workspace. Queue messages while the agent works, stop a turn, and pick plan / auto-accept / full-auto. Type `@` to mention a file; paste a screenshot to attach it. |
 | Bake-off | Pick "Claude + Codex" and each gets the same task in its own workspace. Compare files, turns, time and cost side by side, keep the better one. |
+| Hand off | Another agent carries on the task in the same workspace and branch (a chat's + menu, ⌘K or /handoff). You read and edit the brief before it is sent, and the new chat keeps this chat's mode. |
+| Linear | Connect Linear in Settings, Integrations, and start a workspace from one of your issues: Linear's branch name, the issue in the first message, and "Fixes ENG-123" in the PR. |
 | Second opinion | One click asks the other agent to review the branch read-only. Its `file:line` findings become review comments in Changes, ready to send back. |
 | Checkpoints | Every message you send saves your files first. Hover it and click **Rewind to here** to put them back, including untracked and staged files. It tells you how many files change first, and Undo brings the newer state back. Each workspace keeps its last 50. |
 | Changes | Everything the agent changed versus the target branch, including uncommitted and new files, with line numbers. Comment on any line or range and send all your comments to the agent as one review; comments on lines it has since changed are marked Outdated. Discard one file (the old copy goes to the Trash) and filter long file lists. |
@@ -117,7 +120,11 @@ The cat reflects the real state of your work, so its moods carry information:
 
 ## Install
 
-Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so on first launch right-click it and choose **Open**.
+Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases), open it and drag nekotrail to Applications. The app isn't notarized yet, so macOS blocks it on first launch. Run this once in Terminal, then open it as usual:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/nekotrail.app
+```
 
 **Updates.** nekotrail checks for a new release on launch and every 6 hours, and offers to update itself (⌘K → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the latest release from the download link once by hand: those versions can't update themselves yet.
 
@@ -132,7 +139,7 @@ From the next release, each release also carries an x86_64 `.deb` and `.AppImage
 - Not on Linux yet: the Conductor import (Conductor is Mac-only), vibrancy, and the Dock badge (most Linux desktops don't show one). Annotate in Preview uses WebKitGTK's own snapshot and is the least tested part.
 - Requirements as below, plus WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, pulled in by the `.deb`).
 
-nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS (or Linux, see above), [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one of [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai).
+nekotrail checks your setup on first launch and gives you the exact command for anything missing. Requirements: macOS (or Linux, see above), [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one agent CLI, such as [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai). Setup lists all sixteen with their install commands.
 
 To build it yourself:
 
@@ -148,7 +155,7 @@ bun run tauri dev
 
 ## Keyboard
 
-Conductor's shortcuts still work, so muscle memory carries over. The full list is in Settings (⌘,), under Shortcuts.
+Conductor's shortcuts still work, so muscle memory carries over. The full list is in Settings (⌘,), under Shortcuts, and [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md) maps Conductor's concepts to nekotrail's.
 
 | Keys | Action |
 |---|---|
