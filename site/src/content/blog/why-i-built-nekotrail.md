@@ -49,7 +49,7 @@ Two reasons:
 
 ## Why your own agents
 
-I didn't want another model wrapper. NekoTrail drives the official CLIs (Claude Code, Codex, Gemini CLI and 13 more) with your logins. Your subscription is used as is. No proxy, no markup.
+I didn't want another model wrapper. NekoTrail drives the agents' own CLIs (Claude Code, Codex, Gemini CLI and 13 more) with your logins. Your subscription is used as is. No proxy, no markup.
 
 It also means no lock-in. Race two agents on one task, or hand a half-done task to another when the first runs out.
 

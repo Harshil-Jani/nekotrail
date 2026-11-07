@@ -49,7 +49,7 @@ MIT. Workspaces, branches and chats stay on your disk.
 <td width="50%" valign="top">
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/icons/key-dark.svg"><img src="docs/readme/icons/key-light.svg" width="44" alt=""></picture><br>
 <b>Your agents, your logins.</b><br>
-Sixteen agents through their official CLIs. No proxy, no markup.
+Sixteen agents through the agents' own CLIs. No proxy, no markup.
 </td>
 </tr>
 <tr>
@@ -104,7 +104,7 @@ Out of usage? Codex picks up in the same branch, from a brief you read first.
 <td width="50%" valign="top">
 <img src="docs/readme/gifs/queue.gif" width="100%" alt="The queue running three tasks at once: one finishes and the next starts, another stops to wait for your OK in gold, and Open goes to it"><br>
 <b>Queue the night's work.</b><br>
-Tasks run a few at a time and wait out usage limits. One that needs you turns gold.
+Tasks run a few at a time and respect each plan's limits, picking up after they reset. One that needs you turns gold.
 </td>
 </tr>
 <tr>
@@ -197,7 +197,7 @@ Every workspace is a star in a cat constellation. Merged PRs make it shine.
 
 ## Sixteen agents, one window
 
-<p align="center">Through their official CLIs, on your own logins and subscriptions. No proxy, no markup.</p>
+<p align="center">Through the agents' own CLIs, on your own logins and subscriptions. No proxy, no markup.</p>
 
 <table align="center">
 <tr><td width="25%">Claude Code</td><td width="25%">Codex</td><td width="25%">Gemini CLI</td><td width="25%">OpenCode</td></tr>
@@ -220,6 +220,8 @@ Every workspace is a star in a cat constellation. Merged PRs make it shine.
 3. Open NekoTrail as usual. It checks your setup on first launch and gives you the exact command for anything missing.
 
 **Requirements:** [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one agent CLI, such as [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai). Setup lists all sixteen with their install commands.
+
+**Gemini CLI accounts.** Gemini CLI signs in with a Gemini API key, Vertex AI or a Gemini Code Assist plan. Google says free-tier and Google One users moved from Gemini CLI to Antigravity CLI on 18 June 2026; check [Google's Gemini CLI terms](https://www.geminicli.com/docs/resources/tos-privacy) for which accounts it accepts.
 
 **Updates.** NekoTrail checks for a new release on launch and every 6 hours, and offers to update itself (<kbd>⌘K</kbd> → Check for updates, or Settings). It waits for your agents before restarting. If you're on 0.10.1 or earlier, install the latest release from the download link once by hand: those versions can't update themselves yet.
 

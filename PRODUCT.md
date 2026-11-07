@@ -23,7 +23,7 @@ NekoTrail runs many coding agents in parallel on your own machine. Every task ge
 ## Positioning
 
 - **Open source and local-first.** MIT licensed. Runs on your machine; code and chats stay there.
-- **Bring any agent.** Drives sixteen agents through their official CLIs with the user's own subscriptions and settings. Agents that speak the Agent Client Protocol (ACP) are one registry entry each.
+- **Bring any agent.** Drives sixteen agents through the agents' own CLIs with the user's own subscriptions and settings. Agents that speak the Agent Client Protocol (ACP) are one registry entry each.
 - **A safe move from Conductor.** Imports repos, active workspaces and chats from a local Conductor install and moves the worktrees out of Conductor's folder, checking each one. Imported chats continue the same agent session.
 
 ## Operating Context
