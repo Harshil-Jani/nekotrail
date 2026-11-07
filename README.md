@@ -23,8 +23,8 @@
 </p>
 
 <p>
-<a href="https://github.com/sponsors/Harshil-Jani"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/buttons/sponsor-dark.svg"><img src="docs/sponsor/github-sponsors.svg" height="40" alt="Sponsor on GitHub"></picture></a>&nbsp;
-<a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="40" alt="Buy me a coffee"></a>
+<a href="https://github.com/sponsors/Harshil-Jani"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/buttons/sponsor-dark.svg"><img src="docs/sponsor/github-sponsors.svg" height="30" alt="Sponsor on GitHub"></picture></a>&nbsp;
+<a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="30" alt="Buy me a coffee"></a>
 </p>
 
 <br>
