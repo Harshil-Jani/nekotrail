@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronRight, CircleAlert, Copy, Download, FolderInput, FolderOpen, GitFork, Lock, Plus, RotateCw, Search, SquareTerminal, X } from "lucide-react";
 import { api, errText, type Agent, type Doctor, type GithubUser, type ImportReport, type Repo } from "../api";
 import { IS_MAC, keyHint } from "../platform";
@@ -153,22 +153,21 @@ export function CloneSheet({ onDone, onClose }: { onDone: (r: Repo) => void; onC
 
 /** What you see with no workspace open: setup, ways to start, and the Conductor import. */
 export function Welcome({
-  me, repos, mood, purring, onPet, onAddRepo, onClone, onNew, canImport, onImport, onImported, onImportTerminal,
+  me, repos, mood, purring, onPet, onAddRepo, onClone, onNew, canImport, onImport, moveNotice, refreshKey, onImportTerminal,
 }: {
   me: GithubUser; repos: Repo[]; mood: Mood; purring: boolean; onPet: () => void;
   onAddRepo: () => void; onClone: () => void; onNew: () => void;
+  /** Opens the Conductor sheet, which imports and moves the worktrees out of Conductor's folder. */
   canImport: boolean; onImport: () => Promise<void>;
-  onImported?: () => void;
+  /** The one-time notice for imported workspaces still in Conductor's folder. */
+  moveNotice?: ReactNode;
+  /** Changes when workspaces come or go, so the import card counts again. */
+  refreshKey?: number;
   /** Opens "Import terminal sessions" (Claude Code, Codex and Gemini chats run in a terminal). */
   onImportTerminal?: () => void;
 }) {
   const [preview, setPreview] = useState<ImportReport | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [outside, setOutside] = useState<string[]>([]);
-  const [moving, setMoving] = useState(false);
-  const [moveResult, setMoveResult] = useState<string | null>(null);
-  useEffect(() => { api.importedOutside().then(setOutside).catch(() => {}); }, [repos.length]);
-  useEffect(() => { if (canImport) api.importPreview().then(setPreview).catch(() => {}); }, [canImport, repos.length]);
+  useEffect(() => { if (canImport) api.importPreview().then(setPreview).catch(() => {}); }, [canImport, repos.length, refreshKey]);
   const fresh = repos.length === 0;
   // Setup state from the checklist: it goes first while anything is red, and the greeting waits for GitHub.
   const [setup, setSetup] = useState<{ allOk: boolean; ghOk: boolean } | null>(null);
@@ -187,27 +186,7 @@ export function Welcome({
       <p className="lede">Run many coding agents at once. Each one gets its own branch and folder, and each one ends as a PR.</p>
       {setupRed && setupCard}
 
-      {outside.length > 0 && (
-        <div className="import-card hero">
-          <h2>Move your imported workspaces into nekotrail</h2>
-          <p>
-            {outside.length} imported {outside.length === 1 ? "workspace still lives" : "workspaces still live"} in Conductor's folder. If Conductor cleans up or is uninstalled, that folder can be deleted with your uncommitted work.
-            Moving them takes a few seconds; branches, chats and uncommitted changes come along.
-          </p>
-          <button disabled={moving} onClick={async () => {
-            setMoving(true);
-            try {
-              const [n, problems] = await api.relocateImported();
-              setMoveResult(problems.length ? `Moved ${n}. Not moved: ${problems.join(" ")}` : `Moved ${n} ${n === 1 ? "workspace" : "workspaces"} into ~/nekotrail/workspaces.`);
-              setOutside(await api.importedOutside());
-              onImported?.();
-            } catch (e) { setMoveResult(String(e)); } finally { setMoving(false); }
-          }}>
-            {moving ? <span className="spinner" /> : <FolderInput size={15} />}Move {outside.length} {outside.length === 1 ? "workspace" : "workspaces"}
-          </button>
-        </div>
-      )}
-      {moveResult && <p className="muted">{moveResult}</p>}
+      {moveNotice}
       {hasImport && (
         <div className="import-card hero">
           <div className="row import-head">
@@ -218,10 +197,10 @@ export function Welcome({
           <p>
             Bring over {preview.repos > 0 ? `${preview.repos} ${preview.repos === 1 ? "repo" : "repos"}, ` : ""}
             {preview.workspaces} {preview.workspaces === 1 ? "workspace" : "workspaces"} and {preview.sessions} {preview.sessions === 1 ? "chat" : "chats"} with their history.
-            {preview.skipped > 0 ? ` ${preview.skipped} already here or gone from disk.` : ""} nekotrail only reads Conductor's data. Nothing is moved or deleted, and chats continue where they left off.
+            {preview.skipped > 0 ? ` ${preview.skipped} already here or gone from disk.` : ""} Their folders live inside Conductor's, which Conductor says it deletes when its app shuts down, so nekotrail moves them into its own folder. You see exactly what moves first.
           </p>
-          <button disabled={importing} onClick={async () => { setImporting(true); await onImport(); setImporting(false); setPreview(null); }}>
-            {importing ? <span className="spinner" /> : <Download size={15} />}Import from Conductor
+          <button className="primary" onClick={() => onImport()}>
+            <FolderInput size={15} />Bring them over…
           </button>
         </div>
       )}

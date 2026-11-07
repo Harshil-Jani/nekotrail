@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
+import { FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
 import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
@@ -35,6 +35,8 @@ import { CommandsLog } from "./components/CommandsLog";
 import { RulesSheet } from "./components/RulesSheet";
 import { ExportSheet } from "./components/ExportSheet";
 import { TerminalImport } from "./components/TerminalImport";
+import { ConductorSheet, MoveNotice } from "./components/ConductorSheet";
+import { NOTICE_KEY, noticeShown } from "./conductorRescue";
 import { Settings, type Pane as SettingsPane } from "./components/Settings";
 import { loadPrompts, type PromptEntry } from "./prompts";
 import { TrustSheet } from "./components/TrustSheet";
@@ -154,6 +156,14 @@ export default function App() {
   const [toast, setToast] = useState<{ text: string; error?: boolean; action?: { label: string; run: () => void } } | null>(null);
   const [discovery, setDiscovery] = useState<{ star: Star; kind: "lit" | "shining" } | null>(null);
   const [canImport, setCanImport] = useState(false);
+  // The Conductor sheet: "import" brings work over and moves it out of Conductor's folder; "move"
+  // only moves workspaces imported earlier. ?rescue= opens it in the preview (moving, done and
+  // partial start the move straight away).
+  const rescueParam = params.get("rescue");
+  const [conductorSheet, setConductorSheet] = useState<null | "import" | "move">(rescueParam === "move" ? "move" : rescueParam && rescueParam !== "notice" ? "import" : null);
+  // Imported Conductor workspaces still in Conductor's folder, and the one-time notice about them.
+  const [outside, setOutside] = useState<string[]>([]);
+  const [moveNoticeOff, setMoveNoticeOff] = useState(() => localStorage.getItem(NOTICE_KEY));
   // First run: the welcome flow's step (null once done, or for people who had repos already), the
   // coach-mark tour, and whether the first look at the database has happened (both wait for it).
   const [onboardStep, setOnboardStep] = useState<Step | null>(null);
@@ -1160,15 +1170,11 @@ export default function App() {
     openUrl(localUrls[ws.id] ?? "http://localhost:3000").catch((e) => say(errText(e), true));
   };
 
-  const importConductor = async () => {
-    try {
-      const r = await api.importConductor();
-      await refresh();
-      say(`Imported ${r.repos} repos, ${r.workspaces} workspaces and ${r.sessions} chats (${r.chats_with_history} with history)${r.skipped ? `. Skipped ${r.skipped} already here or missing on disk` : ""}.`);
-    } catch (e) {
-      say(errText(e), true);
-    }
-  };
+  const importConductor = async () => setConductorSheet("import");
+  useEffect(() => { api.importedOutside().then(setOutside).catch(() => {}); }, [workspaces.length, repos.length]);
+  const showMoveNotice = noticeShown(outside.length, moveNoticeOff);
+  const dismissMoveNotice = () => { localStorage.setItem(NOTICE_KEY, "dismissed"); setMoveNoticeOff("dismissed"); };
+  const conductorChanged = () => { refresh(); api.importedOutside().then(setOutside).catch(() => {}); };
 
   const terminalImported = async (r: TerminalReport) => {
     setTerminalImport(false);
@@ -1250,7 +1256,7 @@ export default function App() {
   };
   // The tour shows by itself once, when the first workspace is open and nothing else is on top.
   // The "You lit a star" card plays first: the delight, then the tour.
-  const tourBusy = !!discovery || !!trustAsk || palette || !!newFor || settingsOpen || searchOpen || terminalImport || cloning || !!settingsFor;
+  const tourBusy = !!discovery || !!trustAsk || palette || !!newFor || settingsOpen || searchOpen || terminalImport || !!conductorSheet || cloning || !!settingsFor;
   const tourReady = view === "workspace" && !!ws && ws.state === "active" && !isHistory(ws);
   useEffect(() => {
     if (!looked || tourOpen || !shouldAutoTour(localStorage, { workspaceOpen: tourReady, busy: tourBusy })) return;
@@ -1378,7 +1384,8 @@ export default function App() {
     for (const r of repos) c.push({ id: `filter-${r.id}`, group: "Go", label: `Show only ${r.name}`, keywords: "filter project repo", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [r.id] }) });
     if (getSettings().repoFilter.length) c.push({ id: "filter-all", group: "Go", label: "Show all repos", keywords: "filter clear project", icon: <FolderOpen size={15} />, run: () => saveSettings({ ...getSettings(), repoFilter: [] }) });
     for (const r of repos) c.push({ id: `scripts-${r.id}`, group: "App", label: `Edit ${r.name} setup and run scripts`, icon: <Gear size={15} />, run: () => setSettingsFor(r.id) });
-    if (canImport) c.push({ id: "import", group: "App", label: "Import from Conductor", icon: <Download size={15} />, run: importConductor });
+    if (canImport) c.push({ id: "import", group: "App", label: "Import from Conductor", keywords: "move worktrees conductor folder", icon: <Download size={15} />, run: importConductor });
+    if (outside.length) c.push({ id: "conductor-move", group: "App", label: `Move ${outside.length === 1 ? "1 workspace" : `${outside.length} workspaces`} out of Conductor's folder`, keywords: "conductor import relocate worktree keep safe", icon: <FolderInput size={15} />, run: () => setConductorSheet("move") });
     c.push({ id: "import-terminal", group: "App", label: "Import terminal sessions", keywords: "claude code codex gemini history cli", icon: <SquareTerminal size={15} />, run: () => setTerminalImport(true) });
     return c;
   };
@@ -1540,7 +1547,8 @@ export default function App() {
           <Welcome
             me={me} repos={repos} mood={mood} purring={purring} onPet={pet}
             onAddRepo={addRepo} onClone={() => setCloning(true)} onNew={() => openNew()}
-            canImport={canImport} onImport={importConductor} onImported={refresh}
+            canImport={canImport} onImport={importConductor} refreshKey={workspaces.length}
+            moveNotice={showMoveNotice ? <MoveNotice count={outside.length} onMove={() => setConductorSheet("move")} onDismiss={dismissMoveNotice} /> : null}
             onImportTerminal={() => setTerminalImport(true)}
           />
         )}
@@ -1719,6 +1727,7 @@ export default function App() {
               />
             )}
 
+            {showMoveNotice && <MoveNotice compact count={outside.length} onMove={() => setConductorSheet("move")} onDismiss={dismissMoveNotice} />}
             {away?.id === ws.id && (
               <div className="away-banner" role="status">
                 <span className="unread" /><b>While you were away:</b> {away.text}
@@ -1873,6 +1882,10 @@ export default function App() {
         return <ExportSheet ws={w} repoName={repos.find((r) => r.id === w.repo_id)?.name ?? ""} star={starName(sky, w)} initialChat={exportFor.chat}
           pr={prs[w.id]?.pr ?? undefined} onSay={say} onClose={() => setExportFor(null)} />;
       })()}
+      {conductorSheet && (
+        <ConductorSheet mode={conductorSheet} autoStart={!!rescueParam && ["moving", "done", "partial"].includes(rescueParam)}
+          onChanged={conductorChanged} onClose={(note) => { setConductorSheet(null); if (note) say(note.text, note.bad); }} />
+      )}
       {terminalImport && <TerminalImport onClose={() => setTerminalImport(false)} onImported={terminalImported} />}
       {storage && <Storage names={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : id; }} onClose={() => setStorage(false)} onSay={say} />}
       {comparing && (

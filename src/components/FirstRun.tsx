@@ -92,7 +92,7 @@ function AgentsStep({ mood, purring, onPet, ready, onReady, onNext, onSkip }: {
 }
 
 const ACTION: Record<CodeAction, { label: string; icon: React.ReactNode }> = {
-  conductor: { label: "Import from Conductor", icon: <Download size={15} /> },
+  conductor: { label: "Import from Conductor…", icon: <Download size={15} /> },
   terminal: { label: "Import terminal chats", icon: <SquareTerminal size={15} /> },
   local: { label: "Open a local repo", icon: <FolderOpen size={15} /> },
   clone: { label: "Clone from GitHub", icon: <GitFork size={15} /> },
@@ -122,7 +122,7 @@ function CodeStep({ repos, canImport, onAddRepo, onClone, onImportConductor, onI
   };
   const hero = primary === "conductor" && conductor ? {
     title: "Pick up where you left off in Conductor",
-    body: `Found ${conductor.repos} ${conductor.repos === 1 ? "repo" : "repos"}, ${conductor.workspaces} ${conductor.workspaces === 1 ? "workspace" : "workspaces"} and ${conductor.sessions} ${conductor.sessions === 1 ? "chat" : "chats"}. nekotrail only reads Conductor's data, and chats continue where they left off.`,
+    body: `Found ${conductor.repos} ${conductor.repos === 1 ? "repo" : "repos"}, ${conductor.workspaces} ${conductor.workspaces === 1 ? "workspace" : "workspaces"} and ${conductor.sessions} ${conductor.sessions === 1 ? "chat" : "chats"}. Their folders live inside Conductor's, which Conductor says it deletes when its app shuts down, so nekotrail moves them into its own folder. You see exactly what moves first, and chats continue where they left off.`,
   } : primary === "terminal" ? {
     title: "Bring in your terminal chats",
     body: `Found ${found.terminal} ${found.terminal === 1 ? "chat" : "chats"} you ran with Claude Code, Codex or Gemini in a terminal. You pick which ones, and their repos come along. Read-only.`,
