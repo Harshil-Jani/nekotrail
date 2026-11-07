@@ -63,6 +63,11 @@ export type Doctor = {
   gh: { installed: boolean; ok: boolean; login: string | null };
 } & Record<Agent, { ok: boolean; version: string }>;
 export type ImportReport = { repos: number; workspaces: number; sessions: number; skipped: number; chats_with_history: number };
+/** A Conductor worktree that would move into nekotrail's folder (src-tauri/src/rescue.rs). */
+export type RescueItem = { id: string; repo: string; label: string; branch: string; from: string; to: string; kb: number; uncommitted: number; imported: boolean };
+export type RescuePlan = { report: ImportReport | null; items: RescueItem[]; root: string };
+/** What one move did. Not moved means it is still where it was, untouched. */
+export type RescueOutcome = { id: string; label: string; from: string; to: string; moved: boolean; error: string | null; problems: string[]; uncommitted: number };
 
 export type CatalogModel = { id: string; label: string; efforts: string[]; default_effort?: string | null; new?: boolean; released?: string };
 export type AgentCatalog = { label: string; effort_label: string; effort_names: Record<string, string>; default_model: string; models: CatalogModel[] };
@@ -447,7 +452,10 @@ export const api = {
   /** From the file lists line counts already gathered: no git of its own. */
   collisions: (prs: Record<string, string>) => invoke<Collision[]>("collisions", { prs }),
   importedOutside: () => invoke<string[]>("imported_outside"),
-  relocateImported: () => invoke<[number, string[]]>("relocate_imported"),
+  /** Moves with `git worktree move` and checks each one after. No ids: every one still outside. */
+  relocateImported: (ids?: string[]) => invoke<RescueOutcome[]>("relocate_imported", { ids: ids ?? null }),
+  /** What the Conductor sheet lists before anything changes. Read-only. */
+  conductorRescuePlan: () => invoke<RescuePlan>("conductor_rescue_plan"),
   sections: () => invoke<Section[]>("sections"),
   createSection: (name: string) => invoke<Section>("create_section", { name }),
   renameSection: (id: string, name: string) => invoke<void>("rename_section", { id, name }),
