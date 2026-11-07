@@ -68,7 +68,7 @@ cd extensions/vscode && bun install && bun test test/ && bun run typecheck
 Also:
 
 - Add a line for anything users will notice under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md), written for users, not for developers.
-- If you add, remove or upgrade a dependency, regenerate the license list: `bun scripts/third-party-notices.ts > THIRD_PARTY_NOTICES.md`. Dependencies under the GPL or AGPL can't be bundled with the app.
+- If you add, remove or upgrade a dependency, regenerate the license list and the bundled license texts: `bun run licenses` (it rewrites THIRD_PARTY_NOTICES.md; CI fails if that file is stale). Dependencies under the GPL or AGPL can't be bundled with the app, and `cargo deny check` in CI enforces the Rust side.
 - Keep copy plain and short. Cat puns are fine in small doses, never in errors.
 - Never put real tokens, keys or personal paths in code, tests or fixtures. Use obviously fake values (`/Users/sam`, `sk-test-...`).
 - One topic per PR, with a description of what changed and how you checked it. Screenshots help for UI changes.

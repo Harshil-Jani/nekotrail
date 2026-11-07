@@ -20,6 +20,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "licenses": "bun scripts/third-party-notices.ts",
     "tauri": "tauri"
   },
   "dependencies": {

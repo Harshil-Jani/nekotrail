@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bun run licenses && bun run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -90,6 +90,9 @@
     "shortDescription": "Run many coding agents in parallel, one worktree and pull request each.",
     "longDescription": "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request. Open source and local-first: it drives the agent CLIs you already use, such as Claude Code, Codex, Gemini CLI and OpenCode, with your own logins.",
     "createUpdaterArtifacts": true,
+    "resources": {
+      "resources/THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt"
+    },
     "macOS": {
       "bundleName": "NekoTrail",
       "minimumSystemVersion": "13.0",

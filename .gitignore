@@ -47,5 +47,8 @@ dist-ssr
 .impeccable/mocks/
 .impeccable/*.json
 
+# Licence texts, generated at build time by `bun run licenses`
+src-tauri/resources/THIRD_PARTY_LICENSES.txt
+
 # Astro site build cache
 site/.astro

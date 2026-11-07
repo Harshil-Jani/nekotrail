@@ -26,6 +26,8 @@ jobs:
         with:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
+      # THIRD_PARTY_NOTICES.md matches the dependencies, and every bundled component has a licence text.
+      - run: bun scripts/third-party-notices.ts --check
       - run: bunx tsc --noEmit
       - run: bun run build
       - run: bun test tests/
