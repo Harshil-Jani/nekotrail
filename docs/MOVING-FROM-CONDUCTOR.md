@@ -119,8 +119,8 @@ git -C <your repo> worktree list
 | Cloud workspaces, organisations, team features | Not in Nekotrail: it runs on your Mac only, with no account |
 
 New in Nekotrail with no Conductor counterpart: **Hand off to another agent** (another agent carries on
-the same task in the same workspace, from a brief you read first), Claude + Codex bake-offs with
-Compare, the task queue, spend caps, and the night sky.
+the same task in the same workspace, from a brief you read first), racing Claude and Codex with
+Compare agents, the task queue, spend caps, and the night sky.
 
 ## Shortcuts
 
