@@ -14,7 +14,9 @@
 
 <p align="center"><img src="docs/screenshots/workspace.png" width="900" alt="nekotrail: a workspace with a Claude chat, PR status, CI checks and the sidebar"></p>
 
-<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a> · <a href="https://github.com/sponsors/Harshil-Jani">Sponsor</a></p>
+<p align="center"><a href="https://github.com/Harshil-Jani/nekotrail/releases/latest"><b>Download for Mac</b></a> · <a href="#tour">Take the tour</a> · <a href="CHANGELOG.md">What's new</a></p>
+
+<p align="center"><a href="https://github.com/sponsors/Harshil-Jani"><img src="docs/sponsor/github-sponsors.svg" height="40" alt="Sponsor on GitHub"></a> <a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="40" alt="Buy me a coffee"></a></p>
 
 ---
 
@@ -230,7 +232,9 @@ Early (0.21). Built and used daily on macOS. Linux x86_64 builds are new and exp
 
 ## Sponsor
 
-nekotrail is free, open source and local-first, with no account and no paid tier. If it saves you time, you can support its development on [GitHub Sponsors](https://github.com/sponsors/Harshil-Jani). In the app: Settings, next to the version, or "Sponsor nekotrail" in ⌘K.
+nekotrail is free, open source and local-first, with no account and no paid tier. If it saves you time, you can support its development on [GitHub Sponsors](https://github.com/sponsors/Harshil-Jani) or with a one-off coffee on [Buy Me a Coffee](https://buymeacoffee.com/harshiljani). In the app: Settings, next to the version, or "Sponsor nekotrail" and "Buy me a coffee" in ⌘K.
+
+<p><a href="https://github.com/sponsors/Harshil-Jani"><img src="docs/sponsor/github-sponsors.svg" height="40" alt="Sponsor on GitHub"></a> <a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="40" alt="Buy me a coffee"></a></p>
 
 ## License
 

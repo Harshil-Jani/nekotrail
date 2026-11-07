@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Heart, Minus, Plus, Volume2, X } from "lucide-react";
+import { Coffee, Heart, Minus, Plus, Volume2, X } from "lucide-react";
 import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
 import { IS_MAC, keyHint } from "../platform";
@@ -364,9 +364,10 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
           ) : (
             <button className="link" onClick={onCheckUpdates}>Check for updates</button>
           )}
-          {/* Sponsor is a different kind of link from the version ones: set apart, with a heart. */}
+          {/* Sponsor links are a different kind of link from the version ones: set apart, each with its icon. */}
           <span className="foot-sep" aria-hidden />
           <button className="link sponsor" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="nekotrail is free and open source. Sponsoring keeps it that way."><Heart size={12} aria-hidden />Sponsor</button>
+          <button className="link sponsor" onClick={() => openUrl("https://buymeacoffee.com/harshiljani").catch(() => {})} title="Buy the maintainer a coffee: a one-off thank you, no account needed."><Coffee size={12} aria-hidden />Buy me a coffee</button>
           <span className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>
