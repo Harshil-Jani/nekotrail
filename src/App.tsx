@@ -8,6 +8,7 @@ import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
 import { applyRunning, DoneWatchdog, Latest, sameSet, type RunningSets } from "./runState";
+import { ptyBus } from "./ptyBus";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -184,21 +185,16 @@ export default function App() {
   useEffect(() => {
     const unExit = listen<{ id: string }>("pty-exit", ({ payload }) =>
       setLivePtys((s) => { const n = new Set(s); n.delete(payload.id); return n; }));
-    // Spot "http://localhost:3000" in run output, so ⌘⇧B can open it.
-    const unData = listen<{ id: string; data: string }>("pty", ({ payload }) => {
-      if (!payload.id.endsWith(":run")) return;
-      const m = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):\d+[^\s"'\x1b]*/.exec(payload.data.replace(/\x1b\[[0-9;]*m/g, ""));
-      if (m) setLocalUrls((u) => ({ ...u, [payload.id.split(":")[0]]: m[0].replace("0.0.0.0", "localhost") }));
+    // Spot "http://localhost:3000" in run output, so ⌘⇧B can open it (through the terminals' one listener).
+    const unData = ptyBus.tap((id, data) => {
+      if (!id.endsWith(":run")) return;
+      const m = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):\d+[^\s"'\x1b]*/.exec(data.replace(/\x1b\[[0-9;]*m/g, ""));
+      if (m) setLocalUrls((u) => ({ ...u, [id.split(":")[0]]: m[0].replace("0.0.0.0", "localhost") }));
     });
     return () => { unExit.then((f) => f()); unData.then((f) => f()); };
   }, []);
-  /** Resolves when a terminal process ends (or after 20 minutes, whichever is first). */
-  const waitForExit = (id: string) => new Promise<void>((resolve) => {
-    const t = setTimeout(() => resolve(), 20 * 60_000);
-    const un = listen<{ id: string }>("pty-exit", ({ payload }) => {
-      if (payload.id === id) { clearTimeout(t); un.then((f) => f()); resolve(); }
-    });
-  });
+  /** Resolves when a terminal process ends (or after 20 minutes, whichever is first); never leaves a listener behind. */
+  const waitForExit = (id: string) => ptyBus.waitForExit(id, 20 * 60_000);
   // j / k move through the sidebar when you're not typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

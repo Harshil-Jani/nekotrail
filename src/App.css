@@ -631,6 +631,9 @@ button.good-btn:hover { background: var(--good); }
 .term-body[hidden] { display: none; }
 .terminal-wrap { position: relative; height: 100%; }
 .terminal-idle { position: absolute; top: var(--s3); left: var(--s4); margin: 0; font-size: 12.5px; z-index: 1; }
+/* A shell that exited, didn't start or is slow to: say so, with a way to start a fresh one. */
+.terminal-state { position: absolute; top: var(--s3); right: var(--s4); z-index: 1; display: flex; align-items: center; gap: var(--s2); padding: 4px 4px 4px var(--s3); font-size: 12.5px; color: var(--text); background: var(--surface); border-radius: var(--r); box-shadow: 0 0 0 0.5px var(--line-strong); }
+.terminal-state button { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; }
 .term-action { align-self: center; padding: 2px var(--s2); font-size: 12px; margin-right: var(--s2); }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
 .terminal-wrap .terminal { height: 100%; box-sizing: border-box; }

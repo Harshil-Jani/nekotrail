@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { listen } from "@tauri-apps/api/event";
 import { Play, Plus, RotateCw, Square, SquareTerminal, Wrench, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { api, errText } from "../api";
-import { startFailedText } from "../pty";
+import { afterScrollback, startFailedText } from "../pty";
+import { ptyBus } from "../ptyBus";
+
+const SLOW_START_MS = 8000; // a shell that hasn't answered by now gets a Try again
 import { fontStack, TERM_SIZE, TERM_STACK } from "../appearance";
 import { getSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
@@ -18,6 +20,9 @@ import { IS_MAC, keyHint, mod } from "../platform";
 export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: string; cwd: string; mode?: "shell" | "attach"; nonce?: number }) {
   const host = useRef<HTMLDivElement>(null);
   const [idle, setIdle] = useState(false);
+  // "slow": the shell hasn't answered after a while; "exited" and "failed" offer a fresh shell.
+  const [state, setState] = useState<"starting" | "live" | "slow" | "exited" | "failed">("starting");
+  const [restart, setRestart] = useState(0);
 
   useEffect(() => {
     const look = getSettings();
@@ -54,24 +59,50 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
       });
     }
     let live = true;
+    setState("starting");
 
-    const onData = t.onData((d) => api.ptyWrite(ptyId, d));
-    const un = listen<{ id: string; data: string }>("pty", ({ payload }) => {
-      if (payload.id === ptyId) { setIdle(false); t.write(payload.data); }
-    });
-    const unExit = listen<{ id: string }>("pty-exit", ({ payload }) => {
-      if (payload.id !== ptyId) return;
-      t.write(mode === "shell" ? "\r\n\x1b[2m[shell exited; open a new tab to start another]\x1b[0m\r\n" : "\r\n\x1b[2m[finished]\x1b[0m\r\n");
-    });
-    const start = mode === "shell" ? api.ptyOpen(ptyId, cwd, t.cols, t.rows) : api.ptyAttach(ptyId);
-    start.then((sb) => {
+    const onData = t.onData((d) => { api.ptyWrite(ptyId, d).catch(() => {}); });
+    // Output that arrives before the scrollback does waits here, so none is lost or shown twice.
+    let early: string[] | null = [];
+    let exitedEarly = false;
+    let off: (() => void) | null = null;
+    const ended = () => {
+      t.write(mode === "shell" ? "\r\n\x1b[2m[shell exited]\x1b[0m\r\n" : "\r\n\x1b[2m[finished]\x1b[0m\r\n");
+      if (mode === "shell") setState("exited");
+    };
+    const slow = setTimeout(() => { if (live) setState((s) => (s === "starting" ? "slow" : s)); }, SLOW_START_MS);
+    (async () => {
+      // Listen first, then start: a new shell's first prompt can come before `pty_open` returns.
+      const unsub = await ptyBus.subscribe(ptyId, (data) => {
+        if (early) { early.push(data); return; }
+        setIdle(false);
+        t.write(data);
+      }, () => {
+        if (!live) return;
+        if (early) { exitedEarly = true; return; } // said after the scrollback, below
+        ended();
+      });
+      if (!live) { unsub(); return; }
+      off = unsub;
+      // This shell ended earlier (seen even with the tab closed): clear it, so a fresh one starts.
+      if (mode === "shell" && ptyBus.takeEnded(ptyId)) await api.ptyClose(ptyId).catch(() => {});
+      const sb = await (mode === "shell" ? api.ptyOpen(ptyId, cwd, t.cols, t.rows) : api.ptyAttach(ptyId));
       if (!live) return;
+      clearTimeout(slow);
       if (sb) t.write(sb);
+      for (const d of afterScrollback(sb ?? "", early ?? [])) t.write(d);
+      early = null;
       if (mode === "attach" && sb === null) setIdle(true);
+      setState("live");
+      if (exitedEarly) ended();
       api.ptyResize(ptyId, t.cols, t.rows).catch(() => {});
-    }).catch((err) => {
+    })().catch((err) => {
+      if (!live) return;
+      clearTimeout(slow);
+      early = null;
       // Say why there is no shell (a folder that is gone, say) instead of a blank terminal that ignores typing.
-      if (live) t.write(startFailedText(errText(err)));
+      t.write(startFailedText(errText(err)));
+      setState("failed");
     });
 
     const ro = new ResizeObserver(() => {
@@ -96,18 +127,31 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
     window.addEventListener("nekotrail-settings", onLook);
     return () => {
       live = false;
+      clearTimeout(slow);
       window.removeEventListener("nekotrail-settings", onLook);
       ro.disconnect();
       onData.dispose();
-      un.then((f) => f());
-      unExit.then((f) => f());
+      off?.();
       t.dispose();
     };
-  }, [ptyId, cwd, mode, nonce]);
+  }, [ptyId, cwd, mode, nonce, restart]);
+
+  // Start a fresh shell in this tab: close what is left of the old one, then build the view again.
+  const startAgain = () => {
+    ptyBus.takeEnded(ptyId);
+    api.ptyClose(ptyId).catch(() => {}).finally(() => setRestart((n) => n + 1));
+  };
+  const stuck = mode === "shell" && (state === "exited" || state === "failed" || state === "slow");
 
   return (
     <div className="terminal-wrap">
       {idle && <p className="terminal-idle muted">Not running. Start it with the button above.</p>}
+      {stuck && (
+        <div className="terminal-state" role="status">
+          <span>{state === "exited" ? "The shell exited." : state === "slow" ? "The shell is taking a while to start." : "The shell didn't start."}</span>
+          <button className="quiet" onClick={startAgain}><RotateCw size={12} />{state === "slow" ? "Try again" : "Start a new shell"}</button>
+        </div>
+      )}
       <div className="terminal" ref={host} />
     </div>
   );
