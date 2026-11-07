@@ -6,7 +6,7 @@
 
 Needs Pillow. After re-shooting docs/screenshots/*.png (1600x1000, dark theme), run this and every README
 image is redrawn with the same file names. --gifs needs the preview harness running
-(`bun run dev -- --port 1439`), Playwright with Chromium, ffmpeg and gifski: see clips.py.
+(`bun run dev -- --port 1441`), Playwright with Chromium, ffmpeg and gifski: see clips.py.
 
 - cards/<name>.png : each screenshot cropped to its feature, all the same size (1084x694), rounded corners,
   a hairline edge (so a dark card still reads on GitHub's dark page) and a soft shadow (for the light page).
@@ -35,7 +35,7 @@ CROPS = {
     "scorecard":     (285, 200, 1000, 625),
     "night-sky":     (264, 10, 1216, 760),
     "model-picker":  (245, 375, 1000, 625),
-    "opencode":      (390, 110, 1040, 650),
+    "opencode":      (390, 225, 1040, 650),
     "stacked":       (264, 0, 1300, 812),
     "board":         (264, 0, 1300, 812),
     "storage":       (285, 180, 1000, 625),

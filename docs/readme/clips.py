@@ -1,6 +1,6 @@
 """Records the README GIFs and the site clips from the preview harness, headless.
 
-    bun run dev -- --port 1439                       # in another terminal
+    bun run dev -- --port 1441                       # in another terminal (or scripts/media/shoot.sh)
     python3 docs/readme/clips.py [name ...]          # record, then encode (all clips by default)
     python3 docs/readme/clips.py --encode [name ...] # encode again from the last recording
 
@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-BASE = os.environ.get("BASE", "http://localhost:1439/preview.html")
+BASE = os.environ.get("BASE", "http://localhost:1441/preview.html")
 WORK = os.path.join(tempfile.gettempdir(), "nekotrail-clips")
 W, H, DSF, FPS = 1200, 750, 2, 30
 GIF_FPS, GIF_Q = 25, 96
@@ -151,7 +151,7 @@ def hero(pg, m):
     move("w3", 486, "OPEN", ["w2", "w5"]); pg.wait_for_timeout(1100)  # Dash opens its PR
     move("w1", 482, "MERGED"); pg.wait_for_timeout(1000)              # Mochi merges
     move("w3", 486, "MERGED"); pg.wait_for_timeout(900)               # Dash merges
-    m.click(pg.locator(".sidebar-foot").get_by_text("stars", exact=False), 800, 500)
+    m.click(pg.locator(".sidebar-foot button.me"), 800, 500)  # the profile row opens the night sky
     js(pg, "() => { window.__shining = undefined; window.__over.snapshot = (r) => ({ ...r, running_workspaces: ['w2', 'w5'] }); window.__emit('workspaces-changed', {}); }")
     pg.wait_for_timeout(1900)
     m.home(600); pg.wait_for_timeout(100)
