@@ -163,7 +163,7 @@ function card(w: number, h: number): string {
   const s = (w * 0.6) / LOCK_VB[2];
   const top = h * 0.3;
   const pitchY = top + LOCK_VB[3] * s + 70 * (h / 640);
-  const fs1 = Math.round(34 * (w / 1280));
+  const fs1 = Math.round(44 * (w / 1280));
   const fs2 = Math.round(24 * (w / 1280));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
   <defs><radialGradient id="sky" cx="0.5" cy="0" r="1.15"><stop offset="0" stop-color="${C.Dusk}"/><stop offset="0.55" stop-color="${C.Night}"/><stop offset="1" stop-color="${C.Midnight}"/></radialGradient></defs>
@@ -171,8 +171,8 @@ function card(w: number, h: number): string {
   <g fill="#fff">${stars}</g>
   ${loaf}
   <g transform="translate(${m} ${top}) scale(${s}) translate(${-LOCK_VB[0]} ${-LOCK_VB[1]})">${lockupBody(C.Paper)}</g>
-  <text x="${m}" y="${pitchY}" font-family="System Font, SF Pro Display, Helvetica Neue, sans-serif" font-weight="600" font-size="${fs1}" fill="${C.Paper}" letter-spacing="-0.3">Run Claude Code, Codex and 14 more coding agents at once.</text>
-  <text x="${m}" y="${pitchY + fs1 * 1.5}" font-family="System Font, SF Pro Text, Helvetica Neue, sans-serif" font-size="${fs2}" fill="${C.Paper}" fill-opacity="0.66">Each task in its own git worktree. Free, open source, local. macOS.</text>
+  <text x="${m}" y="${pitchY}" font-family="System Font, SF Pro Display, Helvetica Neue, sans-serif" font-weight="600" font-size="${fs1}" fill="${C.Paper}" letter-spacing="-0.4">Your coding agents, all at once.</text>
+  <text x="${m}" y="${pitchY + fs1 * 1.5}" font-family="System Font, SF Pro Text, Helvetica Neue, sans-serif" font-size="${fs2}" fill="${C.Paper}" fill-opacity="0.7">Claude Code, Codex and 14 more on your logins, each in its own worktree.</text>
 </svg>`;
 }
 

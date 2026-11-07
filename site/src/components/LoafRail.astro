@@ -1,0 +1,83 @@
+---
+// The constellation rail beside the feature sections. It is The Loaf, the same six stars at the same
+// positions as in the app's night sky (src-tauri/src/names.rs). Each feature section lights one star
+// as you reach it, and a line appears only once both of its stars are lit, which is the app's rule
+// for merged PRs. With all six lit, the cat the stars stand for is sketched in behind them.
+interface Props { names: string[] }
+const { names } = Astro.props;
+const stars: [number, number][] = [[90, 120], [130, 70], [175, 115], [270, 120], [270, 210], [90, 210]];
+const lines: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
+// Label placement per star: [dx, dy, anchor]
+const labels: [number, number, string][] = [[-12, 4, "end"], [0, -16, "middle"], [0, 24, "middle"], [12, 4, "start"], [12, 4, "start"], [-12, 4, "end"]];
+---
+<div class="rail" aria-hidden="true" data-rail>
+  <p class="rail-caption">
+    <span class="rail-lead">Every merged PR lights a star.</span>
+    <span class="rail-todo">Scroll to light The Loaf.</span>
+    <span class="rail-done">The Loaf: one of 8 cat constellations in the app.</span>
+  </p>
+  <svg viewBox="22 34 296 214">
+    <g class="rail-figure">
+      <!-- the cat the stars stand for: second ear, face, tucked paws and a tail round the front -->
+      <path d="M104 112 L112 86 L124 102" />
+      <path d="M112 150 q5 -5 10 0 M140 150 q5 -5 10 0" />
+      <path d="M128 162 l3 4 l3 -4 M131 166 q-4 5 -8 2 M131 166 q4 5 8 2" />
+      <path d="M98 160 l-22 -4 M98 168 l-22 2 M164 160 l22 -4 M164 168 l22 2" />
+      <path d="M118 210 q12 -10 24 0 M168 210 q12 -10 24 0" />
+      <path d="M270 196 q34 4 26 30 q-8 20 -64 16" />
+    </g>
+    <g class="rail-lines">
+      {lines.map(([a, b]) => (
+        <line x1={stars[a][0]} y1={stars[a][1]} x2={stars[b][0]} y2={stars[b][1]} data-a={a} data-b={b}
+          style={`--len:${Math.hypot(stars[a][0] - stars[b][0], stars[a][1] - stars[b][1]).toFixed(1)}`} />
+      ))}
+    </g>
+    {stars.map(([x, y], i) => (
+      <g class="rail-star" data-star={i}>
+        <circle class="halo" cx={x} cy={y} r="11" />
+        <circle class="core" cx={x} cy={y} r="4" />
+        <text x={x + labels[i][0]} y={y + labels[i][1]} text-anchor={labels[i][2]}>{names[i]}</text>
+      </g>
+    ))}
+  </svg>
+  <p class="rail-count"><span data-rail-count>0</span> of {stars.length} lit</p>
+</div>
+
+<script>
+  // Light star n when feature section n reaches the upper part of the screen. Lit stars stay lit.
+  const rail = document.querySelector<HTMLElement>("[data-rail]");
+  const sections = Array.from(document.querySelectorAll<HTMLElement>(".feature[data-step]"));
+  if (rail && sections.length) {
+    const starsEl = Array.from(rail.querySelectorAll<SVGGElement>("[data-star]"));
+    const linesEl = Array.from(rail.querySelectorAll<SVGLineElement>("line[data-a]"));
+    const count = rail.querySelector<HTMLElement>("[data-rail-count]");
+    const lit = new Set<number>();
+    let current = -1;
+    const paint = () => {
+      starsEl.forEach((g, i) => {
+        g.classList.toggle("on", lit.has(i));
+        g.classList.toggle("current", i === current);
+      });
+      linesEl.forEach((l) => l.classList.toggle("on", lit.has(Number(l.dataset.a)) && lit.has(Number(l.dataset.b))));
+      if (count) count.textContent = String(lit.size);
+      rail.classList.toggle("complete", lit.size === starsEl.length);
+    };
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const n = Number((e.target as HTMLElement).dataset.step);
+          e.target.classList.add("lit");
+          // Scrolling fast past several sections still lights every star before this one.
+          for (let i = 0; i <= n; i++) lit.add(i);
+          current = n;
+        }
+        paint();
+      }, { rootMargin: "0px 0px -45% 0px" });
+      sections.forEach((s) => io.observe(s));
+    } else {
+      sections.forEach((s, i) => { s.classList.add("lit"); lit.add(i); });
+      paint();
+    }
+  }
+</script>

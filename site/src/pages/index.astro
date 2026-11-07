@@ -4,6 +4,8 @@ import Base from "../layouts/Base.astro";
 import Stars from "../components/Stars.astro";
 import Clip from "../components/Clip.astro";
 import Sponsor from "../components/Sponsor.astro";
+import Wordmark from "../components/Wordmark.astro";
+import LoafRail from "../components/LoafRail.astro";
 import { SITE, AGENTS, href, appVersion, readRepoFile, formatDate } from "../lib/site";
 import { parseChangelog } from "../lib/markdown";
 
@@ -96,21 +98,19 @@ const gallery = [
   ["preview", "Annotate", "your running app for the agent."],
   ["workspace-light", "Light and dark", "follow your Mac."],
 ];
-// Rail: The Loaf, drawn top to bottom, one star per feature section.
-const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400]];
 ---
 <Base
-  title="NekoTrail: run Claude Code, Codex and 14 more coding agents in parallel"
-  description="A free, open-source Mac app that runs coding agents in parallel git worktrees with your own subscriptions. A local Conductor alternative: imports your work, no account."
+  title="NekoTrail: Your coding agents, all at once"
+  description="Your coding agents, all at once. Claude Code, Codex and 14 more on your logins, each in its own worktree. A free, open-source Mac app that imports your Conductor work."
   path=""
   announce
 >
   <section class="sky hero" aria-labelledby="hero-title">
     <Stars count={140} seed={11} constellation />
     <div class="wrap" style="position:relative">
-      <img class="mascot" src={href("brand/mascot-working.svg")} alt="" width="76" height="76" />
-      <h1 id="hero-title">Many coding agents. <em>One Mac.</em></h1>
-      <p class="lede">Run Claude Code, Codex and 14 more at once. Each task gets its own git worktree.</p>
+      <div class="hero-mark"><Wordmark cat reveal /></div>
+      <h1 id="hero-title">Your coding agents, <em>all&nbsp;at&nbsp;once.</em></h1>
+      <p class="lede">Claude Code, Codex and 14 more on your logins, each in its own worktree.</p>
       <div class="ctas">
         <a class="btn primary" href={href("download/")}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V2.25A.75.75 0 0 1 8 1.5ZM2.75 12.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
@@ -127,37 +127,23 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
 
   <section class="agents wrap" aria-labelledby="agents-title">
     <p id="agents-title">Uses your own agent logins and subscriptions</p>
-    <ul class="chips">{AGENTS.map((a) => <li>{a}</li>)}</ul>
+    <ul class="chips" data-stagger>{AGENTS.map((a) => <li>{a}</li>)}</ul>
   </section>
 
   <section class="features wrap" aria-label="Features">
     <div class="features-grid">
-      <div class="rail" aria-hidden="true">
-        <svg viewBox="0 0 120 440">
-          {railStars.slice(1).map(([x, y], i) => (
-            <line x1={railStars[i][0]} y1={railStars[i][1]} x2={x} y2={y} data-step={i + 1} />
-          ))}
-          {railStars.map(([x, y], i) => (
-            <g>
-              <circle class="halo" cx={x} cy={y} r="9" data-step={i} />
-              <circle cx={x} cy={y} r="3.5" data-step={i} />
-              <text x={x + (x > 60 ? -8 : 10)} y={y + 4} text-anchor={x > 60 ? "end" : "start"}>{features[i].star}</text>
-            </g>
-          ))}
-          <text class="caption" x="60" y="436" text-anchor="middle">The Loaf</text>
-        </svg>
-      </div>
+      <LoafRail names={features.map((f) => f.star)} />
       <div>
         {features.map((f, i) => (
-          <article class={`feature reveal${i % 2 ? " flip" : ""}`} id={f.id} data-step={i} aria-labelledby={`${f.id}-title`}>
-            <div class="copy">
+          <article class={`feature${i % 2 ? " flip" : ""}`} id={f.id} data-step={i} aria-labelledby={`${f.id}-title`}>
+            <div class="copy reveal">
               <span class="eyebrow"><span class="star-mark"></span>{f.eyebrow}</span>
               <h2 id={`${f.id}-title`}>{f.title}</h2>
               <p>{f.text}</p>
               <ul>{f.points.map((p) => <li>{p}</li>)}</ul>
               {f.more && <a class="more" href={href(f.more.href)}>{f.more.label} →</a>}
             </div>
-            <div class="visual">
+            <div class="visual" data-reveal="media">
               {f.clip ? (
                 <Clip name={f.clip} label={f.label} title={f.window} />
               ) : (
@@ -179,9 +165,9 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
         <h2 id="more-title">The rest of the job</h2>
         <p>From a queued task to a merged PR.</p>
       </div>
-      <div class="groups">
+      <div class="groups" data-stagger>
         {groups.map((g) => (
-          <div class="group reveal">
+          <div class="group">
             <h3>{g.title}</h3>
             <ul>{g.items.map(([t, d]) => <li><b>{t}</b><span>{d}</span></li>)}</ul>
           </div>
@@ -196,7 +182,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
         <h2 id="tour-title">A closer look</h2>
         <p>Sample data. Scroll sideways.</p>
       </div>
-      <div class="gallery" tabindex="0" role="region" aria-label="Screenshots of NekoTrail">
+      <div class="gallery" data-stagger tabindex="0" role="region" aria-label="Screenshots of NekoTrail">
         {gallery.map(([img, b, t]) => (
           <figure>
             <img src={href(`shots/${img}.webp`)} alt={`${b} ${t}`} width="1600" height="1000" loading="lazy" decoding="async" />
@@ -212,18 +198,18 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
       <div class="section-head center reveal">
         <h2 id="why-title">Yours, not ours</h2>
       </div>
-      <div class="principles">
-        <div class="reveal">
+      <div class="principles" data-stagger>
+        <div>
           <div class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 6 3 10l4 4M13 6l4 4-4 4" /></svg></div>
           <h3>Open source</h3>
           <p>MIT on GitHub. Read it, build it, fork it.</p>
         </div>
-        <div class="reveal">
+        <div>
           <div class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="10" rx="2" /><path d="M7 17h6" /></svg></div>
           <h3>Local</h3>
           <p>Plain worktrees and chats, on your disk. No account.</p>
         </div>
-        <div class="reveal">
+        <div>
           <div class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="7" r="3" /><path d="M4 17c1-3 3.3-4.5 6-4.5s5 1.5 6 4.5" /></svg></div>
           <h3>Your logins</h3>
           <p>Official agent CLIs, your logins. No proxy, no markup.</p>
@@ -238,7 +224,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
         <h2 id="changelog-title">Changelog</h2>
         <p>Small, tagged releases. The app updates itself.</p>
       </div>
-      <ul class="releases">
+      <ul class="releases" data-stagger>
         {releases.map((r) => (
           <li>
             <a href={href(`changelog/#${r.id}`)}>
@@ -258,7 +244,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
       <div class="section-head reveal">
         <h2 id="blog-title">From the blog</h2>
       </div>
-      <ul class="posts">
+      <ul class="posts" data-stagger>
         {posts.map((p) => (
           <li>
             <a href={href(`blog/${p.id}/`)}>
@@ -289,27 +275,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
   </section>
 
   <script>
-    // The constellation on the left lights one star per feature as it scrolls into view.
-    const steps = document.querySelectorAll<HTMLElement>(".feature[data-step]");
-    const light = (n: number) => {
-      document.querySelectorAll<SVGElement>(".rail [data-step]").forEach((el) => {
-        el.classList.toggle("on", Number(el.dataset.step) <= n);
-      });
-    };
-    if ("IntersectionObserver" in window) {
-      let max = -1;
-      const io = new IntersectionObserver((entries) => {
-        for (const e of entries) {
-          if (!e.isIntersecting) continue;
-          e.target.classList.add("lit");
-          max = Math.max(max, Number((e.target as HTMLElement).dataset.step));
-          light(max);
-        }
-      }, { rootMargin: "0px 0px -40% 0px" });
-      steps.forEach((s) => io.observe(s));
-    } else {
-      steps.forEach((s) => s.classList.add("lit"));
-      light(steps.length);
-    }
+    import { wordmarkReveal } from "../scripts/wordmark-reveal";
+    wordmarkReveal();
   </script>
 </Base>

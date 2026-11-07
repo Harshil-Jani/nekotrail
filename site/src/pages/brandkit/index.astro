@@ -1,0 +1,207 @@
+---
+// The brand kit: every asset from the repo's brand/ folder with its files and sizes, the palette,
+// type, clear space and the rules. Files and the zip are served from brand/ by the endpoints next
+// to this page, so nothing here can drift from what scripts/brand.ts draws.
+import Base from "../../layouts/Base.astro";
+import Wordmark from "../../components/Wordmark.astro";
+import { SITE, href, AGENTS } from "../../lib/site";
+import { palette, pngSize, fileSize, kitFiles, kitFile } from "../../lib/brand";
+
+const file = (rel: string) => href(`brandkit/files/${rel}`);
+const zipName = "nekotrail-brand-kit.zip";
+const zipBytes = kitFiles().reduce((n, f) => n + kitFile(f).length, 0);
+const zipSize = `${(zipBytes / 1024 / 1024).toFixed(1)} MB`;
+
+type Asset = { title: string; note: string; svg?: string; png: string; bg: "light" | "dark" | "sky"; wide?: boolean };
+const assets: Asset[] = [
+  { title: "Letter mark", note: "Full colour. Works on light and dark backgrounds.", svg: "mark/nekotrail-mark.svg", png: "mark/nekotrail-mark.png", bg: "light" },
+  { title: "Letter mark, dark", note: "One colour. Use on light backgrounds.", svg: "mark/nekotrail-mark-dark.svg", png: "mark/nekotrail-mark-dark.png", bg: "light" },
+  { title: "Letter mark, light", note: "One colour. Use on dark backgrounds.", svg: "mark/nekotrail-mark-light.svg", png: "mark/nekotrail-mark-light.png", bg: "dark" },
+  { title: "Wordmark, dark", note: "Use on light backgrounds.", svg: "wordmark/nekotrail-wordmark-dark.svg", png: "wordmark/nekotrail-wordmark-dark.png", bg: "light", wide: true },
+  { title: "Wordmark, light", note: "Use on dark backgrounds.", svg: "wordmark/nekotrail-wordmark-light.svg", png: "wordmark/nekotrail-wordmark-light.png", bg: "dark", wide: true },
+  { title: "Lockup, dark", note: "Mark and wordmark together. Use on light backgrounds.", svg: "lockup/nekotrail-lockup-dark.svg", png: "lockup/nekotrail-lockup-dark.png", bg: "light", wide: true },
+  { title: "Lockup, light", note: "Mark and wordmark together. Use on dark backgrounds.", svg: "lockup/nekotrail-lockup-light.svg", png: "lockup/nekotrail-lockup-light.png", bg: "dark", wide: true },
+  { title: "App icon", note: "The macOS app icon. Use it when you link to the download.", svg: "icon/nekotrail-icon.svg", png: "icon/nekotrail-icon-1024.png", bg: "light" },
+  { title: "The cat", note: "The mascot. For stickers, slides and empty states, never as the logo.", svg: "mascot/nekotrail-cat-idle.svg", png: "mascot/nekotrail-cat-idle.png", bg: "sky" },
+  { title: "Social preview", note: "1280 x 640, for the GitHub repository and link cards.", png: "social-preview.png", bg: "sky", wide: true },
+];
+const colors = palette();
+const brandColors = colors.filter((c) => c.group === "brand");
+const mascotColors = colors.filter((c) => c.group === "mascot");
+// Text on a swatch: dark ink on light colours, white on dark ones.
+const inkFor = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#0A0D18" : "#FFFFFF";
+};
+const facts: [string, string][] = [
+  ["Name", "NekoTrail"],
+  ["Category", "Open-source desktop app for running coding agents"],
+  ["Platform", "macOS 13 or later. Linux experimental."],
+  ["Agents", `${AGENTS.length}, including Claude Code, Codex and Gemini CLI`],
+  ["License", "MIT"],
+  ["Made by", SITE.author],
+  ["Command line", "nekotrail"],
+];
+const links: [string, string][] = [
+  ["Website", "https://harshil-jani.github.io/nekotrail/"],
+  ["GitHub", SITE.repo],
+  ["Releases", SITE.allReleases],
+  ["Changelog", "https://harshil-jani.github.io/nekotrail/changelog/"],
+];
+---
+<Base title="Brand kit" description="NekoTrail logos, app icon, colours, type and usage rules, with a one-click download of the whole kit." path="brandkit/">
+  <div class="wrap bk">
+    <header class="page-head bk-head">
+      <h1>NekoTrail brand kit</h1>
+      <p class="lede">Logos, the app icon, colours and the rules for using them. Writing about NekoTrail? Start here.</p>
+      <p class="bk-download">
+        <a class="btn primary" href={href(`brandkit/${zipName}`)} download>
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V2.25A.75.75 0 0 1 8 1.5ZM2.75 12.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          Download the brand kit
+        </a>
+        <span class="muted">ZIP, {zipSize}. Every SVG and PNG below, plus the palette.</span>
+      </p>
+    </header>
+
+    <section class="bk-section" aria-labelledby="assets">
+      <h2 id="assets">Assets</h2>
+      <ul class="bk-assets" data-stagger>
+        {assets.map((a) => {
+          const [w, h] = pngSize(a.png);
+          return (
+            <li class="bk-asset">
+              <div class="bk-meta">
+                <h3>{a.title}</h3>
+                <p>{a.note}</p>
+                <p class="bk-files">
+                  {a.svg && <a href={file(a.svg)} download>SVG <span>{fileSize(a.svg)}</span></a>}
+                  <a href={file(a.png)} download>PNG <span>{w} x {h}</span></a>
+                </p>
+              </div>
+              <div class={`bk-tile ${a.bg}${a.wide ? " wide" : ""}`}>
+                <img src={file(a.svg ?? a.png)} alt={`${a.title} preview`} loading="lazy" decoding="async" width={w} height={h} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+
+    <section class="bk-section" aria-labelledby="colours">
+      <h2 id="colours">Colours</h2>
+      <p class="bk-intro">Cat Orange is the one accent; the night sky carries the rest. Click a colour to copy its hex.</p>
+      <ul class="bk-swatches" data-stagger>
+        {brandColors.map((c) => (
+          <li>
+            <button type="button" class="bk-swatch" data-hex={c.hex} style={`--sw:${c.hex};--sw-ink:${inkFor(c.hex)}`} aria-label={`Copy ${c.name}, ${c.hex}`}>
+              <span class="chip"><span class="copied" aria-hidden="true">Copied</span></span>
+              <span class="name">{c.name}</span>
+              <code>{c.hex}</code>
+            </button>
+            <p>{c.use}</p>
+          </li>
+        ))}
+      </ul>
+      <h3 class="bk-sub">The cat's own colours</h3>
+      <ul class="bk-swatches small" data-stagger>
+        {mascotColors.map((c) => (
+          <li>
+            <button type="button" class="bk-swatch" data-hex={c.hex} style={`--sw:${c.hex};--sw-ink:${inkFor(c.hex)}`} aria-label={`Copy ${c.name}, ${c.hex}`}>
+              <span class="chip"><span class="copied" aria-hidden="true">Copied</span></span>
+              <span class="name">{c.name}</span>
+              <code>{c.hex}</code>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p class="sr-only" role="status" aria-live="polite" data-copy-status></p>
+    </section>
+
+    <section class="bk-section" aria-labelledby="type">
+      <h2 id="type">Typography</h2>
+      <div class="bk-type">
+        <div class="bk-type-row wordmark-row">
+          <div class="label"><b>Wordmark</b><span>Drawn, not typed. One monoline stroke with round ends; the i is dotted with a star.</span></div>
+          <div class="sample"><Wordmark /></div>
+        </div>
+        <div class="bk-type-row">
+          <div class="label"><b>SF Pro Display</b><span>Headings. Semibold or bold, tracking -0.02em to -0.035em.</span></div>
+          <div class="sample display">Your coding agents, all at once.</div>
+        </div>
+        <div class="bk-type-row">
+          <div class="label"><b>SF Pro Text</b><span>Body and interface, the system font, as in the app.</span></div>
+          <div class="sample text">Each task gets its own git worktree, branch, chat, diff and terminal.</div>
+        </div>
+        <div class="bk-type-row">
+          <div class="label"><b>SF Mono</b><span>Code, branches and paths only.</span></div>
+          <div class="sample mono">nekotrail new "fix the bug" --agent codex</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bk-section" aria-labelledby="space">
+      <h2 id="space">Clear space and minimum size</h2>
+      <div class="bk-rules">
+        <figure class="bk-clear">
+          <div class="bk-clear-box">
+            <img src={file("lockup/nekotrail-lockup-dark.svg")} alt="The lockup with its clear space marked on every side" width="1000" height="167" loading="lazy" />
+          </div>
+          <figcaption>Keep the height of the lowercase <b>e</b> (the x-height) clear on every side of the wordmark and the lockup. Around the mark alone, a quarter of its width.</figcaption>
+        </figure>
+        <div class="bk-min">
+          <div class="bk-min-row"><img src={file("mark/nekotrail-mark.svg")} alt="The mark at 16 pixels" width="16" height="14" /><span><b>Mark</b> 16 px</span></div>
+          <div class="bk-min-row"><img src={file("wordmark/nekotrail-wordmark-dark.svg")} class="on-light" alt="The wordmark at 80 pixels wide" width="80" height="15" /><span><b>Wordmark</b> 80 px wide</span></div>
+          <div class="bk-min-row"><img src={file("lockup/nekotrail-lockup-dark.svg")} class="on-light" alt="The lockup at 120 pixels wide" width="120" height="20" /><span><b>Lockup</b> 120 px wide</span></div>
+          <p>Smaller than that, use the mark on its own.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="bk-section" aria-labelledby="rules">
+      <h2 id="rules">Do and don't</h2>
+      <ul class="bk-dont" data-stagger>
+        <li class="do"><div class="tile light"><img src={file("lockup/nekotrail-lockup-dark.svg")} alt="" width="200" height="34" loading="lazy" /></div><p><b>Do</b> use the dark files on light backgrounds and the light files on dark ones.</p></li>
+        <li class="dont"><div class="tile light"><img class="x-stretch" src={file("wordmark/nekotrail-wordmark-dark.svg")} alt="" width="200" height="38" loading="lazy" /></div><p><b>Don't</b> stretch, squash or rotate it.</p></li>
+        <li class="dont"><div class="tile light"><img class="x-recolour" src={file("wordmark/nekotrail-wordmark-dark.svg")} alt="" width="200" height="38" loading="lazy" /></div><p><b>Don't</b> recolour it, or add outlines, glows or gradients.</p></li>
+        <li class="dont"><div class="tile light"><span class="x-typed">NekoTrail</span></div><p><b>Don't</b> set the name in a typeface and call it the logo.</p></li>
+        <li class="dont"><div class="tile dark"><img src={file("wordmark/nekotrail-wordmark-dark.svg")} alt="" width="200" height="38" loading="lazy" /></div><p><b>Don't</b> put the dark files on dark backgrounds.</p></li>
+        <li class="do"><div class="tile light"><span class="x-name">NekoTrail</span></div><p><b>Do</b> write the name <b>NekoTrail</b>, capital N and T. Lowercase only in the command, paths and URLs.</p></li>
+      </ul>
+    </section>
+
+    <section class="bk-section bk-about" aria-labelledby="about">
+      <div>
+        <h2 id="about">About NekoTrail</h2>
+        <p>NekoTrail is a free, open-source Mac app for running coding agents in parallel. Give it a task and it creates a workspace: a git worktree on its own branch, a chat with the agent you choose, a diff against your target branch, a terminal and a live preview. Finished work becomes a pull request, with GitHub status and CI checks in view.</p>
+        <p>It drives {AGENTS.length} agents, including Claude Code, Codex and Gemini CLI, through their official command lines with your own logins and subscriptions, so there is no account and nothing leaves your machine that the agent would not send anyway. Every workspace is named after a star in one of eight cat constellations, and each merged PR lights its star.</p>
+        <h2 class="bk-short-h">Short description</h2>
+        <p class="bk-short">NekoTrail: your coding agents, all at once. Claude Code, Codex and 14 more on your logins, each in its own worktree.</p>
+      </div>
+      <div>
+        <h2>Facts</h2>
+        <dl class="bk-facts">{facts.map(([k, v]) => <><dt>{k}</dt><dd>{v}</dd></>)}</dl>
+        <h2>Official links</h2>
+        <ul class="bk-links">{links.map(([k, v]) => <li><span>{k}</span><a href={v} rel="noopener">{v.replace(/^https:\/\//, "").replace(/\/$/, "")}</a></li>)}</ul>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Click a swatch to copy its hex. The chip says "Copied" and a live region tells screen readers.
+    const status = document.querySelector<HTMLElement>("[data-copy-status]");
+    for (const b of document.querySelectorAll<HTMLButtonElement>(".bk-swatch")) {
+      b.addEventListener("click", async () => {
+        const hex = b.dataset.hex ?? "";
+        try {
+          await navigator.clipboard.writeText(hex);
+          b.classList.add("is-copied");
+          if (status) status.textContent = `Copied ${hex}`;
+          setTimeout(() => b.classList.remove("is-copied"), 1400);
+        } catch {
+          if (status) status.textContent = `Copy blocked. The hex is ${hex}`;
+        }
+      });
+    }
+  </script>
+</Base>
