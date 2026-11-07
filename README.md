@@ -404,9 +404,9 @@ NekoTrail is free, open source and local-first, with no account and no paid tier
 
 <br>
 
-<a href="CONTRIBUTING.md">Contributing</a> &nbsp;·&nbsp; <a href="SECURITY.md">Security</a> &nbsp;·&nbsp; <a href="CHANGELOG.md">Changelog</a> &nbsp;·&nbsp; <a href="https://harshil-jani.github.io/nekotrail/">Website</a> &nbsp;·&nbsp; <a href="LICENSE">License</a>
+<a href="CONTRIBUTING.md">Contributing</a> &nbsp;·&nbsp; <a href="SECURITY.md">Security</a> &nbsp;·&nbsp; <a href="PRIVACY.md">Privacy</a> &nbsp;·&nbsp; <a href="CHANGELOG.md">Changelog</a> &nbsp;·&nbsp; <a href="https://harshil-jani.github.io/nekotrail/">Website</a> &nbsp;·&nbsp; <a href="LICENSE">License</a>
 
-<sub>The open-source components it ships with, and their licenses, are listed in <a href="THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a>.<br>NekoTrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.</sub>
+<sub>No telemetry. <a href="PRIVACY.md">PRIVACY.md</a> lists every network connection NekoTrail makes. It never reads, stores or forwards your agent logins; each CLI signs in by itself.<br>The open-source components it ships with, and their licenses, are listed in <a href="THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a>; their full texts ship inside the app (Settings, About).<br>NekoTrail is an independent project and is not affiliated with Conductor, Anthropic, OpenAI, Google or OpenCode.</sub>
 
 <br><br>
 
