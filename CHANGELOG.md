@@ -3,6 +3,11 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.24.0 (2026-11-08)
+
+**Find your messages**
+- A rail on the chat's right edge marks each message you sent. Hover it to see the list, then click one to jump there. Shows once you have sent two.
+
 ## 0.23.3 (2026-11-08)
 
 **Easier to find your chat**
