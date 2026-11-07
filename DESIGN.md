@@ -1,6 +1,6 @@
 # Design
 
-nekotrail follows Apple's macOS Human Interface Guidelines: it should feel like Finder, Mail or Xcode, with the cat as its personality. Light and dark follow the system. Everything is defined as tokens at the top of `src/App.css`.
+NekoTrail follows Apple's macOS Human Interface Guidelines: it should feel like Finder, Mail or Xcode, with the cat as its personality. Light and dark follow the system. Everything is defined as tokens at the top of `src/App.css`.
 
 ## Foundations
 

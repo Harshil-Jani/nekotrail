@@ -6,7 +6,7 @@ Want something on this list sooner, or something that isn't on it? Open a [featu
 
 ## Next
 
-- **A signed, notarized Mac app.** So macOS opens nekotrail on first launch without the `xattr` step. Updates are already signed and install from inside the app.
+- **A signed, notarized Mac app.** So macOS opens NekoTrail on first launch without the `xattr` step. Updates are already signed and install from inside the app.
 - **Linux, tested for real.** The `.deb` and `.AppImage` are new and have only run in CI. Reports from real machines (other desktops, Wayland, ARM) decide what gets fixed first.
 - **More agents over the Agent Client Protocol (ACP).** Gemini over ACP would give it "Ask before changes". Forking ACP chats, and each agent's live model list in the model picker.
 - **Speed at scale.** Fast switching and a flat CPU graph with 30 or more workspaces across several repos.
@@ -19,7 +19,7 @@ Want something on this list sooner, or something that isn't on it? Open a [featu
 
 ## Not planned
 
-- **Cloud workspaces, teams, accounts, mobile apps.** nekotrail stays local-first: your code, chats and worktrees stay on your machine.
-- **Provider and API key settings.** The agent CLIs own those, with your own logins and subscriptions; nekotrail doesn't proxy them.
+- **Cloud workspaces, teams, accounts, mobile apps.** NekoTrail stays local-first: your code, chats and worktrees stay on your machine.
+- **Provider and API key settings.** The agent CLIs own those, with your own logins and subscriptions; NekoTrail doesn't proxy them.
 - **A full code editor.** ⌘P edits a file in place, and "Open in" hands off to your editor for anything bigger.
 - **A theme marketplace.** Light and dark follow your system.

@@ -2,7 +2,7 @@
 
 <!-- impeccable:product-schema 1 -->
 
-Who nekotrail is for and the principles behind it. Read this before proposing a feature or changing how something works; the visual rules are in [DESIGN.md](DESIGN.md).
+Who NekoTrail is for and the principles behind it. Read this before proposing a feature or changing how something works; the visual rules are in [DESIGN.md](DESIGN.md).
 
 ## Platform
 
@@ -18,7 +18,7 @@ Their job: hand a task to an agent, keep working on other tasks while it runs, r
 
 ## Product Purpose
 
-nekotrail runs many coding agents in parallel on your own machine. Every task gets its own workspace: a git worktree on its own branch, a chat with an agent, a diff view against the target branch, a live preview, a real terminal, notes, and a PR bar showing GitHub status and CI checks. Success is a developer shipping several reviewed PRs in the time one used to take.
+NekoTrail runs many coding agents in parallel on your own machine. Every task gets its own workspace: a git worktree on its own branch, a chat with an agent, a diff view against the target branch, a live preview, a real terminal, notes, and a PR bar showing GitHub status and CI checks. Success is a developer shipping several reviewed PRs in the time one used to take.
 
 ## Positioning
 
@@ -42,10 +42,10 @@ nekotrail runs many coding agents in parallel on your own machine. Every task ge
 
 ## Brand Commitments
 
-- Name: **nekotrail**, always lowercase in the product (neko is Japanese for cat).
+- Name: **NekoTrail**, with a capital N and T in every user-visible string (neko is Japanese for cat). Lowercase `nekotrail` is for identifiers only: the terminal command, bundle id, data folders, `nekotrail.json`, URLs and package names.
 - Mascot: an original cute cat. It must not resemble any existing product's mascot.
 - Voice: plain, friendly, short. Cat puns allowed in small doses, never in errors.
-- Visual system: Apple's macOS Human Interface Guidelines, so nekotrail feels like a native Mac app. System font, semantic label colours, hairline separators, a vibrancy sidebar with the traffic lights inside it, segmented controls, pop-up menus, and light and dark following the system. The cat orange is the one accent. Tokens and rules live in DESIGN.md.
+- Visual system: Apple's macOS Human Interface Guidelines, so NekoTrail feels like a native Mac app. System font, semantic label colours, hairline separators, a vibrancy sidebar with the traffic lights inside it, segmented controls, pop-up menus, and light and dark following the system. The cat orange is the one accent. Tokens and rules live in DESIGN.md.
 - Simple layouts, a consistent spacing scale, contrast checked numerically.
 
 ## Evidence on Hand

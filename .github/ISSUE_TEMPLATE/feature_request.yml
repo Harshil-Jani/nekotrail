@@ -1,12 +1,12 @@
 name: Feature request
-description: Suggest something nekotrail should do.
+description: Suggest something NekoTrail should do.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for the idea. Please check the [roadmap](https://github.com/Harshil-Jani/nekotrail/blob/main/docs/ROADMAP.md) and the [open issues](https://github.com/Harshil-Jani/nekotrail/issues) first.
-        nekotrail stays local-first: no accounts, no cloud workspaces, and your agents run with your own logins.
+        NekoTrail stays local-first: no accounts, no cloud workspaces, and your agents run with your own logins.
   - type: textarea
     id: problem
     attributes:

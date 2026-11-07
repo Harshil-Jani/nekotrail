@@ -1,4 +1,4 @@
-# Contributing to nekotrail
+# Contributing to NekoTrail
 
 Thanks for wanting to help. Bug reports, small fixes, docs and new agent support are all welcome. For anything bigger than a bug fix, open an issue first so we can agree on the shape before you spend time on it.
 

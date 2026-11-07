@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in nekotrail doesn't work as it should.
+description: Something in NekoTrail doesn't work as it should.
 labels: ["bug"]
 body:
   - type: markdown
@@ -27,7 +27,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: nekotrail version
+      label: NekoTrail version
       description: Settings shows it next to the version link at the bottom.
       placeholder: "0.21.0"
     validations:
@@ -82,8 +82,8 @@ body:
     attributes:
       label: Diagnostics
       description: |
-        In nekotrail press ⌘K (Ctrl+K on Linux), run "Copy diagnostics for a bug report" and paste the result here.
-        It lists versions of nekotrail, git, gh and the agents, and counts of repos and workspaces. No paths, names or prompts.
+        In NekoTrail press ⌘K (Ctrl+K on Linux), run "Copy diagnostics for a bug report" and paste the result here.
+        It lists versions of NekoTrail, git, gh and the agents, and counts of repos and workspaces. No paths, names or prompts.
       render: text
     validations:
       required: true
