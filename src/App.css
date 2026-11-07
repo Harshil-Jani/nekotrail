@@ -1996,8 +1996,6 @@ textarea.rules-task:focus { outline: none; box-shadow: inset 0 0 0 0.5px var(--l
 .tq-empty { margin: var(--s7) auto 0; max-width: 440px; }
 .tq-empty p { margin: 0; }
 .tq-empty > svg { color: var(--accent-text); }
-.tq-cli { font-size: 12px; }
-.tq-cli code { font-size: 11.5px; padding: 1px 5px; border-radius: var(--r-xs); background: var(--surface); color: var(--text); }
 .tq-form { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--r-xl); background: var(--surface); }
 .tq-form textarea { width: 100%; resize: vertical; min-height: 68px; padding: var(--s2) 10px; border-radius: var(--r-md); line-height: 1.45; }
 .tq-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2) var(--s3); }

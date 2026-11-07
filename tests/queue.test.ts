@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { counts, dropBefore, elapsed, groups, moved, stateText, stillGoing, summaryText, taskTitle, thenText, unattended, waitText, type QueueTask } from "../src/queue";
+import { counts, dropBefore, elapsed, groups, moved, QUEUE_EMPTY, queueScreen, stateText, stillGoing, summaryText, taskTitle, thenText, unattended, waitText, type QueueTask } from "../src/queue";
 
 const task = (id: string, extra: Partial<QueueTask> = {}): QueueTask => ({
   id, prompt: `task ${id}`, repo_id: "r1", base: null, agent: "claude", model: null, effort: null, mode: "acceptEdits", fallback: null,
@@ -78,5 +78,22 @@ describe("queue lists", () => {
     expect(moved(next, "a", null)).toEqual(["b", "c", "d", "a"]);
     // The same answer the drop gives, applied.
     expect(moved(next, "b", dropBefore(next, "b", "c", true)!)).toEqual(["a", "c", "b", "d"]);
+  });
+});
+
+describe("queue screen", () => {
+  test("is never blank: a spinner until the first answer, then the error, the empty state or the list", () => {
+    expect(queueScreen(null, null)).toBe("loading");
+    expect(queueScreen(null, "database is locked")).toBe("error");
+    expect(queueScreen({ tasks: [] }, null)).toBe("empty");
+    expect(queueScreen({ tasks: [task("a")] }, null)).toBe("list");
+    // A later reload that fails keeps what was already shown.
+    expect(queueScreen({ tasks: [] }, "timeout")).toBe("empty");
+  });
+
+  test("the empty state says what the queue is, in one line", () => {
+    expect(QUEUE_EMPTY).toContain("queue");
+    expect(QUEUE_EMPTY).not.toContain("\n");
+    expect(QUEUE_EMPTY).not.toContain("—");
   });
 });

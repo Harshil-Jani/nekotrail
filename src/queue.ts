@@ -163,6 +163,18 @@ export function groups(tasks: QueueTask[]) {
   };
 }
 
+/** The empty Queue's one line: what the queue is. "Add task" sits right under it. */
+export const QUEUE_EMPTY = "The queue holds tasks for later: NekoTrail runs them a few at a time, each in its own workspace.";
+
+/**
+ * What the Queue screen shows: a spinner until the first answer, the error if that failed, then
+ * the empty state or the lists. Never a blank page.
+ */
+export function queueScreen(view: Pick<QueueView, "tasks"> | null, error: string | null): "loading" | "error" | "empty" | "list" {
+  if (view) return view.tasks.length ? "list" : "empty";
+  return error ? "error" : "loading";
+}
+
 /** Counts for the sidebar row. */
 export function counts(tasks: QueueTask[]) {
   const g = groups(tasks);

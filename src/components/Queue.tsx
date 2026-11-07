@@ -8,7 +8,7 @@ import { useCatalog } from "./ModelPicker";
 import { okFullAuto } from "../fullAuto";
 import { ask } from "./Confirm";
 import { keyHint, mod } from "../platform";
-import { clockTime, dropBefore, elapsed, groups, MODE_LABEL, moved, stateText, taskTitle, thenText, unattended, waitText, type QueueTask, type QueueThen, type QueueView } from "../queue";
+import { clockTime, dropBefore, elapsed, groups, MODE_LABEL, moved, QUEUE_EMPTY, queueScreen, stateText, taskTitle, thenText, unattended, waitText, type QueueTask, type QueueThen, type QueueView } from "../queue";
 
 const MODES: PermissionMode[] = ["plan", "ask", "acceptEdits", "bypassPermissions"];
 /** The choices for "Run up to N at once". The backend allows up to 16. */
@@ -51,11 +51,13 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
   const act = (p: Promise<unknown>) => p.then(load).catch((e) => onSay(errText(e), true));
   const repoName = (id: string) => repos.find((r) => r.id === id)?.name ?? "Removed repo";
 
+  const screen = queueScreen(view, error);
   if (!view) {
     return (
       <div className="tq">
         <QueueHead view={null} onAdd={() => setAdding(true)} act={act} />
-        {error && <div className="empty"><AlertCircle size={22} aria-hidden /><h2>Couldn't load the queue</h2><p>{error}</p><button onClick={load}>Try again</button></div>}
+        {screen === "loading" && <div className="empty tq-empty" role="status"><span className="spinner" aria-hidden /><p>Loading the queue…</p></div>}
+        {screen === "error" && <div className="empty"><AlertCircle size={22} aria-hidden /><h2>Couldn't load the queue</h2><p>{error}</p><button onClick={load}>Try again</button></div>}
       </div>
     );
   }
@@ -153,7 +155,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
     );
   };
 
-  const empty = view.tasks.length === 0;
+  const empty = screen === "empty";
   return (
     <div className="tq">
       {/* Empty, the page's own Add task is the one button; paused, the banner's Resume is. */}
@@ -192,10 +194,8 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
         {empty && !adding && (
           <div className="empty tq-empty">
             <ListOrdered size={24} aria-hidden />
-            <h2>Line up tasks for later</h2>
-            <p>Add tasks before you stop for the day. NekoTrail runs {view.max_total} at a time, each in its own workspace, and starts the next one when a task finishes or needs you.</p>
+            <p>{QUEUE_EMPTY}</p>
             <button className="primary" onClick={() => setAdding(true)}><Plus size={14} />Add task</button>
-            <p className="tq-cli">From a terminal: <code>nekotrail queue add "fix the flaky test"</code></p>
           </div>
         )}
         {g.running.length > 0 && (
