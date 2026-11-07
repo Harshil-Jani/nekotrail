@@ -7,6 +7,7 @@ import { FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronRig
 import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
+import { applyRunning, DoneWatchdog, Latest, sameSet, type RunningSets } from "./runState";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Diff } from "./components/Diff";
@@ -497,8 +498,24 @@ export default function App() {
   const [palettePrompts, setPalettePrompts] = useState<PromptEntry[]>([]);
   const updater = useUpdater();
 
+  // Which agents are working. `running` events apply straight away; a snapshot only counts when it
+  // answers the newest request made after the last event (see runState.ts), so a late, older answer
+  // can't turn a spinner back on or leave it stuck.
+  const snapReq = useRef(new Latest());
+  const wsOf = useRef(new Map<string, string>());
+  const runningRef = useRef<RunningSets>({ sessions: new Set(), workspaces: new Set() });
+  const setRunning = (next: RunningSets) => {
+    const cur = runningRef.current;
+    const sessions = sameSet(cur.sessions, next.sessions) ? cur.sessions : next.sessions;
+    const workspaces = sameSet(cur.workspaces, next.workspaces) ? cur.workspaces : next.workspaces;
+    runningRef.current = { sessions, workspaces };
+    setRunningSessions(sessions);
+    setRunningWs(workspaces);
+  };
   const refresh = useCallback(async () => {
+    const req = snapReq.current.begin();
     const s = await api.snapshot(showArchived);
+    if (!snapReq.current.isCurrent(req)) return; // a newer request or a running event came since
     if (!lookedRef.current) {
       // Once per launch: a brand-new install starts the first-run clock and the welcome flow;
       // someone who already has repos skips both, and the tour.
@@ -511,8 +528,7 @@ export default function App() {
     setWorkspaces(s.workspaces);
     setCosts(s.costs ?? {});
     api.sections().then(setSections).catch(() => {});
-    setRunningSessions(new Set(s.running));
-    setRunningWs(new Set(s.running_workspaces));
+    setRunning({ sessions: new Set(s.running), workspaces: new Set(s.running_workspaces) });
     setLit(new Set(s.lit));
     setShining((prev) => {
       const next = new Set(s.shining);
@@ -539,12 +555,32 @@ export default function App() {
     api.githubProfile().then(setMe);
   }, []);
 
+  // A turn said Done but the window never heard it stop: look again (10 s, 30 s, 60 s).
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const watchdog = useRef<DoneWatchdog | null>(null);
   useEffect(() => {
-    const un = listen<{ running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
-      refresh();
+    const w = new DoneWatchdog((sid) => runningRef.current.sessions.has(sid), () => { refreshRef.current(); });
+    watchdog.current = w;
+    const un = listen<{ session_id: string; event: ChatEvent }>("agent", ({ payload }) => {
+      if (payload.event.kind === "done") w.done(payload.session_id);
+    });
+    return () => { un.then((f) => f()); w.dispose(); watchdog.current = null; };
+  }, []);
+
+  useEffect(() => {
+    // Turn end and the next queued turn come a moment apart: one snapshot and one sidebar reload for both.
+    let snap = 0, facts = 0;
+    const un = listen<{ session_id?: string; running: boolean; workspace_id?: string; ok?: boolean; title?: string; more_queued?: boolean; needs?: string | null }>("running", ({ payload }) => {
+      snapReq.current.invalidate();
+      setRunning(applyRunning(runningRef.current, payload, wsOf.current));
+      if (payload.session_id) watchdog.current?.ended(payload.session_id);
+      clearTimeout(snap);
+      snap = window.setTimeout(() => { refresh(); }, 250);
       // The first answer of a new install stops the first-run clock (local only, see Copy diagnostics).
       if (payload.workspace_id && isAnswer(payload)) markFirstRun(localStorage, "answer");
-      setRefreshKey((k) => k + 1); // a turn ended: reload line counts and the collision radar
+      clearTimeout(facts);
+      facts = window.setTimeout(() => setRefreshKey((k) => k + 1), 500); // reload line counts and the collision radar
       // The agent may have pushed or opened a PR: have the poller look at that repo now.
       if (!payload.running && payload.workspace_id) api.prRefresh(payload.workspace_id, true).catch(() => {});
       // Changes and PR state only move for the workspace whose agent ran.
@@ -600,7 +636,7 @@ export default function App() {
         try { getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {}); } catch { /* preview */ }
       }
     });
-    return () => { un.then((f) => f()); unNeeds.then((f) => f()); };
+    return () => { clearTimeout(snap); clearTimeout(facts); un.then((f) => f()); unNeeds.then((f) => f()); };
   }, [refresh]);
 
   // Refs so the event listener above always sees current state.
