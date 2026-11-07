@@ -160,7 +160,7 @@ pub struct GhCli<'a>(pub &'a str);
 
 impl Gh for GhCli<'_> {
     fn run(&self, dir: &str, args: &[&str]) -> Result<String, String> {
-        let out = std::process::Command::new(self.0).args(args).current_dir(dir).output().map_err(|e| e.to_string())?;
+        let out = crate::proc::output(crate::proc::no_prompts(std::process::Command::new(self.0).args(args).current_dir(dir)), None, crate::proc::GH).map_err(|e| e.to_string())?;
         if !out.status.success() {
             let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
             return Err(if err.is_empty() { format!("gh exited with {}", out.status) } else { err });

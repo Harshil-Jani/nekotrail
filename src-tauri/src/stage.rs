@@ -11,7 +11,6 @@ use anyhow::{bail, Result};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
-use std::process::Command;
 
 /// Options every diff here is read with. `-c` settings go before the subcommand.
 const CFG: &[&str] = &["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "core.quotePath=true"];
@@ -151,7 +150,8 @@ pub fn diff(ws: &Path, path: &str, staged: bool, old: Option<&str>) -> Result<Ve
     }
     // Untracked: all of it as new. `--no-index` exits 1 when the files differ, which they do.
     args.extend(["--no-index".into(), "--".into(), "/dev/null".into(), path.into()]);
-    let out = Command::new("git").arg("-C").arg(ws).args(&args).output()?;
+    let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = crate::git::run(ws, &a, None, &[])?;
     if !out.status.success() && out.status.code() != Some(1) {
         bail!("git diff failed: {}", String::from_utf8_lossy(&out.stderr).trim());
     }

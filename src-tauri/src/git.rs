@@ -5,13 +5,20 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Every git this app runs: in `dir`, with no prompts, stopped at its deadline (proc.rs), with
+/// `stdin` fed while its output is read.
+pub(crate) fn run(dir: &Path, args: &[&str], stdin: Option<&[u8]>, env: &[(&str, &str)]) -> std::io::Result<std::process::Output> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(dir).args(args);
+    crate::proc::no_prompts(&mut cmd);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    crate::proc::output(&mut cmd, stdin, crate::proc::git_limit(args))
+}
+
 pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .with_context(|| format!("running git {}", args.join(" ")))?;
+    let out = run(dir, args, None, &[]).with_context(|| format!("running git {}", args.join(" ")))?;
     if !out.status.success() {
         bail!(
             "git {} failed: {}",
@@ -167,7 +174,7 @@ pub(crate) fn count_lines(p: &Path) -> u32 {
 
 /// Like `git`, but keeps the output exactly (for `-z` formats).
 fn git_raw(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output()?;
+    let out = run(dir, args, None, &[])?;
     if !out.status.success() {
         bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -185,11 +192,7 @@ pub fn file_diff_since(ws: &Path, base: &str, file: &str) -> Result<String> {
         return Ok(d);
     }
     // Untracked file: show it as all-new.
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(ws)
-        .args(["diff", "--no-index", "--", "/dev/null", file])
-        .output()?;
+    let out = run(ws, &["diff", "--no-index", "--", "/dev/null", file], None, &[])?;
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
@@ -215,13 +218,8 @@ pub fn branches(repo: &Path) -> Result<Vec<String>> {
 
 /// Run git with a private index file, so snapshots never touch the user's staging area.
 pub(crate) fn git_idx(dir: &Path, index: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_INDEX_FILE", index)
-        .output()
-        .with_context(|| format!("running git {}", args.join(" ")))?;
+    let index = index.to_string_lossy();
+    let out = run(dir, args, None, &[("GIT_INDEX_FILE", &index)]).with_context(|| format!("running git {}", args.join(" ")))?;
     if !out.status.success() {
         bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -242,21 +240,12 @@ impl Drop for TempIndex {
 
 /// Run git and return raw stdout, optionally with its own index and `stdin`. Paths from `-z`
 /// output are bytes, not UTF-8, so file names with any characters round-trip exactly.
+/// Its stdin is written while its output is read: written first, a long list (`hash-object
+/// --stdin-paths` for a few thousand files) filled the output pipe and both sides waited forever.
 pub(crate) fn git_bytes(dir: &Path, index: Option<&Path>, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
-    use std::io::Write;
-    use std::process::Stdio;
-    let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(dir).args(args);
-    if let Some(i) = index {
-        cmd.env("GIT_INDEX_FILE", i);
-    }
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
-    let mut child = cmd.spawn().with_context(|| format!("running git {}", args.join(" ")))?;
-    if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
-        pipe.write_all(data)?;
-    }
-    let out = child.wait_with_output()?;
+    let index = index.map(|i| i.to_string_lossy().to_string());
+    let env: Vec<(&str, &str)> = index.as_deref().map(|i| ("GIT_INDEX_FILE", i)).into_iter().collect();
+    let out = run(dir, args, stdin, &env).with_context(|| format!("running git {}", args.join(" ")))?;
     if !out.status.success() {
         bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -311,16 +300,9 @@ pub fn worktree_tree(ws: &Path) -> Result<String> {
 }
 
 pub(crate) fn commit_tree(ws: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(ws)
-        .arg("commit-tree")
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "nekotrail")
-        .env("GIT_AUTHOR_EMAIL", "nekotrail@localhost")
-        .env("GIT_COMMITTER_NAME", "nekotrail")
-        .env("GIT_COMMITTER_EMAIL", "nekotrail@localhost")
-        .output()?;
+    let all: Vec<&str> = std::iter::once("commit-tree").chain(args.iter().copied()).collect();
+    let me = [("GIT_AUTHOR_NAME", "nekotrail"), ("GIT_AUTHOR_EMAIL", "nekotrail@localhost"), ("GIT_COMMITTER_NAME", "nekotrail"), ("GIT_COMMITTER_EMAIL", "nekotrail@localhost")];
+    let out = run(ws, &all, None, &me)?;
     if !out.status.success() {
         bail!("git commit-tree failed: {}", String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -580,7 +562,7 @@ pub fn cleanable(ws: &Path) -> Vec<(String, u64)> {
 }
 
 pub fn is_ignored(ws: &Path, rel: &str) -> bool {
-    Command::new("git").arg("-C").arg(ws).args(["check-ignore", "-q", "--", rel]).status().map(|s| s.success()).unwrap_or(false)
+    run(ws, &["check-ignore", "-q", "--", rel], None, &[]).map(|o| o.status.success()).unwrap_or(false)
 }
 
 /// Size of a folder in KB (`du -sk`), 0 if it can't be read.
@@ -675,6 +657,29 @@ pub fn discard_file(ws: &Path, rel: &str, trash: impl Fn(&Path) -> Result<()>) -
 #[cfg(test)]
 pub mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_path_list_on_stdin_does_not_deadlock() {
+        // 5,000 paths of ~100 bytes in, 41 bytes out each: git fills its output pipe long before
+        // it has read the list. Writing all of stdin first waited forever (the protected-files
+        // check at the end of a turn does exactly this).
+        let d = tempfile::tempdir().unwrap();
+        let mut list = Vec::new();
+        for i in 0..5000 {
+            let name = format!("{}-{i:05}.txt", "f".repeat(90));
+            std::fs::write(d.path().join(&name), i.to_string()).unwrap();
+            list.extend_from_slice(name.as_bytes());
+            list.push(b'\n');
+        }
+        assert!(Command::new("git").args(["init", "-q"]).arg(d.path()).status().unwrap().success());
+        let dir = d.path().to_path_buf();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(git_bytes(&dir, None, &["hash-object", "--stdin-paths"], Some(&list)).map(|o| o.len()));
+        });
+        let out = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("git and nekotrail waited on each other");
+        assert_eq!(out.unwrap(), 5000 * 41);
+    }
 
     pub fn init_repo() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();

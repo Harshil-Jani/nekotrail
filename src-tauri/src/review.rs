@@ -14,8 +14,7 @@ use crate::prpoll::{self, Problem};
 use crate::store::ReviewComment;
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Duration;
 
 // ---------- review requests ----------
@@ -86,7 +85,7 @@ pub fn parse_requests(stdout: &str, now: chrono::DateTime<chrono::Utc>) -> Resul
 
 /// Run the review request query once for one repo.
 pub fn fetch_requests(gh: &str, dir: &str, hostname: Option<&str>) -> Result<Requests, Problem> {
-    let out = match Command::new(gh).args(requests_args(hostname)).current_dir(dir).stdin(Stdio::null()).output() {
+    let out = match crate::proc::output(crate::proc::no_prompts(Command::new(gh).args(requests_args(hostname)).current_dir(dir)), None, crate::proc::GH) {
         Ok(o) => o,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Err(Problem::NoGh),
         Err(err) => return Err(Problem::Other(err.to_string())),
@@ -480,18 +479,9 @@ pub fn gh_api(gh: &str, dir: &str, hostname: Option<&str>, method: &str, endpoin
     if input.is_some() {
         args.extend(["--input", "-"]);
     }
-    let mut child = Command::new(gh)
-        .args(&args)
-        .current_dir(dir)
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    let body_in = input.map(|v| v.to_string());
+    let out = crate::proc::output(crate::proc::no_prompts(Command::new(gh).args(&args).current_dir(dir)), body_in.as_deref().map(str::as_bytes), crate::proc::GH)
         .map_err(|err| if err.kind() == std::io::ErrorKind::NotFound { "GitHub CLI (gh) isn't installed".to_string() } else { err.to_string() })?;
-    if let (Some(v), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(v.to_string().as_bytes()).map_err(|e| e.to_string())?;
-    }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let body: Value = serde_json::from_str(stdout.trim()).unwrap_or(Value::Null);
     if out.status.success() {

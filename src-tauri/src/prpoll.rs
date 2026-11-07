@@ -8,7 +8,7 @@
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 /// While checks run or autopilot is on for a repo.
@@ -223,7 +223,7 @@ pub fn classify_failure(code: Option<i32>, stderr: &str) -> Problem {
 
 /// Run gh once for one chunk.
 pub fn fetch_chunk(gh: &str, dir: &str, branches: &[String], hostname: Option<&str>) -> Result<Parsed, Problem> {
-    let out = match Command::new(gh).args(gh_args(branches, hostname)).current_dir(dir).stdin(Stdio::null()).output() {
+    let out = match crate::proc::output(crate::proc::no_prompts(Command::new(gh).args(gh_args(branches, hostname)).current_dir(dir)), None, crate::proc::GH) {
         Ok(o) => o,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Err(Problem::NoGh),
         Err(err) => return Err(Problem::Other(err.to_string())),

@@ -18,6 +18,7 @@ pub mod linear;
 #[cfg(unix)]
 pub mod linux;
 pub mod lockorder;
+pub mod proc;
 #[cfg(debug_assertions)]
 mod e2e;
 pub mod names;
@@ -269,7 +270,9 @@ impl AppState {
 /// Linux desktop launchers have the same gap (nvm, ~/.local/bin and exports from .bashrc or .zshrc).
 fn load_login_env() {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| pty::FALLBACK_SHELL.into());
-    let Ok(out) = Command::new(shell).args(["-ilc", "env -0"]).stdin(Stdio::null()).output() else { return };
+    // With a deadline: a profile that waits on something (a prompt, the network) kept the app
+    // from opening at all. Past it, the app starts with the env it was given.
+    let Ok(out) = proc::output(Command::new(shell).args(["-ilc", "env -0"]), None, proc::LOGIN_SHELL) else { return };
     for kv in out.stdout.split(|b| *b == 0) {
         let kv = String::from_utf8_lossy(kv);
         if let Some((k, v)) = kv.split_once('=')
@@ -281,7 +284,7 @@ fn load_login_env() {
 }
 
 fn github_login() -> Option<String> {
-    let out = Command::new("gh").args(["api", "user", "--jq", ".login"]).output().ok()?;
+    let out = proc::output(proc::no_prompts(Command::new("gh").args(["api", "user", "--jq", ".login"])), None, proc::GH).ok()?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (out.status.success() && !s.is_empty()).then_some(s)
 }
@@ -1935,7 +1938,7 @@ fn mark_changed(st: &AppState, workspace_id: &str) {
 // ---------- pull requests (gh) ----------
 
 fn gh(dir: &str, args: &[&str]) -> Res<String> {
-    let out = Command::new("gh").args(args).current_dir(dir).output().map_err(e)?;
+    let out = proc::output(proc::no_prompts(Command::new("gh").args(args).current_dir(dir)), None, proc::GH).map_err(e)?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -2376,7 +2379,8 @@ async fn mcp_list(st: State<'_, AppState>, id: String, agent: String) -> Res<Str
     if untrusted_agent_config(&st, &ws, harness).is_some() {
         cmd.envs(harness.config_off_env().iter().copied());
     }
-    let out = cmd.args(["mcp", "list"]).current_dir(&ws.path).stdin(Stdio::null()).output().map_err(|err| format!("Couldn't run {bin}: {err}. Check that it's installed."))?;
+    // It starts every server to check it; one that hangs shouldn't hold this forever.
+    let out = proc::output(cmd.args(["mcp", "list"]).current_dir(&ws.path), None, std::time::Duration::from_secs(45)).map_err(|err| format!("Couldn't run {bin}: {err}. Check that it's installed."))?;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     Ok(text.trim().to_string())
 }
@@ -3412,9 +3416,7 @@ async fn merge_all(app: AppHandle, id: String, order: Vec<String>) -> Res<Vec<mu
 #[tauri::command]
 async fn github_profile(app: AppHandle) -> Res<Value> {
     blocking(app, |st| Ok(st.github.lock().unwrap().get_or_insert_with(|| {
-        Command::new("gh")
-            .args(["api", "user"])
-            .output()
+        proc::output(proc::no_prompts(Command::new("gh").args(["api", "user"])), None, proc::GH)
             .ok()
             .filter(|o| o.status.success())
             .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
@@ -4026,7 +4028,7 @@ fn classify_cli_notice(text: &str) -> Option<&'static str> {
 
 /// Is a tool installed, and what does it say about itself? Used by the first-run setup check.
 fn probe(cmd: &str, args: &[&str]) -> (bool, String) {
-    match Command::new(cmd).args(args).stdin(Stdio::null()).output() {
+    match proc::output(Command::new(cmd).args(args), None, proc::PROBE) {
         Ok(o) => {
             let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
             (o.status.success(), out.lines().next().unwrap_or("").trim().to_string())

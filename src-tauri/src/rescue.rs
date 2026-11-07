@@ -12,7 +12,6 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 /// One worktree that lives outside nekotrail's folder, as the import sheet lists it.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -76,7 +75,7 @@ pub fn status_entries(raw: &str) -> Vec<String> {
 }
 
 fn git_bytes(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output()?;
+    let out = crate::git::run(dir, args, None, &[])?;
     if !out.status.success() {
         anyhow::bail!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -89,15 +88,8 @@ fn untracked_ids(ws: &Path) -> Result<Vec<u8>> {
     if list.is_empty() {
         return Ok(vec![]);
     }
-    let mut child = Command::new("git")
-        .arg("-C").arg(ws).args(["hash-object", "--stdin-paths"])
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-        .spawn()?;
-    {
-        use std::io::Write;
-        child.stdin.take().expect("piped").write_all(&list)?;
-    }
-    let out = child.wait_with_output()?;
+    // The list goes in while the ids come out (proc.rs): written first, a long list deadlocked.
+    let out = crate::git::run(ws, &["hash-object", "--stdin-paths"], Some(&list), &[])?;
     if !out.status.success() {
         anyhow::bail!("git hash-object failed: {}", String::from_utf8_lossy(&out.stderr).trim());
     }
