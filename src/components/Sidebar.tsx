@@ -60,7 +60,6 @@ type Props = {
   onQueue: () => void;
   usageOpen: boolean;
   onUsage: () => void;
-  ram: { total_mb: number; top: { name: string; mb: number }[] } | null;
   canBack: boolean;
   canForward: boolean;
   onBack: () => void;
@@ -127,6 +126,14 @@ const CHECK_LABEL: Record<CheckDot, string> = { passed: "Checks pass", failed: "
 
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
+  // Memory use, for the tooltip on your name: read when you point at it, not on a timer (it lists every process).
+  const [ram, setRam] = useState<Awaited<ReturnType<typeof api.resourceUsage>> | null>(null);
+  const ramAt = useRef(0);
+  const loadRam = () => {
+    if (Date.now() - ramAt.current < 5000) return;
+    ramAt.current = Date.now();
+    api.resourceUsage().then(setRam).catch(() => {});
+  };
   // Project filter and folded sections, remembered between launches.
   const [filter, setFilterState] = useState<string[]>(() => getSettings().repoFilter);
   const [collapsed, setCollapsedState] = useState<string[]>(() => getSettings().collapsed);
@@ -361,7 +368,7 @@ export function Sidebar(p: Props) {
   );
   const queueTip = `Queue: ${queueLine(p.queue)}${p.queue.needs ? `. ${p.queue.needs} need you.` : ""}`;
   const usageTip = p.usage && p.usage.today > 0 ? `Usage: $${p.usage.today.toFixed(2)} today, API-equivalent` : "Usage: spend, caps and limits";
-  const ramTip = p.ram ? `\nMemory: ${p.ram.total_mb >= 1024 ? `${(p.ram.total_mb / 1024).toFixed(2)} GB` : `${p.ram.total_mb} MB`} for NekoTrail, its agents, terminals and dev servers\n${p.ram.top.map((t) => `  ${t.name}  ${t.mb} MB`).join("\n")}` : "";
+  const ramTip = ram ? `\nMemory: ${ram.total_mb >= 1024 ? `${(ram.total_mb / 1024).toFixed(2)} GB` : `${ram.total_mb} MB`} for NekoTrail, its agents, terminals and dev servers\n${ram.top.map((t) => `  ${t.name}  ${t.mb} MB`).join("\n")}` : "";
 
   return (
     <aside className="sidebar" data-tour="sidebar">
@@ -504,7 +511,7 @@ export function Sidebar(p: Props) {
           </button>
         )}
         <div className="foot-row">
-          <button className="me" onClick={p.onSky} title={`${p.me ? `@${p.me.login} · ` : ""}${p.lit} of ${total} stars lit. Open your night sky.${ramTip}`}>
+          <button className="me" onClick={p.onSky} onPointerEnter={loadRam} onFocus={loadRam} title={`${p.me ? `@${p.me.login} · ` : ""}${p.lit} of ${total} stars lit. Open your night sky.${ramTip}`}>
             {p.me ? <Avatar src={p.me.avatar_url} size={22} label={p.me.login} /> : <Mascot size={22} />}
             <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to GitHub"}</span>
           </button>

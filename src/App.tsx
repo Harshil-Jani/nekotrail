@@ -138,13 +138,6 @@ export default function App() {
     window.addEventListener("nekotrail-open-usage", openUsage);
     return () => { un.then((f) => f()); unBudget.then((f) => f()); window.removeEventListener("nekotrail-open-usage", openUsage); };
   }, []);
-  const [ram, setRam] = useState<Awaited<ReturnType<typeof api.resourceUsage>> | null>(null);
-  useEffect(() => {
-    const load = () => { if (!document.hidden) api.resourceUsage().then(setRam).catch(() => {}); };
-    load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, []);
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "chat");
   const navRef = useRef<(d: -1 | 1) => void>(() => {});
   // Back / forward through places you've been (workspace, view, tab), like a browser. ⌘[ and ⌘].
@@ -694,7 +687,9 @@ export default function App() {
 
   // Clock for the nap and worried moods.
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    // Only a change of mood (the cat falls asleep) re-renders the app, not every tick.
+    const napping = (t: number) => t - lastActive.current > NAP_AFTER_MS;
+    const t = setInterval(() => setNow((prev) => { const n = Date.now(); return napping(prev) === napping(n) ? prev : n; }), 30_000);
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
@@ -1235,6 +1230,7 @@ export default function App() {
   // Versions and counts only: no paths, chats, tokens or repo names.
   const copyDiagnostics = async () => {
     const d = await api.doctor().catch(() => null);
+    const ram = await api.resourceUsage().catch(() => null);
     const { getVersion } = await import("@tauri-apps/api/app");
     const v = await getVersion().catch(() => "unknown");
     const text = [
@@ -1512,7 +1508,6 @@ export default function App() {
         onQueue={() => setView("queue")}
         usageOpen={view === "usage"}
         onUsage={() => setView("usage")}
-        ram={ram}
         lowDiskMb={freeMb !== null && freeMb < 3072 ? freeMb : null}
         onStorage={() => setStorage(true)}
         canBack={history.current.at > 0}
