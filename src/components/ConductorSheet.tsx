@@ -3,10 +3,13 @@ import { AlertTriangle, CheckCircle2, Cloud, FolderInput, X, XCircle } from "luc
 import { api, errText, type ImportReport, type RescueItem, type RescueOutcome, type RescuePlan } from "../api";
 import { byRepo, plural, primaryLabel, outcomeLine, sizeLabel, summary, tilde, verdict, whatMoves, type Choice } from "../conductorRescue";
 
+/** Backticked commands in a result line ("Run `git worktree unlock` on it") shown as code, not raw backticks. */
+const withCode = (text: string) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part));
+
 type Phase = "loading" | "choose" | "importing" | "moving" | "done" | "error";
 
 /** Conductor Cloud's dates, as Conductor announced them. */
-const CLOUD_NOTE = "nekotrail can't read Conductor Cloud. Cloud turns read-only on 13 November 2026 and shuts down on 20 November, when its data is deleted. Before then, export or transfer your Cloud workspaces to the Conductor app on your Mac (Conductor offers this), then import them here.";
+const CLOUD_NOTE = "nekotrail can't read Conductor Cloud, which goes read-only on 13 November and shuts down on 20 November 2026. Before then, right-click each Cloud workspace in Conductor and choose Transfer to local, then import it here.";
 
 /**
  * Bringing work over from Conductor. Its worktrees live inside Conductor's folder, which Conductor
@@ -98,7 +101,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
 
         {plan && phase !== "done" && items.length > 0 && (
           <p className="cs-lead">
-            Your worktrees live inside Conductor's folder. Conductor says its data is deleted when its app shuts down, so nekotrail moves them into its own folder, <code>{tilde(plan.root)}</code>.
+            Your worktrees live inside Conductor's folder, and Conductor says it will delete all user data when its app shuts down in early 2027. Moving them into <code>{tilde(plan.root)}</code> means your work no longer depends on Conductor.
           </p>
         )}
 
@@ -108,14 +111,14 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
               <input type="radio" name="cs-choice" checked={choice === "move"} onChange={() => setChoice("move")} />
               <span>
                 <span className="cs-choice-title"><b>Move into nekotrail</b><span className="chip">Recommended</span></span>
-                <small>Uses <code>git worktree move</code>. Branches, commits and uncommitted changes come along, and each one is checked after. Nothing in Conductor's folder is deleted; Conductor just won't find these folders any more.</small>
+                <small>Branches, commits and uncommitted changes come along, and each worktree is checked after it moves. Conductor won't find these folders any more.</small>
               </span>
             </label>
             <label className={`cs-choice ${choice === "leave" ? "on" : ""}`}>
               <input type="radio" name="cs-choice" checked={choice === "leave"} onChange={() => setChoice("leave")} />
               <span>
                 <b>{importing ? "Import only, leave them in Conductor's folder" : "Leave them in Conductor's folder for now"}</b>
-                <small>They are lost if Conductor's folder is deleted. You can move them later from ⌘K.</small>
+                <small>They keep depending on Conductor's folder. You can move them later from ⌘K.</small>
               </span>
             </label>
           </div>
@@ -149,7 +152,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
                       <span className="cs-main">
                         <span className="cs-name"><span className="cs-label">{it.label}</span><code className="cs-branch">{it.branch}</code></span>
                         {o ? (
-                          <span className={`cs-result ${v}`}>{outcomeLine(o)}</span>
+                          <span className={`cs-result ${v}`}>{withCode(outcomeLine(o))}</span>
                         ) : (
                           <span className="cs-path muted" title={`${it.from} → ${it.to}`}>{tilde(it.from)}</span>
                         )}
@@ -170,7 +173,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
         {plan && phase === "choose" && importing && (
           <p className="muted cs-also">
             Also comes in: {plural(report!.repos, "repo")} with their scripts and prompts, and {plural(report!.sessions, "chat")} with their history. Chats continue the same agent session.
-            {report!.skipped > 0 ? ` ${report!.skipped} already here or gone from disk.` : ""}
+            {report!.skipped > 0 ? ` ${report!.skipped} skipped: already in nekotrail, or the folder is gone.` : ""}
           </p>
         )}
 
@@ -185,7 +188,7 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
         {phase === "moving" && <p className="row muted" role="status"><span className="spinner" />Moving {plural(items.length, "worktree")} and checking each one. Keep nekotrail open.</p>}
 
         <div className="row cs-actions">
-          {phase === "choose" && <span className="muted cs-foot">Only <code>git worktree move</code>. Nothing is deleted.</span>}
+          {phase === "choose" && <span className="muted cs-foot">Runs only <code>git worktree move</code>. Nothing is deleted.</span>}
           <span className="spacer" />
           {phase === "choose" && <button onClick={close}>Cancel</button>}
           {phase === "choose" && (
@@ -204,14 +207,17 @@ export function ConductorSheet({ mode, autoStart, onChanged, onClose }: {
 
 /** The one-time, dismissible nudge for workspaces imported earlier and still in Conductor's folder. */
 export function MoveNotice({ count, onMove, onDismiss, compact }: { count: number; onMove: () => void; onDismiss: () => void; compact?: boolean }) {
-  const text = `${count} imported ${count === 1 ? "workspace still lives" : "workspaces still live"} in Conductor's folder, which Conductor says it deletes when its app shuts down.`;
+  const where = `${count} imported ${count === 1 ? "workspace is" : "workspaces are"} still in Conductor's folder.`;
+  const why = "Conductor says it will delete all user data when its app shuts down in early 2027.";
   if (compact) {
     return (
       <div className="away-banner move-notice" role="status">
-        <FolderInput size={13} aria-hidden /><span>{text}</span>
-        <span className="spacer" />
-        <button onClick={onMove}>Move into nekotrail…</button>
-        <button className="icon" aria-label="Dismiss" title="Don't show this again. ⌘K still has the move." onClick={onDismiss}><X size={13} /></button>
+        <FolderInput size={14} aria-hidden />
+        <span className="mn-text"><b>{where}</b> Move them so your work no longer depends on Conductor.</span>
+        <span className="mn-actions">
+          <button onClick={onMove}>Move into nekotrail…</button>
+          <button className="icon" aria-label="Dismiss" title="Don't show this again. ⌘K still has the move." onClick={onDismiss}><X size={13} /></button>
+        </span>
       </div>
     );
   }
@@ -222,7 +228,7 @@ export function MoveNotice({ count, onMove, onDismiss, compact }: { count: numbe
         <span className="spacer" />
         <button className="icon" aria-label="Dismiss" title="Don't show this again. ⌘K still has the move." onClick={onDismiss}><X size={14} /></button>
       </div>
-      <p>{text} Moving them takes seconds: branches, chats and uncommitted changes come along, and each one is checked after.</p>
+      <p>{where} {why} Moving them takes seconds: branches, chats and uncommitted changes come along, and each one is checked after.</p>
       <button className="primary" onClick={onMove}><FolderInput size={15} />Move into nekotrail…</button>
     </div>
   );

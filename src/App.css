@@ -2284,7 +2284,7 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .modal.conductor-sheet { width: 680px; max-width: calc(100vw - 32px); max-height: 88vh; overflow: hidden; }
 .conductor-sheet > p { margin: 0; line-height: 1.5; }
 .conductor-sheet code { font-family: var(--mono); font-size: 0.92em; }
-.cs-lead { padding: var(--s3) var(--s4); border-radius: var(--r-md); background: var(--wait-soft); color: var(--text); }
+.cs-lead { color: var(--text); max-width: 72ch; }
 .cs-choices { display: flex; flex-direction: column; gap: var(--s2); }
 .cs-choice { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3) var(--s4); border-radius: var(--r-lg); box-shadow: inset 0 0 0 0.5px var(--line-strong); cursor: default; }
 .cs-choice.on { box-shadow: inset 0 0 0 1px var(--accent-ring); background: var(--accent-soft); }
@@ -2299,7 +2299,13 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .cs-summary { font-weight: 600; padding: var(--s3) var(--s4); border-radius: var(--r-md); }
 .cs-summary.good { background: var(--good-soft); color: var(--good-text); }
 .cs-summary.bad { background: var(--wait-soft); color: var(--text); }
-.cs-list { overflow-y: auto; min-height: 132px; flex: 0 1 auto; display: flex; flex-direction: column; border-radius: var(--r-lg); box-shadow: inset 0 0 0 0.5px var(--line); }
+.cs-list { overflow-y: auto; min-height: 132px; flex: 0 1 auto; display: flex; flex-direction: column; border-radius: var(--r-lg); box-shadow: inset 0 0 0 0.5px var(--line);
+  /* Scroll shadows: a soft edge shows only where more rows sit past the top or bottom. */
+  background:
+    linear-gradient(var(--bg) 30%, transparent) center top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--bg) 70%) center bottom / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.55)), transparent) center top / 100% 10px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.55)), transparent) center bottom / 100% 10px no-repeat scroll; }
 .cs-repo + .cs-repo { border-top: 0.5px solid var(--line); }
 .cs-repo-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); padding: var(--s2) var(--s4) var(--s1); font-size: 12px; }
 .cs-repo-head b { font-weight: 600; }
@@ -2317,7 +2323,8 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .cs-result { font-size: 12px; line-height: 1.45; }
 .cs-result.ok { color: var(--muted); }
 .cs-result.differs { color: var(--text); }
-.cs-result.failed { color: var(--bad-text); }
+.cs-result.failed { color: var(--text); }
+.cs-result code { font-size: 11.5px; padding: 0 3px; border-radius: var(--r-xs); background: var(--hover); }
 .cs-meta { display: flex; align-items: center; gap: var(--s2); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip.cs-dirty { background: var(--wait-soft); color: var(--wait); }
 .cs-also { font-size: 12px; }
@@ -2326,8 +2333,14 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .cs-cloud p { margin: 0; line-height: 1.45; }
 .cs-cloud b { color: var(--text); font-weight: 600; }
 .cs-actions { gap: var(--s2); flex-wrap: wrap; }
-.cs-foot { font-size: 11.5px; }
-.move-notice.away-banner > span:not(.spacer) { min-width: 0; }
+.cs-foot { font-size: 11.5px; flex: 1 1 0; min-width: 0; line-height: 1.45; }
+.cs-foot code { white-space: nowrap; }
+.cs-actions .cs-foot + .spacer { display: none; }
+.move-notice.away-banner { flex-wrap: wrap; row-gap: var(--s2); padding: 8px 6px 8px 12px; }
+.move-notice.away-banner > svg { flex: none; align-self: flex-start; margin-top: 2px; }
+.move-notice .mn-text { flex: 1 1 280px; min-width: 0; line-height: 1.45; }
+.move-notice .mn-actions { display: flex; align-items: center; gap: var(--s1); flex: none; margin-left: auto; }
+.move-notice .mn-actions button:not(.icon) { white-space: nowrap; }
 @media (max-width: 560px) {
   .modal.conductor-sheet { padding: var(--s4); max-height: 92vh; overflow-y: auto; }
   .cs-list { overflow: visible; min-height: 0; flex: none; }
@@ -2338,5 +2351,5 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
   .cs-list.has-state .cs-item { grid-template-columns: 16px minmax(0, 1fr); }
   .cs-list.has-state .cs-meta { grid-column: 2; }
   .cs-foot { display: none; }
-  .move-notice.away-banner { flex-wrap: wrap; }
+  .cs-actions .cs-foot + .spacer { display: block; }
 }
