@@ -5,6 +5,11 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Fixes**
+- Typing in the terminal works again, and the app no longer freezes after you open a workspace. Starting a workspace's terminal held the database and waited on itself, which stalled everything that reads it, including the Queue.
+- A workspace whose folder was deleted says so in its terminal instead of showing a blank tab.
+- The Queue shows a loading state, and when empty, one line on what it is with Add task.
+
 **Simpler to use**
 - The sidebar is calmer: one line per workspace, indented under its repo, with a single mark at the end (working, needs you, checks failing, or the PR). The star name, branch, lines changed and overlaps are in the row's tooltip.
 - Repos show their owner's real GitHub picture, worked out from the remote and kept on disk, so it shows on every launch and offline. The first letter only shows for repos without a GitHub remote.

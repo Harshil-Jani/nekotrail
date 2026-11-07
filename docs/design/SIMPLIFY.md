@@ -16,7 +16,7 @@ Legend: **Keep** stays visible. **Menu** moves to a menu named in the row. **⌘
 palette (with its shortcut where it has one). **Hover** shows on hover or in a tooltip. **Remove** goes
 because something else already says it.
 
-## Workspace screen, before: 53 visible controls and labels
+## Workspace screen, before: 99 visible controls and labels
 
 Counted on the default preview workspace (Chat tab, two chats, an open PR, 5 workspaces in 2 repos).
 
@@ -59,7 +59,7 @@ Counted on the default preview workspace (Chat tab, two chats, an open PR, 5 wor
 
 | Control | Decision | Where it goes |
 | --- | --- | --- |
-| Avatar, name, @login, "10/18 stars" | Keep, one line | Avatar and name; @login and stars in the tooltip and the account menu, which also opens the night sky |
+| Avatar, name, @login, "10/18 stars" | Keep, one line | Avatar and name; @login and stars and memory use in the tooltip on your name |
 | Low disk warning with "Clean up" | Keep | Only shows when the disk is nearly full |
 | "Show archived" | Menu | An icon button in the footer, and ⌘K |
 | (new) Settings | Keep | An icon button in the footer, as in Conductor (⌘,) |
@@ -101,9 +101,9 @@ Counted on the default preview workspace (Chat tab, two chats, an open PR, 5 wor
 | Send | Keep | A round icon button |
 | Placeholder "Ask for a change, fix or plan. Type @ ..." | Keep, shorter | "Ask for a change, @mention files, or type / for commands" |
 
-## Workspace screen, after: 27 visible controls and labels
+## Workspace screen, after: 59 visible controls and labels
 
-53 to 27 on the same sample data is a 49% cut. Toolbar rows above the chat go from three (52 + 40 + 36 px)
+99 to 59 on the same sample data (recounted) is a 40% cut. Toolbar rows above the chat go from three (52 + 40 + 36 px)
 to two (52 + 38 px).
 
 ## Other screens
@@ -111,7 +111,7 @@ to two (52 + 38 px).
 - **Changes:** the file list header (All, Uncommitted, Commit, refresh) stays; the per-file toolbar (Show
   side by side, Edit file, Discard) keeps its labels because each is a distinct, frequent action.
 - **Settings:** the tab strip and grouped rows are already calm. The footer row mixed five links with Done;
-  Sponsor and Buy me a coffee move to General's "About" row, keeping version, What's new, Check for updates and Done.
+  Sponsor and Buy me a coffee move to a "Support NekoTrail" section in General, keeping version, What's new, Check for updates and Done.
 - **Board:** unchanged; it is a destination you choose, and its density is the point.
 
 ## What we did not remove
