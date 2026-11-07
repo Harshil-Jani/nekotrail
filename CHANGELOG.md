@@ -14,6 +14,8 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - The workspace header is a breadcrumb (repo › branch), the PR's state and its one main button, and a ⋯ menu. Run, Ports, Compare, Open in, Rename, Rename branch and the rest are in ⋯ and ⌘K; their shortcuts are unchanged. While the run script is live, a Stop button shows.
 - One row of tabs: your chats on the left, Changes, Terminal, Preview and Checks on the right. Click a chat to go back to it. The separate PR bar is gone; it is part of the header now.
 - The message box shows only what you use every time: the model and effort, and a round Send. Attach, Save as prompt, commands and permissions are in its + menu; pasting or dropping a screenshot still attaches it, and /plan and /auto still switch modes. A small chip shows the mode only when it isn't Auto-accept edits, and the context ring shows once the chat is 70% full.
+- The PR's author, lines changed, comments and reviewers are in the tooltip on its number, so the header keeps only its state, CI and the main button.
+- Settings ends with the version, What's new, Check for updates and Done. Sponsor and Buy me a coffee moved to General, under Support NekoTrail.
 - Workspaces are no longer named after a pasted screenshot or a timestamp ("2026-11-05 at 5.42.16 PM.png"). The title comes from the words of your first message, or the branch name when there are none; existing ones are fixed on the next launch.
 
 ## 0.22.1 (2026-11-07)

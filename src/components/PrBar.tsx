@@ -483,7 +483,9 @@ export function PrBar({
         <>
           <Avatar src={avatar(pr.author.login)} size={24} label={pr.author.login} title={`Opened by @${pr.author.login}`} />
           <PrState pr={pr} />
-          <button className="link num" onClick={() => openUrl(pr.url)} title={pr.title}>#{pr.number}</button>
+          <button className="link num" onClick={() => openUrl(pr.url)}
+            title={[pr.title, `Opened by @${pr.author.login} · +${pr.additions} -${pr.deletions}${pr.commentCount ? ` · ${pr.commentCount} comments` : ""}`,
+              ...reviewers.map((r) => `@${r.login}: ${r.state.toLowerCase().replace("_", " ")}`)].join("\n")}>#{pr.number}</button>
           <span className="num"><span className="add">+{pr.additions}</span> <span className="del">-{pr.deletions}</span></span>
           {pr.commentCount > 0 && <span className="check num pr-comments" title={`${pr.commentCount} comments`}><MessageSquare size={14} />{pr.commentCount}</span>}
           {reviewers.length > 0 && (

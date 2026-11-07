@@ -2463,6 +2463,8 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .ws-header .prbar > .avatar,
 .ws-header .prbar > .mascot,
 .ws-header .prbar > span.num:has(.add),
+.ws-header .prbar > .pr-comments,
+.ws-header .prbar > .reviewers,
 .ws-header .prbar .stack-link .pill-text,
 .ws-header .prbar .overlap .pill-text { display: none; }
 .ws-header .prbar .stack-link { color: var(--muted); gap: 4px; }
@@ -2502,3 +2504,7 @@ body:has(.composer) .toast { bottom: auto; top: 140px; }
 .composer-bar button.send-btn { width: 28px; height: 28px; padding: 0; justify-content: center; border-radius: 50%; }
 .composer-bar button.send-btn:disabled { opacity: 1; background: var(--hover); color: var(--muted); }
 .composer-stop { height: 26px; gap: 5px; color: var(--bad-text); }
+.setting-links { display: inline-flex; gap: var(--s3); flex: none; }
+/* Section counts are noise when the rows are right there: they show on hover, and when folded. */
+.section-head .repo-meta { opacity: 0; transition: opacity 0.15s var(--ease); }
+.section-head:hover .repo-meta, .section-head:has(.fold[aria-expanded="false"]) .repo-meta { opacity: 1; }
