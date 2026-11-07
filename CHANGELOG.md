@@ -3,6 +3,21 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Simpler to use**
+- The sidebar is calmer: one line per workspace, indented under its repo, with a single mark at the end (working, needs you, checks failing, or the PR). The star name, branch, lines changed and overlaps are in the row's tooltip.
+- Repos show their owner's real GitHub picture, worked out from the remote and kept on disk, so it shows on every launch and offline. The first letter only shows for repos without a GitHub remote.
+- Search, Board, Queue and Usage are plain rows at the top. Grouping, the repo filter, sections, Add repo and Show archived are in the ⋯ next to "Workspaces"; a repo's scripts are on its right-click menu.
+- The "Needs you" list no longer repeats rows: a workspace that needs you gets a gold dot where it is. ⌘⌥L still jumps to the next one.
+- The bottom of the sidebar is you, Archived and Settings. Memory use is in the tooltip on your name.
+- The workspace header is a breadcrumb (repo › branch), the PR's state and its one main button, and a ⋯ menu. Run, Ports, Compare, Open in, Rename, Rename branch and the rest are in ⋯ and ⌘K; their shortcuts are unchanged. While the run script is live, a Stop button shows.
+- One row of tabs: your chats on the left, Changes, Terminal, Preview and Checks on the right. Click a chat to go back to it. The separate PR bar is gone; it is part of the header now.
+- The message box shows only what you use every time: the model and effort, and a round Send. Attach, Save as prompt, commands and permissions are in its + menu; pasting or dropping a screenshot still attaches it, and /plan and /auto still switch modes. A small chip shows the mode only when it isn't Auto-accept edits, and the context ring shows once the chat is 70% full.
+- The PR's author, lines changed, comments and reviewers are in the tooltip on its number, so the header keeps only its state, CI and the main button.
+- Settings ends with the version, What's new, Check for updates and Done. Sponsor and Buy me a coffee moved to General, under Support NekoTrail.
+- Workspaces are no longer named after a pasted screenshot or a timestamp ("2026-11-05 at 5.42.16 PM.png"). The title comes from the words of your first message, or the branch name when there are none; existing ones are fixed on the next launch.
+
 ## 0.22.1 (2026-11-07)
 
 **Fixes**

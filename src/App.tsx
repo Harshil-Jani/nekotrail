@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronDown, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Coffee, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
+import { FolderInput, ArrowRightLeft, Archive, ArchiveRestore, Check, ChevronRight, GitBranch, Columns2, Copy, Link, Crown, Kanban, SquareStack, PanelLeft, X, Ellipsis, ExternalLink, Pencil, Square, Code2, Download, FilePlus2, FolderOpen, GitPullRequest, MessageSquare, Moon, NotebookPen, Pin, PinOff, Play, Plus, Settings as Gear, SquareTerminal, Sparkles, AppWindow, Heart, Coffee, Search, Eye, Network, ListChecks, BookText, ScrollText, ListOrdered, ListPlus, Pause, Share, Gauge } from "lucide-react";
 import { taskFacts } from "./editorTask";
 import { api, constellationOf, displayName, errText, nameInText, starFor, starName, subName, STATUS_LABEL, type Agent, type ChatEvent, type Collision, type GithubUser, type Repo, type Section, type Sky, type Star, type Workspace, type WorkspaceScripts, type ScriptTrust, type AgentConfigTrust, type WsStatus, type PrView, type CheckDot, type RemoteJob, type ReviewRequest, prStateOf, setBeforeTurn, type JumpTo, type SearchHit, isHistory, type TerminalReport } from "./api";
 import { reviewAgent, reviewWorkspaceFor } from "./review";
@@ -13,7 +13,6 @@ import { Diff } from "./components/Diff";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrBar } from "./components/PrBar";
 import { ReviewBar } from "./components/ReviewBar";
-import { useFit, overflows } from "./useFit";
 import { RepoSettings } from "./components/RepoSettings";
 import { NightSky } from "./components/NightSky";
 import { NewWorkspace, type NewWorkspaceRequest, type Source as NewSource } from "./components/NewWorkspace";
@@ -469,7 +468,6 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [scorecard, setScorecard] = useState(params.has("scorecard"));
   const [storage, setStorage] = useState(params.has("storage"));
   const [commandsFor, setCommandsFor] = useState<string | null>(params.get("commands")); // workspace id
@@ -786,21 +784,12 @@ export default function App() {
     return `${c.name} · ${all.filter((x) => lit.has(x.slug)).length} of ${all.length} stars lit`;
   };
   const repo = ws ? repos.find((r) => r.id === ws.repo_id) : null;
-  // The toolbar folds up instead of clipping (zoomed in, narrow window, wide sidebar):
-  // 1 labels become icons and "Open in" moves into ⋯, 2 the tabs tighten, 3 Run and Compare move into ⋯ too.
+  // Run, Ports, Compare and Open in live in the header's ⋯ menu; only a live run script shows a Stop button.
   const paired = !!ws?.pair_id && workspaces.filter((x) => x.pair_id === ws.pair_id).length > 1;
   const runLive = !!ws && livePtys.has(`${ws.id}:run`);
   const urlShown = !!ws && !!localUrls[ws.id] && runLive;
-  // Fold when the bar overflows, or when the title is cut short while it has less than 240px: the
-  // workspace's name matters more than button labels.
-  const titleCut = (el: HTMLElement) => {
-    const box = el.querySelector<HTMLElement>(".ws-title");
-    const text = el.querySelector<HTMLElement>(".ws-title-text");
-    const w = box?.clientWidth ?? 999;
-    return w < 120 || (w < 240 && !!text && overflows(text));
-  };
-  const [toolbarRef, fold] = useFit(3, (el) => overflows(el) || titleCut(el),
-    [ws?.id, ws?.state, paired, runLive, urlShown, repo?.prefs?.actions?.length ?? 0, tab, openTargets.length]);
+  // Chat draws its chat tabs into the tab row, next to Changes, Terminal, Preview and Checks.
+  const [chatSlot, setChatSlot] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!ws) return;
@@ -1375,6 +1364,8 @@ export default function App() {
       queueInfo.paused
         ? { id: "queue-resume", group: "App", label: "Resume the queue", keywords: "task queue start", icon: <Play size={15} />, run: () => api.queueSetPaused(false).catch((e) => say(errText(e), true)) }
         : { id: "queue-pause", group: "App", label: "Pause the queue", keywords: "task queue stop hold", icon: <Pause size={15} />, run: () => api.queueSetPaused(true).then(() => say("Paused the queue. Running tasks finish; nothing new starts.")).catch((e) => say(errText(e), true)) },
+      { id: "group-by", group: "Go", label: groupBy === "repo" ? "Group sidebar by status" : "Group sidebar by repo", keywords: "sidebar group sort status repo", icon: <ListChecks size={15} />, run: () => { const g = groupBy === "repo" ? "status" : "repo"; setGroupBy(g); saveSettings({ ...getSettings(), groupBy: g }); } },
+      { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", keywords: "archive restore old", icon: <Archive size={15} />, run: () => { setSidebarHidden(() => false); setShowArchived((v) => !v); } },
       { id: "new-section", group: "Create", label: "Add sidebar section", keywords: "new group folder", icon: <Plus size={15} />, run: () => { setSidebarHidden(() => false); window.dispatchEvent(new Event("nekotrail-new-section")); } },
       { id: "sky", group: "Go", label: "Open night sky", keywords: "stars constellations progress", icon: <Moon size={15} />, run: () => setView("sky") },
       { id: "archived", group: "Go", label: showArchived ? "Hide archived workspaces" : "Show archived workspaces", icon: <ArchiveRestore size={15} />, run: () => setShowArchived((v) => !v) },
@@ -1481,6 +1472,8 @@ export default function App() {
         onRename={(id) => { select(id); const w = workspaces.find((x) => x.id === id); if (w) setEditingTitle(displayName(sky, w)); }}
         onArchive={(id) => archive({ id })}
         onBoard={() => setView("board")}
+        boardOpen={view === "board"}
+        onSettings={() => setSettingsOpen(true)}
         queue={queueInfo}
         queueOpen={view === "queue"}
         onQueue={() => setView("queue")}
@@ -1556,46 +1549,55 @@ export default function App() {
 
         {view === "workspace" && ws && (
           <>
-            <header className={`ws-header${fold >= 1 ? " tb-icons" : ""}${fold >= 2 ? " tb-compact" : ""}${fold >= 3 ? " tb-min" : ""}`} ref={toolbarRef} data-tauri-drag-region>
-              <div className="ws-title" data-tauri-drag-region>
-                {editingTitle !== null ? (
-                  <input
-                    className="title-edit"
-                    autoFocus
-                    value={editingTitle}
-                    aria-label="Workspace name"
-                    placeholder="Name it after its task"
-                    title="Leave it empty to name it after the PR or the first message again"
-                    onChange={(e) => setEditingTitle(e.target.value)}
-                    onBlur={() => {
-                      // Only a real change counts as naming it by hand; empty goes back to automatic.
-                      if (editingTitle.trim() !== displayName(sky, ws)) api.setWorkspaceTitle(ws.id, editingTitle).then(refresh).catch((e) => say(errText(e), true));
-                      setEditingTitle(null);
-                    }}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingTitle(null); }}
-                  />
-                ) : (
-                  <h1 onDoubleClick={() => setEditingTitle(displayName(sky, ws))} title={`${ws.title_source === "auto" ? "Named after the first message. " : ws.title_source === "issue" ? "Named after the Linear issue. " : ws.title_source === "pr" ? "Named after the PR. " : ""}Double-click to rename.`}>
-                    <span className="ws-title-text">{displayName(sky, ws)}</span>
-                    {ws.pinned && <Pin size={16} className="muted" aria-label="Pinned" />}
-                  </h1>
-                )}
-                <div className="ws-sub" title={isTask ? `One task across ${members.map((m) => repoNameOf(m.repo_id)).join(", ")}. The agent works in ${repo?.name}.` : undefined}>{subName(sky, ws) && <><span className="ws-sub-star">{subName(sky, ws)}</span> · </>}{isTask ? members.map((m) => repoNameOf(m.repo_id)).join(", ") : repo?.name} · {isHistory(ws) ?<>on {ws.branch}, in your main checkout</> : <>{ws.branch} → {ws.target_branch}</>}</div>
-              </div>
-              <span className="spacer" />
-              {ws.state === "active" && !isHistory(ws) && (
-                <nav className="tabs" role="tablist" aria-label="Workspace">
-                  {TABS.filter((t) => t.id !== "notes" || tab === "notes" || ws.notes.trim()).map((t) => (
-                    <button key={t.id} role="tab" data-tour={t.id === "changes" ? "changes" : undefined} aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)} title={TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : undefined}>
-                      {t.label}
-                      {t.id === "checks" && taskDot && taskDot !== "passed" && (
-                        <span className={`ws-check ck-${taskDot}`} role="img" aria-label={taskDot === "failed" ? "failing" : "running"} />
-                      )}
-                    </button>
-                  ))}
+            <header className="ws-header" data-tauri-drag-region>
+              {editingTitle !== null ? (
+                <input
+                  className="title-edit"
+                  autoFocus
+                  value={editingTitle}
+                  aria-label="Workspace name"
+                  placeholder="Name it after its task"
+                  title="Leave it empty to name it after the PR or the first message again"
+                  onChange={(e) => setEditingTitle(e.target.value)}
+                  onBlur={() => {
+                    // Only a real change counts as naming it by hand; empty goes back to automatic.
+                    if (editingTitle.trim() !== displayName(sky, ws)) api.setWorkspaceTitle(ws.id, editingTitle).then(refresh).catch((e) => say(errText(e), true));
+                    setEditingTitle(null);
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingTitle(null); }}
+                />
+              ) : (
+                // Where you are: repo › branch. The task's name is the selected sidebar row; it and the rest are in the tooltip.
+                <nav className="crumbs" aria-label="Workspace" data-tauri-drag-region onDoubleClick={() => setEditingTitle(displayName(sky, ws))}
+                  title={`${displayName(sky, ws)}${subName(sky, ws) ? ` (${subName(sky, ws)})` : ""}\n${isTask ? `One task across ${members.map((m) => repoNameOf(m.repo_id)).join(", ")}. The agent works in ${repo?.name}.` : repo?.root_path ?? ""}\n${isHistory(ws) ? `${ws.branch}, in your main checkout` : `${ws.branch} into ${ws.target_branch}`}\n${ws.title_source === "auto" ? "Named after the first message. " : ws.title_source === "issue" ? "Named after the Linear issue. " : ws.title_source === "pr" ? "Named after the PR. " : ""}Double-click to rename.`}>
+                  <span className="crumb">{isTask ? members.map((m) => repoNameOf(m.repo_id)).join(", ") : repo?.name}</span>
+                  <ChevronRight size={13} className="crumb-sep" aria-hidden />
+                  <span className="crumb crumb-branch">{ws.branch}</span>
                 </nav>
               )}
-              <span className="spacer" />
+              {ws.state === "active" && !isTask && !ws.review_pr && !isHistory(ws) ? (
+                <PrBar
+                      ws={ws}
+                      repo={repo ?? undefined}
+                      name={nameInText(sky, ws)}
+                      star={star?.name ?? starName(sky, ws)}
+                      refreshKey={wsRefreshKey}
+                      collision={collisions.find((c) => c.order.includes(ws.id))}
+                      prStates={prStates}
+                      prView={prs[ws.id]}
+                      parentPr={ws.parent_id ? prs[ws.parent_id]?.pr : undefined}
+                      lines={lines}
+                      onOpenWorkspace={select}
+                      stackedOnThis={workspaces.filter((w) => w.state === "active" && w.parent_id === ws.id).map((w) => w.id)}
+                      onRestacked={refresh}
+                      onArchive={(auto, id) => archive({ auto, id })}
+                      onSay={say}
+                      autopilot={autopilot[ws.id]}
+                      nameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; }}
+                      textNameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? nameInText(sky, w) : "another workspace"; }}
+                      onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
+                    />
+              ) : <span className="spacer" />}
               <div className="ws-actions">
                 {ws.state === "active" && isHistory(ws) ? (<>
                   <span className="chip read-only" title="Chats you ran in this repo's main checkout from a terminal. NekoTrail never changes that folder."><SquareTerminal size={11} />History, read only</span>
@@ -1608,67 +1610,39 @@ export default function App() {
                   </button>
                 </>) : (
                   <>
-                    {fold < 3 && urlShown && (
-                      <button className="quiet tb-url" onClick={openLocal} title={`Open ${localUrls[ws.id]} in your browser (${keyHint("⌘⇧B")})`} aria-label="Open in browser">
-                        <ExternalLink size={14} />{fold < 1 && <span className="tb-label">{localUrls[ws.id].replace(/^https?:\/\//, "")}</span>}
-                      </button>
-                    )}
-                    {/* Folded away, the button moves into ⋯; the popover still opens from here. */}
+                    {/* A live run script is the one thing worth a button here: it holds a port until you stop it. */}
+                    {runLive && <button className="quiet tb-stop" onClick={() => runScript()} title={keyHint("Stop the run script (⌘R)")}><Square size={11} />Stop</button>}
                     <span className="tb-ports-wrap">
-                      {fold < 3 && <button className="quiet tb-ports" onClick={() => setPortsOpen((o) => !o)} aria-expanded={portsOpen} title="Ports: what each workspace's app listens on" aria-label="Ports"><Network size={14} />{fold < 1 && "Ports"}</button>}
                       {portsOpen && <PortsPopover selected={viewWs?.id ?? ws.id} task={members.map((m) => m.id)} label={wsLabel} repoOf={(id) => repoNameOf(workspaces.find((w) => w.id === id)?.repo_id ?? "")} onPreview={showInPreview} onSay={say} onClose={() => setPortsOpen(false)} />}
                     </span>
-                    {fold < 3 && paired && (
-                      <button onClick={() => setComparing(ws.pair_id)} title="Compare both agents' results" aria-label="Compare"><Columns2 size={14} />{fold < 1 && "Compare"}</button>
-                    )}
-                    {fold < 3 && (runLive ? (
-                      <button className="danger" onClick={() => runScript()} title={keyHint("Stop the run script (⌘R)")} aria-label="Stop"><Square size={13} />{fold < 1 && "Stop"}</button>
-                    ) : (
-                      <button onClick={() => runScript({ stay: tab === "preview" })} title={keyHint("Run the repo's run script (⌘R)")} aria-label="Run"><Play size={14} />{fold < 1 && "Run"}</button>
-                    ))}
-                    {(repo?.prefs?.actions?.length ?? 0) > 0 && (
-                      <span className="git-menu">
-                        <button className="icon" aria-label="More actions" title="More actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen((o) => !o)}><ChevronDown size={14} /></button>
-                        {actionsOpen && (
-                          <span className="menu" role="menu" onMouseLeave={() => setActionsOpen(false)}>
-                            {repo!.prefs.actions.map(([n, c]) => (
-                              <button key={n} role="menuitem" onClick={() => { setActionsOpen(false); runAction(n); }} title={c}><Play size={14} /><span>{n}</span><kbd>{c.length > 24 ? c.slice(0, 24) + "…" : c}</kbd></button>
-                            ))}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {fold < 1 && <select aria-label="Open workspace in" value="" onChange={(e) => e.target.value && api.openIn(ws.id, e.target.value).catch((er) => say(errText(er), true))}>
-                      <option value="">Open in</option>
-                      {openTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>}
                     <span className="git-menu">
-                      <button className="icon" aria-label="More actions" title="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
+                      <button className="icon tb-more" aria-label="More actions" title="Run, open, ports and more" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Ellipsis size={18} /></button>
                       {moreOpen && (
-                        <span className="menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
-                          {/* What the folded toolbar has no room for. */}
-                          {fold >= 3 && <>
-                            {urlShown && <button role="menuitem" onClick={() => { setMoreOpen(false); openLocal(); }}><ExternalLink size={15} /><span>Open {localUrls[ws.id].replace(/^https?:\/\//, "")}</span><kbd>{keyHint("⌘⇧B")}</kbd></button>}
-                            {paired && <button role="menuitem" onClick={() => { setMoreOpen(false); setComparing(ws.pair_id); }}><Columns2 size={15} /><span>Compare</span></button>}
-                            <button role="menuitem" onClick={() => { setMoreOpen(false); setPortsOpen(true); }}><Network size={15} /><span>Ports</span></button>
-                            {runLive
-                              ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the Run script</span><kbd>{keyHint("⌘R")}</kbd></button>
-                              : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>{keyHint("⌘R")}</kbd></button>}
+                        <span className="menu ws-menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+                          {runLive
+                            ? <button role="menuitem" onClick={() => { setMoreOpen(false); runScript(); }}><Square size={15} /><span>Stop the run script</span><kbd>{keyHint("⌘R")}</kbd></button>
+                            : <button role="menuitem" onClick={() => { setMoreOpen(false); runScript({ stay: tab === "preview" }); }}><Play size={15} /><span>Run</span><kbd>{keyHint("⌘R")}</kbd></button>}
+                          {(repo?.prefs?.actions ?? []).map(([n, c]) => (
+                            <button key={n} role="menuitem" onClick={() => { setMoreOpen(false); runAction(n); }} title={c}><Play size={15} /><span>{n}</span></button>
+                          ))}
+                          {urlShown && <button role="menuitem" onClick={() => { setMoreOpen(false); openLocal(); }}><ExternalLink size={15} /><span>Open {localUrls[ws.id].replace(/^https?:\/\//, "")}</span><kbd>{keyHint("⌘⇧B")}</kbd></button>}
+                          <button role="menuitem" className="tb-ports" onClick={() => { setMoreOpen(false); setPortsOpen(true); }}><Network size={15} /><span>Ports</span></button>
+                          {paired && <button role="menuitem" onClick={() => { setMoreOpen(false); setComparing(ws.pair_id); }}><Columns2 size={15} /><span>Compare both agents</span></button>}
+                          {openTargets.length > 0 && <>
                             <div className="menu-sep" />
-                          </>}
-                          {fold >= 1 && openTargets.length > 0 && <>
                             <div className="menu-label">Open in</div>
                             {openTargets.map((t) => (
                               <button key={t.id} role="menuitem" onClick={() => { setMoreOpen(false); api.openIn(ws.id, t.id).catch((er) => say(errText(er), true)); }}><AppWindow size={15} /><span>{t.name}</span></button>
                             ))}
-                            <div className="menu-sep" />
                           </>}
+                          <div className="menu-sep" />
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setEditingTitle(displayName(sky, ws)); }}><Pencil size={15} /><span>Rename</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); api.setPinned(ws.id, !ws.pinned).then(refresh); }}>{ws.pinned ? <PinOff size={15} /> : <Pin size={15} />}<span>{ws.pinned ? "Unpin" : "Pin to top"}</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setTab("notes"); }}><NotebookPen size={15} /><span>Open notes</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setRulesFor({ id: ws.id, pane: "files" }); }}><ScrollText size={15} /><span>Rules</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setCommandsFor(ws.id); }}><SquareTerminal size={15} /><span>Commands the agent ran</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); setExportFor({ id: ws.id }); }}><Share size={15} /><span>Export session…</span></button>
+                          <button role="menuitem" onClick={() => { setMoreOpen(false); window.dispatchEvent(new CustomEvent("nekotrail-rename-branch", { detail: ws.id })); }}><GitBranch size={15} /><span>Rename branch</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); navigator.clipboard.writeText(ws.branch); say(`Copied ${ws.branch}`); }}><Copy size={15} /><span>Copy branch name</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); const pr = prs[ws.id]?.pr; if (pr?.url) { navigator.clipboard.writeText(pr.url); say("Copied the PR link."); } else say("This workspace has no PR yet."); }}><Link size={15} /><span>Copy PR link</span></button>
                           <button role="menuitem" onClick={() => { setMoreOpen(false); openNew("stack", ws.id); }}><SquareStack size={15} /><span>Stack a new workspace on this one</span></button>
@@ -1688,6 +1662,24 @@ export default function App() {
               </div>
             </header>
 
+            {/* One row of tabs: the chats (Chat puts them here) on the left, the other views on the right. */}
+            {ws.state === "active" && !isHistory(ws) && (
+              <div className={`ws-tabbar${tab === "chat" ? " on-chat" : ""}`}>
+                <div className="ws-chats" ref={setChatSlot} onClickCapture={(e) => { if ((e.target as HTMLElement).closest(".chat-tab")) setTab("chat"); }} />
+                <nav className="tabs view-tabs" role="tablist" aria-label="Views">
+                  {TABS.filter((t) => t.id !== "chat" && (t.id !== "notes" || tab === "notes" || ws.notes.trim())).map((t) => (
+                    <button key={t.id} role="tab" data-tour={t.id === "changes" ? "changes" : undefined} aria-selected={tab === t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}
+                      title={`${TAB_KEYS[t.id] ? `${t.label} (${TAB_KEYS[t.id]})` : t.label}${t.id === "changes" && lines[ws.id] ? `: +${lines[ws.id][0]} -${lines[ws.id][1]}` : ""}`}>
+                      {t.label}
+                      {t.id === "checks" && taskDot && taskDot !== "passed" && (
+                        <span className={`ws-check ck-${taskDot}`} role="img" aria-label={taskDot === "failed" ? "failing" : "running"} />
+                      )}
+                    </button>
+                  ))}
+                </nav>
+              </div>
+            )}
+
             {ws.state === "active" && ws.review_pr > 0 && (
               <ReviewBar ws={ws} request={reviewRequests.find((r) => r.repo_id === ws.repo_id && r.number === ws.review_pr)} refreshKey={wsRefreshKey} onChanges={() => setTab("changes")} />
             )}
@@ -1701,29 +1693,6 @@ export default function App() {
                 onSay={say}
                 onArchive={() => archive()}
                 onShowRepo={(id) => { setRepoView((v) => ({ ...v, [ws.id]: id })); setTab("changes"); }}
-                onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
-              />
-            )}
-            {ws.state === "active" && !isTask && !ws.review_pr && !isHistory(ws) && (
-              <PrBar
-                ws={ws}
-                repo={repo ?? undefined}
-                name={nameInText(sky, ws)}
-                star={star?.name ?? starName(sky, ws)}
-                refreshKey={wsRefreshKey}
-                collision={collisions.find((c) => c.order.includes(ws.id))}
-                prStates={prStates}
-                prView={prs[ws.id]}
-                parentPr={ws.parent_id ? prs[ws.parent_id]?.pr : undefined}
-                lines={lines}
-                onOpenWorkspace={select}
-                stackedOnThis={workspaces.filter((w) => w.state === "active" && w.parent_id === ws.id).map((w) => w.id)}
-                onRestacked={refresh}
-                onArchive={(auto, id) => archive({ auto, id })}
-                onSay={say}
-                autopilot={autopilot[ws.id]}
-                nameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? displayName(sky, w) : "another workspace"; }}
-                textNameOf={(id) => { const w = workspaces.find((x) => x.id === id); return w ? nameInText(sky, w) : "another workspace"; }}
                 onSendAgent={(text) => { setTab("chat"); api.sendToWorkspace(ws.id, text).then(refresh).catch((e) => say(errText(e), true)); }}
               />
             )}
@@ -1745,7 +1714,7 @@ export default function App() {
               ) : (
                 <>
                   <div className="pane" hidden={tab !== "chat"}>
-                    <Chat workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} taskRepos={isTask ? members.map((m) => repoNameOf(m.repo_id)) : undefined} handoff={handoffReq?.workspaceId === ws.id ? handoffReq : undefined} />
+                    <Chat tabsSlot={chatSlot} workspaceId={ws.id} running={runningSessions} onRunningChange={refresh} inject={inject} append={append} jump={jump} reviewPr={ws.review_pr} taskRepos={isTask ? members.map((m) => repoNameOf(m.repo_id)) : undefined} handoff={handoffReq?.workspaceId === ws.id ? handoffReq : undefined} />
                   </div>
                   <div className="pane" hidden={tab !== "changes"}>
                     {tab === "changes" && viewWs && perRepo(

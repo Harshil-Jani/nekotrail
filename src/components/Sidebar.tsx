@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Eye, History, HardDrive, MemoryStick, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, Filter, FolderGit2, Gauge, FolderInput, FolderOpen, GitFork, Kanban, Layers, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, History, HardDrive, PanelLeft, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Ellipsis, FolderGit2, Gauge, FolderInput, FolderOpen, GitFork, Kanban, ListChecks, ListOrdered, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Settings, Settings2, Trash2, X } from "lucide-react";
 import { getSettings, saveSettings } from "../settings";
 import { IS_MAC, keyHint, mod } from "../platform";
 import { api, displayName, isHistory, nameInText, starName, subName, statusOf, STATUS_LABEL, type Agent, type CheckDot, type Collision, type Section, type GithubUser, type Repo, type RepoGithub, type ReviewRequest, type Sky, type Workspace } from "../api";
@@ -52,6 +52,8 @@ type Props = {
   onRename: (id: string) => void;
   onArchive: (id: string) => void;
   onBoard: () => void;
+  boardOpen: boolean;
+  onSettings: () => void;
   /** The task queue at a glance, for its row. */
   queue: { running: number; next: number; needs: number; paused: boolean };
   queueOpen: boolean;
@@ -76,48 +78,47 @@ type Props = {
 
 const DRAG = "application/x-nekotrail-workspace";
 
-/** The Queue row's second line: "2 running, 5 up next", "Paused", or what to do with it. */
+/** The Queue row's tooltip: "2 running, 5 up next", "Paused", or what it is for. */
 function queueLine(q: { running: number; next: number; paused: boolean }) {
   const parts = [q.running && `${q.running} running`, q.next && `${q.next} up next`].filter(Boolean).join(", ");
   if (q.paused) return parts ? `Paused · ${parts}` : "Paused";
   return parts || "Line up tasks for later";
 }
 
-/** The workspace's PR at a glance: branch only, draft, open, merged or closed. */
-function PrIcon({ state }: { state?: string }) {
+/** The workspace's PR as the row's trailing mark: draft, open, merged or closed. Nothing without a PR. */
+function PrMark({ state }: { state?: string }) {
   switch (state) {
-    case "OPEN": return <GitPullRequest size={15} className="pr-open" aria-label="PR open" />;
-    case "DRAFT": return <GitPullRequestDraft size={15} className="pr-draft" aria-label="Draft PR" />;
-    case "MERGED": return <GitMerge size={15} className="pr-merged" aria-label="PR merged" />;
-    case "CLOSED": return <GitPullRequestClosed size={15} className="pr-closed" aria-label="PR closed" />;
-    default: return <GitBranch size={15} className="pr-none" aria-label="No PR yet" />;
+    case "OPEN": return <GitPullRequest size={13} className="pr-open" aria-label="PR open" />;
+    case "DRAFT": return <GitPullRequestDraft size={13} className="pr-draft" aria-label="Draft PR" />;
+    case "MERGED": return <GitMerge size={13} className="pr-merged" aria-label="PR merged" />;
+    case "CLOSED": return <GitPullRequestClosed size={13} className="pr-closed" aria-label="PR closed" />;
+    default: return null;
   }
 }
+const PR_WORD: Record<string, string> = { OPEN: "PR open", DRAFT: "Draft PR", MERGED: "PR merged", CLOSED: "PR closed" };
 
-function RepoHead({ repo, onNew, onSettings, collapsed, onToggle, count }: { repo: Repo; onNew: () => void; onSettings: () => void; collapsed: boolean; onToggle: () => void; count: number }) {
+/** The repo's row: its owner's avatar (cached, so it shows offline), its name, and + for a new workspace.
+ * Click the name to fold it; right-click for its scripts. */
+function RepoHead({ repo, onNew, onMenu, collapsed, onToggle, count }: { repo: Repo; onNew: () => void; onMenu: (e: React.MouseEvent) => void; collapsed: boolean; onToggle: () => void; count: number }) {
   const [gh, setGh] = useState<RepoGithub>(null);
-  useEffect(() => { api.repoGithub(repo.id).then(setGh); }, [repo.id]);
+  const [pic, setPic] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.repoAvatar(repo.id).then((u) => live && setPic(u)).catch(() => {});
+    api.repoGithub(repo.id).then((g) => live && setGh(g)).catch(() => {});
+    return () => { live = false; };
+  }, [repo.id]);
+  const stars = gh && gh.stargazerCount > 0 ? `, ${gh.stargazerCount} stars` : "";
   return (
-    <div className="repo-head" data-tour="new">
+    <div className="repo-head" data-tour="new" onContextMenu={onMenu}
+      title={`${gh?.nameWithOwner ?? repo.name}${stars}${gh?.description ? `\n${gh.description}` : ""}\n${repo.root_path}`}>
       <button className="fold" tabIndex={-1} onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${repo.name}` : `Collapse ${repo.name}`}>
-        {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+        <Avatar src={pic ?? gh?.owner_avatar ?? ""} size={20} label={repo.name} />
       </button>
-      {gh?.owner_avatar ? (
-        <Avatar src={gh.owner_avatar} size={20} label={gh.nameWithOwner} />
-      ) : (
-        <Avatar src="" size={20} label={repo.name} />
-      )}
-      <span className="repo-name" title={gh?.description || repo.root_path} onClick={onToggle}>{repo.name}</span>
+      <span className="repo-name" onClick={onToggle}>{repo.name}</span>
+      {collapsed ? <ChevronRight size={12} className="chev" aria-hidden /> : <ChevronDown size={12} className="chev" aria-hidden />}
       {collapsed && count > 0 && <span className="repo-meta num">{count}</span>}
-      {gh && gh.stargazerCount > 0 && (
-        <span className="repo-meta num" title={`${gh.stargazerCount} stars on ${gh.nameWithOwner}`}>
-          <Star size={12} />{gh.stargazerCount >= 1000 ? `${(gh.stargazerCount / 1000).toFixed(1)}k` : gh.stargazerCount}
-        </span>
-      )}
-      <span className="repo-actions">
-        <button className="icon" tabIndex={-1} title="Edit repo scripts" aria-label={`Edit ${repo.name} scripts`} onClick={onSettings}><Settings2 size={16} /></button>
-        <button className="icon" tabIndex={-1} title={keyHint("Create workspace (⌘N)")} aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={18} /></button>
-      </span>
+      <button className="icon repo-new" tabIndex={-1} title={keyHint("Create workspace (⌘N)")} aria-label={`Create workspace in ${repo.name}`} onClick={onNew}><Plus size={15} /></button>
     </div>
   );
 }
@@ -129,7 +130,9 @@ export function Sidebar(p: Props) {
   // Project filter and folded sections, remembered between launches.
   const [filter, setFilterState] = useState<string[]>(() => getSettings().repoFilter);
   const [collapsed, setCollapsedState] = useState<string[]>(() => getSettings().collapsed);
-  const [filterOpen, setFilterOpen] = useState(false);
+  // The "Workspaces" ⋯ menu (grouping, repo filter, sections, add repo) and the repo row's right-click menu.
+  const [listMenu, setListMenu] = useState(false);
+  const [repoCtx, setRepoCtx] = useState<{ r: Repo; x: number; y: number } | null>(null);
   useEffect(() => {
     const sync = () => { setFilterState(getSettings().repoFilter); setCollapsedState(getSettings().collapsed); };
     window.addEventListener("nekotrail-settings", sync);
@@ -154,6 +157,13 @@ export function Sidebar(p: Props) {
     return () => window.removeEventListener("nekotrail-new-section", open);
   }, [p.groupBy]);
   const [secMenu, setSecMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!repoCtx) return;
+    const close = () => setRepoCtx(null);
+    window.addEventListener("mousedown", close);
+    window.addEventListener("blur", close);
+    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("blur", close); };
+  }, [repoCtx]);
   useEffect(() => {
     if (!ctx) return;
     const close = () => { setCtx(null); setMoveOpen(false); };
@@ -236,7 +246,6 @@ export function Sidebar(p: Props) {
   const match = (w: Workspace) => !q || label(w).toLowerCase().includes(q) || starName(p.sky, w).toLowerCase().includes(q) || w.branch.toLowerCase().includes(q);
   const total = p.sky.stars.length;
   const repoName = (id: string) => p.repos.find((r) => r.id === id)?.name ?? "";
-  /** One workspace row. `smart` rows repeat a workspace in a smart group (Needs you) and are never shown selected. */
   /** Quiet note for a row that shares files with other workspaces: who, and the merge order. */
   const collisionNote = (w: Workspace) => {
     const g = p.collisions.find((c) => c.order.includes(w.id));
@@ -246,22 +255,28 @@ export function Sidebar(p: Props) {
     if (!others.length) return null;
     return `Changes the same files as ${others.join(", ")}.\nSuggested merge order: ${g.order.map(nameById).join(", then ")}.`;
   };
-  const row = (w: Workspace, smart = false) => {
+  const row = (w: Workspace) => {
     const l = p.lines[w.id];
-    const on = !smart && p.selected === w.id;
+    const on = p.selected === w.id;
     const clash = w.state === "active" ? collisionNote(w) : null;
     const ck = w.state === "active" ? p.checks?.[w.id] : undefined;
-    // A titled row says what the task is; its star sits underneath.
+    const busy = p.running.has(w.id);
+    const pr = p.prStates[w.id];
     const sub = subName(p.sky, w);
     const task = p.taskRepos?.[w.id];
-    const taskNote = task ? `One task across ${task.join(", ")}` : "";
-    const meta = <>
-      {task && <span className="ws-repos num" role="img" aria-label={taskNote} title={taskNote}><FolderGit2 size={12} />{task.length} repos</span>}
-      {ck && <span className={`ws-check ck-${ck}`} role="img" aria-label={CHECK_LABEL[ck]} title={CHECK_LABEL[ck]} />}
-      {clash && <span className="ws-clash" title={clash} role="img" aria-label={clash}><Layers size={12} /></span>}
-      {l && (l[0] > 0 || l[1] > 0) && <span className="ws-lines num"><span className="add">+{l[0]}</span><span className="del">-{l[1]}</span></span>}
-      {w.pinned && <Pin size={sub ? 12 : 14} className="muted" aria-label="Pinned" />}
-    </>;
+    // One trailing mark, the most urgent: working, needs you, checks failing, else the PR.
+    const trail = busy ? <span className="spinner" aria-label="Agent working" />
+      : w.unread ? <span className="unread" role="img" aria-label="Needs you" />
+      : ck === "failed" ? <span className="ws-check ck-failed" role="img" aria-label={CHECK_LABEL.failed} />
+      : <PrMark state={pr} />;
+    // Everything else is one hover away.
+    const tip = [
+      label(w),
+      sub,
+      `${task ? task.join(", ") : repoName(w.repo_id)} · ${w.branch}`,
+      [busy && "Agent working", w.unread && !busy && "Needs you", pr && PR_WORD[pr], ck && CHECK_LABEL[ck], l && (l[0] || l[1]) ? `+${l[0]} -${l[1]}` : "", w.pinned && "Pinned"].filter(Boolean).join(" · "),
+      clash ? `\n${clash}` : "",
+    ].filter(Boolean).join("\n");
     return (
       <button
         key={w.id}
@@ -269,7 +284,8 @@ export function Sidebar(p: Props) {
         aria-selected={on}
         tabIndex={-1}
         data-id={w.id}
-        className={`ws ${sub ? "two" : ""} ${on ? "selected" : ""} ${smart ? "smart" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
+        title={tip}
+        className={`ws ${on ? "selected" : ""} ${w.unread && !busy ? "news" : ""} ${w.state === "archived" ? "archived" : ""} ${p.leaving === w.id ? "leaving" : ""}`}
         onClick={() => p.onSelect(w.id)}
         draggable={w.state === "active"}
         onDragStart={(e) => { e.dataTransfer.setData(DRAG, w.id); e.dataTransfer.effectAllowed = "move"; setDragging(true); }}
@@ -277,15 +293,10 @@ export function Sidebar(p: Props) {
         onContextMenu={(e) => { e.preventDefault(); setCtx({ w, x: e.clientX, y: e.clientY }); }}
       >
         <span className="ws-mark">
-          {p.running.has(w.id) ? <span className="spinner" aria-label="Agent working" /> : w.review_pr ? <Eye size={15} className="pr-none" aria-label={`Reviewing PR #${w.review_pr}`} /> : isHistory(w) ? <History size={15} className="pr-none" aria-label="Terminal history, read only" /> : <PrIcon state={p.prStates[w.id]} />}
-          {w.unread && !p.running.has(w.id) && <span className="unread badge" aria-label="Unread" />}
+          {w.review_pr ? <Eye size={14} aria-label={`Reviewing PR #${w.review_pr}`} /> : isHistory(w) ? <History size={14} aria-label="Terminal history, read only" /> : task ? <FolderGit2 size={14} aria-label={`One task across ${task.length} repos`} /> : <GitBranch size={14} aria-hidden />}
         </span>
-        <span className="ws-text" title={`${label(w)}${sub ? `\n${sub}` : ""}\n${task ? task.join(", ") : repoName(w.repo_id)} · ${w.branch}${clash ? `\n\n${clash}` : ""}`}>
-          <span className="ws-name">{label(w)}</span>
-          {/* Two-line rows keep the marks on the star's line, so the task title gets the full width. */}
-          {sub && <span className="ws-sub-line"><span className="ws-star">{sub}</span>{meta}</span>}
-        </span>
-        {!sub && meta}
+        <span className="ws-name">{label(w)}</span>
+        <span className="ws-trail">{trail}</span>
       </button>
     );
   };
@@ -331,21 +342,52 @@ export function Sidebar(p: Props) {
     }
   };
 
+  const repoFilterItems = (close: () => void) => (
+    <>
+      <button role="menuitemradio" aria-checked={!filter.length} onClick={() => { setFilter([]); close(); }}>
+        {!filter.length ? <Check size={14} /> : <span className="check-space" />}<span>All repos</span>
+      </button>
+      {p.repos.map((r) => {
+        const on = filter.includes(r.id);
+        const n = p.workspaces.filter((w) => w.repo_id === r.id && w.state === "active").length;
+        return (
+          <button key={r.id} role="menuitemcheckbox" aria-checked={on}
+            onClick={(e) => setFilter(mod(e) || e.shiftKey ? (on ? filter.filter((x) => x !== r.id) : [...filter, r.id]) : on && filter.length === 1 ? [] : [r.id])}>
+            {on ? <Check size={14} /> : <span className="check-space" />}<span>{r.name}</span><span className="muted num">{n}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+  const queueTip = `Queue: ${queueLine(p.queue)}${p.queue.needs ? `. ${p.queue.needs} need you.` : ""}`;
+  const usageTip = p.usage && p.usage.today > 0 ? `Usage: $${p.usage.today.toFixed(2)} today, API-equivalent` : "Usage: spend, caps and limits";
+  const ramTip = p.ram ? `\nMemory: ${p.ram.total_mb >= 1024 ? `${(p.ram.total_mb / 1024).toFixed(2)} GB` : `${p.ram.total_mb} MB`} for NekoTrail, its agents, terminals and dev servers\n${p.ram.top.map((t) => `  ${t.name}  ${t.mb} MB`).join("\n")}` : "";
+
   return (
     <aside className="sidebar" data-tour="sidebar">
       <div className="sidebar-head" data-tauri-drag-region>
         <button className="icon sidebar-toggle" onClick={p.onToggleSidebar} title={keyHint("Hide sidebar (⌘B)")} aria-label="Hide sidebar"><PanelLeft size={16} /></button>
-        <Mascot size={22} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
+        <Mascot size={20} mood={p.mood} follow purring={p.purring} onClick={p.onPet} title="Pet the cat" />
         {p.mood === "sleep" && <span className="zzz" aria-hidden>z z</span>}
         <span className="spacer" />
-        {p.ram && (
-          <span className="ram num" title={`Memory used by NekoTrail, its agents, terminals and dev servers:\n${p.ram.top.map((t) => `${t.name}  ${t.mb} MB`).join("\n")}`}>
-            <MemoryStick size={13} />{p.ram.total_mb >= 1024 ? `${(p.ram.total_mb / 1024).toFixed(2)} GB` : `${p.ram.total_mb} MB`}
-          </span>
-        )}
         <button className="icon" onClick={p.onBack} disabled={!p.canBack} title={keyHint("Back (⌘[)")} aria-label="Back"><ArrowLeft size={16} /></button>
         <button className="icon" onClick={p.onForward} disabled={!p.canForward} title={keyHint("Forward (⌘])")} aria-label="Forward"><ArrowRight size={16} /></button>
       </div>
+      <nav className="side-nav" aria-label="Go to">
+        <label className="nav-row nav-search">
+          <Search size={15} aria-hidden />
+          <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setQuery(""); e.currentTarget.blur(); } }}
+            id="workspace-search" aria-label="Filter workspaces" />
+        </label>
+        <button className={`nav-row${p.boardOpen ? " on" : ""}`} onClick={p.onBoard} title={keyHint("Board (⌘⇧K)")} aria-current={p.boardOpen ? "page" : undefined}><Kanban size={15} aria-hidden />Board</button>
+        {p.repos.length > 0 && <>
+          <button className={`nav-row${p.queueOpen ? " on" : ""}`} onClick={p.onQueue} title={queueTip} aria-current={p.queueOpen ? "page" : undefined}>
+            {p.queue.running > 0 ? <span className="spinner" aria-label="Running" /> : <ListOrdered size={15} aria-hidden />}Queue
+            {p.queue.needs > 0 && <span className="nav-count num" aria-label={`${p.queue.needs} need you`}>{p.queue.needs}</span>}
+          </button>
+          <button className={`nav-row${p.usageOpen ? " on" : ""}`} onClick={p.onUsage} title={usageTip} aria-current={p.usageOpen ? "page" : undefined}><Gauge size={15} aria-hidden />Usage</button>
+        </>}
+      </nav>
       {filter.length > 0 && (
         <div className="filter-chips">
           {filter.map((id) => {
@@ -355,45 +397,6 @@ export function Sidebar(p: Props) {
           <button className="quiet chip-clear" onClick={() => setFilter([])}>Show all repos</button>
         </div>
       )}
-      <div className="search-row">
-        <label className="search">
-          <Search size={14} />
-          <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} id="workspace-search" aria-label="Filter workspaces" />
-        </label>
-        <button className="icon" onClick={p.onBoard} title={keyHint("Open board (⌘⇧K)")} aria-label="Open board"><Kanban size={16} /></button>
-        <span className="filter-wrap">
-          <button className={`icon ${filter.length ? "on" : ""}`} onClick={() => setFilterOpen((o) => !o)} title="Filter by repo" aria-label="Filter by repo" aria-expanded={filterOpen}>
-            <Filter size={16} />
-          </button>
-          {filterOpen && (
-            <span className="menu filter-menu" role="menu" onMouseLeave={() => setFilterOpen(false)}>
-              <button role="menuitemradio" aria-checked={!filter.length} onClick={() => { setFilter([]); setFilterOpen(false); }}>
-                {!filter.length ? <Check size={14} /> : <span className="check-space" />}<span>All repos</span>
-              </button>
-              {p.repos.map((r) => {
-                const on = filter.includes(r.id);
-                const n = p.workspaces.filter((w) => w.repo_id === r.id && w.state === "active").length;
-                return (
-                  <button key={r.id} role="menuitemcheckbox" aria-checked={on}
-                    onClick={(e) => setFilter(mod(e) || e.shiftKey ? (on ? filter.filter((x) => x !== r.id) : [...filter, r.id]) : on && filter.length === 1 ? [] : [r.id])}>
-                    {on ? <Check size={14} /> : <span className="check-space" />}<span>{r.name}</span><span className="muted num">{n}</span>
-                  </button>
-                );
-              })}
-              <p className="muted menu-hint">Click to show one repo. {IS_MAC ? "⌘-click" : "Ctrl-click"} to add more.</p>
-            </span>
-          )}
-        </span>
-        <button
-          className="icon"
-          onClick={() => p.onGroupBy(p.groupBy === "repo" ? "status" : "repo")}
-          title={p.groupBy === "repo" ? "Group by status" : "Group by repo"}
-          aria-label={p.groupBy === "repo" ? "Group by status" : "Group by repo"}
-        >
-          {p.groupBy === "repo" ? <ListChecks size={17} /> : <FolderGit2 size={17} />}
-        </button>
-        <button className="icon" onClick={p.onAddRepo} title={keyHint("Add local repo (⌘⌥A)")} aria-label="Add repo"><Plus size={18} /></button>
-      </div>
       <div className="sidebar-scroll" role="listbox" aria-label="Workspaces" ref={list} onKeyDown={onListKey}
         onFocus={(e) => { const el = (e.target as HTMLElement).closest<HTMLElement>(ITEMS); if (el) kb.current = el; }}>
         {p.repos.length === 0 && (
@@ -407,45 +410,16 @@ export function Sidebar(p: Props) {
           requests={p.reviewRequests.filter((r) => !filter.length || filter.includes(r.repo_id))}
           workspaces={p.workspaces} repos={p.repos} busy={p.reviewBusy} onReview={p.onReview} onOpen={p.onSelect}
         />
-        {p.repos.length > 0 && (
-          <section className="repo queue-entry" aria-label="Queue">
-            <button role="option" aria-selected={p.queueOpen} tabIndex={-1} className={`ws two smart${p.queueOpen ? " selected" : ""}`} onClick={p.onQueue}
-              title="Tasks lined up to run while you're away">
-              <span className="ws-mark">{p.queue.running > 0 ? <span className="spinner" aria-label="Running" /> : <ListOrdered size={15} className="muted" />}</span>
-              <span className="ws-text">
-                <span className="ws-name">Queue</span>
-                <span className="ws-sub-line"><span className="ws-star">{queueLine(p.queue)}</span></span>
-              </span>
-              {p.queue.needs > 0 && <span className="queue-badge num" aria-label={`${p.queue.needs} need you`}>{p.queue.needs}</span>}
-            </button>
-            <button role="option" aria-selected={p.usageOpen} tabIndex={-1} className={`ws two smart${p.usageOpen ? " selected" : ""}`} onClick={p.onUsage}
-              title="Spend, caps and usage limits">
-              <span className="ws-mark"><Gauge size={15} className="muted" /></span>
-              <span className="ws-text">
-                <span className="ws-name">Usage</span>
-                <span className="ws-sub-line"><span className="ws-star num">{p.usage && p.usage.today > 0 ? `$${p.usage.today.toFixed(2)} today, API-equivalent` : "Spend, caps and limits"}</span></span>
-              </span>
-            </button>
-          </section>
-        )}
         {p.groupBy === "repo" && p.repos.length > 0 && (() => {
           const live = p.workspaces.filter((w) => w.state === "active" && inFilter(w) && match(w));
           const pinned = live.filter((w) => w.pinned);
-          // Inbox: workspaces whose agent finished while you were elsewhere.
-          const news = live.filter((w) => w.unread && !p.running.has(w.id) && !w.pinned);
           const folded = (id: string) => collapsed.includes(`sec:${id}`) && !q;
           return (
             <>
               {(pinned.length > 0 || over === "pinned") && (
                 <section className="repo">
-                  {sectionHead("pinned", "Pinned", pinned.length, <Pin size={12} className="muted" />)}
+                  {sectionHead("pinned", "Pinned", pinned.length, null)}
                   {!folded("pinned") && pinned.map((w) => row(w))}
-                </section>
-              )}
-              {news.length > 0 && (
-                <section className="repo needs-you">
-                  <div className="repo-head status-head"><span className="unread" /><span className="repo-name">Needs you</span><span className="repo-meta num">{news.length}</span></div>
-                  {news.map((w) => row(w, true))}
                 </section>
               )}
               {p.sections.map((sec) => {
@@ -454,31 +428,49 @@ export function Sidebar(p: Props) {
                   <section key={sec.id} className="repo">
                     {sectionHead(sec.id, sec.name, ws.length, null, true)}
                     {!folded(sec.id) && ws.map((w) => row(w))}
-                    {!folded(sec.id) && ws.length === 0 && (dragging
-                      ? <div className={`drop-hint ${over === sec.id ? "drop" : ""}`} {...drop(sec.id)}>Drop here</div>
-                      : <p className="section-empty muted">Empty. Drag a workspace onto the name.</p>)}
+                    {!folded(sec.id) && ws.length === 0 && dragging && <div className={`drop-hint ${over === sec.id ? "drop" : ""}`} {...drop(sec.id)}>Drop here</div>}
                   </section>
                 );
               })}
-              {editing?.id === null ? (
+              {editing?.id === null && (
                 <div className="repo-head section-head">
-                  <span className="check-space" />
                   <input className="section-edit" autoFocus placeholder="Section name" value={editing.name} onChange={(e) => setEditing({ id: null, name: e.target.value })}
                     onBlur={saveSection} onKeyDown={(e) => { if (e.key === "Enter") saveSection(); if (e.key === "Escape") setEditing(null); }} />
                 </div>
-              ) : (
-                <button className="ws-empty new-section" onClick={() => setEditing({ id: null, name: "" })}><Plus size={13} />Add section</button>
               )}
             </>
           );
         })()}
+        {p.repos.length > 0 && (
+          <div className="side-label">
+            <span>Workspaces</span>
+            <span className="git-menu">
+              <button className={`icon${filter.length || p.groupBy !== "repo" ? " on" : ""}`} tabIndex={-1} aria-label="Workspace list options" title="Group, filter, sections and repos" aria-expanded={listMenu} onClick={() => setListMenu((o) => !o)}><Ellipsis size={14} /></button>
+              {listMenu && (
+                <span className="menu list-menu" role="menu" onMouseLeave={() => setListMenu(false)}>
+                  <div className="menu-label">Group by</div>
+                  <button role="menuitemradio" aria-checked={p.groupBy === "repo"} onClick={() => { setListMenu(false); p.onGroupBy("repo"); }}>{p.groupBy === "repo" ? <Check size={14} /> : <span className="check-space" />}<span>Repo</span></button>
+                  <button role="menuitemradio" aria-checked={p.groupBy === "status"} onClick={() => { setListMenu(false); p.onGroupBy("status"); }}>{p.groupBy === "status" ? <Check size={14} /> : <span className="check-space" />}<span>Status</span></button>
+                  <div className="menu-label">Show</div>
+                  {repoFilterItems(() => setListMenu(false))}
+                  <p className="muted menu-hint">{IS_MAC ? "⌘-click" : "Ctrl-click"} to show more than one repo.</p>
+                  <div className="menu-sep" />
+                  <button role="menuitem" onClick={() => { setListMenu(false); if (p.groupBy !== "repo") p.onGroupBy("repo"); setEditing({ id: null, name: "" }); }}><Plus size={14} /><span>Add section</span></button>
+                  <button role="menuitem" onClick={() => { setListMenu(false); p.onAddRepo(); }}><FolderOpen size={14} /><span>Add local repo</span><kbd>{keyHint("⌘⌥A")}</kbd></button>
+                  {p.onClone && <button role="menuitem" onClick={() => { setListMenu(false); p.onClone!(); }}><GitFork size={14} /><span>Clone from GitHub</span></button>}
+                  <button role="menuitemcheckbox" aria-checked={p.showArchived} onClick={() => { setListMenu(false); p.onToggleArchived(); }}>{p.showArchived ? <Check size={14} /> : <span className="check-space" />}<span>Show archived</span></button>
+                </span>
+              )}
+            </span>
+          </div>
+        )}
         {p.groupBy === "repo"
           ? shownRepos.map((r) => {
               const ws = p.workspaces.filter((w) => w.repo_id === r.id && w.state === "active" && match(w) && !(w.pinned || (w.section_id && p.sections.some((s) => s.id === w.section_id))));
               const folded = collapsed.includes(r.id) && !q;
               return (
-                <section key={r.id} className="repo" {...drop("")}>
-                  <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onSettings={() => p.onRepoSettings(r.id)} collapsed={folded} onToggle={() => toggleCollapsed(r.id)} count={ws.length} />
+                <section key={r.id} className="repo repo-group" {...drop("")}>
+                  <RepoHead repo={r} onNew={() => p.onNewWorkspace(r.id)} onMenu={(e) => { e.preventDefault(); setRepoCtx({ r, x: e.clientX, y: e.clientY }); }} collapsed={folded} onToggle={() => toggleCollapsed(r.id)} count={ws.length} />
                   {!folded && ws.map((w) => row(w))}
                   {!folded && ws.length === 0 && !q && <button className="ws-empty" onClick={() => p.onNewWorkspace(r.id)}><Plus size={13} />Create workspace</button>}
                 </section>
@@ -498,7 +490,7 @@ export function Sidebar(p: Props) {
           const archived = p.workspaces.filter((w) => w.state === "archived" && inFilter(w) && match(w));
           return (
             <section className="repo archived-group">
-              <div className="repo-head status-head"><Archive size={12} className="muted" /><span className="repo-name">Archived</span><span className="repo-meta num">{archived.length || ""}</span></div>
+              <div className="repo-head status-head"><span className="repo-name">Archived</span><span className="repo-meta num">{archived.length || ""}</span></div>
               {archived.map((w) => row(w))}
               {archived.length === 0 && <p className="muted archived-empty">Nothing archived yet. Archiving removes a workspace's folder and keeps its branch, so you can restore it here.</p>}
             </section>
@@ -506,24 +498,29 @@ export function Sidebar(p: Props) {
         })()}
       </div>
       <div className="sidebar-foot">
-        <button className="me" onClick={p.onSky} title="Open your night sky">
-          {p.me ? <Avatar src={p.me.avatar_url} size={28} label={p.me.login} /> : <Mascot size={28} />}
-          <span className="me-text">
-            <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to GitHub"}</span>
-            <span className="muted num">{p.me ? `@${p.me.login} · ` : ""}{p.lit}/{total} stars</span>
-          </span>
-        </button>
-
         {p.lowDiskMb !== null && (
           <button className="low-disk" onClick={p.onStorage} title="Disk is almost full. Open Storage to clean build folders.">
             <HardDrive size={14} /><span className="muted">{p.lowDiskMb >= 1024 ? `${(p.lowDiskMb / 1024).toFixed(1)} GB` : `${p.lowDiskMb} MB`} free</span><span className="spacer" /><span className="clean-link">Clean up</span>
           </button>
         )}
-        <button className={`quiet ${p.showArchived ? "on" : ""}`} onClick={p.onToggleArchived} aria-pressed={p.showArchived}>
-          {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-          {p.showArchived ? "Hide archived" : "Show archived"}
-        </button>
+        <div className="foot-row">
+          <button className="me" onClick={p.onSky} title={`${p.me ? `@${p.me.login} · ` : ""}${p.lit} of ${total} stars lit. Open your night sky.${ramTip}`}>
+            {p.me ? <Avatar src={p.me.avatar_url} size={22} label={p.me.login} /> : <Mascot size={22} />}
+            <span className="me-name">{p.me?.name || p.me?.login || "Not signed in to GitHub"}</span>
+          </button>
+          <button className={`icon${p.showArchived ? " on" : ""}`} onClick={p.onToggleArchived} aria-pressed={p.showArchived} title={p.showArchived ? "Hide archived" : "Show archived"} aria-label="Show archived">
+            {p.showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          </button>
+          <button className="icon" onClick={p.onSettings} title={keyHint("Settings (⌘,)")} aria-label="Settings"><Settings size={16} /></button>
+        </div>
       </div>
+      {repoCtx && (
+        <div className="menu ctx-menu" role="menu" style={{ left: Math.min(repoCtx.x, window.innerWidth - 240), top: Math.min(repoCtx.y, window.innerHeight - 160) }} onMouseDown={(e) => e.stopPropagation()}>
+          <button role="menuitem" onClick={() => { setRepoCtx(null); p.onNewWorkspace(repoCtx.r.id); }}><Plus size={14} /><span>Create workspace</span><kbd>{keyHint("⌘N")}</kbd></button>
+          <button role="menuitem" onClick={() => { setRepoCtx(null); p.onRepoSettings(repoCtx.r.id); }}><Settings2 size={14} /><span>Setup and run scripts</span></button>
+          <button role="menuitem" onClick={() => { setRepoCtx(null); setFilter(filter.length === 1 && filter[0] === repoCtx.r.id ? [] : [repoCtx.r.id]); }}><ListChecks size={14} /><span>{filter.length === 1 && filter[0] === repoCtx.r.id ? "Show all repos" : `Show only ${repoCtx.r.name}`}</span></button>
+        </div>
+      )}
       {ctx && (
         <div className="menu ctx-menu" role="menu" style={{ left: Math.min(ctx.x, window.innerWidth - 240), top: Math.min(ctx.y, window.innerHeight - 260) }} onMouseDown={(e) => e.stopPropagation()}>
           <button role="menuitem" onClick={() => act(() => api.setPinned(ctx.w.id, !ctx.w.pinned))}>{ctx.w.pinned ? <PinOff size={14} /> : <Pin size={14} />}<span>{ctx.w.pinned ? "Unpin" : "Pin to top"}</span></button>

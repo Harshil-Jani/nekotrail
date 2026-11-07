@@ -214,6 +214,16 @@ export function PrBar({
     window.addEventListener("nekotrail-pr-draft", on);
     return () => window.removeEventListener("nekotrail-pr-draft", on);
   }, [ws.id, ws.title]);
+  // "Rename branch" in the workspace's ⋯ menu: the field opens here. A branch with a PR keeps its name.
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== ws.id) return;
+      if (pr) onSay("This branch has a PR, so it keeps its name.");
+      else setRenaming(ws.branch);
+    };
+    window.addEventListener("nekotrail-rename-branch", on);
+    return () => window.removeEventListener("nekotrail-rename-branch", on);
+  }, [ws.id, ws.branch, pr]);
   useEffect(() => {
     if (ws.parent_id) api.stackParent(ws.id).then(setParent).catch(() => setParent(null));
   }, [ws.id, ws.parent_id, parentPr?.state, parentPr?.number, parentPr?.baseRefName]);
@@ -473,7 +483,9 @@ export function PrBar({
         <>
           <Avatar src={avatar(pr.author.login)} size={24} label={pr.author.login} title={`Opened by @${pr.author.login}`} />
           <PrState pr={pr} />
-          <button className="link num" onClick={() => openUrl(pr.url)} title={pr.title}>#{pr.number}</button>
+          <button className="link num" onClick={() => openUrl(pr.url)}
+            title={[pr.title, `Opened by @${pr.author.login} · +${pr.additions} -${pr.deletions}${pr.commentCount ? ` · ${pr.commentCount} comments` : ""}`,
+              ...reviewers.map((r) => `@${r.login}: ${r.state.toLowerCase().replace("_", " ")}`)].join("\n")}>#{pr.number}</button>
           <span className="num"><span className="add">+{pr.additions}</span> <span className="del">-{pr.deletions}</span></span>
           {pr.commentCount > 0 && <span className="check num pr-comments" title={`${pr.commentCount} comments`}><MessageSquare size={14} />{pr.commentCount}</span>}
           {reviewers.length > 0 && (

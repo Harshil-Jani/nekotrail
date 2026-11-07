@@ -296,6 +296,16 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
           </label>
         </section>
         <CommandLine />
+        <section>
+          <h3>Support NekoTrail</h3>
+          <div className="setting">
+            <span>NekoTrail is free and open source. Sponsoring keeps it that way.</span>
+            <span className="setting-links">
+              <button className="link sponsor" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})}><Heart size={12} aria-hidden />Sponsor</button>
+              <button className="link sponsor" onClick={() => openUrl("https://buymeacoffee.com/harshiljani").catch(() => {})} title="A one-off thank you, no account needed."><Coffee size={12} aria-hidden />Buy me a coffee</button>
+            </span>
+          </div>
+        </section>
         </>}
 
         {pane === "agents" && <>
@@ -364,10 +374,6 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
           ) : (
             <button className="link" onClick={onCheckUpdates}>Check for updates</button>
           )}
-          {/* Sponsor links are a different kind of link from the version ones: set apart, each with its icon. */}
-          <span className="foot-sep" aria-hidden />
-          <button className="link sponsor" onClick={() => openUrl("https://github.com/sponsors/Harshil-Jani").catch(() => {})} title="NekoTrail is free and open source. Sponsoring keeps it that way."><Heart size={12} aria-hidden />Sponsor</button>
-          <button className="link sponsor" onClick={() => openUrl("https://buymeacoffee.com/harshiljani").catch(() => {})} title="Buy the maintainer a coffee: a one-off thank you, no account needed."><Coffee size={12} aria-hidden />Buy me a coffee</button>
           <span className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>

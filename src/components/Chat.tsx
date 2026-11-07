@@ -1,6 +1,7 @@
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
-import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft } from "lucide-react";
+import { ShieldAlert, ShieldX, Undo2, ShieldQuestion, Split, MessageSquarePlus, AlertCircle, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleCheck, CircleDot, ClipboardList, Copy, GitFork, History, Pencil, Paperclip, Play, Plus, FilePen, FileText, Globe, ListTodo, Lock, Search, Square, SquareTerminal, Users, Wrench, X, BookmarkPlus, Ellipsis, CircleX, ListChecks, Share, Gauge, Repeat, ArrowRightLeft, ArrowUp } from "lucide-react";
 import { api, errText, type Agent, type ChatEvent, type Effort, type GuardHit, type GuardLevel, type JumpTo, type PermissionMode, type Session } from "../api";
 import { occurrences } from "../search";
 import { resumeCommand } from "../terminalImport";
@@ -610,6 +611,7 @@ export function Chat({
   history,
   taskRepos,
   handoff,
+  tabsSlot,
 }: {
   workspaceId: string;
   running: Set<string>;
@@ -634,6 +636,8 @@ export function Chat({
   taskRepos?: string[];
   /** Open the hand-off sheet (⌘K, `nekotrail handoff`): for `sessionId`, or the chat showing. */
   handoff?: { nonce: number; sessionId?: string; agent?: Agent | null; model?: string | null };
+  /** The workspace's tab row: the chat tabs go there, beside the other views. Without it they sit above the chat. */
+  tabsSlot?: HTMLElement | null;
 }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -714,6 +718,9 @@ export function Chat({
   };
 
   const [expandAll, setExpandAll] = useState(false);
+  // The composer's + menu, and the file picker it opens.
+  const [cmenu, setCmenu] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState<string | null>(null);
   const [hitIdx, setHitIdx] = useState(0);
   const approvePlan = async () => {
@@ -1249,6 +1256,7 @@ export function Chat({
 
   return (
     <div className={`chat ${readOnly ? "read-only" : ""}`}>
+      {((tabs: React.ReactNode) => (tabsSlot ? createPortal(tabs, tabsSlot) : tabs))(
       <div className="chat-tabs">
         {/* Only the tabs scroll sideways: the + menu sits outside the scroller, so it isn't clipped. */}
         <div className="chat-tab-strip" role="tablist" aria-label="Chats">
@@ -1292,7 +1300,7 @@ export function Chat({
         <span className="spacer" />
         {copied && <span className="muted chat-flag">Copied</span>}
         {expandAll && <button className="quiet chat-flag" onClick={() => setExpandAll(false)} title={keyHint("Collapse tool output (⌃O)")}>Hide tool output</button>}
-      </div>
+      </div>)}
 
       {search !== null && (
         <div className="chat-search">
@@ -1466,7 +1474,7 @@ export function Chat({
             ref={input}
             value={draft}
             aria-label="Message"
-            placeholder={busy ? "Agent is working. Messages you send now run next." : reviewPr ? "Ask about this PR. Type @ to mention a file." : "Ask for a change, fix or plan. Type @ to mention a file, or paste a screenshot."}
+            placeholder={busy ? "Agent is working. Messages you send now run next." : reviewPr ? "Ask about this PR, @mention files" : "Ask for a change, @mention files, or type / for commands"}
             onChange={(e) => { const v = pf.change(e.target.value); setDraft(v); updateMention(v, e.target.selectionStart); if (!pf.fill) updateSlash(v); }}
             onBlur={() => { setMention(null); setSlash(null); }}
             onPaste={(e) => {
@@ -1517,10 +1525,33 @@ export function Chat({
             }}
             rows={3}
           />
+          {/* One calm bar: a + menu (attach, save as prompt, permissions), the model, and Send. A mode
+              chip shows only when it isn't the default, and the context ring only once it is filling up. */}
           <div className="composer-bar">
+            <input ref={fileInput} type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
+            <span className="git-menu composer-menu-wrap">
+              <button className="icon composer-more" aria-label="Attach, prompts and permissions" title="Attach files, save as prompt, permissions" aria-expanded={cmenu} onClick={() => setCmenu((o) => !o)}><Plus size={16} /></button>
+              {cmenu && (
+                <span className="menu composer-menu" role="menu" onMouseLeave={() => setCmenu(false)}>
+                  {session && <div className="menu-label">{agentName(session.agent)} chat</div>}
+                  <button role="menuitem" onClick={() => { setCmenu(false); fileInput.current?.click(); }}><Paperclip size={14} /><span>Attach files</span></button>
+                  <button role="menuitem" disabled={!draft.trim()} onClick={() => { setCmenu(false); setSaving(draft); }}><BookmarkPlus size={14} /><span>Save message as a prompt</span></button>
+                  <button role="menuitem" onClick={() => { setCmenu(false); const v = draft.trim() ? draft : "/"; setDraft(v); updateSlash(v); input.current?.focus(); }}><Wrench size={14} /><span>Commands and prompts</span><kbd>/</kbd></button>
+                  {session && !reviewPr && <>
+                    <div className="menu-sep" />
+                    <div className="menu-label">Permissions</div>
+                    {MODES.filter((m) => m.value !== "ask" || AGENT_INFO[session.agent]?.ask).map((m) => (
+                      <button key={m.value} role="menuitemradio" aria-checked={session.permission_mode === m.value}
+                        onClick={async () => { setCmenu(false); if (await okFullAuto(m.value)) await update({ permission_mode: m.value }); }}>
+                        {session.permission_mode === m.value ? <Check size={14} /> : <span className="check-space" />}<span>{m.label}</span>
+                      </button>
+                    ))}
+                  </>}
+                </span>
+              )}
+            </span>
             {session && (
               <>
-                <span className="agent-badge">{agentName(session.agent)}</span>
                 <ModelPicker
                   agent={session.agent}
                   model={session.model}
@@ -1529,28 +1560,20 @@ export function Chat({
                 />
                 {reviewPr ? (
                   <span className="chip read-only composer-ro" title="A review workspace only reads: the agent can't edit files or push."><Lock size={11} />Read only</span>
-                ) : <select
-                  value={session.permission_mode}
-                  onChange={async (e) => { const m = e.target.value as PermissionMode; if (await okFullAuto(m)) await update({ permission_mode: m }); }}
-                  aria-label="Permissions"
-                  title="What the agent may do without asking"
-                >
-                  {MODES.filter((m) => m.value !== "ask" || AGENT_INFO[session.agent]?.ask).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>}
-                {ctxWindow > 0 && ctxTokens > 0 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
+                ) : session.permission_mode !== "acceptEdits" && (
+                  <button className={`mode-chip mode-${session.permission_mode}`} onClick={() => setCmenu(true)} title="What the agent may do without asking. Change it in the + menu, or type /auto.">
+                    {MODES.find((m) => m.value === session.permission_mode)?.label.replace(" (read only)", "") ?? session.permission_mode}
+                  </button>
+                )}
+                {ctxWindow > 0 && ctxTokens / ctxWindow >= 0.7 && <ContextMeter tokens={ctxTokens} window={ctxWindow} />}
               </>
             )}
-            <button className="icon attach" title="Save as prompt" aria-label="Save the message as a prompt" disabled={!draft.trim()} onClick={() => setSaving(draft)}><BookmarkPlus size={15} /></button>
-            <label className="icon attach" title="Attach files or paste a screenshot">
-              <Paperclip size={15} />
-              <input type="file" multiple hidden onChange={(e) => { if (e.target.files) attach(e.target.files); e.target.value = ""; }} />
-            </label>
             <span className="spacer" />
             {/* One group, kept at the right edge even when the controls wrap. */}
             <span className="composer-send">
-            <span className="muted" style={{ fontSize: 13 }}>{getSettings().sendKey === "enter" ? keyHint("↵") : keyHint("⌘↵")}</span>
-            {busy && <button className="danger" onClick={() => active && api.stop(active)}><Square size={14} />Stop</button>}
-            <button className="accent" onClick={submit} disabled={!draft.trim()}>{busy ? "Queue" : "Send"}</button>
+            {busy && <button className="quiet composer-stop" onClick={() => active && api.stop(active)} title="Stop the agent"><Square size={12} />Stop</button>}
+            <button className="accent send-btn" onClick={submit} disabled={!draft.trim()} aria-label={busy ? "Queue" : "Send"}
+              title={`${busy ? "Queue: sends after this turn" : "Send"} (${getSettings().sendKey === "enter" ? keyHint("↵") : keyHint("⌘↵")})`}><ArrowUp size={16} /></button>
             </span>
           </div>
         </div>

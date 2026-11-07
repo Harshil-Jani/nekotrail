@@ -58,7 +58,8 @@ pub fn task_title(text: &str) -> String {
         let (clean, removed) = clean_line(line);
         let sentence = first_sentence(&clean);
         let t = tidy(&drop_lead_in(sentence), removed);
-        if t.chars().any(char::is_alphanumeric) {
+        // A line that is only a screenshot's name or a timestamp names nothing: try the next one.
+        if t.chars().any(char::is_alphanumeric) && !is_noise(&t) {
             return shorten(&sentence_case(&t));
         }
     }
@@ -91,13 +92,26 @@ fn clean_line(line: &str) -> (String, bool) {
     let s = links_to_text(s.trim());
     let mut words: Vec<String> = vec![];
     let mut removed = false;
-    for (i, w) in s.split_whitespace().enumerate() {
+    let all: Vec<&str> = s.split_whitespace().collect();
+    let mut i = 0;
+    while i < all.len() {
+        let w = all[i];
+        i += 1;
         // A leading /command (but not a path like /v1/tickets).
-        if i == 0 && is_slash_command(w) {
+        if i == 1 && is_slash_command(w) {
             continue;
         }
         let bare = w.trim_matches(|c: char| "([{<\"'`".contains(c) || ")]}>\"'`,;:".contains(c));
-        if is_url(bare) || bare.starts_with('@') {
+        // An attached file whose name has spaces ("@.context/attachments/Screenshot 2026-11-05 at
+        // 5.42.16 PM.png") goes on to the word that ends in its extension.
+        if bare.starts_with('@') && !has_extension(bare)
+            && let Some(end) = all[i..].iter().take(8).position(|x| is_media_file(x.trim_end_matches(|c: char| ",;:)".contains(c))))
+        {
+            i += end + 1;
+            removed = true;
+            continue;
+        }
+        if is_url(bare) || bare.starts_with('@') || is_media_file(bare) {
             removed = true;
             // Keep the punctuation that ended the sentence, so "See @a.ts. Then" still splits.
             if let Some(end) = w.chars().last().filter(|c| ".?!".contains(*c))
@@ -137,6 +151,28 @@ fn links_to_text(s: &str) -> String {
 
 fn is_slash_command(w: &str) -> bool {
     w.strip_prefix('/').is_some_and(|c| c.chars().next().is_some_and(|f| f.is_ascii_alphabetic()) && c.chars().all(|ch| ch.is_ascii_alphanumeric() || "-_:".contains(ch)))
+}
+
+/// A pasted image or recording by name ("image.png", "Screen Recording.mov"): never a task.
+fn is_media_file(w: &str) -> bool {
+    let l = w.to_ascii_lowercase();
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".tiff", ".bmp", ".mov", ".mp4", ".webm", ".pdf"].iter().any(|x| l.ends_with(x) && l.len() > x.len())
+}
+
+/// The last path segment has a short extension (`a.ts`, `notes.md`), so a ref ends here.
+fn has_extension(w: &str) -> bool {
+    let name = w.rsplit('/').next().unwrap_or(w);
+    name.rsplit_once('.').is_some_and(|(stem, ext)| !stem.is_empty() && (1..=5).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+}
+
+/// A title that says nothing: only a date, a time and the words a screenshot's name is made of
+/// ("2026-11-05 at 5.42.16 PM", "Screenshot", "image"). Titles like these are replaced.
+pub fn is_noise(t: &str) -> bool {
+    const FILLER: [&str; 12] = ["at", "am", "pm", "screenshot", "screen", "shot", "recording", "image", "img", "photo", "pasted", "untitled"];
+    !t.split_whitespace().any(|w| {
+        let w = w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        w.chars().filter(|c| c.is_alphabetic()).count() >= 2 && !FILLER.contains(&w.as_str()) && !is_media_file(&w)
+    })
 }
 
 fn is_url(w: &str) -> bool {
@@ -284,6 +320,23 @@ mod tests {
         // Nothing left on the first line: the next line names the task.
         assert_eq!(task_title("https://linear.app/x/ISSUE-12\n\nMake exports faster"), "Make exports faster");
         assert_eq!(task_title("@notes.md. Then clean up the tests"), "Then clean up the tests");
+    }
+
+    #[test]
+    fn screenshots_and_timestamps_are_not_titles() {
+        // An attachment whose name has spaces is one ref, all of it.
+        assert_eq!(task_title("@.context/attachments/Screenshot 2026-11-05 at 5.42.16 PM.png the sidebar logo is missing"), "The sidebar logo is missing");
+        assert_eq!(task_title("@.context/attachments/Screenshot 2026-11-05 at 5.42.16 PM.png\nFix the header"), "Fix the header");
+        // A pasted image by name.
+        assert_eq!(task_title("image.png PR Issues"), "PR Issues");
+        assert_eq!(task_title("image.png\n\nWhy is the PR bar empty?"), "Why is the PR bar empty");
+        // Nothing but a timestamp: no title, so the branch or star shows instead.
+        assert_eq!(task_title("2026-11-05 at 5.42.16 PM"), "");
+        assert_eq!(task_title("Screenshot 2026-11-05 at 5.42.16 PM.png"), "");
+        assert!(is_noise("2026-11-05 at 5.42.16…") && is_noise("image.png") && is_noise("Screenshot"));
+        assert!(!is_noise("Fix 502s after deploy") && !is_noise("PR Issues") && !is_noise("ログインのバグを直して"));
+        // Refs that end in a normal file keep working.
+        assert_eq!(task_title("@src/App.tsx make the header calmer"), "Make the header calmer");
     }
 
     #[test]
