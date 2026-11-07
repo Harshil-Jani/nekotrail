@@ -1,0 +1,8 @@
+/* Intelligence options stay on one row (six of them wrapped "Max" onto a second line). */
+.menu.picker-menu { min-width: 380px; }
+.picker-menu .effort-seg { flex-wrap: nowrap; }
+.picker-menu .effort-seg button { flex: 1 0 auto; width: auto !important; padding: 0 8px !important; white-space: nowrap; }
+/* Footer: make the current pick what new chats start with. */
+.picker-menu .pm-default { border-top: 0.5px solid var(--line); margin-top: 4px; padding: 6px var(--s2) 2px; }
+.picker-menu .pm-default-btn { width: 100%; justify-content: center; height: 28px; font-size: 12.5px; font-weight: 500; }
+.picker-menu .pm-default-on { display: flex; align-items: center; justify-content: center; gap: 6px; height: 28px; font-size: 12.5px; color: var(--muted); }

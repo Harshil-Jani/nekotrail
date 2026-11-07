@@ -3,6 +3,8 @@ import { Brain, Check, ChevronDown, ChevronRight, Sparkles } from "lucide-react"
 import { api, type Agent, type ModelCatalog } from "../api";
 import { keyHint, mod } from "../platform";
 import { AGENT_INFO } from "../agents";
+import { useMenuPlace } from "../menuPlace";
+import "./ModelPicker.css";
 
 let cached: Promise<ModelCatalog> | null = null;
 /** The model catalog, fetched once per launch. */
@@ -58,6 +60,25 @@ export function ModelPicker({
   const [showOlder, setShowOlder] = useState(false);
   const [custom, setCustom] = useState("");
   const root = useRef<HTMLSpanElement>(null);
+  const menu = useRef<HTMLSpanElement>(null);
+  useMenuPlace(menu, open, [showOlder]);
+  // What new chats with this agent start on (Settings keeps it as `<agent>_model` / `<agent>_effort`).
+  const [saved, setSaved] = useState<{ model: string; effort: string } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    api.appSettings().then((s) => setSaved({ model: s[`${agent}_model`] ?? "", effort: s[`${agent}_effort`] ?? "" })).catch(() => {});
+  }, [open, agent]);
+  const isSaved = !!saved && saved.model === (model ?? "") && saved.effort === (effort ?? "");
+  const makeDefault = async () => {
+    await api.setAppSetting(`${agent}_model`, model ?? "");
+    await api.setAppSetting(`${agent}_effort`, effort ?? "");
+    // A new workspace starts from what it last used: point that at the new default too.
+    try {
+      const nw = JSON.parse(localStorage.getItem("nekotrail.new") || "{}");
+      if (!nw.agent || nw.agent === agent) localStorage.setItem("nekotrail.new", JSON.stringify({ ...nw, agent, model: model ?? "", effort: effort ?? null }));
+    } catch { /* a bad saved value is replaced next time a workspace is made */ }
+    setSaved({ model: model ?? "", effort: effort ?? "" });
+  };
   const a = cat?.[agent];
   // Aliases like "opus" or "sonnet" mean that family's newest model.
   const alias = model && a?.models.find((m) => m.label.toLowerCase().startsWith(model.toLowerCase()));
@@ -113,7 +134,7 @@ export function ModelPicker({
         <ChevronDown size={12} />
       </button>
       {open && a && (
-        <span className="menu picker-menu" role="menu">
+        <span ref={menu} className="menu picker-menu" role="menu">
           <div className="menu-label">{AGENT_INFO[agent]?.name ?? "Claude"} model</div>
           <button role="menuitemradio" aria-checked={!model} onClick={() => pick(null)}>
             {!model ? <Check size={14} /> : <span className="check-space" />}<span className="pm-label">Default</span>{!plainDefault(defaultModel) && <span className="muted">{defaultModel?.label}</span>}
@@ -143,6 +164,13 @@ export function ModelPicker({
               </div>
               <p className="muted menu-hint">Higher thinks longer and costs more. Use it for hard bugs and big refactors.</p>
             </>
+          )}
+          {saved && (
+            <div className="pm-default">
+              {isSaved
+                ? <span className="pm-default-on"><Check size={13} />New chats start with this</span>
+                : <button className="pm-default-btn" onClick={makeDefault} title={`New ${AGENT_INFO[agent]?.name ?? "Claude"} chats and workspaces start with this model and intelligence`}>Set as default for new chats</button>}
+            </div>
           )}
         </span>
       )}
