@@ -4,13 +4,14 @@ description: "What NekoTrail imports from the Conductor app, how it moves your w
 date: 2026-11-07T10:00:00Z
 clip: conductor
 clipLabel: "The Conductor import sheet: what moves, then every worktree moved and checked"
+canonical: "moving-from-conductor/"
 ---
 
 Install NekoTrail, click **Import from Conductor**, press **Import and move**. Your repos, workspaces and chats come over, and your worktrees move out of Conductor's folder. The rest of this post is what happens underneath.
 
 ## Why move now
 
-Meta acquired Conductor on 4 November 2026. Conductor Cloud goes read-only on 13 November and shuts down on 20 November 2026. The Mac app gets critical fixes until early 2027, then winds down.
+Conductor announced on 4 November 2026 that it is joining Meta. Conductor Cloud goes read-only on 13 November, and Conductor starts deleting Cloud data on 20 November 2026. The Mac app gets critical fixes until early 2027, then winds down.
 
 What matters is where your work lives. Conductor keeps each worktree inside its own folder, and says user data is deleted when the app shuts down. Uncommitted work lives in those folders. Moving them puts it somewhere you control.
 

@@ -8,6 +8,7 @@ import Wordmark from "../components/Wordmark.astro";
 import LoafRail from "../components/LoafRail.astro";
 import { SITE, AGENTS, href, appVersion, readRepoFile, formatDate } from "../lib/site";
 import { parseChangelog } from "../lib/markdown";
+import { website, softwareApp } from "../lib/schema";
 
 const version = appVersion();
 const releases = parseChangelog(readRepoFile("CHANGELOG.md")).filter((r) => r.date).slice(0, 3);
@@ -34,7 +35,7 @@ const features = [
     text: "Another agent picks up in the same branch, from a brief you read first.",
     points: ["Built from the chat on your Mac. No model writes it.", "Never gives the next agent more permissions."],
     clip: "handoff", label: "Claude is out of usage; the hand-off sheet opens with the brief, and Codex carries on", window: "NekoTrail: Hand off to another agent",
-    more: { label: "How the brief works", href: "blog/hand-off-claude-to-codex/" },
+    more: [{ label: "How the brief works", href: "blog/hand-off-claude-to-codex/" }],
   },
   {
     id: "review", star: "Dumpling", eyebrow: "Review",
@@ -49,7 +50,10 @@ const features = [
     text: "Import your repos, workspaces and chats. Your worktrees move out of Conductor's folder.",
     points: ["Only git worktree move. Nothing is deleted.", "Each move is checked: branch, commit, uncommitted files."],
     clip: "conductor", label: "The Conductor import sheet lists what moves, then shows every worktree moved and checked", window: "NekoTrail: Bring your work over from Conductor",
-    more: { label: "Read the move guide", href: "moving-from-conductor/" },
+    more: [
+      { label: "Read the move guide", href: "moving-from-conductor/" },
+      { label: "NekoTrail vs Conductor", href: "vs/conductor/" },
+    ],
   },
   {
     id: "sky", star: "Muffin", eyebrow: "The night sky",
@@ -100,9 +104,10 @@ const gallery = [
 ];
 ---
 <Base
-  title="NekoTrail: Your coding agents, all at once"
-  description="Your coding agents, all at once. Claude Code, Codex and 14 more on your logins, each in its own worktree. A free, open-source Mac app that imports your Conductor work."
+  title="NekoTrail: Run Claude Code, Codex and More in Parallel"
+  description="Free, open-source Mac app that runs Claude Code, Codex, Gemini and 13 more coding agents in parallel, each in its own git worktree, on your own logins. Linux too."
   path=""
+  jsonld={[website(), softwareApp()]}
   announce
 >
   <section class="sky hero" aria-labelledby="hero-title">
@@ -110,7 +115,7 @@ const gallery = [
     <div class="wrap" style="position:relative">
       <div class="hero-mark"><Wordmark cat reveal /></div>
       <h1 id="hero-title">Your coding agents, <em>all&nbsp;at&nbsp;once.</em></h1>
-      <p class="lede">Claude Code, Codex and 14 more on your logins, each in its own worktree.</p>
+      <p class="lede">Run Claude Code, Codex and 14 more coding agents in parallel, each in its own git worktree, on your own logins.</p>
       <div class="ctas">
         <a class="btn primary" href={href("download/")}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V2.25A.75.75 0 0 1 8 1.5ZM2.75 12.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
@@ -141,7 +146,7 @@ const gallery = [
               <h2 id={`${f.id}-title`}>{f.title}</h2>
               <p>{f.text}</p>
               <ul>{f.points.map((p) => <li>{p}</li>)}</ul>
-              {f.more && <a class="more" href={href(f.more.href)}>{f.more.label} →</a>}
+              {f.more && <p class="more-links">{f.more.map((m) => <a class="more" href={href(m.href)}>{m.label} →</a>)}</p>}
             </div>
             <div class="visual" data-reveal="media">
               {f.clip ? (

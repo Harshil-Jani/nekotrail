@@ -13,6 +13,10 @@ const blog = defineCollection({
     /** A clip from public/clips/ shown under the title. */
     clip: z.string().optional(),
     clipLabel: z.string().optional(),
+    /** Share image in public/ (1200x630). Defaults to og/blog.png. */
+    image: z.string().optional(),
+    /** Canonical path under the base when another page is the main one for this topic. */
+    canonical: z.string().optional(),
   }),
 });
 

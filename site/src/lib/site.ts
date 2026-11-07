@@ -12,7 +12,7 @@ export const SITE = {
   buyMeACoffee: "https://buymeacoffee.com/harshiljani",
   author: "Harshil Jani",
   description:
-    "Run Claude Code, Codex and 14 more coding agents in parallel on your Mac, each in its own git worktree and branch. Free, open source (MIT), local, no account.",
+    "Run Claude Code, Codex and 14 more coding agents in parallel on your Mac or Linux, each in its own git worktree and branch. Free, open source (MIT), no account.",
 };
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");

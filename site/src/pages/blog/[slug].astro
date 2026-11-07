@@ -4,6 +4,7 @@ import Base from "../../layouts/Base.astro";
 import Clip from "../../components/Clip.astro";
 import Sponsor from "../../components/Sponsor.astro";
 import { href, formatDate } from "../../lib/site";
+import { blogPosting, breadcrumbs } from "../../lib/schema";
 
 export async function getStaticPaths() {
   const posts = (await getCollection("blog", ({ data }) => !data.draft)).sort((a, b) => +b.data.date - +a.data.date);
@@ -18,8 +19,23 @@ const words = (post.body ?? "").split(/\s+/).filter(Boolean).length;
 const minutes = Math.max(1, Math.round(words / 230));
 // Posts about Conductor name it in plain text only (no logo) and carry the trademark line.
 const aboutConductor = post.id.includes("conductor");
+const image = post.data.image ?? "og/blog.png";
+const jsonld = [
+  blogPosting(post, image),
+  breadcrumbs([["Home", ""], ["Blog", "blog/"], [post.data.title, `blog/${post.id}/`]]),
+];
 ---
-<Base title={post.data.title} description={post.data.description} path={`blog/${post.id}/`} ogType="article" published={post.data.date}>
+<Base
+  title={post.data.title}
+  description={post.data.description}
+  path={`blog/${post.id}/`}
+  canonicalPath={post.data.canonical}
+  ogType="article"
+  published={post.data.date}
+  image={image}
+  imageAlt={`${post.data.title}, on the NekoTrail blog`}
+  jsonld={jsonld}
+>
   <div class="wrap" style="max-width:780px">
     <header class="post-head">
       <a class="back" href={href("blog/")}>← Blog</a>

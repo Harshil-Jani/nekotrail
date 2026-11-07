@@ -15,11 +15,25 @@ interface Props {
   announce?: boolean;
   /** For the 404 page: no canonical URL, and kept out of search. */
   noindex?: boolean;
+  /** Use the title as given, without " | NekoTrail". Titles over 45 characters skip the suffix anyway. */
+  rawTitle?: boolean;
+  /** Point the canonical at another page, e.g. "moving-from-conductor/" for a post that repeats the guide. */
+  canonicalPath?: string;
+  /** Share image in public/ (1200x630), e.g. "og/vs-conductor.png". */
+  image?: string;
+  imageAlt?: string;
+  /** One or more JSON-LD objects (see lib/schema.ts). */
+  jsonld?: Record<string, unknown> | Record<string, unknown>[];
 }
-const { title, description = SITE.description, path, ogType = "website", published, announce = false, noindex = false } = Astro.props;
-const fullTitle = path === "" ? title : `${title} | NekoTrail`;
-const canonical = absolute(path);
-const og = absolute("og.png");
+const {
+  title, description = SITE.description, path, ogType = "website", published, announce = false, noindex = false,
+  rawTitle = false, canonicalPath, image = "og.png",
+  imageAlt = "NekoTrail: run Claude Code, Codex and more coding agents in parallel", jsonld,
+} = Astro.props;
+const fullTitle = path === "" || rawTitle || title.length > 45 ? title : `${title} | NekoTrail`;
+const canonical = absolute(canonicalPath ?? path);
+const og = absolute(image);
+const schemas = jsonld ? [jsonld].flat() : [];
 const version = appVersion();
 const nav = [
   { label: "Download", path: "download/" },
@@ -54,13 +68,17 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
     <meta property="og:image" content={og} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="NekoTrail: run many coding agents at once on your Mac" />
+    <meta property="og:image:alt" content={imageAlt} />
+    <meta property="og:locale" content="en_US" />
     {published && <meta property="article:published_time" content={published.toISOString()} />}
     {published && <meta property="article:author" content={SITE.author} />}
+    <meta name="author" content={SITE.author} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={fullTitle} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={og} />
+    <meta name="twitter:image:alt" content={imageAlt} />
+    {schemas.map((s) => <script type="application/ld+json" set:html={JSON.stringify(s).replace(/</g, "\\u003c")} />)}
     <slot name="head" />
     <script is:inline>document.documentElement.classList.add("js");</script>
   </head>
@@ -128,6 +146,8 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
               <li><a href={href("download/")}>Download</a></li>
               <li><a href={href("changelog/")}>Changelog</a></li>
               <li><a href={href("moving-from-conductor/")}>Moving from Conductor</a></li>
+              <li><a href={href("vs/conductor/")}>NekoTrail vs Conductor</a></li>
+              <li><a href={href("alternatives/")}>Alternatives</a></li>
             </ul>
           </div>
           <div>

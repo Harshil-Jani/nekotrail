@@ -9,6 +9,10 @@ export default defineConfig({
   trailingSlash: "always",
   output: "static",
   build: { format: "directory" },
-  integrations: [sitemap({ filter: (page) => !page.includes("/404") })],
+  // The Conductor blog post repeats the guide and points its canonical at it, so only the guide is listed.
+  // No lastmod: a build date on every URL is worse than none.
+  integrations: [
+    sitemap({ filter: (page) => !page.includes("/404") && !page.endsWith("/blog/moving-from-conductor/") }),
+  ],
   devToolbar: { enabled: false },
 });

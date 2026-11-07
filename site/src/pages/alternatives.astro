@@ -1,0 +1,230 @@
+---
+// Conductor alternatives, compared on facts from each project's own repo or site. Every cell must be
+// checkable from a link under Sources; if a project's own page doesn't say it, it isn't in the table.
+// Re-check monthly and update `checked`. Other projects are named in plain text only: no logos.
+import Base from "../layouts/Base.astro";
+import { SITE, href } from "../lib/site";
+import { softwareApp, faq, breadcrumbs, type Faq } from "../lib/schema";
+
+const checked = "8 November 2026";
+
+interface Tool {
+  name: string;
+  url: string;
+  license: string;
+  desktop: string;
+  phone: string;
+  agents: string;
+  conductor: string;
+}
+const reference: Tool = {
+  name: "Conductor", url: "https://conductor.build",
+  license: "Proprietary (per its terms)",
+  desktop: "Mac. Sign-ups and downloads closed since 4 Nov 2026",
+  phone: "None listed on conductor.build",
+  agents: "Claude Code, Codex, Cursor and OpenCode (per its docs)",
+  conductor: "n/a",
+};
+const tools: Tool[] = [
+  {
+    name: "NekoTrail", url: SITE.repo,
+    license: "MIT",
+    desktop: "macOS 13+. Linux x86_64 .deb (experimental). No Windows yet",
+    phone: "None. Alerts through ntfy, Slack or Discord",
+    agents: "16, including Claude Code, Codex, Gemini CLI, Cursor and OpenCode",
+    conductor: "Imports repos, workspaces and Claude and Codex chats, then moves and checks each worktree",
+  },
+  {
+    name: "Orca", url: "https://github.com/stablyai/orca",
+    license: "MIT",
+    desktop: "macOS, Windows, Linux. Also SSH hosts and cloud VMs",
+    phone: "iOS and Android",
+    agents: "34 listed in its README, and any CLI agent",
+    conductor: "Offers a repo's conductor.json setup script (per its source)",
+  },
+  {
+    name: "Paseo", url: "https://github.com/getpaseo/paseo",
+    license: "Apache-2.0 (third-party parts keep their own licenses)",
+    desktop: "macOS 13+, Windows, Linux. Also web, CLI and a server daemon",
+    phone: "iOS and Android",
+    agents: "Claude Code, Codex, Copilot, OpenCode, Pi, Antigravity and Muse Code",
+    conductor: "None found in its README or repo",
+  },
+  {
+    name: "Emdash", url: "https://github.com/generalaction/emdash",
+    license: "Apache-2.0",
+    desktop: "macOS, Windows, Linux (x64 and ARM64). Also remote projects over SSH",
+    phone: "None listed in its README",
+    agents: "Claude Code, Codex, Cursor, OpenCode, Amp, Devin, Qwen Code, Droid, GitHub Copilot and more",
+    conductor: "Reads a repo's conductor.json scripts (per its source)",
+  },
+  {
+    name: "Paradev (formerly Superset)", url: "https://github.com/ParadevAI/Paradev",
+    license: "MIT. Desktop app free; Pro and Team plans add more",
+    desktop: "macOS. Linux AppImage (experimental). Windows not yet available",
+    phone: "iPhone and iPad, on the Pro plan",
+    agents: "21 listed in its README, and any CLI agent",
+    conductor: "Migration guide: adopts Conductor worktrees in place; scripts converted by hand",
+  },
+  {
+    name: "Nimbalyst (formerly Crystal)", url: "https://github.com/nimbalyst/nimbalyst",
+    license: "MIT",
+    desktop: "macOS 12+, Windows 10+, Linux",
+    phone: "iOS and Android companion (per its repo description)",
+    agents: "Codex and Claude Code; OpenCode and GitHub Copilot in alpha; a Gemini provider",
+    conductor: "None found in its README or repo",
+  },
+];
+const columns = ["License", "Desktop", "Phone app", "Agents", "From Conductor"];
+const cells = (t: Tool) => [t.license, t.desktop, t.phone, t.agents, t.conductor];
+
+const choose: [string, string][] = [
+  ["Need Windows?", "Orca, Paseo, Emdash and Nimbalyst have Windows builds. NekoTrail and Paradev don't yet."],
+  ["Want to check on agents from your phone?", "Orca and Paseo have iOS and Android apps, and Nimbalyst has a companion app. Paradev's iPhone and iPad app is on its Pro plan. NekoTrail has no phone app; it sends alerts through ntfy, Slack or Discord."],
+  ["Run agents on another machine?", "Orca and Emdash work on SSH hosts, and Paseo runs as a daemon on a server you connect to. NekoTrail runs on the Mac in front of you."],
+  ["Moving from Conductor?", "NekoTrail imports repos, workspaces and Claude and Codex chats. Paradev's guide adopts Conductor worktrees in place. Orca and Emdash read a repo's conductor.json setup script."],
+];
+const notes: [string, string][] = [
+  ["Orca", "Desktop apps for Mac, Windows and Linux, phone apps for iOS and Android, and worktrees on SSH hosts or a cloud VM. Its README lists 34 agents and says any CLI agent works. Pick Orca over NekoTrail if you need Windows or a phone app."],
+  ["Paseo", "A local daemon that the desktop, phone, web and command-line apps all connect to, so agents can run on a server while you check in from your phone. Its README says it has no telemetry, tracking or forced log-ins. Pick Paseo if you want agents on a server you reach from anywhere."],
+  ["Emdash", "Desktop apps for Mac, Windows and Linux, including ARM64 Linux, and remote projects over SSH. Pick Emdash if your code lives on remote machines or you work on ARM Linux."],
+  ["Paradev (formerly Superset)", "Mac first, with an experimental Linux build. Its paid plans add remote access, automations, the iPhone and iPad app and cloud workspaces, and its docs carry a step-by-step Conductor migration guide. Pick Paradev if you want cloud workspaces or a team plan."],
+  ["Nimbalyst (formerly Crystal)", "A visual workspace: next to agent sessions in worktrees, it edits markdown, mockups and diagrams and tracks tasks. Pick Nimbalyst if you plan and write docs in the same place as the code."],
+];
+
+// Shown on the page and sent as FAQPage JSON-LD, so both say exactly the same thing.
+const FAQ: Faq = [
+  ["Which Conductor alternatives are open source?", "All six listed here publish their code: NekoTrail, Orca, Paradev and Nimbalyst under MIT, and Paseo and Emdash under Apache-2.0. Conductor itself is proprietary."],
+  ["Which run on Windows?", "Orca, Paseo, Emdash and Nimbalyst have Windows builds. Paradev says Windows is not yet available, and NekoTrail runs on macOS and, experimentally, Linux."],
+  ["Which can import from Conductor?", "NekoTrail imports repos, workspaces and Claude and Codex chats, and moves each worktree out of Conductor's folder. Paradev's guide adopts Conductor worktrees in place. Orca and Emdash read a repo's conductor.json setup script. No Conductor import was found in Paseo's or Nimbalyst's repo."],
+  ["Which have a phone app?", "Orca and Paseo have iOS and Android apps, Nimbalyst has a companion app, and Paradev's iPhone and iPad app is on its Pro plan. NekoTrail has no phone app; it sends alerts through ntfy, Slack or Discord."],
+];
+
+const sources: [string, [string, string][]][] = [
+  ["Conductor", [
+    ["Announcement", "https://conductor.build/announcement"],
+    ["Docs", "https://www.conductor.build/docs/"],
+    ["Terms", "https://conductor.build/terms"],
+    ["Home page", "https://conductor.build"],
+  ]],
+  ["Orca", [
+    ["README", "https://github.com/stablyai/orca#readme"],
+    ["License", "https://github.com/stablyai/orca/blob/main/LICENSE"],
+    ["conductor.json import", "https://github.com/stablyai/orca/blob/main/src/shared/workspace-setup/setup-script-imports.ts"],
+  ]],
+  ["Paseo", [
+    ["README", "https://github.com/getpaseo/paseo#readme"],
+    ["License", "https://github.com/getpaseo/paseo/blob/main/LICENSE"],
+    ["Download", "https://paseo.sh/download"],
+  ]],
+  ["Emdash", [
+    ["README", "https://github.com/generalaction/emdash#readme"],
+    ["conductor.json import", "https://github.com/generalaction/emdash/blob/main/apps/emdash-desktop/src/core/features/projects/node/settings/sharing/conductor-config-migration.ts"],
+  ]],
+  ["Paradev", [
+    ["README", "https://github.com/ParadevAI/Paradev#readme"],
+    ["Plans and platforms", "https://paradev.com/compare/conductor-alternative"],
+    ["Conductor migration guide", "https://docs.paradev.com/migrate-from-conductor"],
+  ]],
+  ["Nimbalyst", [
+    ["README", "https://github.com/nimbalyst/nimbalyst#readme"],
+    ["Crystal is now Nimbalyst", "https://github.com/stravu/crystal"],
+  ]],
+  ["NekoTrail", [
+    ["README", `${SITE.repo}#readme`],
+    ["Conductor import guide", `${SITE.repo}/blob/main/docs/MOVING-FROM-CONDUCTOR.md`],
+  ]],
+];
+const sections = [
+  { id: "choose", title: "How to choose" },
+  { id: "comparison", title: "Comparison" },
+  { id: "each", title: "Each tool" },
+  { id: "nekotrail", title: "Where NekoTrail fits" },
+  { id: "faq", title: "FAQ" },
+  { id: "sources", title: "Sources" },
+];
+const slug = (s: string) => s.toLowerCase().replace(/\(.*\)/, "").trim().replace(/\s+/g, "-");
+---
+<Base
+  title="Conductor Alternatives, Compared Honestly"
+  description="Orca, Paseo, Emdash, Paradev, Nimbalyst and NekoTrail, compared on license, platforms, phone apps, agents and Conductor import, with a link to each project's own repo."
+  path="alternatives/"
+  image="og/alternatives.png"
+  imageAlt="Conductor alternatives for running coding agents in parallel, compared"
+  jsonld={[softwareApp(), faq(FAQ), breadcrumbs([["Home", ""], ["Conductor alternatives", "alternatives/"]])]}
+>
+  <div class="sky">
+    <div class="wrap">
+      <header class="page-head sky-head">
+        <h1>Conductor alternatives for running coding agents in parallel</h1>
+        <p class="lede">Six tools, compared on facts from each project's own repo or site.</p>
+      </header>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="with-toc" style="padding-top:48px">
+      <aside class="toc" aria-label="On this page">
+        <nav>
+          <p>On this page</p>
+          <ul>{sections.map((s) => <li><a href={`#${s.id}`}>{s.title}</a></li>)}</ul>
+        </nav>
+      </aside>
+      <div class="alt-body">
+        <div class="prose">
+          <p class="answer">These are desktop apps that run several coding agents at once, such as Claude Code and Codex, each in its own git worktree and branch, the way Conductor does. Conductor is joining Meta and has closed new sign-ups. Every fact below comes from each project's own repo or site, checked {checked}.</p>
+
+          <h2 id="choose">How to choose</h2>
+          <dl class="choose">
+            {choose.map(([q, a]) => (<div><dt>{q}</dt><dd>{a}</dd></div>))}
+          </dl>
+
+          <h2 id="comparison">Comparison</h2>
+        </div>
+        <div class="table-wrap compare-wrap" tabindex="0" role="region" aria-label="Comparison of Conductor alternatives">
+          <table class="data-table compare">
+            <thead>
+              <tr><th scope="col">Tool</th>{columns.map((c) => <th scope="col">{c}</th>)}</tr>
+            </thead>
+            <tbody>
+              {tools.map((t) => (
+                <tr class={t.name === "NekoTrail" ? "ours" : undefined}>
+                  <th scope="row"><a href={t.url} rel="noopener">{t.name}</a></th>
+                  {cells(t).map((c) => <td>{c}</td>)}
+                </tr>
+              ))}
+              <tr class="reference">
+                <th scope="row"><a href={reference.url} rel="noopener">{reference.name}</a> <span class="muted">(for reference)</span></th>
+                {cells(reference).map((c) => <td>{c}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted table-note">Checked {checked}. Something wrong or out of date? <a href={SITE.issues} rel="noopener">Open an issue</a>.</p>
+
+        <div class="prose">
+          <h2 id="each">Each tool</h2>
+          {notes.map(([name, text]) => (<><h3 id={slug(name)}>{name}</h3><p>{text}</p></>))}
+
+          <h2 id="nekotrail">Where NekoTrail fits</h2>
+          <p>NekoTrail is for Conductor users on a Mac who want to keep working the same way: the same shortcuts, one import for repos, workspaces and Claude and Codex chats, and 16 agents on your own logins. It is MIT licensed, with no account. It does not run on Windows yet, has no phone app or cloud workspaces, the Linux build is experimental, and the Mac app is not notarized yet.</p>
+          <p class="inline-ctas">
+            <a class="btn primary" href={href("download/")}>Download for Mac</a>
+            <a class="btn" href={href("vs/conductor/")}>NekoTrail vs Conductor</a>
+          </p>
+          <p>Moving now? The <a href={href("moving-from-conductor/")}>Conductor migration guide</a> covers what moves and how to check it.</p>
+
+          <h2 id="faq">FAQ</h2>
+          {FAQ.map(([q, a]) => (<><h3>{q}</h3><p>{a}</p></>))}
+
+          <h2 id="sources">Sources, checked {checked}</h2>
+          <ul class="sources">
+            {sources.map(([name, links]) => (
+              <li><b>{name}:</b> {links.map(([label, url], i) => (<>{i > 0 && ", "}<a href={url} rel="noopener">{label}</a></>))}</li>
+            ))}
+          </ul>
+          <p class="tm-note">Conductor, Orca, Paseo, Emdash, Paradev and Nimbalyst are trademarks of their owners. NekoTrail is an independent project, not affiliated with any of them.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</Base>

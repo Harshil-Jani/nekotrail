@@ -1,0 +1,23 @@
+# NekoTrail
+
+> NekoTrail is a free, open-source (MIT) desktop app for macOS 13+ (Linux experimental) that runs Claude Code, Codex, Gemini CLI and 13 more coding agents in parallel. Each task gets its own git worktree and branch, with a chat, diff, terminal, live preview and PR bar. Agents run through their own CLIs on the user's own logins: no account, no proxy, no telemetry. It imports repos, workspaces and chats from Conductor and is a free alternative to it.
+
+Key facts:
+- License: MIT. Price: free, no paid tier.
+- Platforms: macOS 13 or later (Apple silicon and Intel, one DMG); Linux x86_64 .deb (experimental). No Windows.
+- Agents: Claude Code, Codex, Gemini CLI, OpenCode, Cursor, GitHub Copilot, Goose, Qwen Code, Kimi, Auggie, Grok, Kiro, Droid, Mistral Vibe, Cline, Kilo.
+- Conductor import: moves worktrees with git worktree move, checks branch, head commit and uncommitted files; deletes nothing.
+- Source: https://github.com/Harshil-Jani/nekotrail
+
+## Pages
+- [Home](https://harshil-jani.github.io/nekotrail/): what it does
+- [Download](https://harshil-jani.github.io/nekotrail/download/): install steps for Mac and Linux
+- [NekoTrail vs Conductor](https://harshil-jani.github.io/nekotrail/vs/conductor/): differences, and Conductor's shutdown dates
+- [Migrate from Conductor](https://harshil-jani.github.io/nekotrail/moving-from-conductor/): what moves and how
+- [Conductor alternatives](https://harshil-jani.github.io/nekotrail/alternatives/): open-source tools compared
+- [Changelog](https://harshil-jani.github.io/nekotrail/changelog/)
+
+## Optional
+- [Why I built NekoTrail](https://harshil-jani.github.io/nekotrail/blog/why-i-built-nekotrail/)
+- [Hand off from Claude to Codex](https://harshil-jani.github.io/nekotrail/blog/hand-off-claude-to-codex/)
+- [README](https://github.com/Harshil-Jani/nekotrail#readme)
