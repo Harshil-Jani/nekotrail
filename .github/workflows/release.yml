@@ -45,7 +45,7 @@ jobs:
             cat notes.md
             echo ""
             echo "### Install"
-            echo "Download the \`.dmg\` below, open it and drag nekotrail to Applications. The app is not notarized yet: on first launch, right-click it and choose Open, or run \`xattr -dr com.apple.quarantine /Applications/nekotrail.app\`."
+            echo "Download the \`.dmg\` below, open it and drag nekotrail to Applications. The app is not notarized yet, so macOS blocks it on first launch. Run \`xattr -dr com.apple.quarantine /Applications/nekotrail.app\` once in Terminal, then open it as usual."
             echo "$eof"
           } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
