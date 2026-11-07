@@ -3,7 +3,7 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.21.0 (2026-11-07)
 
 **Moving from Conductor**
 - Importing from Conductor now opens a sheet that leads with keeping your work safe: your worktrees live inside Conductor's folder, and Conductor says it will delete all user data when its app shuts down in early 2027, so nekotrail moves them into its own folder. **Move into nekotrail** is picked for you; Import only is still there.
