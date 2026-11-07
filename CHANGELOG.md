@@ -19,6 +19,16 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - A new terminal shows its first prompt instead of staying blank until you press a key. When the shell exits, fails or is slow to start, the terminal says so and offers Start a new shell; reopening a tab whose shell ended starts a fresh one.
 - Long chats stay smooth while the agent streams: new output is drawn once per frame, and only the rows that changed are redrawn.
 - The app no longer redraws everything every 5 seconds to update the memory meter; memory use is read when you point at your name.
+- A finished turn no longer leaves the app stuck on "working". The end of every turn that went well waited on a database lock it already held, so the spinner never stopped, a message sent after it never ran, terminals stayed blank and every screen that reads the database hung. Two more places with the same mistake are fixed, and debug builds now stop with both lock names when a lock is taken twice or out of order.
+- The app can no longer freeze when a turn starts or ends while autopilot checks its workspaces: the two took the same two locks in opposite orders. They now share one order.
+- A turn ends when the agent has answered, even if the agent process stays alive or something it started keeps its output open.
+- Stop reaches everything the agent started, not just the agent, and follows up with stronger signals if the turn doesn't end.
+- Two messages sent at the same moment no longer start two turns at once in one chat; the second waits its turn. If a waiting message can't start, the chat shows it and why, instead of dropping it or leaving it stuck in the queue.
+- Messages waiting when NekoTrail quits or crashes are kept, and run after it opens again, with a note in the chat.
+- A big paste into a terminal running something that doesn't read input (a dev server, `sleep`) no longer freezes every terminal and then the app.
+- git, gh and the agents' version checks are stopped after a time limit instead of waiting forever (a git asking for a password, gh offline), and the app opens even when your shell profile hangs. The check for protected files no longer hangs on workspaces with thousands of untracked files.
+- A first message that is only a greeting ("Hey there") no longer names the workspace ("There"). It keeps the branch name until a message says what the task is; existing ones are fixed on the next launch.
+- `caffeinate` no longer stays behind as a zombie process after every turn.
 
 ## 0.22.2 (2026-11-07)
 

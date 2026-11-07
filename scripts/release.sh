@@ -20,6 +20,18 @@ echo "Checking: clippy (CI runs it with -D warnings)..."
 (cd src-tauri && cargo clippy -q --all-targets -- -D warnings >/dev/null 2>&1) || { echo "Clippy found problems (run: cd src-tauri && cargo clippy --all-targets -- -D warnings). Nothing was tagged." >&2; exit 1; }
 echo "Checking: Rust tests..."
 (cd src-tauri && cargo test -q >/dev/null 2>&1) || { echo "Rust tests failed. Nothing was tagged." >&2; exit 1; }
+# The real app, driven like a user: chats, turns, the queue, terminals, Stop, a crash (scripts/e2e.sh).
+if [ "$(uname -s)" = "Darwin" ]; then
+  echo "Checking: end-to-end journeys on the real app (about a minute)..."
+  e2e_log="$(mktemp)"
+  scripts/e2e.sh >"$e2e_log" 2>&1 || { tail -40 "$e2e_log" >&2; echo "The end-to-end journeys failed (full log: $e2e_log). Nothing was tagged." >&2; exit 1; }
+  grep "^e2e: all" "$e2e_log"
+  rm -f "$e2e_log"
+  rm -rf dist
+else
+  echo "WARNING: the end-to-end journeys run on macOS only and were SKIPPED. This release was not tested end to end." >&2
+fi
+echo "Before you tag: the 5-minute manual pass in docs/RELEASE-CHECKLIST.md, on the installed app."
 
 sed -i '' -E "s/(\"version\": \")[^\"]+/\1$v/" package.json src-tauri/tauri.conf.json
 # Only the first `version =` in Cargo.toml (the package's own).
