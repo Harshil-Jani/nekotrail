@@ -5,6 +5,13 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**New look**
+- A new theme, Moonlight: midnight indigo surfaces, moonlight lavender for buttons, selection and focus, and indigo in light mode. Every text colour passes WCAG AA in both appearances.
+- The cat is now the Starlight tabby: silver fur, indigo stripes and a merge tail with gold commit stars. Its eyes still follow your pointer, and it still naps, works and worries.
+- Lantern gold is kept for what needs you: the Needs you section, unread dots, an agent asking for your OK, the away banner and your Preview annotations. Warnings are amber-orange, so the two never get mixed up.
+- The night sky is moonlit, lit stars glow starlight and merged ones shine gold.
+- New app icon, logo, wordmark (with a gold star on the i), favicon, social preview and VS Code extension icons, and the website, README screenshots and clips in the new look.
+
 **Ready for launch**
 - Settings now has a Buy me a coffee link next to Sponsor, and ⌘K has "Buy me a coffee", for a one-off thank you without a GitHub account.
 - The README shows Sponsor on GitHub and Buy me a coffee buttons, and the repo's Sponsor button lists both.
