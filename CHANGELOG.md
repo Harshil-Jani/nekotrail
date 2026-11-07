@@ -3,6 +3,11 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.23.2 (2026-11-08)
+
+**Fixes**
+- Clicking a chat's tab while Changes, Terminal or another view is open goes back to that chat again. It did nothing before.
+
 ## 0.23.1 (2026-11-07)
 
 **Fixes**
