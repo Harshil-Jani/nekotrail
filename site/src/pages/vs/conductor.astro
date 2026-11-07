@@ -1,0 +1,131 @@
+---
+// NekoTrail and Conductor, side by side. Copy is from the launch kit as approved. Every Conductor fact
+// comes from Conductor's own pages, listed under Sources with the date they were checked. Conductor is
+// named in plain text only: no logo.
+import Base from "../../layouts/Base.astro";
+import { SITE, href } from "../../lib/site";
+import { softwareApp, faq, breadcrumbs, type Faq } from "../../lib/schema";
+
+const checked = "8 November 2026";
+const rows: [string, string, string][] = [
+  ["Parallel agents in git worktrees", "Yes", "Yes"],
+  ["Agents", "16, including Claude Code, Codex, Cursor and OpenCode", "Claude Code, Codex, Cursor and OpenCode (per its docs)"],
+  ["Runs on", "macOS 13+, Linux (experimental)", "Mac"],
+  ["Code and chats stored", "On your machine", "On your machine, for the local app"],
+  ["Source code", "Open, MIT", "Proprietary (per its terms)"],
+  ["Account", "None", "Required (per its terms)"],
+  ["Analytics", "None. Every network connection listed", "Limited app analytics, such as crash logs and feature usage (per its privacy notice)"],
+  ["Price", "Free, no paid tier", "Free and Pro plans"],
+  ["New users", "Welcome", "Sign-ups and downloads closed since 4 Nov 2026"],
+  ["Status", "Early (0.25), updated often", "Joining Meta. Local app supported until early 2027"],
+];
+const keep = [
+  "Your repos, scripts and custom prompts",
+  "Active workspaces, with branch, pin and notes",
+  "Claude and Codex chats, full history, same session",
+  "Conductor's keyboard shortcuts",
+];
+const add: [string, string][] = [
+  ["12 more agents:", "Gemini CLI, GitHub Copilot, Goose, Qwen Code and more"],
+  ["Hand off:", "another agent carries on in the same branch"],
+  ["Queue:", "tasks wait for each plan's reset time"],
+  ["Protected files:", "agents can't quietly change `.env` or migrations"],
+  ["Search every chat,", "and replies that show the answer first"],
+];
+// Shown on the page and sent as FAQPage JSON-LD. Backticks become <code> on the page only.
+const FAQ: Faq = [
+  ["Will I lose my chats?", "No. Claude and Codex chats come over with their full history, and new messages continue the same agent session."],
+  ["Does the import change anything in Conductor?", "It reads Conductor's data file read-only. Then it moves each worktree with `git worktree move`, which renames the folder. Nothing is copied or deleted."],
+  ["Do I need new subscriptions?", "No. NekoTrail runs each agent's own CLI on your own login. It never reads, stores or forwards that login."],
+  ["What about Conductor Cloud?", "NekoTrail can't read it. In Conductor, right-click each Cloud workspace and choose Transfer to local, then import. Conductor says Cloud data deletion begins 20 Nov 2026."],
+  ["Is NekoTrail affiliated with Conductor?", "No. It is an independent open-source project. Conductor is named here only to compare and to explain the import."],
+];
+const plain = (t: string) => t.replace(/`/g, "");
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const withCode = (t: string) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>");
+const sources: [string, string][] = [
+  ["Conductor's announcement (joining Meta, dates, plans, Transfer to local)", "https://conductor.build/announcement"],
+  ["conductor.build (parallel coding agents on your Mac)", "https://conductor.build"],
+  ["Conductor docs (agents)", "https://www.conductor.build/docs/"],
+  ["Conductor docs: workspaces and branches (git worktrees)", "https://www.conductor.build/docs/concepts/workspaces-and-branches"],
+  ["Conductor privacy notice (local storage, app analytics)", "https://conductor.build/privacy"],
+  ["Conductor terms (account, proprietary software)", "https://conductor.build/terms"],
+  ["NekoTrail README", `${SITE.repo}#readme`],
+  ["NekoTrail privacy (every network connection)", `${SITE.repo}/blob/main/PRIVACY.md`],
+];
+const sections = [
+  { id: "at-a-glance", title: "At a glance" },
+  { id: "keep", title: "What you keep" },
+  { id: "add", title: "What you add" },
+  { id: "faq", title: "FAQ" },
+  { id: "sources", title: "Sources" },
+];
+---
+<Base
+  title="NekoTrail and Conductor compared"
+  description="How NekoTrail compares with Conductor, and how to bring your workspaces and chats over in one import. Facts from both projects' own pages."
+  path="vs/conductor/"
+  image="og/vs-conductor.png"
+  imageAlt="NekoTrail and Conductor compared"
+  jsonld={[
+    softwareApp(),
+    faq(FAQ.map(([q, a]) => [q, plain(a)])),
+    breadcrumbs([["Home", ""], ["NekoTrail vs Conductor", "vs/conductor/"]]),
+  ]}
+>
+  <div class="sky">
+    <div class="wrap">
+      <header class="page-head sky-head">
+        <h1>NekoTrail and Conductor</h1>
+        <p class="lede">Same workflow. Open code. Your work comes with you.</p>
+        <div class="head-ctas">
+          <a class="btn primary" href={href("download/")}>Download for Mac</a>
+          <a class="btn on-sky" href={href("moving-from-conductor/")}>How the import works</a>
+        </div>
+      </header>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="with-toc" style="padding-top:48px">
+      <aside class="toc" aria-label="On this page">
+        <nav>
+          <p>On this page</p>
+          <ul>{sections.map((s) => <li><a href={`#${s.id}`}>{s.title}</a></li>)}</ul>
+        </nav>
+      </aside>
+      <article class="prose">
+        <p class="answer">Conductor made parallel coding agents feel normal. NekoTrail keeps that workflow, adds more agents, and is MIT licensed.</p>
+
+        <h2 id="at-a-glance">At a glance</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col"><span class="sr-only">Feature</span></th><th scope="col">NekoTrail</th><th scope="col">Conductor</th></tr></thead>
+            <tbody>{rows.map(([k, n, c]) => <tr><th scope="row">{k}</th><td>{n}</td><td>{c}</td></tr>)}</tbody>
+          </table>
+        </div>
+        <p class="muted" style="font-size:14px">Conductor facts come from conductor.build, its docs, terms and privacy notice, checked 8 Nov 2026. Something out of date? <a href={SITE.issues} rel="noopener">Open an issue</a>.</p>
+
+        <h2 id="keep">What you keep</h2>
+        <ol>{keep.map((k) => <li>{k}</li>)}</ol>
+
+        <h2 id="add">What you add</h2>
+        <ol>{add.map(([b, t]) => <li><strong>{b}</strong> <Fragment set:html={withCode(t)} /></li>)}</ol>
+
+        <p class="inline-ctas">
+          <a class="btn primary" href={href("download/")}>Download for Mac</a>
+          <a class="btn" href={href("moving-from-conductor/")}>How the import works</a>
+        </p>
+        <p>Looking at other tools too? See <a href={href("alternatives/")}>Conductor alternatives</a>.</p>
+
+        <h2 id="faq">FAQ</h2>
+        {FAQ.map(([q, a]) => (<><h3>{q}</h3><p set:html={withCode(a)} /></>))}
+
+        <h2 id="sources">Sources, checked {checked}</h2>
+        <ul class="sources">
+          {sources.map(([label, url]) => <li><a href={url} rel="noopener">{label}</a></li>)}
+        </ul>
+        <p class="tm-note">Conductor is a trademark of its owner. NekoTrail is not affiliated with Conductor.</p>
+      </article>
+    </div>
+  </div>
+</Base>

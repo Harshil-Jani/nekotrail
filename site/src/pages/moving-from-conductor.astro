@@ -5,6 +5,7 @@ import Base from "../layouts/Base.astro";
 import Clip from "../components/Clip.astro";
 import { SITE, href, readRepoFile } from "../lib/site";
 import { renderMarkdown } from "../lib/markdown";
+import { softwareApp, faq, breadcrumbs, type Faq } from "../lib/schema";
 
 const md = readRepoFile("docs/MOVING-FROM-CONDUCTOR.md");
 /** One "## Heading" section of the guide, without its heading. */
@@ -15,19 +16,39 @@ const section = (title: string) => {
 const concepts = section("Concepts");
 const shortcuts = section("Shortcuts");
 const fullGuide = `${SITE.repo}/blob/main/docs/MOVING-FROM-CONDUCTOR.md`;
+const announcement = "https://conductor.build/announcement";
+// Dates from Conductor's announcement (checked 8 November 2026).
+const timeline = [
+  ["4 Nov 2026", "Conductor announces it is joining Meta. New users can't sign up or download the app."],
+  ["13 Nov 2026", "Conductor Cloud goes read-only."],
+  ["20 Nov 2026", "Conductor starts deleting Cloud data."],
+  ["Early 2027", "The Mac app shuts down, and Conductor says it deletes all user data then."],
+];
+// Shown on the page and sent as FAQPage JSON-LD, so both say exactly the same thing.
+const FAQ: Faq = [
+  ["What happens to my Conductor worktrees?", "NekoTrail moves each one out of Conductor's folder into ~/nekotrail/workspaces/<repo>/<name> with git worktree move. Git renames the folder, so the branch, its commits and every uncommitted file come along. Nothing is copied or deleted."],
+  ["Will I lose uncommitted work?", "No. After each move NekoTrail checks that the branch, the head commit and the uncommitted files are the same as before. Each worktree reads Checked, Moved with a difference to look at, or Not moved with the reason."],
+  ["Can I import Conductor Cloud workspaces?", "Not directly. NekoTrail can only read the Conductor app on your Mac. Before 20 November 2026, right-click each Cloud workspace in Conductor and choose Transfer to local, then import."],
+  ["What if a worktree won't move?", "It stays exactly where it was, and the sheet says why: a lock, submodules, or a different disk from your home folder. Fix the cause, or commit and push and start a fresh workspace on that branch."],
+];
 const sections = [
+  { id: "timeline", title: "Timeline" },
   { id: "steps", title: "Three steps" },
   { id: "what-moves", title: "What moves" },
   { id: "the-move", title: "The move" },
   { id: "conductor-cloud", title: "Conductor Cloud" },
   { id: "concepts", title: "Concepts" },
   { id: "shortcuts", title: "Shortcuts" },
+  { id: "faq", title: "FAQ" },
 ];
 ---
 <Base
-  title="Moving from Conductor"
-  description="A local Conductor alternative: import your repos, workspaces and chats from the Conductor app, and move your worktrees out of Conductor's folder with git worktree move."
+  title="Migrate from Conductor Before It Shuts Down"
+  description="Conductor Cloud starts deleting data on 20 November 2026. Move your Conductor repos, workspaces and Claude and Codex chats to NekoTrail in one import. Nothing is deleted."
   path="moving-from-conductor/"
+  image="og/moving-from-conductor.png"
+  imageAlt="Migrate from Conductor to NekoTrail: repos, workspaces and chats in one import"
+  jsonld={[softwareApp(), faq(FAQ), breadcrumbs([["Home", ""], ["Moving from Conductor", "moving-from-conductor/"]])]}
 >
   <div class="sky">
     <div class="wrap">
@@ -47,9 +68,16 @@ const sections = [
         </nav>
       </aside>
       <article class="prose">
-        <div class="note" style="margin-bottom:32px">
-          <p><strong>Dates.</strong> Meta acquired Conductor on 4 November 2026. Cloud goes read-only 13 November and shuts down 20 November 2026. The Mac app winds down in early 2027, and Conductor says user data is deleted then.</p>
+        <p>Comparing the two first? See <a href={href("vs/conductor/")}>NekoTrail vs Conductor</a>.</p>
+
+        <h2 id="timeline" style="margin-top:1em">Timeline</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Date</th><th scope="col">What happens</th></tr></thead>
+            <tbody>{timeline.map(([d, t]) => <tr><td style="white-space:nowrap">{d}</td><td>{t}</td></tr>)}</tbody>
+          </table>
         </div>
+        <p class="muted" style="font-size:14px">From <a href={announcement} rel="noopener">Conductor's announcement</a>, checked 8 November 2026.</p>
 
         <h2 id="steps">Three steps</h2>
         <ol>
@@ -83,6 +111,9 @@ const sections = [
 
         <h2 id="shortcuts">Shortcuts</h2>
         <Fragment set:html={shortcuts} />
+
+        <h2 id="faq">FAQ</h2>
+        {FAQ.map(([q, a]) => (<><h3>{q}</h3><p>{a}</p></>))}
 
         <p style="margin-top:40px">Every detail, including failed moves: <a href={fullGuide} rel="noopener">the full guide</a>.</p>
         <p class="tm-note">Conductor is a trademark of its owner. NekoTrail is not affiliated with Conductor.</p>

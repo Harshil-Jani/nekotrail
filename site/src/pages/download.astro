@@ -1,14 +1,16 @@
 ---
 import Base from "../layouts/Base.astro";
 import { SITE, href, appVersion } from "../lib/site";
+import { softwareApp, breadcrumbs } from "../lib/schema";
 const version = appVersion();
 const xattr = "xattr -dr com.apple.quarantine /Applications/nekotrail.app";
 const deb = "sudo apt install ./nekotrail_*_amd64.deb";
 ---
 <Base
-  title="Download"
-  description="Download NekoTrail for Mac (one DMG for Apple silicon and Intel), or the experimental Linux .deb. Free, open source, no account."
+  title="Download for Mac and Linux"
+  description="Download NekoTrail for Mac (Apple silicon and Intel) or Linux (.deb). Free, open source (MIT), no account. Runs 16 coding agents in parallel."
   path="download/"
+  jsonld={[softwareApp(), breadcrumbs([["Home", ""], ["Download", "download/"]])]}
 >
   <div class="wrap" style="max-width:820px">
     <header class="page-head">
