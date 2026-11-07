@@ -50,11 +50,11 @@ describe("the workspace list", () => {
 
 describe("the status bar", () => {
   test("counts what needs you", () => {
-    expect(statusBar("ok", 0).text).toBe("$(check) nekotrail");
-    expect(statusBar("ok", 1)).toEqual({ text: "$(bell-dot) 1 needs you", tooltip: "1 workspace needs you. Click to show nekotrail." });
+    expect(statusBar("ok", 0).text).toBe("$(check) NekoTrail");
+    expect(statusBar("ok", 1)).toEqual({ text: "$(bell-dot) 1 needs you", tooltip: "1 workspace needs you. Click to show NekoTrail." });
     expect(statusBar("ok", 3).text).toBe("$(bell-dot) 3 need you");
     expect(statusBar("offline", 3).tooltip).toContain("Click to start it");
-    expect(statusBar("outdated", 0).tooltip).toContain("newer nekotrail");
+    expect(statusBar("outdated", 0).tooltip).toContain("newer NekoTrail");
   });
 });
 

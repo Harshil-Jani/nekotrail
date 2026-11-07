@@ -1,7 +1,7 @@
 {
   "name": "nekotrail",
-  "displayName": "nekotrail",
-  "description": "See your nekotrail workspaces, open their worktrees and changes, and hand selected code to an agent. Talks to the nekotrail app on your machine only.",
+  "displayName": "NekoTrail",
+  "description": "See your NekoTrail workspaces, open their worktrees and changes, and hand selected code to an agent. Talks to the NekoTrail app on your machine only.",
   "version": "0.1.0",
   "publisher": "nekotrail",
   "license": "MIT",
@@ -37,7 +37,7 @@
       "activitybar": [
         {
           "id": "nekotrail",
-          "title": "nekotrail",
+          "title": "NekoTrail",
           "icon": "media/activity.svg"
         }
       ]
@@ -54,27 +54,27 @@
     "viewsWelcome": [
       {
         "view": "nekotrail.workspaces",
-        "contents": "nekotrail isn't running.\n[Start nekotrail](command:nekotrail.start)",
+        "contents": "NekoTrail isn't running.\n[Start NekoTrail](command:nekotrail.start)",
         "when": "nekotrail.state == offline"
       },
       {
         "view": "nekotrail.workspaces",
-        "contents": "This extension needs a newer nekotrail. Update nekotrail (Settings, Updates), then reopen it.\n[Try again](command:nekotrail.refresh)",
+        "contents": "This extension needs a newer NekoTrail. Update NekoTrail (Settings, Updates), then reopen it.\n[Try again](command:nekotrail.refresh)",
         "when": "nekotrail.state == outdated"
       },
       {
         "view": "nekotrail.workspaces",
-        "contents": "Open a folder from a git repo to see its nekotrail workspaces.",
+        "contents": "Open a folder from a git repo to see its NekoTrail workspaces.",
         "when": "nekotrail.state == noFolder"
       },
       {
         "view": "nekotrail.workspaces",
-        "contents": "This repo isn't in nekotrail yet.\n[Add it to nekotrail](command:nekotrail.addRepo)",
+        "contents": "This repo isn't in NekoTrail yet.\n[Add it to NekoTrail](command:nekotrail.addRepo)",
         "when": "nekotrail.state == notAdded"
       },
       {
         "view": "nekotrail.workspaces",
-        "contents": "No workspaces in this repo yet. Select some code and run \"nekotrail: New task from selection\", or start one in the app.\n[Show nekotrail](command:nekotrail.focusApp)",
+        "contents": "No workspaces in this repo yet. Select some code and run \"NekoTrail: New task from selection\", or start one in the app.\n[Show NekoTrail](command:nekotrail.focusApp)",
         "when": "nekotrail.state == empty"
       },
       {
@@ -87,61 +87,61 @@
       {
         "command": "nekotrail.newTaskFromSelection",
         "title": "New task from selection",
-        "category": "nekotrail"
+        "category": "NekoTrail"
       },
       {
         "command": "nekotrail.sendSelection",
         "title": "Send selection to workspace chat",
-        "category": "nekotrail"
+        "category": "NekoTrail"
       },
       {
         "command": "nekotrail.focusApp",
-        "title": "Show nekotrail",
-        "category": "nekotrail"
+        "title": "Show NekoTrail",
+        "category": "NekoTrail"
       },
       {
         "command": "nekotrail.start",
-        "title": "Start nekotrail",
-        "category": "nekotrail"
+        "title": "Start NekoTrail",
+        "category": "NekoTrail"
       },
       {
         "command": "nekotrail.refresh",
         "title": "Refresh",
-        "category": "nekotrail",
+        "category": "NekoTrail",
         "icon": "$(refresh)"
       },
       {
         "command": "nekotrail.addRepo",
-        "title": "Add this repo to nekotrail",
-        "category": "nekotrail"
+        "title": "Add this repo to NekoTrail",
+        "category": "NekoTrail"
       },
       {
         "command": "nekotrail.openChanges",
         "title": "Show changes",
-        "category": "nekotrail",
+        "category": "NekoTrail",
         "icon": "$(diff-multiple)"
       },
       {
         "command": "nekotrail.openWindow",
         "title": "Open worktree in new window",
-        "category": "nekotrail",
+        "category": "NekoTrail",
         "icon": "$(empty-window)"
       },
       {
         "command": "nekotrail.openInApp",
-        "title": "Show in nekotrail",
-        "category": "nekotrail",
+        "title": "Show in NekoTrail",
+        "category": "NekoTrail",
         "icon": "$(link-external)"
       },
       {
         "command": "nekotrail.sendSelectionTo",
         "title": "Send selection here",
-        "category": "nekotrail"
+        "category": "NekoTrail"
       },
       {
         "command": "nekotrail.openPr",
         "title": "Open pull request",
-        "category": "nekotrail",
+        "category": "NekoTrail",
         "icon": "$(git-pull-request)"
       }
     ],
@@ -239,7 +239,7 @@
       ]
     },
     "configuration": {
-      "title": "nekotrail",
+      "title": "NekoTrail",
       "properties": {
         "nekotrail.click": {
           "type": "string",
@@ -249,18 +249,18 @@
             "Open the workspace's worktree folder in a new window."
           ],
           "default": "changes",
-          "description": "What clicking a workspace in the nekotrail view does."
+          "description": "What clicking a workspace in the NekoTrail view does."
         },
         "nekotrail.agent": {
           "type": "string",
           "default": "",
-          "description": "Agent for \"New task from selection\" (claude, codex, gemini, ...). Empty uses nekotrail's default, Claude. You still confirm in the app."
+          "description": "Agent for \"New task from selection\" (claude, codex, gemini, ...). Empty uses NekoTrail's default, Claude. You still confirm in the app."
         },
         "nekotrail.refreshSeconds": {
           "type": "number",
           "default": 5,
           "minimum": 2,
-          "description": "How often the view and status bar ask nekotrail for news, in seconds."
+          "description": "How often the view and status bar ask NekoTrail for news, in seconds."
         }
       }
     }

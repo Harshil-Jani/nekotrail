@@ -68,7 +68,7 @@ export function encode(req: Request): string {
 /** nekotrail isn't running (no socket, or nobody listening on it). */
 export class NotRunning extends Error {
   constructor() {
-    super("nekotrail isn't running.");
+    super("NekoTrail isn't running.");
     this.name = "NotRunning";
   }
 }
@@ -76,7 +76,7 @@ export class NotRunning extends Error {
 /** The running app is older than this extension. */
 export class Outdated extends Error {
   constructor() {
-    super("This extension needs a newer nekotrail. Update nekotrail, then reopen it.");
+    super("This extension needs a newer NekoTrail. Update NekoTrail, then reopen it.");
     this.name = "Outdated";
   }
 }
@@ -95,10 +95,10 @@ export function parseAnswer<T = unknown>(line: string): T {
   try {
     v = JSON.parse(line.trim());
   } catch {
-    throw new Refused("nekotrail sent an answer this extension can't read.");
+    throw new Refused("NekoTrail sent an answer this extension can't read.");
   }
   if (v && v.ok === true) return v.data as T;
-  const err = typeof v?.error === "string" ? v.error : "nekotrail couldn't do that.";
+  const err = typeof v?.error === "string" ? v.error : "NekoTrail couldn't do that.";
   // An app that predates a command answers like this (remote::decode).
   if (/different versions|needs protocol \d/.test(err)) throw new Outdated();
   throw new Refused(err);
@@ -142,12 +142,12 @@ export class Client {
         if (err) reject(err);
         else resolve(value as T);
       };
-      const timer = setTimeout(() => finish(new Refused("nekotrail didn't answer in time.")), timeoutMs);
+      const timer = setTimeout(() => finish(new Refused("NekoTrail didn't answer in time.")), timeoutMs);
       conn.setEncoding("utf8");
       conn.on("connect", () => conn.write(encode(req)));
       conn.on("data", (chunk: string) => {
         buf += chunk;
-        if (buf.length > MAX_ANSWER) return finish(new Refused("nekotrail's answer was too long."));
+        if (buf.length > MAX_ANSWER) return finish(new Refused("NekoTrail's answer was too long."));
         const nl = buf.indexOf("\n");
         if (nl < 0) return;
         try {
@@ -156,10 +156,10 @@ export class Client {
           finish(e as Error);
         }
       });
-      conn.on("end", () => finish(buf.trim() ? new Refused("nekotrail closed the connection mid-answer.") : new Refused("nekotrail closed the connection without answering.")));
+      conn.on("end", () => finish(buf.trim() ? new Refused("NekoTrail closed the connection mid-answer.") : new Refused("NekoTrail closed the connection without answering.")));
       conn.on("error", (e: NodeJS.ErrnoException) => {
         if (e.code === "ENOENT" || e.code === "ECONNREFUSED" || e.code === "ENOTDIR") finish(new NotRunning());
-        else finish(new Refused(`Couldn't reach nekotrail: ${e.message}`));
+        else finish(new Refused(`Couldn't reach NekoTrail: ${e.message}`));
       });
     });
   }

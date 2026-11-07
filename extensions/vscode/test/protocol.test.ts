@@ -42,7 +42,7 @@ describe("answers", () => {
 
   test("an older app's version answer reads as Outdated", () => {
     expect(() => parseAnswer('{"ok":false,"error":"This nekotrail command and the running app are different versions. Quit and reopen nekotrail, then try again."}')).toThrow(Outdated);
-    expect(() => parseAnswer('{"ok":false,"error":"nekotrail didn\'t understand that request: \\"hello\\" needs protocol 2 or newer."}')).toThrow(Outdated);
+    expect(() => parseAnswer('{"ok":false,"error":"NekoTrail didn\'t understand that request: \\"hello\\" needs protocol 2 or newer."}')).toThrow(Outdated);
   });
 });
 

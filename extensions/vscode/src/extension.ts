@@ -20,12 +20,12 @@ export function activate(ctx: vscode.ExtensionContext) {
   // $HOME first, as the app's `dirs` crate reads it.
   const home = process.env.HOME || os.homedir();
   client = new Client(socketPath(process.platform, home, process.env));
-  log = vscode.window.createOutputChannel("nekotrail");
+  log = vscode.window.createOutputChannel("NekoTrail");
 
   const view = new Workspaces();
   const tree = vscode.window.createTreeView("nekotrail.workspaces", { treeDataProvider: view, showCollapseAll: false });
   const bar = vscode.window.createStatusBarItem("nekotrail.status", vscode.StatusBarAlignment.Left, 50);
-  bar.name = "nekotrail";
+  bar.name = "NekoTrail";
   bar.command = "nekotrail.focusApp";
   bar.show();
 
@@ -105,8 +105,8 @@ export function activate(ctx: vscode.ExtensionContext) {
         return false;
       }
     }
-    const pick = await vscode.window.showInformationMessage("nekotrail isn't running. Start it?", "Start nekotrail");
-    return pick === "Start nekotrail" && startApp();
+    const pick = await vscode.window.showInformationMessage("NekoTrail isn't running. Start it?", "Start NekoTrail");
+    return pick === "Start NekoTrail" && startApp();
   };
 
   /** Start the app and wait until it answers (up to 40 seconds, as the CLI waits). */
@@ -115,9 +115,9 @@ export function activate(ctx: vscode.ExtensionContext) {
     if (!started) {
       const pick = await vscode.window.showErrorMessage(
         process.platform === "darwin"
-          ? "Couldn't start nekotrail. Is it in your Applications folder?"
-          : "Couldn't find nekotrail. Open it once, then install its terminal command (Settings, General) so the editor can start it.",
-        "Get nekotrail",
+          ? "Couldn't start NekoTrail. Is it in your Applications folder?"
+          : "Couldn't find NekoTrail. Open it once, then install its terminal command (Settings, General) so the editor can start it.",
+        "Get NekoTrail",
       );
       if (pick) vscode.env.openExternal(vscode.Uri.parse(RELEASES));
       return false;
@@ -135,7 +135,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       }
       return false;
     });
-    if (!ok) vscode.window.showErrorMessage("nekotrail started but didn't answer. Open it once from your applications, then try again.");
+    if (!ok) vscode.window.showErrorMessage("NekoTrail started but didn't answer. Open it once from your applications, then try again.");
     await refresh();
     return ok;
   };
@@ -146,7 +146,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     try {
       await f(...args);
     } catch (e) {
-      if (e instanceof NotRunning) vscode.window.showErrorMessage("nekotrail stopped answering. Start it and try again.");
+      if (e instanceof NotRunning) vscode.window.showErrorMessage("NekoTrail stopped answering. Start it and try again.");
       else vscode.window.showErrorMessage((e as Error).message);
     }
     refresh();
@@ -162,7 +162,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     }
     const ls = await client.ls(folder);
     if (ls.repo === null) {
-      vscode.window.showWarningMessage("This repo isn't in nekotrail yet. Run \"nekotrail: Add this repo to nekotrail\".");
+      vscode.window.showWarningMessage("This repo isn't in NekoTrail yet. Run \"NekoTrail: Add this repo to NekoTrail\".");
       return;
     }
     const items = toItems(ls.workspaces, folder);
@@ -196,10 +196,10 @@ export function activate(ctx: vscode.ExtensionContext) {
     if (!ed) return vscode.window.showWarningMessage("Open a file and select the code the task is about.");
     const sel = await selection(ed, true);
     const dir = cwdFor(ed);
-    if (!dir) return vscode.window.showWarningMessage("Save the file in a git repo first, so nekotrail knows which repo the task is for.");
+    if (!dir) return vscode.window.showWarningMessage("Save the file in a git repo first, so NekoTrail knows which repo the task is for.");
     const instruction = await vscode.window.showInputBox({
-      title: "nekotrail: New task from selection",
-      prompt: `The task for the agent. ${sel.code ? "The selected code" : "The file and line"} goes with it. You confirm in nekotrail before anything starts.`,
+      title: "NekoTrail: New task from selection",
+      prompt: `The task for the agent. ${sel.code ? "The selected code" : "The file and line"} goes with it. You confirm in NekoTrail before anything starts.`,
       placeHolder: "For example: make this retry once on a network error",
       validateInput: (v) => (v.trim() ? null : "Say what the agent should do."),
       ignoreFocusOut: true,
@@ -207,7 +207,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     if (!instruction) return;
     const agent = vscode.workspace.getConfiguration("nekotrail").get<string>("agent")?.trim() || null;
     const res = await client.propose(dir, { prompt: taskPrompt(instruction, sel), agent });
-    vscode.window.showInformationMessage(res.asked ? "Check the task in nekotrail and press Start agent there." : "That task is already waiting for your answer in nekotrail.");
+    vscode.window.showInformationMessage(res.asked ? "Check the task in NekoTrail and press Start agent there." : "That task is already waiting for your answer in NekoTrail.");
   };
 
   const send = async (item?: Item) => {
@@ -226,7 +226,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     }
     if (!row) return;
     const res = await client.draft(row.id, draftText(sel));
-    vscode.window.showInformationMessage(`It's in the message box of ${res.title || res.workspace}. Press Send in nekotrail.`);
+    vscode.window.showInformationMessage(`It's in the message box of ${res.title || res.workspace}. Press Send in NekoTrail.`);
   };
 
   const click = (item: Item) => (vscode.workspace.getConfiguration("nekotrail").get("click") === "window" ? openWindow(item) : openChanges(item));
@@ -251,13 +251,13 @@ export function activate(ctx: vscode.ExtensionContext) {
       const folder = currentFolder();
       if (!folder) return vscode.window.showWarningMessage("Open a folder from a git repo first.");
       const r = await client.add(folder);
-      vscode.window.showInformationMessage(r.added ? `Added ${r.repo} to nekotrail.` : `${r.repo} is already in nekotrail.`);
+      vscode.window.showInformationMessage(r.added ? `Added ${r.repo} to NekoTrail.` : `${r.repo} is already in NekoTrail.`);
     })),
     vscode.commands.registerCommand("nekotrail.click", guarded(click)),
     vscode.commands.registerCommand("nekotrail.openChanges", guarded(openChanges)),
     vscode.commands.registerCommand("nekotrail.openWindow", guarded(openWindow)),
     vscode.commands.registerCommand("nekotrail.openInApp", guarded(async (item?: Item) => {
-      const row = await pickRow(item, "Show which workspace in nekotrail?");
+      const row = await pickRow(item, "Show which workspace in NekoTrail?");
       if (row) await client.open(row.id);
     })),
     vscode.commands.registerCommand("nekotrail.openPr", async (item?: Item) => {

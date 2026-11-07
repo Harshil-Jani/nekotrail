@@ -61,7 +61,7 @@ test("registers every contributed command and reads as offline with no app", asy
     // The first refresh finds no socket.
     for (let i = 0; i < 50 && contexts["nekotrail.state"] !== "offline"; i++) await new Promise((r) => setTimeout(r, 10));
     expect(contexts["nekotrail.state"]).toBe("offline");
-    expect(bar.text).toBe("$(circle-slash) nekotrail");
+    expect(bar.text).toBe("$(circle-slash) NekoTrail");
     expect(bar.command).toBe("nekotrail.focusApp");
     for (const s of subs) s.dispose();
   } finally {

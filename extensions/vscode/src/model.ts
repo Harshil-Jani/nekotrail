@@ -72,11 +72,11 @@ export function toItems(rows: Row[], folder: string | null): Item[] {
 
 /** The status bar: how many workspaces need you, across every repo. */
 export function statusBar(state: "offline" | "outdated" | "ok", needCount: number): { text: string; tooltip: string } {
-  if (state === "offline") return { text: "$(circle-slash) nekotrail", tooltip: "nekotrail isn't running. Click to start it." };
-  if (state === "outdated") return { text: "$(warning) nekotrail", tooltip: "This extension needs a newer nekotrail. Update nekotrail, then reopen it." };
-  if (needCount === 0) return { text: "$(check) nekotrail", tooltip: "Nothing needs you. Click to show nekotrail." };
+  if (state === "offline") return { text: "$(circle-slash) NekoTrail", tooltip: "NekoTrail isn't running. Click to start it." };
+  if (state === "outdated") return { text: "$(warning) NekoTrail", tooltip: "This extension needs a newer NekoTrail. Update NekoTrail, then reopen it." };
+  if (needCount === 0) return { text: "$(check) NekoTrail", tooltip: "Nothing needs you. Click to show NekoTrail." };
   const n = needCount === 1 ? "1 needs you" : `${needCount} need you`;
-  return { text: `$(bell-dot) ${n}`, tooltip: `${needCount === 1 ? "1 workspace needs" : `${needCount} workspaces need`} you. Click to show nekotrail.` };
+  return { text: `$(bell-dot) ${n}`, tooltip: `${needCount === 1 ? "1 workspace needs" : `${needCount} workspaces need`} you. Click to show NekoTrail.` };
 }
 
 /** Where the selection came from, as `src/a.ts:12` or `src/a.ts:12-20`. */
