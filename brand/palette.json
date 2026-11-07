@@ -1,0 +1,96 @@
+{
+  "about": "The NekoTrail palette: the one place brand colours live. Edit here, then run `bun scripts/brand.ts`. It redraws every logo, icon and card and rewrites site/src/styles/tokens.css.",
+  "colors": [
+    {
+      "token": "accent",
+      "name": "Cat Orange",
+      "hex": "#FF9A4D",
+      "use": "The one accent. Primary buttons, the mark, lit stars.",
+      "group": "brand"
+    },
+    {
+      "token": "accent-deep",
+      "name": "Marmalade",
+      "hex": "#E5762A",
+      "use": "Fur shading, whiskers, the merge tail.",
+      "group": "brand"
+    },
+    {
+      "token": "accent-text-light",
+      "name": "Ember",
+      "hex": "#B35400",
+      "use": "Orange text on light backgrounds.",
+      "group": "brand"
+    },
+    {
+      "token": "accent-text-dark",
+      "name": "Apricot",
+      "hex": "#FFAD6E",
+      "use": "Orange text on dark backgrounds and the sky.",
+      "group": "brand"
+    },
+    {
+      "token": "night",
+      "name": "Night",
+      "hex": "#0A0D18",
+      "use": "The night sky, and the wordmark on light backgrounds.",
+      "group": "brand"
+    },
+    {
+      "token": "dusk",
+      "name": "Dusk",
+      "hex": "#1B2340",
+      "use": "The glow at the top of the night sky.",
+      "group": "brand"
+    },
+    {
+      "token": "midnight",
+      "name": "Midnight",
+      "hex": "#06070D",
+      "use": "The bottom of the night sky.",
+      "group": "brand"
+    },
+    {
+      "token": "starlight",
+      "name": "Starlight",
+      "hex": "#E8EAEE",
+      "use": "Lit stars and text on the sky.",
+      "group": "brand"
+    },
+    {
+      "token": "paper",
+      "name": "Paper",
+      "hex": "#FFFFFF",
+      "use": "Light backgrounds, the wordmark on dark.",
+      "group": "brand"
+    },
+    {
+      "token": "mist",
+      "name": "Mist",
+      "hex": "#F5F5F7",
+      "use": "Light surfaces and cards.",
+      "group": "brand"
+    },
+    {
+      "token": "blush",
+      "name": "Blush",
+      "hex": "#FF6F6F",
+      "use": "Inner ears and cheeks. Mascot only.",
+      "group": "mascot"
+    },
+    {
+      "token": "cat-ink",
+      "name": "Cat Ink",
+      "hex": "#1A1006",
+      "use": "The cat's eyes and mouth. Mascot only.",
+      "group": "mascot"
+    },
+    {
+      "token": "cat-nose",
+      "name": "Nose",
+      "hex": "#FF7A8A",
+      "use": "The cat's nose. Mascot only.",
+      "group": "mascot"
+    }
+  ]
+}

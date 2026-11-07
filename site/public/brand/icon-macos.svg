@@ -1,32 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- macOS app icon grid: 824x824 body, 100px margin, ~185px corner radius, soft drop shadow. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23262d"/><stop offset="1" stop-color="#050506"/></linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.55"><stop offset="0" stop-color="#ff9a4d" stop-opacity="0.22"/><stop offset="1" stop-color="#ff9a4d" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B2340"/><stop offset="0.6" stop-color="#0A0D18"/><stop offset="1" stop-color="#06070D"/></linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.46" r="0.5"><stop offset="0" stop-color="#FF9A4D" stop-opacity="0.2"/><stop offset="1" stop-color="#FF9A4D" stop-opacity="0"/></radialGradient>
     <filter id="sh" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/></filter>
   </defs>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#sh)"/>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)"/>
-  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
-  <g transform="translate(212 196) scale(5)">
-  <!-- The letter N drawn as a cat: two stems are the cheeks, ears on top, the diagonal carries the nose,
-       and the tail is a git merge. -->
-  <g fill="#ff9a4d">
-    <path d="M22 40 L30 14 Q32 10 35 13 L46 32 L46 96 Q46 100 42 100 L26 100 Q22 100 22 96 Z"/>
-    <path d="M98 40 L90 14 Q88 10 85 13 L74 32 L74 96 Q74 100 78 100 L94 100 Q98 100 98 96 Z"/>
-    <path d="M38 30 L54 30 L82 100 L66 100 Z"/>
-  </g>
-  <path d="M28 34 L32 22 L39 31 Z M92 34 L88 22 L81 31 Z" fill="#ff6f6f" opacity="0.6"/>
-  <ellipse cx="34" cy="54" rx="5" ry="6.5" fill="#1a1006"/>
-  <ellipse cx="86" cy="54" rx="5" ry="6.5" fill="#1a1006"/>
-  <circle cx="36" cy="51.5" r="1.8" fill="#fff"/>
-  <circle cx="88" cy="51.5" r="1.8" fill="#fff"/>
-  <path d="M56 62 L64 62 L60 67 Z" fill="#ff7a8a" stroke="#ff7a8a" stroke-width="1.5" stroke-linejoin="round"/>
-  <path d="M60 67 q-2.5 4 -6 2.5 M60 67 q2.5 4 6 2.5" stroke="#1a1006" stroke-width="1.8" stroke-linecap="round" fill="none"/>
-  <g stroke="#e5762a" stroke-width="2.2" stroke-linecap="round">
-    <path d="M22 66 L8 63"/><path d="M22 72 L8 74"/><path d="M98 66 L112 63"/><path d="M98 72 L112 74"/>
-  </g>
-</g>
-  <!-- stars on the trail -->
-  <g fill="#fff"><circle cx="246" cy="250" r="5" opacity="0.5"/><circle cx="790" cy="228" r="4" opacity="0.35"/><circle cx="812" cy="780" r="5" opacity="0.4"/></g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="3"/>
+  <g fill="#fff"><circle cx="236" cy="252" r="5" opacity="0.55"/><circle cx="800" cy="226" r="4" opacity="0.4"/><circle cx="818" cy="772" r="5" opacity="0.45"/><circle cx="214" cy="736" r="3.5" opacity="0.3"/></g>
+  <path d="M770 308Q773.52 326.48 792 330Q773.52 333.52 770 352Q766.48 333.52 748 330Q766.48 326.48 770 308Z" fill="#E8EAEE" opacity="0.85"/>
+  <g transform="translate(212 206) scale(5)"><g fill="#FF9A4D"><path d="M22 40 L30 14 Q32 10 35 13 L46 32 L46 96 Q46 100 42 100 L26 100 Q22 100 22 96 Z"/><path d="M98 40 L90 14 Q88 10 85 13 L74 32 L74 96 Q74 100 78 100 L94 100 Q98 100 98 96 Z"/><path d="M38 30 L54 30 L82 100 L66 100 Z"/></g><path d="M28 34 L32 22 L39 31 Z M92 34 L88 22 L81 31 Z" fill="#FF6F6F" opacity="0.6"/><ellipse cx="34" cy="54" rx="5" ry="6.5" fill="#1A1006"/><circle cx="36" cy="51.5" r="1.8" fill="#fff"/><ellipse cx="86" cy="54" rx="5" ry="6.5" fill="#1A1006"/><circle cx="88" cy="51.5" r="1.8" fill="#fff"/><path d="M56 62 L64 62 L60 67 Z" fill="#FF7A8A" stroke="#FF7A8A" stroke-width="1.5" stroke-linejoin="round"/><path d="M60 67 q-2.5 4 -6 2.5 M60 67 q2.5 4 6 2.5" stroke="#1A1006" stroke-width="1.8" stroke-linecap="round" fill="none"/><g stroke="#E5762A" stroke-width="2.2" stroke-linecap="round"><path d="M22 66 L8 63"/><path d="M22 72 L8 74"/><path d="M98 66 L112 63"/><path d="M98 72 L112 74"/></g></g>
 </svg>
