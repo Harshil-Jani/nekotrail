@@ -30,6 +30,10 @@ GitHub, so a page or message cannot make it call anywhere else. Preview shows de
 - **Your worktrees**: `~/nekotrail/workspaces`, ordinary git worktrees on your disk.
 - **Secrets you give NekoTrail** (the Linear API key, alert tokens and webhook addresses): your system
   keychain (macOS Keychain or the Secret Service on Linux), never the database.
+- **Your shell's environment**: `login-env.json` in the app's data folder, readable by you only. It keeps
+  the PATH and variables your login shell set at the last launch, so the window can open without waiting
+  for your shell profile. Variables whose names look like secrets (containing KEY, TOKEN, SECRET,
+  PASSWORD, AUTH and similar) are left out: they are only ever held in memory.
 - **Avatar cache**: small images in the app's data folder.
 - **Exports and diagnostics**: only where you put them. A session export is saved to a file you choose,
   after a secret scan you can review. Copy diagnostics puts versions and counts on your clipboard and
