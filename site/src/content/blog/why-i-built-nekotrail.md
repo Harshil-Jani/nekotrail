@@ -1,12 +1,12 @@
 ---
-title: "Why I built nekotrail"
-description: "Several agents in one folder step on each other. Git worktrees fix that. nekotrail is the rest: local, open source, your own agent logins."
+title: "Why I built Nekotrail"
+description: "Several agents in one folder step on each other. Git worktrees fix that. Nekotrail is the rest: local, open source, your own agent logins."
 date: 2026-11-07T09:00:00Z
 clip: parallel
 clipLabel: "Switching between workspaces where different agents work at the same time, then the board of all of them"
 ---
 
-I built nekotrail so I could run several coding agents at once without them wrecking each other's work. Each task gets its own git worktree, and everything stays on my Mac.
+I built Nekotrail so I could run several coding agents at once without them wrecking each other's work. Each task gets its own git worktree, and everything stays on my Mac.
 
 ## The problem: one folder, many agents
 
@@ -30,7 +30,7 @@ That maps straight onto agent work:
 2. The agent works only in that folder.
 3. When it's done, the branch becomes a PR.
 
-In nekotrail that unit is a **workspace**: the worktree plus a chat, a diff, a terminal, a live preview and a PR bar with CI status. The sidebar shows which agents are working, which need you, and which are done.
+In Nekotrail that unit is a **workspace**: the worktree plus a chat, a diff, a terminal, a live preview and a PR bar with CI status. The sidebar shows which agents are working, which need you, and which are done.
 
 ## Features came from walls I hit
 
@@ -40,7 +40,7 @@ In nekotrail that unit is a **workspace**: the worktree plus a chat, a diff, a t
 
 ## Why local
 
-nekotrail talks only to tools you already have: `git`, `gh`, and your agent CLIs. Workspaces are plain folders. Chats live on your disk. No account, no server of mine.
+Nekotrail talks only to tools you already have: `git`, `gh`, and your agent CLIs. Workspaces are plain folders. Chats live on your disk. No account, no server of mine.
 
 Two reasons:
 
@@ -49,7 +49,7 @@ Two reasons:
 
 ## Why your own agents
 
-I didn't want another model wrapper. nekotrail drives the official CLIs (Claude Code, Codex, Gemini CLI and 13 more) with your logins. Your subscription is used as is. No proxy, no markup.
+I didn't want another model wrapper. Nekotrail drives the official CLIs (Claude Code, Codex, Gemini CLI and 13 more) with your logins. Your subscription is used as is. No proxy, no markup.
 
 It also means no lock-in. Race two agents on one task, or hand a half-done task to another when the first runs out.
 
@@ -65,4 +65,4 @@ The sidebar cat reports real state: tail wagging while an agent works, asleep af
 
 ## Try it
 
-nekotrail is early, used daily on macOS, with experimental Linux builds. It's free and will stay free. Found something wrong? [Open an issue](https://github.com/Harshil-Jani/nekotrail/issues).
+Nekotrail is early, used daily on macOS, with experimental Linux builds. It's free and will stay free. Found something wrong? [Open an issue](https://github.com/Harshil-Jani/nekotrail/issues).

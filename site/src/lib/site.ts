@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const SITE = {
-  name: "nekotrail",
+  name: "Nekotrail",
   origin: "https://harshil-jani.github.io",
   repo: "https://github.com/Harshil-Jani/nekotrail",
   releases: "https://github.com/Harshil-Jani/nekotrail/releases/latest",

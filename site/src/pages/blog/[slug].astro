@@ -36,7 +36,7 @@ const minutes = Math.max(1, Math.round(words / 230));
       <Content />
     </article>
     <footer class="post-foot">
-      <Sponsor line="Useful? Keep nekotrail free." />
+      <Sponsor line="Useful? Keep Nekotrail free." />
       <nav class="post-nav" aria-label="More posts">
         {older && <a class="prev" href={href(`blog/${older.id}/`)}><span>Older</span>{older.data.title}</a>}
         {newer && <a class="next" href={href(`blog/${newer.id}/`)}><span>Newer</span>{newer.data.title}</a>}

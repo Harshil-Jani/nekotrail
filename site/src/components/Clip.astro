@@ -4,7 +4,7 @@
 // stays on its poster with controls, so nothing moves unless you ask.
 import { href } from "../lib/site";
 interface Props { name: string; label: string; title?: string; eager?: boolean }
-const { name, label, title = "nekotrail", eager = false } = Astro.props;
+const { name, label, title = "Nekotrail", eager = false } = Astro.props;
 ---
 <figure class="window" style="margin:0">
   <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>{title}</span></div>

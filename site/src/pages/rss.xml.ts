@@ -6,8 +6,8 @@ import { absolute } from "../lib/site";
 export async function GET(context: APIContext) {
   const posts = (await getCollection("blog", ({ data }) => !data.draft)).sort((a, b) => +b.data.date - +a.data.date);
   return rss({
-    title: "nekotrail blog",
-    description: "Notes on building nekotrail and on running coding agents in parallel.",
+    title: "Nekotrail blog",
+    description: "Notes on building Nekotrail and on running coding agents in parallel.",
     site: context.site ?? absolute(),
     items: posts.map((p) => ({
       title: p.data.title,

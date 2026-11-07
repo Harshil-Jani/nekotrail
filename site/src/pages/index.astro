@@ -17,21 +17,21 @@ const features = [
     title: "One task, one worktree.",
     text: "Each task gets its own branch, folder, chat, diff and terminal.",
     points: ["Agents never touch each other or your main checkout.", "10 ports per workspace, so no fights over 3000."],
-    clip: "parallel", label: "Switching between workspaces where agents work at the same time, then the board of every workspace", window: "nekotrail: Fix 502s after deploy",
+    clip: "parallel", label: "Switching between workspaces where agents work at the same time, then the board of every workspace", window: "Nekotrail: Fix 502s after deploy",
   },
   {
     id: "compare", star: "Biscuit", eyebrow: "Compare agents",
     title: "Race two agents.",
     text: "Same task, Claude and Codex side by side. Keep the better diff.",
     points: ["Compare files, turns, time and cost.", "Second opinion: the other agent reviews, read-only."],
-    clip: "compare", label: "The Compare agents sheet with a Claude and a Codex workspace side by side", window: "nekotrail: Compare agents",
+    clip: "compare", label: "The Compare agents sheet with a Claude and a Codex workspace side by side", window: "Nekotrail: Compare agents",
   },
   {
     id: "handoff", star: "Tofu", eyebrow: "Hand off",
     title: "Claude stops. Codex continues.",
     text: "Another agent picks up in the same branch, from a brief you read first.",
     points: ["Built from the chat on your Mac. No model writes it.", "Never gives the next agent more permissions."],
-    clip: "handoff", label: "Claude is out of usage; the hand-off sheet opens with the brief, and Codex carries on", window: "nekotrail: Hand off to another agent",
+    clip: "handoff", label: "Claude is out of usage; the hand-off sheet opens with the brief, and Codex carries on", window: "Nekotrail: Hand off to another agent",
     more: { label: "How the brief works", href: "blog/hand-off-claude-to-codex/" },
   },
   {
@@ -39,14 +39,14 @@ const features = [
     title: "Review it like a PR.",
     text: "Comment on any line. Send every comment back as one review.",
     points: ["Rewind your files to any message.", "Protected files the agent can't change."],
-    image: "changes", label: "The Changes tab with draft review comments on lines and the Send review button", window: "nekotrail: Changes",
+    image: "changes", label: "The Changes tab with draft review comments on lines and the Send review button", window: "Nekotrail: Changes",
   },
   {
     id: "conductor", star: "Pudding", eyebrow: "Moving from Conductor",
     title: "Leave Conductor, keep everything.",
     text: "Import your repos, workspaces and chats. Your worktrees move out of Conductor's folder.",
     points: ["Only git worktree move. Nothing is deleted.", "Each move is checked: branch, commit, uncommitted files."],
-    clip: "conductor", label: "The Conductor import sheet lists what moves, then shows every worktree moved and checked", window: "nekotrail: Bring your work over from Conductor",
+    clip: "conductor", label: "The Conductor import sheet lists what moves, then shows every worktree moved and checked", window: "Nekotrail: Bring your work over from Conductor",
     more: { label: "Read the move guide", href: "moving-from-conductor/" },
   },
   {
@@ -54,7 +54,7 @@ const features = [
     title: "Every workspace lights a star.",
     text: "Merged PRs make stars shine. Ship enough and a cat appears.",
     points: ["The sidebar cat shows real state: working, asleep, worried."],
-    clip: "sky", label: "The night sky view with The Loaf, The Pounce and The Kitten constellations", window: "nekotrail: Night sky",
+    clip: "sky", label: "The night sky view with The Loaf, The Pounce and The Kitten constellations", window: "Nekotrail: Night sky",
   },
 ];
 
@@ -84,7 +84,7 @@ const groups = [
       ["GitHub and Linear", "Start from an issue. Autopilot drives the PR to green."],
       ["Preview", "Your running app inside the workspace."],
       ["MCP and prompts", "Copy MCP servers between agents. Reuse saved prompts."],
-      ["VS Code and Cursor", "Send a selection to nekotrail as a task."],
+      ["VS Code and Cursor", "Send a selection to Nekotrail as a task."],
     ],
   },
 ];
@@ -100,7 +100,7 @@ const gallery = [
 const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400]];
 ---
 <Base
-  title="nekotrail: run Claude Code, Codex and 14 more coding agents in parallel"
+  title="Nekotrail: run Claude Code, Codex and 14 more coding agents in parallel"
   description="A free, open-source Mac app that runs coding agents in parallel git worktrees with your own subscriptions. A local Conductor alternative: one-click import, no account."
   path=""
   announce
@@ -121,7 +121,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
       <p class="fine">Free. MIT. No account. macOS 13+, <a href={href("download/#linux")}>Linux experimental</a>. v{version}</p>
     </div>
     <div class="wrap hero-shot">
-      <Clip name="parallel" eager label="nekotrail switching between workspaces where different agents work at the same time, then the board of every workspace" title="nekotrail" />
+      <Clip name="parallel" eager label="Nekotrail switching between workspaces where different agents work at the same time, then the board of every workspace" title="Nekotrail" />
     </div>
   </section>
 
@@ -196,7 +196,7 @@ const railStars = [[60, 20], [24, 96], [86, 168], [36, 244], [92, 320], [52, 400
         <h2 id="tour-title">A closer look</h2>
         <p>Sample data. Scroll sideways.</p>
       </div>
-      <div class="gallery" tabindex="0" role="region" aria-label="Screenshots of nekotrail">
+      <div class="gallery" tabindex="0" role="region" aria-label="Screenshots of Nekotrail">
         {gallery.map(([img, b, t]) => (
           <figure>
             <img src={href(`shots/${img}.webp`)} alt={`${b} ${t}`} width="1600" height="1000" loading="lazy" decoding="async" />
