@@ -68,7 +68,7 @@ Chose Import only? ⌘K keeps **Move workspaces out of Conductor's folder** unti
 
 ## Conductor Cloud
 
-nekotrail can't read Cloud. Before 20 November 2026, export Cloud workspaces to the Conductor Mac app, then import. A pushed branch also works: start a workspace from it or its PR with ⌘⇧N.
+nekotrail can't read Cloud. Before 20 November 2026, right-click each Cloud workspace in Conductor and choose **Transfer to local**, then import. A pushed branch also works: start a workspace from it or its PR with ⌘⇧N.
 
 ## Once you're here
 

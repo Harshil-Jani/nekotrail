@@ -67,7 +67,7 @@ The brief sits folded at the top of the new chat. Export session records the han
 ## When I use it
 
 - **Out of usage, two tests left.** Codex reads the failures from the brief and finishes.
-- **A loop.** When the queue or autopilot drives, nekotrail stops an agent after the same command fails four times, a file flips back and forth, or three turns change nothing. A fresh agent with the list of what failed often gets past it.
+- **A loop.** When the queue or autopilot drives, by default nekotrail stops an agent after the same command fails four times, a file flips back and forth, or three turns change nothing. A fresh agent with the list of what failed often gets past it.
 - **Review only?** Use Second opinion instead. It reads the branch without changing it.
 
 Picking the right agent up front still matters. Hand-off just means the choice is never final.
