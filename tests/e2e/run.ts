@@ -1,6 +1,7 @@
 // End-to-end user journeys against the real app. Run through scripts/e2e.sh, which builds it.
 //
 //   bun tests/e2e/run.ts <path to the debug nekotrail binary>
+//   E2E_KEEP_GOING=1: run every journey and list the ones that failed (to see what a change breaks)
 //
 // The app runs with no window (NEKOTRAIL_E2E=1), in a throwaway home folder, with fake `claude`,
 // `codex` and `gh` first on PATH (tests/e2e/bin). The journeys go through the app's `nekotrail`
@@ -36,6 +37,10 @@ const sock = join(home, "Library", "Application Support", "dev.nekotrail.app", "
 let app: ChildProcess | null = null;
 let step = "starting";
 let failed = false;
+let inJourney = false;
+const keepGoing = !!process.env.E2E_KEEP_GOING;
+const failures: string[] = [];
+class JourneyFailed extends Error {}
 const started = Date.now();
 
 function cleanup() {
@@ -46,6 +51,11 @@ function cleanup() {
 }
 
 function fail(msg: string): never {
+  if (keepGoing && inJourney) {
+    failures.push(step);
+    console.error(`  FAIL ${step}: ${msg}`);
+    throw new JourneyFailed(msg);
+  }
   failed = true;
   console.error(`\nFAIL in "${step}": ${msg}`);
   const tail = existsSync(appLog) ? readFileSync(appLog, "utf8").split("\n").slice(-30).join("\n") : "";
@@ -122,7 +132,15 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catc
 async function journey(name: string, body: () => Promise<void>) {
   step = name;
   const t = Date.now();
-  await body();
+  inJourney = true;
+  try {
+    await body();
+  } catch (e) {
+    if (!(e instanceof JourneyFailed)) throw e;
+    return;
+  } finally {
+    inJourney = false;
+  }
   console.log(`  ok  ${name} (${((Date.now() - t) / 1000).toFixed(1)} s)`);
 }
 
@@ -136,24 +154,30 @@ git(repo, "add", "-A");
 git(repo, "commit", "-qm", "first");
 
 const path = `${fakes}:/usr/bin:/bin:/usr/sbin:/sbin`;
-app = spawn(bin, [], {
-  env: {
-    ...gitEnv(), HOME: home, ZDOTDIR: home, SHELL: "/bin/zsh", PATH: path, NEKOTRAIL_E2E: "1", NEKOTRAIL_E2E_PATH: path,
-    FAKE_AGENT_LOG: agentLog, RUST_BACKTRACE: "1",
-  },
-  stdio: ["ignore", "pipe", "pipe"],
-});
 const out: string[] = [];
-const keep = (d: Buffer) => { out.push(d.toString()); writeFileSync(appLog, out.join("")); };
-app.stdout!.on("data", keep);
-app.stderr!.on("data", keep);
-app.on("exit", (code, sig) => { if (!failed && step !== "done") fail(`the app exited (code ${code}, signal ${sig})`); });
+let crashing = false;
+
+/** Start the app (again) on the same home folder, and wait until it answers. */
+async function launch() {
+  app = spawn(bin, [], {
+    env: {
+      ...gitEnv(), HOME: home, ZDOTDIR: home, SHELL: "/bin/zsh", PATH: path, NEKOTRAIL_E2E: "1", NEKOTRAIL_E2E_PATH: path,
+      FAKE_AGENT_LOG: agentLog, RUST_BACKTRACE: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const keep = (d: Buffer) => { out.push(d.toString()); writeFileSync(appLog, out.join("")); };
+  app.stdout!.on("data", keep);
+  app.stderr!.on("data", keep);
+  app.on("exit", (code, sig) => { if (!failed && !crashing && step !== "done") fail(`the app exited (code ${code}, signal ${sig})`); });
+  await until("the app's socket", async () => existsSync(sock) && (await call("ping", {}, 2000).catch(() => null)), 30_000);
+  const pong = await $("ping");
+  if (!String(pong.home).startsWith(home)) fail(`the app uses the real home folder (${pong.home}), not the test one`);
+}
 
 console.log(`e2e: ${bin}\n      data in ${root}`);
 step = "app starts and answers on its socket";
-await until("the app's socket", async () => existsSync(sock) && (await call("ping", {}, 2000).catch(() => null)), 30_000);
-const pong = await $("ping");
-if (!String(pong.home).startsWith(home)) fail(`the app uses the real home folder (${pong.home}), not the test one`);
+await launch();
 
 // ---------- journeys ----------
 
@@ -274,6 +298,56 @@ await journey("a Codex chat runs a turn to the end", async () => {
   if (!(await events(s)).some((e) => e.kind === "text" && e.text === "ok")) fail("no answer in the Codex chat");
 });
 
+await journey("two messages sent at the same moment run one after the other", async () => {
+  writeFileSync(agentLog, "");
+  await Promise.all([
+    $("send", { session_id: sid, text: "[slow] first of two" }),
+    $("send", { session_id: sid, text: "[slow] second of two" }),
+  ]);
+  await until("both turns to finish", async () => agentTurns().filter((l) => l.startsWith("end")).length >= 2 && !(await running(sid)), 25_000);
+  const kinds = agentTurns().map((l) => l.split(" ")[0]);
+  if (kinds.join(",") !== "start,end,start,end") fail(`two turns ran at once in one chat: ${agentTurns().join(" / ")}`);
+  const texts = await userTexts(sid);
+  if (!texts.includes("[slow] first of two") || !texts.includes("[slow] second of two")) fail(`chat shows ${JSON.stringify(texts.slice(-2))}`);
+});
+
+await journey("messages waiting when the app crashes come back in the message box", async () => {
+  const w2 = await $("create_workspace", { repo_id: (await $("snapshot")).repos[0].id });
+  const s2 = (await $("new_session", { workspace_id: w2.id, agent: "claude" })).id;
+  await $("send", { session_id: s2, text: "[hang] long job" });
+  await until("the turn to start", () => running(s2));
+  await $("send", { session_id: s2, text: "then tidy up" });
+  await $("send", { session_id: s2, text: "and write the notes" });
+  crashing = true;
+  app!.kill("SIGKILL");
+  await until("the app to be gone", async () => app!.exitCode !== null || app!.signalCode !== null, 5000);
+  crashing = false;
+  await launch();
+  const jobs = (await $("inbox")) as any[];
+  const draft = jobs.find((j) => j.kind === "draft" && j.workspace_id === w2.id);
+  if (!draft) fail(`nothing came back after the restart: ${JSON.stringify(jobs)}`);
+  if (draft.text !== "then tidy up\n\nand write the notes") fail(`the message box gets ${JSON.stringify(draft.text)}`);
+  if ((await $("queued", { session_id: s2 })).length !== 0) fail("they also wait in the queue, and would run twice");
+  spawnSync("pkill", ["-f", "long job"]);
+});
+
+await journey("a waiting message whose turn can't start is shown, never dropped", async () => {
+  const w3 = await $("create_workspace", { repo_id: (await $("snapshot")).repos[0].id });
+  const s3 = (await $("new_session", { workspace_id: w3.id, agent: "claude" })).id;
+  await $("send", { session_id: s3, text: "[slow] one" });
+  await until("the turn to start", () => running(s3));
+  await $("send", { session_id: s3, text: "two" });
+  await $("send", { session_id: s3, text: "three" });
+  // The workspace folder goes away mid-turn: the next turn can't start there.
+  rmSync(w3.path, { recursive: true, force: true });
+  await idle(s3, 20_000);
+  if ((await $("queued", { session_id: s3 })).length !== 0) fail("messages are stuck in the queue with nothing running");
+  const ev = await events(s3);
+  const said = JSON.stringify(ev);
+  if (!said.includes("three")) fail(`"three" is gone: ${said.slice(-600)}`);
+  if (!ev.some((e) => e.kind === "error")) fail("the chat doesn't say what went wrong");
+});
+
 await journey("the Queue screen loads", async () => {
   const v = await $("queue_view");
   if (!Array.isArray(v.tasks) || typeof v.max_total !== "number") fail(`odd queue data: ${JSON.stringify(v).slice(0, 200)}`);
@@ -285,6 +359,7 @@ await journey("archive the workspace", async () => {
   if ((snap.workspaces as any[]).some((w) => w.id === ws)) fail("the workspace is still listed");
 });
 
+if (failures.length) fail(`${failures.length} journeys failed: ${failures.join("; ")}`);
 step = "done";
 const log = out.join("");
 if (/panicked at/.test(log)) fail("the app panicked (see above)");

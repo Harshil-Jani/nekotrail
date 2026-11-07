@@ -59,6 +59,7 @@ pub fn handle(app: &AppHandle, line: &str) -> Res<Value> {
         "queue_view" => block_on(crate::queuerun::queue_view(app.clone())),
         "pty_open" => to_value(block_on(crate::pty_open(app.clone(), st(), s("id")?, s("cwd")?, 80, 24))),
         "pty_write" => to_value(block_on(crate::pty_write(st(), s("id")?, s("data")?))),
+        "inbox" => to_value(Ok(crate::remote_take(st()))),
         "archive" => to_value(block_on(crate::archive_workspace(st(), s("id")?, req["force"].as_bool().unwrap_or(false)))),
         "seen" => {
             let since = req["since"].as_u64().unwrap_or(0) as usize;

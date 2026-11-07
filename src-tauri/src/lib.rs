@@ -63,15 +63,20 @@ fn e<E: std::fmt::Display>(err: E) -> String {
 
 #[derive(Default)]
 struct Runs {
-    /// session id -> pid of the running agent turn
+    /// session id -> pid of the running agent turn. `RESERVED` (0) while a turn is starting
+    /// (checkpoint, checks) and has no process yet: the chat counts as busy from the first moment,
+    /// so two quick sends can't start two turns.
     running: HashMap<String, u32>,
-    /// session id -> prompts waiting for the current turn to finish
+    /// Chats where Stop was pressed while their turn was still starting: it doesn't start.
+    cancelled: std::collections::HashSet<String>,
+    /// session id -> prompts waiting for the current turn to finish. Saved in the settings table
+    /// on every change (`save_chat_queue`), so quitting or a crash doesn't lose them.
     queued: HashMap<String, VecDeque<String>>,
     /// session id -> context the agent must hear before the next prompt (e.g. "files were rewound")
     notes: HashMap<String, String>,
     /// stdin of interactive turns ("ask before changes"), for answering permission requests.
-    /// Each interactive turn's stdin. Written outside the runs lock (`write_stdin`); dropping the
-    /// entry closes it once no write is under way.
+    /// Written outside the runs lock (`write_stdin`); dropping the entry closes it once no write
+    /// is under way.
     stdins: HashMap<String, Arc<Mutex<std::process::ChildStdin>>>,
     /// Open permission requests: request id -> (session id, tool input, CLI suggestions).
     approvals: HashMap<String, (String, Value, Value)>,
@@ -98,9 +103,96 @@ fn write_stdin(runs: &Arc<Ordered<Runs>>, id: &str, lines: &[String]) -> bool {
     lines.iter().all(|l| stdin.write_all(l.as_bytes()).is_ok()) && stdin.flush().is_ok()
 }
 
+/// `Runs::running` for a turn that is starting and has no process yet.
+const RESERVED: u32 = 0;
+/// The settings key the chats' waiting messages are kept under.
+const CHAT_QUEUE: &str = "chat_queue";
+
+/// Save every chat's waiting messages. Copied under the runs lock, written after it.
+fn save_chat_queue(st: &AppState) {
+    static SAVING: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = SAVING.lock().unwrap_or_else(|p| p.into_inner());
+    let all: HashMap<String, Vec<String>> = st.runs.lock().unwrap().queued.iter()
+        .filter(|(_, q)| !q.is_empty())
+        .map(|(k, q)| (k.clone(), q.iter().cloned().collect()))
+        .collect();
+    let _ = if all.is_empty() { st.db().delete_setting(CHAT_QUEUE) } else { st.db().set_setting(CHAT_QUEUE, &json!(all).to_string()) };
+}
+
+/// Messages that were waiting when nekotrail last closed go back in their chat's message box
+/// (through the window's inbox), to send again or drop. They don't start by themselves: the turn
+/// they were waiting for was cut short.
+fn restore_chat_queue(store: &Store, inbox: &remote::Inbox) {
+    let Some(raw) = store.setting(CHAT_QUEUE).ok().flatten() else { return };
+    let saved: HashMap<String, Vec<String>> = serde_json::from_str(&raw).unwrap_or_default();
+    for (session, texts) in saved {
+        if let Ok(s) = store.session(&session)
+            && !texts.is_empty() {
+                inbox.push(remote::Job::Draft {
+                    workspace_id: s.workspace_id,
+                    text: texts.join("\n\n"),
+                    note: Some(format!("{} waiting when NekoTrail closed {} back in the message box. Send when ready.", plural(texts.len(), "message", "messages"), if texts.len() == 1 { "is" } else { "are" })),
+                });
+            }
+    }
+    let _ = store.delete_setting(CHAT_QUEUE);
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// A chat's turn from the moment it is claimed until its agent process runs. Dropped without
+/// `started()` (an error, the agent not installed, Stop while starting), it lets the chat go and
+/// says in the chat which waiting messages didn't run, so nothing is dropped without a word.
+struct Starting<'a> {
+    app: AppHandle,
+    st: &'a AppState,
+    id: String,
+    done: bool,
+}
+
+impl Starting<'_> {
+    fn started(mut self) {
+        self.done = true;
+    }
+}
+
+impl Drop for Starting<'_> {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        let stuck: Vec<String> = {
+            let mut runs = self.st.runs.lock().unwrap();
+            if runs.running.get(&self.id) == Some(&RESERVED) {
+                runs.running.remove(&self.id);
+            }
+            runs.cancelled.remove(&self.id);
+            runs.queued.remove(&self.id).map(Vec::from).unwrap_or_default()
+        };
+        if !stuck.is_empty() {
+            save_chat_queue(self.st);
+            let ev = json!({"kind": "error", "text": format!(
+                "The turn didn't start, so {} waiting after it didn't run either:\n\n{}",
+                plural(stuck.len(), "message", "messages"),
+                stuck.join("\n\n")
+            )});
+            let _ = self.st.db().append_event(&self.id, &ev);
+            emit_event(&self.app, &self.id, &ev);
+            let _ = self.app.emit("queue", json!({"session_id": self.id, "queued": []}));
+        }
+        let _ = self.app.emit("running", json!({"session_id": self.id, "running": false}));
+    }
+}
+
 /// Send `signal` to an agent turn's whole process group: the agent and every tool, shell and
 /// server it started (agents start in a group of their own, see `agent::command`).
 fn signal_group(pid: u32, signal: &str) {
+    // 0 is a turn still starting; `kill -- -0` would signal nekotrail's own group.
+    if pid == RESERVED {
+        return;
+    }
     let _ = Command::new("kill").args([signal, "--", &format!("-{pid}")]).stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
 
@@ -3494,6 +3586,7 @@ async fn queued(st: State<'_, AppState>, id: String) -> Res<Vec<String>> {
 #[tauri::command]
 async fn clear_queue(app: AppHandle, st: State<'_, AppState>, id: String) -> Res<()> {
     st.runs.lock().unwrap().queued.remove(&id);
+    save_chat_queue(&st);
     let _ = app.emit("queue", json!({"session_id": id, "queued": []}));
     Ok(())
 }
@@ -3530,12 +3623,15 @@ async fn answer_approval(app: AppHandle, st: State<'_, AppState>, request_id: St
 /// Drop one queued message (by position). Returns the remaining queue.
 #[tauri::command]
 async fn remove_queued(app: AppHandle, st: State<'_, AppState>, id: String, index: usize) -> Res<Vec<String>> {
-    let mut runs = st.runs.lock().unwrap();
-    let q = runs.queued.entry(id.clone()).or_default();
-    if index < q.len() {
-        q.remove(index);
-    }
-    let rest: Vec<String> = q.iter().cloned().collect();
+    let rest: Vec<String> = {
+        let mut runs = st.runs.lock().unwrap();
+        let q = runs.queued.entry(id.clone()).or_default();
+        if index < q.len() {
+            q.remove(index);
+        }
+        q.iter().cloned().collect()
+    };
+    save_chat_queue(&st);
     let _ = app.emit("queue", json!({"session_id": id, "queued": rest}));
     Ok(rest)
 }
@@ -3711,13 +3807,17 @@ async fn send(app: AppHandle, st: State<'_, AppState>, id: String, text: String)
 /// While the chat's agent works, `text` waits in its queue (None). Otherwise it comes back, to
 /// start a turn with.
 fn queue_if_busy(app: &AppHandle, st: &AppState, id: &str, text: String) -> Option<String> {
-    let mut runs = st.runs.lock().unwrap();
-    if !runs.running.contains_key(id) {
-        return Some(text);
-    }
-    let q = runs.queued.entry(id.to_string()).or_default();
-    q.push_back(text);
-    let _ = app.emit("queue", json!({"session_id": id, "queued": q}));
+    let queued: Vec<String> = {
+        let mut runs = st.runs.lock().unwrap();
+        if !runs.running.contains_key(id) {
+            return Some(text);
+        }
+        let q = runs.queued.entry(id.to_string()).or_default();
+        q.push_back(text);
+        q.iter().cloned().collect()
+    };
+    save_chat_queue(st);
+    let _ = app.emit("queue", json!({"session_id": id, "queued": queued}));
     None
 }
 
@@ -3728,6 +3828,11 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
         (runs.running.get(&id).copied(), runs.parsers.get(&id).cloned())
     };
     let Some(pid) = pid else { return Ok(()) };
+    if pid == RESERVED {
+        // Still starting (checkpoint, checks): it won't start.
+        st.runs.lock().unwrap().cancelled.insert(id);
+        return Ok(());
+    }
     // ACP agents are asked to cancel (and given a moment); everything else gets SIGINT, the way
     // Ctrl-C would stop it. Then TERM and KILL to the whole group, in case it doesn't stop.
     let cancel = parser.and_then(|p| p.lock().unwrap().cancel());
@@ -4070,6 +4175,32 @@ fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()
 /// `start_turn`, saying whether the agent started. False: it couldn't (not installed, or the
 /// repo's agent settings wait for your OK), and the chat says why.
 fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -> Res<bool> {
+    start_turn_claimed(app, st, id, text, false)
+}
+
+/// `start_turn_spawned`. `claimed`: the caller already holds the chat (`RESERVED` in
+/// `running`), as the end of a turn does for the next queued message. Otherwise the chat is
+/// claimed here, in one step with the check, and a chat that is busy queues `text` instead.
+fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, claimed: bool) -> Res<bool> {
+    if !claimed {
+        let queued: Option<Vec<String>> = {
+            let mut runs = st.runs.lock().unwrap();
+            if runs.running.contains_key(&id) {
+                let q = runs.queued.entry(id.clone()).or_default();
+                q.push_back(text.clone());
+                Some(q.iter().cloned().collect())
+            } else {
+                runs.running.insert(id.clone(), RESERVED);
+                None
+            }
+        };
+        if let Some(q) = queued {
+            save_chat_queue(st);
+            let _ = app.emit("queue", json!({"session_id": id, "queued": q}));
+            return Ok(true);
+        }
+    }
+    let starting = Starting { app: app.clone(), st, id: id.clone(), done: false };
     let (session, ws, repo) = {
         let db = st.db();
         let s = db.session(&id).map_err(e)?;
@@ -4226,6 +4357,12 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
     let mut cmd = agent::command(&spec);
     let parser: SharedParser = Arc::new(Mutex::new(agent::parser(&spec)));
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if st.runs.lock().unwrap().cancelled.remove(&id) {
+        let ev = json!({"kind": "done", "is_error": true, "stopped": true});
+        st.db().append_event(&id, &ev).map_err(e)?;
+        emit_event(&app, &id, &ev);
+        return Ok(false);
+    }
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(err) => {
@@ -4240,6 +4377,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         runs.running.insert(id.clone(), child.id());
         runs.parsers.insert(id.clone(), parser.clone());
     }
+    starting.started();
     if harness.interactive(permission_mode)
         && let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
@@ -4505,12 +4643,23 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         mark_changed(&st, &workspace_id);
         let next = {
             let mut runs = st.runs.lock().unwrap();
-            runs.running.remove(&id);
             runs.stdins.remove(&id);
             runs.parsers.remove(&id);
             runs.approvals.retain(|_, (sid, _, _)| sid != &id);
+            runs.cancelled.remove(&id);
             let next = runs.queued.get_mut(&id).and_then(|q| q.pop_front());
+            // The next message keeps the chat claimed, so a send in between queues behind it
+            // instead of jumping ahead.
+            if next.is_some() {
+                runs.running.insert(id.clone(), RESERVED);
+            } else {
+                runs.running.remove(&id);
+            }
             let rest: Vec<String> = runs.queued.get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default();
+            drop(runs);
+            if next.is_some() {
+                save_chat_queue(&st);
+            }
             let _ = app.emit("queue", json!({"session_id": id, "queued": rest}));
             next
         };
@@ -4548,7 +4697,12 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         }
         let more = next.is_some();
         if let Some(text) = next {
-            let _ = start_turn(app.clone(), &st, id.clone(), text);
+            // It never vanishes: if it can't start, the chat shows it with the reason.
+            if let Err(why) = start_turn_claimed(app.clone(), &st, id.clone(), text.clone(), true) {
+                let ev = json!({"kind": "error", "text": format!("This waiting message didn't run: {why}\n\n{text}")});
+                let _ = st.db().append_event(&id, &ev);
+                emit_event(&app, &id, &ev);
+            }
         } else if run_checks {
             let _ = start_checks(&app, &st, &workspace_id, None, Some(id.clone()));
         }
@@ -4846,7 +5000,7 @@ fn workspace_roots(st: &AppState) -> HashMap<String, Vec<u32>> {
             roots.entry(ws.to_string()).or_default().push(pid);
         }
     }
-    let running: Vec<(String, u32)> = st.runs.lock().unwrap().running.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    let running: Vec<(String, u32)> = st.runs.lock().unwrap().running.iter().filter(|(_, v)| **v != RESERVED).map(|(k, v)| (k.clone(), *v)).collect();
     let db = st.db();
     for (session, pid) in running {
         if let Ok(s) = db.session(&session) {
@@ -4951,9 +5105,11 @@ async fn busy_work(st: State<'_, AppState>) -> Res<Value> {
 }
 
 /// Stop every agent turn and terminal, right before the app relaunches into an update.
-/// Queued prompts are dropped so no new turn starts in between (they live in memory only).
+/// Queued prompts leave memory so no new turn starts in between; they stay saved for after.
 #[tauri::command]
 async fn stop_all_work(st: State<'_, AppState>) -> Res<()> {
+    // Waiting messages stay saved (`save_chat_queue`) and come back in their message boxes after
+    // the relaunch; clearing them here only keeps a new turn from starting in between.
     let pids: Vec<u32> = {
         let mut runs = st.runs.lock().unwrap();
         runs.queued.clear();
@@ -5089,6 +5245,9 @@ pub fn run() {
     let mut task_queue = queue::Queue::from_json(store.setting(queue::SETTING).ok().flatten().as_deref());
     task_queue.after_restart();
     let _ = store.set_setting(queue::SETTING, &task_queue.to_json());
+    // Chat messages that were waiting at quit go back in their message boxes.
+    let inbox = remote::Inbox::default();
+    restore_chat_queue(&store, &inbox);
 
     // Network and repo calls run beside the window instead of before it (`gh api user` alone is ~0.5s, more offline).
     let branch_prefix: Arc<OnceLock<String>> = Default::default();
@@ -5111,7 +5270,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(AppState { store: Ordered::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox: Default::default(), port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Ordered::new(task_queue) })
+        .manage(AppState { store: Ordered::new(store), runs: Default::default(), ptys: Default::default(), home, branch_prefix, github: Default::default(), repo_meta: Default::default(), lines: Default::default(), prs: Default::default(), pr_wake: Default::default(), inbox, port_failures: Default::default(), checks: checks::Checks::new(data.join("checks")), queue: Ordered::new(task_queue) })
         .setup(move |app| {
             // The window is made here rather than from the config at launch, so an e2e run can go
             // without one: nothing appears on screen and nothing in the Dock.

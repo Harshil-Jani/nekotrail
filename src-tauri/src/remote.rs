@@ -362,7 +362,8 @@ pub enum Job {
     /// `from` is `link` or `editor`, so the question says who asked.
     Confirm { token: String, from: String, repo: String, repo_path: String, adds_repo: bool, prompt: String, agent: String, base: Option<String>, plan: bool },
     /// Your editor sent text for this workspace's message box. Show it there; don't send it.
-    Draft { workspace_id: String, text: String },
+    /// `note`: what to tell you instead of the editor's "your selection" line.
+    Draft { workspace_id: String, text: String, note: Option<String> },
     /// `nekotrail handoff`: open the hand-off of this chat to `agent`, with its brief to read first.
     Handoff { workspace_id: String, session_id: String, agent: String, model: Option<String> },
     /// A link nekotrail couldn't use.
@@ -766,7 +767,7 @@ mod server {
             return Err(format!("That's too long for a message (over {MAX_DRAFT} characters)."));
         }
         let w = find_active(st, workspace)?;
-        Ok(Job::Draft { workspace_id: w.id, text })
+        Ok(Job::Draft { workspace_id: w.id, text, note: None })
     }
 
     /// A task proposed from your editor for the repo at `cwd`. Like a link, it only parks the task
@@ -1312,7 +1313,7 @@ mod tests {
             target_branch: "main".into(), state: "active".into(), pinned: false, unread: false, notes: String::new(),
             imported_from: None, created_at: String::new(), title: String::new(), status: String::new(), pair_id: String::new(), section_id: String::new(), parent_id: String::new(), title_source: String::new(), review_pr: 0, group_id: String::new(),
         }).unwrap();
-        assert_eq!(draft(&st, "w1", "see a.rs:3".into()), Ok(Job::Draft { workspace_id: "w1".into(), text: "see a.rs:3".into() }));
+        assert_eq!(draft(&st, "w1", "see a.rs:3".into()), Ok(Job::Draft { workspace_id: "w1".into(), text: "see a.rs:3".into(), note: None }));
         assert_eq!(draft(&st, "me/mochi", "x".into()).map(|j| matches!(j, Job::Draft { .. })), Ok(true));
         assert!(draft(&st, "w1", " \n".into()).unwrap_err().contains("nothing to send"));
         assert!(draft(&st, "w1", "x".repeat(MAX_DRAFT + 1)).unwrap_err().contains("too long"));
