@@ -3991,6 +3991,54 @@ fn maybe_name_branch(app: &AppHandle, st: &AppState, ws: Workspace, text: &str) 
     Workspace { branch: name, ..ws }
 }
 
+/// How long a turn waits for the agent to exit after its final answer (Claude's `result`), and
+/// for stdout to close after the agent exited. Then the turn is over either way.
+const AFTER_ANSWER: std::time::Duration = std::time::Duration::from_secs(5);
+const AFTER_EXIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// When a turn's process is done, even if its stdout never closes.
+#[derive(Default)]
+struct TurnEnd {
+    answered_at: Option<std::time::Instant>,
+    exited: Option<(std::time::Instant, std::process::ExitStatus)>,
+}
+
+impl TurnEnd {
+    /// Called while no output arrives. True once the turn is over: the agent answered and
+    /// `AFTER_ANSWER` passed, or it exited `AFTER_EXIT` ago.
+    fn over(&mut self, child: &mut std::process::Child, answered: bool) -> bool {
+        if answered && self.answered_at.is_none() {
+            self.answered_at = Some(std::time::Instant::now());
+        }
+        if self.exited.is_none()
+            && let Ok(Some(status)) = child.try_wait() {
+                self.exited = Some((std::time::Instant::now(), status));
+            }
+        self.answered_at.is_some_and(|t| t.elapsed() >= AFTER_ANSWER) || self.exited.is_some_and(|(t, _)| t.elapsed() >= AFTER_EXIT)
+    }
+
+    /// The exit status, stopping an agent that is still running after the turn ended
+    /// (SIGTERM, then SIGKILL after 3 s).
+    fn reap(&mut self, child: &mut std::process::Child) -> std::io::Result<std::process::ExitStatus> {
+        if let Some((_, status)) = self.exited {
+            return Ok(status);
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Ok(status);
+        }
+        let _ = Command::new("kill").args(["-TERM", &child.id().to_string()]).status();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < until {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Ok(status);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let _ = child.kill();
+        child.wait()
+    }
+}
+
 fn start_turn(app: AppHandle, st: &AppState, id: String, text: String) -> Res<()> {
     start_turn_spawned(app, st, id, text).map(|_| ())
 }
@@ -4183,7 +4231,12 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
     // Keep the Mac awake while the agent works (ends by itself when the agent exits).
     #[cfg(target_os = "macos")]
     if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
-        let _ = Command::new("caffeinate").args(["-i", "-w", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+        // Waited on, so it doesn't linger as a zombie once the agent exits.
+        if let Ok(mut c) = Command::new("caffeinate").args(["-i", "-w", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            std::thread::spawn(move || {
+                let _ = c.wait();
+            });
+        }
     }
     // Linux: the same through systemd-inhibit, where there is one.
     #[cfg(not(target_os = "macos"))]
@@ -4227,9 +4280,27 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
         // What the agent said when it hit its usage limit, for the reset time in it (the queue).
         let mut limit_text: Option<String> = None;
         let mut user_stopped = false;
-        // The `None` after the last line lets the parser hand over anything it still holds.
-        let lines = BufReader::new(stdout).lines().map_while(Result::ok).map(Some).chain(std::iter::once(None));
-        for line in lines {
+        // stdout is read on its own thread, so the turn can end without its EOF: when the agent
+        // has answered and stays alive (stream-json input keeps Claude waiting), or exits while
+        // something it started still holds the pipe open.
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut end_of = TurnEnd::default();
+        loop {
+            // `None` ends the turn, and lets the parser hand over anything it still holds.
+            let line = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                Ok(l) => Some(l),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => None,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if end_of.over(&mut child, saw_done) { None } else { continue }
+                }
+            };
             let end = line.is_none();
             let line = line.unwrap_or_default();
             // Interactive turns: permission requests and the end of the turn arrive here first.
@@ -4337,8 +4408,11 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
                 let _ = st.db().append_event(&id, &ev);
                 emit_event(&app, &id, &ev);
             }
+            if end {
+                break;
+            }
         }
-        let status = child.wait();
+        let status = end_of.reap(&mut child);
         if !saw_done {
             let stderr = err_buf.lock().unwrap().trim().to_string();
             let stopped = harness.stopped_by_user(status.as_ref().ok(), &stderr);
