@@ -3,6 +3,19 @@
 Every release of nekotrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Moving from Conductor**
+- Importing from Conductor now opens a sheet that leads with keeping your work safe: your worktrees live inside Conductor's folder, which Conductor says it deletes when its app shuts down, so nekotrail moves them into its own folder. **Move into nekotrail** is picked for you; Import only is still there.
+- The sheet shows exactly what moves before anything happens: each repo and worktree, its branch, its size and how many uncommitted files it has.
+- Moving runs only `git worktree move`. Nothing in Conductor's folder is ever deleted, and a worktree that can't move stays where it was.
+- After each move nekotrail checks that `git worktree list` shows the new folder, the branch and its head commit are unchanged, and the uncommitted files are the same files with the same content.
+- Results are per worktree: Checked, Moved with a difference to look at, or Not moved with the reason in plain words (a locked worktree, submodules, another disk). Try again retries only the ones that didn't move.
+- Workspaces imported earlier and left in Conductor's folder get a one-time notice offering the move, on the welcome screen and above the chat. Dismiss it and ⌘K still has the move.
+- First launch and the welcome card say the same thing when they find Conductor's data, and open the sheet.
+- The sheet notes that nekotrail can't read Conductor Cloud, which goes read-only on 13 November and shuts down on 20 November 2026: move Cloud workspaces to the Conductor app on your Mac first, then import.
+- New guide, [Moving from Conductor](docs/MOVING-FROM-CONDUCTOR.md): what imports, what doesn't, Conductor Cloud, the move, and Conductor's concepts and shortcuts in nekotrail. The README links it, lists all sixteen agents, Linear and hand-off, and gives the `xattr` install step until the app is notarized (the release notes say the same).
+
 ## 0.20.0 (2026-11-07)
 
 **Hand off to another agent**
