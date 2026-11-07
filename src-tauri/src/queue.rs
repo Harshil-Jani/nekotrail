@@ -391,12 +391,12 @@ impl Queue {
                     t.state = State::Queued;
                     t.resume = t.workspace_id.is_some();
                     t.step.clear();
-                    t.note = "nekotrail closed while this ran. It picks up where it was.".into();
+                    t.note = "NekoTrail closed while this ran. It picks up where it was.".into();
                 }
                 State::Then if t.step != "autopilot" => {
                     let what = match t.step.as_str() { "checks" => "the checks", _ => "opening the PR" };
                     t.state = State::NeedsYou;
-                    t.note = format!("nekotrail closed before {what} finished.");
+                    t.note = format!("NekoTrail closed before {what} finished.");
                     t.step.clear();
                 }
                 _ => {}

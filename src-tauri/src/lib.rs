@@ -1161,7 +1161,7 @@ async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, igno
         if let Some(i) = ignored.as_deref().filter(|i| !i.is_empty())
             && (!safe::object_id(i) || !guard::is_snapshot(root, i)) {
                 release();
-                return Err("The saved copies from before this turn are gone, so nekotrail can't put these back. Use Rewind instead.".into());
+                return Err("The saved copies from before this turn are gone, so NekoTrail can't put these back. Use Rewind instead.".into());
             }
         let repo = match st.db().repo(&ws.repo_id) {
             Ok(r) => r,
@@ -1174,14 +1174,14 @@ async fn put_back_protected(app: AppHandle, id: String, checkpoint: String, igno
         release();
         let done = done.map_err(e)?;
         if done.is_empty() {
-            return Err("nekotrail couldn't tell what these files looked like before the turn, so it left them alone.".into());
+            return Err("NekoTrail couldn't tell what these files looked like before the turn, so it left them alone.".into());
         }
         let ev = json!({"kind": "guard_restored", "files": done, "checkpoint": checkpoint});
         st.db().append_event(&id, &ev).map_err(e)?;
         emit_event(&app, &id, &ev);
         let _ = app.emit("workspaces-changed", json!({}));
         let note = format!(
-            "[Note from nekotrail: the user put back protected files you changed: {}. They are protected for this repo. Don't change them again; ask the user if you need to.]",
+            "[Note from NekoTrail: the user put back protected files you changed: {}. They are protected for this repo. Don't change them again; ask the user if you need to.]",
             done.join(", ")
         );
         let mut runs = st.runs.lock().unwrap();
@@ -3086,7 +3086,7 @@ async fn split_plan(app: AppHandle, id: String) -> Res<Value> {
         match side_turn(st, &ws, &stage::split_prompt(&hunks), SIDE_TURN_SECS) {
             Ok(reply) => match stage::parse_plan(&reply, hunks.len()) {
                 Some(groups) => Ok(json!({"hunks": hunks, "groups": groups, "source": "agent", "note": null})),
-                None => Ok(local("The agent's answer wasn't a plan nekotrail could read, so these commits are grouped by folder.")),
+                None => Ok(local("The agent's answer wasn't a plan NekoTrail could read, so these commits are grouped by folder.")),
             },
             Err(why) => Ok(local(&format!("The agent couldn't answer ({}), so these commits are grouped by folder.", why.lines().next().unwrap_or("").trim_end_matches('.')))),
         }
@@ -3799,7 +3799,7 @@ fn rewind_to(app: &AppHandle, st: &AppState, id: String, checkpoint: String) -> 
     let _ = app.emit("workspaces-changed", json!({}));
     st.runs.lock().unwrap().notes.insert(
         id,
-        "[Note from nekotrail: the user rewound the workspace files to an earlier point in this chat. \
+        "[Note from NekoTrail: the user rewound the workspace files to an earlier point in this chat. \
          Edits you made after that point no longer exist. Re-read files before changing them.]".into(),
     );
     Ok(())
@@ -4984,8 +4984,24 @@ pub fn run() {
             alerts::alerts_view, alerts::alerts_add, alerts::alerts_save, alerts::alerts_set_secret, alerts::alerts_remove, alerts::alerts_test,
             linear::linear_status, linear::linear_connect, linear::linear_test, linear::linear_disconnect, linear::linear_set_move, linear::linear_teams, linear::linear_issues
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running nekotrail");
+        .run(context())
+        .expect("error while running NekoTrail");
+}
+
+/// The brand is written NekoTrail, but `productName` stays "nekotrail": the bundler kebab-cases it
+/// into the Debian package name (so "NekoTrail" would ship as a new package, neko-trail, that
+/// clashes with installed ones) and uses it for the .deb, AppImage, DMG and .app file names. On
+/// macOS the default menu's About panel takes its name from here, so it gets the brand (the menu
+/// bar and Dock read CFBundleName and CFBundleDisplayName, set in tauri.conf.json and Info.plist).
+/// Linux keeps the product name, since the badge count looks up `<name>.desktop`.
+fn context() -> tauri::Context<tauri::Wry> {
+    #[allow(unused_mut)]
+    let mut ctx = tauri::generate_context!();
+    #[cfg(target_os = "macos")]
+    {
+        ctx.package_info_mut().name = "NekoTrail".into();
+    }
+    ctx
 }
 
 #[cfg(test)]

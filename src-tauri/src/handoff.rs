@@ -336,8 +336,8 @@ pub fn build(input: &Input) -> Brief {
 fn intro(from: &str, reason: Reason, stop: &str, repos: usize) -> String {
     let why = match reason {
         Reason::Limit => format!("{from} ran out of usage partway through this task, so you're taking over."),
-        Reason::Loop if !stop.trim().is_empty() => format!("nekotrail stopped {from} because it was going in circles ({}), so you're taking over.", one_line(stop.strip_suffix('.').filter(|x| !x.ends_with('.')).unwrap_or(stop), 200)),
-        Reason::Loop => format!("nekotrail stopped {from} because it was going in circles, so you're taking over."),
+        Reason::Loop if !stop.trim().is_empty() => format!("NekoTrail stopped {from} because it was going in circles ({}), so you're taking over.", one_line(stop.strip_suffix('.').filter(|x| !x.ends_with('.')).unwrap_or(stop), 200)),
+        Reason::Loop => format!("NekoTrail stopped {from} because it was going in circles, so you're taking over."),
         Reason::Budget => format!("{from} stopped at a spend cap partway through this task, so you're taking over."),
         Reason::Asked => format!("You're taking over this task from {from}, partway through."),
     };
@@ -748,7 +748,7 @@ mod tests {
         let lp = json!({"kind": "stop", "reason": "loop", "text": "The same command failed 4 times in a row: go test ./..."});
         let b = brief(&[user("a"), lp], &[], &[]);
         assert_eq!(b.reason, Reason::Loop);
-        assert!(b.text.starts_with("nekotrail stopped Claude because it was going in circles (The same command failed 4 times in a row: go test ./...), so you're taking over."), "{}", b.text);
+        assert!(b.text.starts_with("NekoTrail stopped Claude because it was going in circles (The same command failed 4 times in a row: go test ./...), so you're taking over."), "{}", b.text);
         assert_eq!(brief(&[user("a"), json!({"kind": "stop", "reason": "budget", "text": "cap"})], &[], &[]).reason, Reason::Budget);
         // An install or login problem isn't a reason to hand off.
         assert_eq!(brief(&[user("a"), json!({"kind": "error", "text": "x", "fix": "login"})], &[], &[]).reason, Reason::Asked);

@@ -131,7 +131,7 @@ pub fn keep_awake_while(pid: u32) {
     let Some(inhibit) = which(&["systemd-inhibit"]) else { return };
     let Some(tail) = which(&["tail"]) else { return };
     let mut c = Command::new(inhibit);
-    c.args(["--what=idle", "--who=nekotrail", "--why=An agent is working", "--mode=block"])
+    c.args(["--what=idle", "--who=NekoTrail", "--why=An agent is working", "--mode=block"])
         .arg(tail)
         // GNU tail exits when that process does, which releases the lock.
         .args(["--pid", &pid.to_string(), "-f", "/dev/null"])

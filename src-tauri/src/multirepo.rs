@@ -195,7 +195,7 @@ pub fn create_all(gh: &dyn Gh, members: &[Member], title: &str, bodies: &[String
             let open: Value = serde_json::from_str(&open).map_err(|e| format!("gh answered something unexpected: {e}"))?;
             if let Some(pr) = open.get(0) {
                 let url = pr["url"].as_str().unwrap_or("").to_string();
-                let (repo, number) = parse_pr_url(&url).ok_or_else(|| format!("gh gave a PR link nekotrail can't read: {url}"))?;
+                let (repo, number) = parse_pr_url(&url).ok_or_else(|| format!("gh gave a PR link NekoTrail can't read: {url}"))?;
                 return Ok((PrRef { workspace_id: m.workspace_id.clone(), repo, number, url }, pr["body"].as_str().unwrap_or("").to_string()));
             }
             let body = bodies.get(i).cloned().unwrap_or_default();

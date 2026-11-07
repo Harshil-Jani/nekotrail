@@ -228,7 +228,7 @@ pub fn free(port: u16, roots: impl Fn() -> Vec<u32>) -> Result<usize> {
     let first = owned(&now);
     if first.is_empty() {
         return Err(anyhow!(if now.iter().any(|l| l.port == port) {
-            "This workspace didn't start what is listening on that port, so nekotrail won't stop it. Quit it where it runs."
+            "This workspace didn't start what is listening on that port, so NekoTrail won't stop it. Quit it where it runs."
         } else {
             "Nothing is listening on that port any more."
         }));
@@ -511,7 +511,7 @@ pub fn report(ws: &[WsInfo], listeners: &[Listener], owner: impl Fn(u32) -> Opti
                         Some(l) => match owners.get(&l.pid).cloned().flatten() {
                             Some((id, _)) if id == w.id => format!("{} from this workspace", l.command),
                             Some((id, _)) => format!("{} in {}", l.command, label(&id)),
-                            None => format!("{} (pid {}), which nekotrail didn't start", l.command, l.pid),
+                            None => format!("{} (pid {}), which NekoTrail didn't start", l.command, l.pid),
                         },
                         None => "another app".into(),
                     };

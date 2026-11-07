@@ -418,7 +418,7 @@ pub fn from_json(flavor: AgentId, v: &Value) -> Result<Def, String> {
             Some("sse") => Transport::Sse,
             Some("ws") => Transport::Ws,
             None => return Err("It has a url but no type, so Claude Code skips it.".into()),
-            Some(t) => return Err(format!("Its type {t} isn't one nekotrail knows.")),
+            Some(t) => return Err(format!("Its type {t} isn't one NekoTrail knows.")),
         };
     }
     for (k, val) in o.get("env").and_then(Value::as_object).into_iter().flatten() {
@@ -1107,9 +1107,9 @@ pub fn json_add_at(text: &str, key: &str, name: &str, val: &Value) -> Result<Str
         return Ok(format!("{}\n", pretty(&json!({ key: { name: val } }), "  ", "")));
     }
     let blank = blank_jsonc(text);
-    let before: Value = serde_json::from_str(&blank).map_err(|e| format!("It isn't valid JSON ({e}), so nekotrail won't change it."))?;
-    let root = before.as_object().ok_or("It isn't a JSON object, so nekotrail won't change it.")?;
-    let ((rs, re), servers) = root_spans(&blank, key).ok_or("nekotrail couldn't find its way around this file, so it won't change it.")?;
+    let before: Value = serde_json::from_str(&blank).map_err(|e| format!("It isn't valid JSON ({e}), so NekoTrail won't change it."))?;
+    let root = before.as_object().ok_or("It isn't a JSON object, so NekoTrail won't change it.")?;
+    let ((rs, re), servers) = root_spans(&blank, key).ok_or("NekoTrail couldn't find its way around this file, so it won't change it.")?;
     let first = skip_ws(blank.as_bytes(), rs + 1);
     let unit = match line_indent(text, first) {
         u if u.is_empty() || !text[rs..first].contains('\n') => "  ".to_string(),
@@ -1118,15 +1118,15 @@ pub fn json_add_at(text: &str, key: &str, name: &str, val: &Value) -> Result<Str
     let new = match (root.get(key), servers) {
         (Some(Value::Object(m)), Some(span)) => {
             if m.contains_key(name) {
-                return Err(format!("There's already a server called {name} there. nekotrail won't replace it."));
+                return Err(format!("There's already a server called {name} there. NekoTrail won't replace it."));
             }
             insert_member(text, &blank, span, name, val, &unit)
         }
-        (Some(_), _) => return Err(format!("Its {key} isn't a list of servers, so nekotrail won't change it.")),
+        (Some(_), _) => return Err(format!("Its {key} isn't a list of servers, so NekoTrail won't change it.")),
         (None, _) => insert_member(text, &blank, (rs, re), key, &json!({ name: val }), &unit),
     };
     // Parse the result: the new server is there, and everything else is exactly as before.
-    let mut after: Value = serde_json::from_str(&blank_jsonc(&new)).map_err(|_| "nekotrail couldn't add it without breaking the file, so it left it alone.")?;
+    let mut after: Value = serde_json::from_str(&blank_jsonc(&new)).map_err(|_| "NekoTrail couldn't add it without breaking the file, so it left it alone.")?;
     let servers = after.get_mut(key).and_then(Value::as_object_mut).ok_or("Couldn't add it safely.")?;
     if servers.remove(name).as_ref() != Some(val) {
         return Err("Couldn't add it safely.".into());
@@ -1135,7 +1135,7 @@ pub fn json_add_at(text: &str, key: &str, name: &str, val: &Value) -> Result<Str
         after.as_object_mut().unwrap().remove(key);
     }
     if after != before {
-        return Err("Adding it would have changed other settings, so nekotrail left the file alone.".into());
+        return Err("Adding it would have changed other settings, so NekoTrail left the file alone.".into());
     }
     Ok(new)
 }
@@ -1144,23 +1144,23 @@ pub fn json_add_at(text: &str, key: &str, name: &str, val: &Value) -> Result<Str
 /// everything else stay as they are. Refuses a name that is there.
 pub fn toml_add(text: &str, name: &str, server: toml_edit::Table) -> Result<String, String> {
     use toml_edit::{DocumentMut, Item, Table};
-    let before: toml::Table = text.parse().map_err(|e| format!("It isn't valid TOML ({e}), so nekotrail won't change it."))?;
-    let mut doc: DocumentMut = text.parse().map_err(|e| format!("It isn't valid TOML ({e}), so nekotrail won't change it."))?;
+    let before: toml::Table = text.parse().map_err(|e| format!("It isn't valid TOML ({e}), so NekoTrail won't change it."))?;
+    let mut doc: DocumentMut = text.parse().map_err(|e| format!("It isn't valid TOML ({e}), so NekoTrail won't change it."))?;
     let root = doc.as_table_mut();
     if !root.contains_key("mcp_servers") {
         let mut t = Table::new();
         t.set_implicit(true);
         root.insert("mcp_servers", Item::Table(t));
     }
-    let servers = root["mcp_servers"].as_table_mut().ok_or("Its mcp_servers is written inline, so nekotrail won't change it. Add the server by hand.")?;
+    let servers = root["mcp_servers"].as_table_mut().ok_or("Its mcp_servers is written inline, so NekoTrail won't change it. Add the server by hand.")?;
     if servers.contains_key(name) {
-        return Err(format!("There's already a server called {name} there. nekotrail won't replace it."));
+        return Err(format!("There's already a server called {name} there. NekoTrail won't replace it."));
     }
     servers.insert(name, Item::Table(server.clone()));
     let new = doc.to_string();
     let want = toml_snippet(name, server).parse::<toml::Table>().map_err(|e| e.to_string())?;
     let want = &want["mcp_servers"][name];
-    let mut after: toml::Table = new.parse().map_err(|_| "nekotrail couldn't add it without breaking the file, so it left it alone.")?;
+    let mut after: toml::Table = new.parse().map_err(|_| "NekoTrail couldn't add it without breaking the file, so it left it alone.")?;
     let servers = after.get_mut("mcp_servers").and_then(toml::Value::as_table_mut).ok_or("Couldn't add it safely.")?;
     if servers.remove(name).as_ref() != Some(want) {
         return Err("Couldn't add it safely.".into());
@@ -1169,7 +1169,7 @@ pub fn toml_add(text: &str, name: &str, server: toml_edit::Table) -> Result<Stri
         after.remove("mcp_servers");
     }
     if after != before {
-        return Err("Adding it would have changed other settings, so nekotrail left the file alone.".into());
+        return Err("Adding it would have changed other settings, so NekoTrail left the file alone.".into());
     }
     Ok(new)
 }
@@ -1311,7 +1311,7 @@ fn user_readable(h: &Homes, a: AgentId) -> Result<(), String> {
         Codex => read_toml(&p).map(|_| ()),
         _ => read_json(&p).map(|_| ()),
     };
-    ok.map_err(|_| format!("nekotrail can't read {}, so it won't change it.", h.tilde(&p)))
+    ok.map_err(|_| format!("NekoTrail can't read {}, so it won't change it.", h.tilde(&p)))
 }
 
 pub fn overview(h: &Homes, ws: Option<&Path>) -> Overview {
@@ -1336,7 +1336,7 @@ pub fn overview(h: &Homes, ws: Option<&Path>) -> Overview {
                 .filter(|a| !has.iter().any(|h| h.agent == **a))
                 .map(|&agent| {
                     let why = match def {
-                        None => Some("nekotrail can't read this server's settings.".to_string()),
+                        None => Some("NekoTrail can't read this server's settings.".to_string()),
                         Some(d) => user_readable(h, agent).err().or_else(|| check(d, agent, name).0.into_iter().next()),
                     };
                     Target { agent, ok: why.is_none(), why }
@@ -1413,7 +1413,7 @@ fn plan(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices: &Has
     if mine.is_empty() {
         return Err(format!("No server called {name} any more. Check again."));
     }
-    let def = mine.iter().find_map(|(_, _, d)| d.as_ref().ok()).ok_or_else(|| format!("nekotrail can't read {name}'s settings."))?;
+    let def = mine.iter().find_map(|(_, _, d)| d.as_ref().ok()).ok_or_else(|| format!("NekoTrail can't read {name}'s settings."))?;
     let path = h.user_file(target);
     let real = real_path(&path);
     let old = std::fs::read(&real).ok();
@@ -1421,7 +1421,7 @@ fn plan(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices: &Has
     let (real_def, mut no, more) = with_choices(def, name, choices, false);
     let (mut blockers, mut notes) = check(&real_def, target, name);
     if mine.iter().any(|(_, has, _)| has.agent == target) {
-        blockers.insert(0, format!("{} already has a server called {name}. nekotrail won't replace it.", target.label()));
+        blockers.insert(0, format!("{} already has a server called {name}. NekoTrail won't replace it.", target.label()));
     }
     notes.extend(more);
     let (shown, _, _) = with_choices(def, name, choices, true);

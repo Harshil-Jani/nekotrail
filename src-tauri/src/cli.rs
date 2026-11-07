@@ -8,10 +8,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub const HELP: &str = "nekotrail: run coding agents in parallel, from your terminal.
+pub const HELP: &str = "NekoTrail: run coding agents in parallel, from your terminal.
 
 Usage:
-  nekotrail                      Open nekotrail
+  nekotrail                      Open NekoTrail
   nekotrail .                    Add this repo if it's new, and show it
   nekotrail <path>               The same, for the repo at <path>
   nekotrail new \"<task>\"         Make a workspace in this repo and send it the task
@@ -23,7 +23,7 @@ Usage:
   nekotrail ls [--all] [--json]  Workspaces in this repo (or every repo): state, agent, PR
   nekotrail open <name>          Show a workspace, by name, branch or title
   nekotrail status [--json]      What needs you
-  nekotrail queue add \"<task>\"   Line up a task. nekotrail runs a few at a time, each in its own workspace
+  nekotrail queue add \"<task>\"   Line up a task. NekoTrail runs a few at a time, each in its own workspace
       --agent <name>             Agent to use. Default: claude
       --fallback <name>          Agent to use while the first is out of usage
       --repo <path>              Repo to work in. Default: the one you're in
@@ -37,10 +37,10 @@ Usage:
                                  Hand a workspace's chat to another agent, with a brief of what
                                  was done. <name> is a name, branch or title; . is the one you're in
       --model <id>               Model for the new agent. Default: your default for it
-      --now                      Send the brief right away. Default: nekotrail shows it to you first
+      --now                      Send the brief right away. Default: NekoTrail shows it to you first
   nekotrail --help | --version
 
-nekotrail starts if it isn't running. For a folder named new, ls, open or status, write ./new.
+NekoTrail starts if it isn't running. For a folder named new, ls, open or status, write ./new.
 ";
 
 /// What the command line asked for, before any path is resolved.
@@ -342,14 +342,14 @@ pub fn format_queued(data: &Value) -> String {
     let s = |k: &str| data[k].as_str().unwrap_or("").to_string();
     let agent = crate::queue::agent_name(&s("agent"));
     if data["state"] == "waiting" {
-        return format!("Added to the queue in {} for {agent}. It waits for you to start it in nekotrail, because it asks before changes.\n", s("repo"));
+        return format!("Added to the queue in {} for {agent}. It waits for you to start it in NekoTrail, because it asks before changes.\n", s("repo"));
     }
     let when = match data["ahead"].as_u64().unwrap_or(0) {
         0 => "It starts as soon as a slot is free.".to_string(),
         1 => "1 task is ahead of it.".to_string(),
         n => format!("{n} tasks are ahead of it."),
     };
-    let paused = if data["paused"] == true { " The queue is paused: resume it in nekotrail's Queue view." } else { "" };
+    let paused = if data["paused"] == true { " The queue is paused: resume it in NekoTrail's Queue view." } else { "" };
     format!("Queued in {} for {agent}. {when}{paused}\n", s("repo"))
 }
 
@@ -382,7 +382,7 @@ pub fn format_queue(data: &Value) -> String {
         out.push_str(&format!("{:<a$}  {:<b$}  {:<c$}  {}\n", l[0], l[1], l[2], l[3], a = w[0], b = w[1], c = w[2]));
     }
     if data["paused"] == true {
-        out.push_str("The queue is paused. Resume it in nekotrail's Queue view.\n");
+        out.push_str("The queue is paused. Resume it in NekoTrail's Queue view.\n");
     }
     out
 }
@@ -393,7 +393,7 @@ pub fn format_handoff(data: &Value) -> String {
     let name = |k: &str| crate::queue::agent_name(n[k].as_str().unwrap_or(""));
     let ws = n["title"].as_str().filter(|t| !t.is_empty()).or(n["workspace"].as_str()).unwrap_or("the workspace");
     if data["started"] != true {
-        return format!("The hand-off from {} to {} is open in nekotrail, in {ws}. Read the brief, then press Hand off.\n", name("from"), name("to"));
+        return format!("The hand-off from {} to {} is open in NekoTrail, in {ws}. Read the brief, then press Hand off.\n", name("from"), name("to"));
     }
     let mode = match data["mode"].as_str().unwrap_or("") {
         "plan" => " It started in Plan (read only): it can't ask before changes, so switch its mode in the chat when you're ready.",
@@ -410,11 +410,11 @@ pub fn format_handoff(data: &Value) -> String {
 fn format_done(action: &Action, data: &Value) -> String {
     let s = |k: &str| data[k].as_str().unwrap_or("").to_string();
     match action {
-        Action::Add { .. } if data["added"].as_bool() == Some(true) => format!("Added {} to nekotrail.\n", s("repo")),
-        Action::Add { .. } => format!("Showing {} in nekotrail.\n", s("repo")),
+        Action::Add { .. } if data["added"].as_bool() == Some(true) => format!("Added {} to NekoTrail.\n", s("repo")),
+        Action::Add { .. } => format!("Showing {} in NekoTrail.\n", s("repo")),
         Action::New { .. } if data["issue"].is_string() => format!("Started {} for {} in {} with {} (branch {}).\nIts folder: {}\n", s("workspace"), s("issue"), s("repo"), s("agent"), s("branch"), s("path")),
         Action::New { .. } => format!("Started {} in {} with {} (branch {}).\nIts folder: {}\n", s("workspace"), s("repo"), s("agent"), s("branch"), s("path")),
-        Action::Open { .. } => format!("Showing {} in nekotrail.\n", s("workspace")),
+        Action::Open { .. } => format!("Showing {} in NekoTrail.\n", s("workspace")),
         Action::Ls { json: true, .. } | Action::Status { json: true } | Action::QueueLs { json: true } => format!("{}\n", serde_json::to_string_pretty(data).unwrap_or_default()),
         Action::QueueAdd { .. } => format_queued(data),
         Action::QueueLs { .. } => format_queue(data),
@@ -447,7 +447,7 @@ fn launch(background: bool) -> Result<(), String> {
         None => cmd.args(["-b", "dev.nekotrail.app"]),
     };
     let ok = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
-    if ok { Ok(()) } else { Err("Couldn't start nekotrail. Is it in your Applications folder?".into()) }
+    if ok { Ok(()) } else { Err("Couldn't start NekoTrail. Is it in your Applications folder?".into()) }
 }
 
 /// Start the app: this same binary, without `--cli`, detached from the terminal.
@@ -455,7 +455,7 @@ fn launch(background: bool) -> Result<(), String> {
 fn launch(_background: bool) -> Result<(), String> {
     use std::process::Stdio;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    std::process::Command::new(exe).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ()).map_err(|e| format!("Couldn't start nekotrail: {e}"))
+    std::process::Command::new(exe).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ()).map_err(|e| format!("Couldn't start NekoTrail: {e}"))
 }
 
 #[cfg(unix)]
@@ -475,17 +475,17 @@ fn ask(req: &Request, background: bool) -> Result<Value, String> {
                     break c;
                 }
                 if Instant::now() > until {
-                    return Err("nekotrail started but didn't answer. Open it once from Applications, then try again.".into());
+                    return Err("NekoTrail started but didn't answer. Open it once from Applications, then try again.".into());
                 }
             }
         }
-        Err(err) => return Err(format!("Couldn't reach nekotrail: {err}")),
+        Err(err) => return Err(format!("Couldn't reach NekoTrail: {err}")),
     };
     // Making a workspace runs git (and maybe a fetch), so give it time.
     conn.set_read_timeout(Some(Duration::from_secs(180))).map_err(|e| e.to_string())?;
-    (&conn).write_all(remote::encode(req).as_bytes()).map_err(|e| format!("Couldn't reach nekotrail: {e}"))?;
+    (&conn).write_all(remote::encode(req).as_bytes()).map_err(|e| format!("Couldn't reach NekoTrail: {e}"))?;
     let mut line = String::new();
-    BufReader::new(&conn).read_line(&mut line).map_err(|e| format!("nekotrail didn't answer: {e}"))?;
+    BufReader::new(&conn).read_line(&mut line).map_err(|e| format!("NekoTrail didn't answer: {e}"))?;
     remote::parse_answer(&line)
 }
 
@@ -643,9 +643,9 @@ pub fn install() -> Result<Value, String> {
             let hint = (!on_path(dir)).then(|| format!("{} isn't on your PATH yet. Add this line to ~/.zshrc, then open a new terminal: export PATH=\"{}:$PATH\"", dir.display(), dir.display()));
             Ok(json!({"path": link, "hint": hint}))
         }
-        Err(LinkError::Taken(p)) => Err(format!("{} already exists and isn't nekotrail's. Remove it, then try again.", p.display())),
+        Err(LinkError::Taken(p)) => Err(format!("{} already exists and isn't NekoTrail's. Remove it, then try again.", p.display())),
         Err(LinkError::NotWritable) => Err(format!(
-            "nekotrail can't write to /usr/local/bin or ~/.local/bin. Run this in Terminal instead: sudo ln -sf {} /usr/local/bin/nekotrail",
+            "NekoTrail can't write to /usr/local/bin or ~/.local/bin. Run this in Terminal instead: sudo ln -sf {} /usr/local/bin/nekotrail",
             sh_quote(&script.to_string_lossy())
         )),
     }
@@ -799,7 +799,7 @@ mod tests {
     #[test]
     fn formats_handoff() {
         let names = json!({"workspace": "mochi", "title": "Fix 502s after deploy", "from": "claude", "to": "codex"});
-        assert_eq!(format_handoff(&json!({"started": false, "names": names})), "The hand-off from Claude to Codex is open in nekotrail, in Fix 502s after deploy. Read the brief, then press Hand off.\n");
+        assert_eq!(format_handoff(&json!({"started": false, "names": names})), "The hand-off from Claude to Codex is open in NekoTrail, in Fix 502s after deploy. Read the brief, then press Hand off.\n");
         let done = format_handoff(&json!({"started": true, "names": names, "mode": "plan", "chars": 2410, "hidden": 2}));
         assert!(done.starts_with("Handed Fix 502s after deploy from Claude to Codex. Its new chat started with a brief of what was done (2410 characters)."), "{done}");
         assert!(done.contains("2 things that looked like secrets are hidden"));

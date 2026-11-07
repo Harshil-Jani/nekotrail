@@ -461,7 +461,7 @@ fn line_of(a: &Alert) -> String {
 fn title_of(a: &Alert) -> String {
     match a.event {
         Event::QueueDrained => "The queue is done".into(),
-        Event::MorningSummary => "Overnight in nekotrail".into(),
+        Event::MorningSummary => "Overnight in NekoTrail".into(),
         Event::CapReached if a.workspace.is_empty() => "A spend cap stopped the queue".into(),
         _ if a.workspace.is_empty() => a.what.clone(),
         _ => format!("{} {}", a.workspace, a.what),
@@ -503,7 +503,7 @@ pub fn compose(items: &[Alert], last_line: bool) -> Message {
         Some(Event::ChecksFailed) => format!("Checks failed on {n} PRs"),
         Some(Event::ChecksGreen) => format!("Checks are green on {n} PRs"),
         Some(Event::PrMerged) => format!("{n} PRs merged"),
-        _ => format!("{n} updates from nekotrail"),
+        _ => format!("{n} updates from NekoTrail"),
     };
     let mut lines: Vec<String> = items.iter().take(DIGEST_LINES).map(|a| format!("- {}", line_of(a))).collect();
     if n > DIGEST_LINES {
@@ -575,7 +575,7 @@ pub fn request(service: Service, s: &Secret, m: &Message) -> Result<Req, String>
         }
         Service::Slack => (s.url.clone(), json!({"text": clip(&format!("*{}*\n{}", slack_escape(&m.title), slack_escape(&text("\n"))), 3000)})),
         Service::Discord => (s.url.clone(), json!({
-            "username": "nekotrail", "content": clip(&format!("**{}**\n{}", m.title, text("\n")), 2000),
+            "username": "NekoTrail", "content": clip(&format!("**{}**\n{}", m.title, text("\n")), 2000),
             // A workspace called "@everyone" pings nobody.
             "allowed_mentions": {"parse": []},
         })),
@@ -600,7 +600,7 @@ pub fn request(service: Service, s: &Secret, m: &Message) -> Result<Req, String>
             let mut pairs = vec![("token", s.token.clone()), ("user", s.user.clone()), ("title", clip(&m.title, 250)), ("message", clip(&m.body, 1024)), ("priority", if m.urgent { "1" } else { "0" }.to_string())];
             if let Some(l) = &m.link {
                 pairs.push(("url", l.clone()));
-                pairs.push(("url_title", "Open in nekotrail".into()));
+                pairs.push(("url_title", "Open in NekoTrail".into()));
             }
             return Ok(Req { url: "https://api.pushover.net/1/messages.json".into(), headers: vec![("Content-Type".into(), "application/x-www-form-urlencoded".into())], body: form(&pairs) });
         }
@@ -611,8 +611,8 @@ pub fn request(service: Service, s: &Secret, m: &Message) -> Result<Req, String>
 /// The message "Send a test" sends.
 pub fn test_message() -> Message {
     Message {
-        title: "nekotrail test".into(),
-        body: "Alerts from nekotrail reach you here. Real ones say which workspace and what happened, never your code.".into(),
+        title: "NekoTrail test".into(),
+        body: "Alerts from NekoTrail reach you here. Real ones say which workspace and what happened, never your code.".into(),
         link: None, urgent: false, event: None, items: vec![], last_line: false,
     }
 }
@@ -1024,7 +1024,7 @@ pub async fn alerts_view() -> Res<Value> {
 pub async fn alerts_add(app: AppHandle, service: Service) -> Res<Value> {
     let mut cfg = lock(&LIVE.engine).config.clone();
     if cfg.destinations.len() >= 10 {
-        return Err("That's 10 destinations, the most nekotrail keeps.".into());
+        return Err("That's 10 destinations, the most NekoTrail keeps.".into());
     }
     cfg.destinations.push(Destination::new(crate::store::new_id(), service));
     Ok(save_config(&app.state::<AppState>(), cfg))
@@ -1318,7 +1318,7 @@ mod tests {
     fn queue_and_summary_messages_name_no_workspace() {
         let a = Alert { event: Event::MorningSummary, workspace_id: None, workspace: String::new(), repo: String::new(), what: "8 done, 2 need you, 1 failed".into(), last_line: None, at: 0 };
         let m = compose(std::slice::from_ref(&a), true);
-        assert_eq!((m.title.as_str(), m.body.as_str(), m.link.as_deref()), ("Overnight in nekotrail", "8 done, 2 need you, 1 failed", None));
+        assert_eq!((m.title.as_str(), m.body.as_str(), m.link.as_deref()), ("Overnight in NekoTrail", "8 done, 2 need you, 1 failed", None));
         let m = compose(&[Alert { event: Event::QueueDrained, ..a }], false);
         assert_eq!(m.title, "The queue is done");
     }

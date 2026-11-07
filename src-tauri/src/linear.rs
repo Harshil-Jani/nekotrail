@@ -42,7 +42,7 @@ const BAD_KEY: &str = "Linear didn't accept this key. Make a new personal API ke
 const RATE_LIMITED: &str = "Linear is limiting requests right now. Try again in a minute.";
 const NO_NETWORK: &str = "Couldn't reach Linear. Check your network and try again.";
 const SLOW: &str = "Linear didn't answer in 10 seconds. Try again in a moment.";
-const UNREADABLE: &str = "Linear sent an answer nekotrail couldn't read. Try again, or update nekotrail.";
+const UNREADABLE: &str = "Linear sent an answer NekoTrail couldn't read. Try again, or update NekoTrail.";
 
 // ---------- what Linear sends ----------
 

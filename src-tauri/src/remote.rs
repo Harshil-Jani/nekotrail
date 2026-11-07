@@ -202,12 +202,12 @@ pub fn encode(req: &Request) -> String {
 pub fn decode(line: &str) -> Result<Request, String> {
     let v: Value = serde_json::from_str(line.trim()).map_err(|_| "That request isn't valid JSON.".to_string())?;
     let Some(ver) = v["v"].as_u64().filter(|n| (MIN_PROTOCOL as u64..=PROTOCOL as u64).contains(n)) else {
-        return Err("This nekotrail command and the running app are different versions. Quit and reopen nekotrail, then try again.".into());
+        return Err("This nekotrail command and the running app are different versions. Quit and reopen NekoTrail, then try again.".into());
     };
-    let req = serde_json::from_value::<Envelope>(v).map(|e| e.req).map_err(|err| format!("nekotrail didn't understand that request: {err}"))?;
+    let req = serde_json::from_value::<Envelope>(v).map(|e| e.req).map_err(|err| format!("NekoTrail didn't understand that request: {err}"))?;
     // A command belongs to the versions from the one that added it.
     if ver < req.since() as u64 {
-        return Err(format!("nekotrail didn't understand that request: \"{}\" needs protocol {} or newer.", command_name(&req), req.since()));
+        return Err(format!("NekoTrail didn't understand that request: \"{}\" needs protocol {} or newer.", command_name(&req), req.since()));
     }
     Ok(req)
 }
@@ -227,11 +227,11 @@ pub fn answer(res: &Result<Value, String>) -> String {
 
 /// Read an answer line back into a result.
 pub fn parse_answer(line: &str) -> Result<Value, String> {
-    let v: Value = serde_json::from_str(line.trim()).map_err(|_| "nekotrail sent an answer this command can't read.".to_string())?;
+    let v: Value = serde_json::from_str(line.trim()).map_err(|_| "NekoTrail sent an answer this command can't read.".to_string())?;
     if v["ok"].as_bool() == Some(true) {
         Ok(v["data"].clone())
     } else {
-        Err(v["error"].as_str().unwrap_or("nekotrail couldn't do that.").to_string())
+        Err(v["error"].as_str().unwrap_or("NekoTrail couldn't do that.").to_string())
     }
 }
 
@@ -278,7 +278,7 @@ fn percent_decode(s: &str) -> Option<String> {
 
 /// Parse a `nekotrail://` link. Pure: it decides nothing about what happens next.
 pub fn parse_link(url: &str) -> Result<Link, String> {
-    let bad = || "That nekotrail link isn't one nekotrail understands.".to_string();
+    let bad = || "That NekoTrail link isn't one NekoTrail understands.".to_string();
     let rest = url.get(..10).filter(|p| p.eq_ignore_ascii_case("nekotrail:")).map(|_| &url[10..]).ok_or_else(bad)?;
     let rest = rest.trim_start_matches('/');
     let rest = rest.split('#').next().unwrap_or("");
@@ -290,19 +290,19 @@ pub fn parse_link(url: &str) -> Result<Link, String> {
         let v = percent_decode(v).ok_or_else(bad)?;
         // Two values for one key would leave a doubt about which one you approved.
         if params.insert(k.clone(), v).is_some() {
-            return Err(format!("That nekotrail link sets \"{k}\" twice."));
+            return Err(format!("That NekoTrail link sets \"{k}\" twice."));
         }
     }
     let get = |k: &str| params.get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     match action.trim_end_matches('/').to_ascii_lowercase().as_str() {
         "new" => {
-            let repo = get("repo").ok_or("That nekotrail link doesn't say which repo.")?;
+            let repo = get("repo").ok_or("That NekoTrail link doesn't say which repo.")?;
             let plan = matches!(get("plan").as_deref(), Some("1" | "true" | "yes"));
             let task = Task { prompt: params.get("prompt").cloned().unwrap_or_default(), agent: get("agent"), base: get("base"), plan, linear: None };
             task.validate(MAX_LINK_PROMPT)?;
             Ok(Link::New { repo, task })
         }
-        "open" => Ok(Link::Open { workspace: get("workspace").ok_or("That nekotrail link doesn't say which workspace.")? }),
+        "open" => Ok(Link::Open { workspace: get("workspace").ok_or("That NekoTrail link doesn't say which workspace.")? }),
         _ => Err(bad()),
     }
 }
@@ -727,7 +727,7 @@ mod server {
             let wss = st.db().workspaces(false).map_err(crate::e)?;
             wss.into_iter()
                 .find(|w| Path::new(&w.path).canonicalize().is_ok_and(|p| here.starts_with(p)))
-                .ok_or("This folder isn't one of nekotrail's workspaces. Name the workspace instead: nekotrail handoff <name> --to codex")?
+                .ok_or("This folder isn't one of NekoTrail's workspaces. Name the workspace instead: nekotrail handoff <name> --to codex")?
         } else {
             find_active(st, workspace)?
         };
@@ -885,7 +885,7 @@ mod server {
             None if Path::new(&repo).is_absolute() && Path::new(&repo).is_dir() => {
                 (None, Path::new(&repo).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), repo.clone())
             }
-            None => return Some(Job::Error { text: format!("A link asked for the repo \"{repo}\", which isn't in nekotrail. Add it first.") }),
+            None => return Some(Job::Error { text: format!("A link asked for the repo \"{repo}\", which isn't in NekoTrail. Add it first.") }),
         };
         ask_first(st, repo_id, name, path, task, "link")
     }

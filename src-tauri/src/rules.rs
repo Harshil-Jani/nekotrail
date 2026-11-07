@@ -822,7 +822,7 @@ pub fn plan(root: &Path, req: &Request) -> Result<Plan, String> {
                 if reach.is_empty() { format!("Nothing reads it while {source} exists.") } else { format!("{all} {} {source} too, so this only needs to say where the rules are.", if reach.len() > 1 { "read" } else { "reads" }) }
             }
             How::Import => format!("{who} {} {source}, so this file imports it.", if missing.len() > 1 { "don't read" } else { "doesn't read" }),
-            How::Copy => format!("{who} {} {source} and can't import it, so this is a copy that nekotrail keeps in step.", if missing.len() > 1 { "don't read" } else { "doesn't read" }),
+            How::Copy => format!("{who} {} {source} and can't import it, so this is a copy that NekoTrail keeps in step.", if missing.len() > 1 { "don't read" } else { "doesn't read" }),
             How::Symlink => format!("A link to {source}. Fine on Mac and Linux; on Windows git checks it out as a one-line file."),
             How::Keep if exists => "Left as it is.".into(),
             How::Keep if missing.is_empty() => format!("Not needed: its agents read {source}."),
@@ -887,7 +887,7 @@ pub fn plan(root: &Path, req: &Request) -> Result<Plan, String> {
         items.push(Item { path: k.path.into(), how, options, status, needs_confirm, why, diff: diff_lines, new, exists });
     }
     if facts.override_md && source == "AGENTS.md" {
-        notes.push("AGENTS.override.md is here, so Codex reads it instead of AGENTS.md. nekotrail leaves it alone.".into());
+        notes.push("AGENTS.override.md is here, so Codex reads it instead of AGENTS.md. NekoTrail leaves it alone.".into());
     }
     let token = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
     Ok(Plan { source: source.into(), items, notes, token })
@@ -910,7 +910,7 @@ fn parent_inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(parent).map_err(|e| format!("Couldn't make the folder for {rel}: {e}"))?;
     let real = parent.canonicalize().map_err(|e| e.to_string())?;
     if !real.starts_with(&root) {
-        return Err(format!("{rel} is in a folder that links outside the workspace. nekotrail won't write there."));
+        return Err(format!("{rel} is in a folder that links outside the workspace. NekoTrail won't write there."));
     }
     Ok(real.join(full.file_name().ok_or("Bad path.")?))
 }

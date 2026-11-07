@@ -661,7 +661,7 @@ impl Client {
                     self.config.push_back(("session/set_model", json!({"sessionId": sid, "modelId": m})));
                 }
             } else {
-                ev.push(json!({"kind": "note", "text": format!("{} doesn't let nekotrail pick its model, so it uses its own default.", self.name)}));
+                ev.push(json!({"kind": "note", "text": format!("{} doesn't let NekoTrail pick its model, so it uses its own default.", self.name)}));
             }
         }
         // The mode option's id (None: the older `modes` object), the current mode, every mode.
@@ -734,7 +734,7 @@ impl Client {
                 }
                 let v = r["protocolVersion"].as_u64().unwrap_or(0);
                 if v != PROTOCOL_VERSION {
-                    return self.fail(format!("{} speaks ACP version {v}, and nekotrail speaks version {PROTOCOL_VERSION}. Update both to the latest version.", self.name), ev);
+                    return self.fail(format!("{} speaks ACP version {v}, and NekoTrail speaks version {PROTOCOL_VERSION}. Update both to the latest version.", self.name), ev);
                 }
                 self.caps = r["agentCapabilities"].clone();
                 self.auth_methods = r["authMethods"].clone();
@@ -821,7 +821,7 @@ impl Client {
     fn on_request(&mut self, id: &Value, method: &str, params: &Value, ev: &mut Vec<Value>) {
         if method != "session/request_permission" {
             // No file system, terminal or anything else was offered (see the module docs).
-            return self.reply_error(id, METHOD_NOT_FOUND, &format!("nekotrail does not offer {method}"));
+            return self.reply_error(id, METHOD_NOT_FOUND, &format!("NekoTrail does not offer {method}"));
         }
         self.flush(ev);
         let tc = &params["toolCall"];
@@ -840,7 +840,7 @@ impl Client {
                 None => vec![],
             };
             if !hit.is_empty() {
-                ev.push(json!({"kind": "blocked", "files": hit, "text": format!("{} tried to change a protected file, so nekotrail said no.", self.name)}));
+                ev.push(json!({"kind": "blocked", "files": hit, "text": format!("{} tried to change a protected file, so NekoTrail said no.", self.name)}));
                 let outcome = match pick(&options, &["reject_once", "reject_always"]) {
                     Some(o) => json!({"outcome": "selected", "optionId": o}),
                     None => json!({"outcome": "cancelled"}),

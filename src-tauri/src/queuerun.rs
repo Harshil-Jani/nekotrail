@@ -435,7 +435,7 @@ fn open_draft_pr(st: &AppState, ws: &Workspace, task: &queue::Task) -> Res<Optio
 pub fn add(app: &AppHandle, task: NewTask) -> Res<queue::Task> {
     task.validate()?;
     let st = app.state::<AppState>();
-    st.db().repo(&task.repo_id).map_err(|_| "That repo isn't in nekotrail. Add it first.".to_string())?;
+    st.db().repo(&task.repo_id).map_err(|_| "That repo isn't in NekoTrail. Add it first.".to_string())?;
     let t = update(app, |q| q.add(task, new_id(), now()).clone());
     poke(app);
     Ok(t)
