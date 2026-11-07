@@ -413,3 +413,12 @@ p { text-wrap: pretty; }
 .group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s4); }
 .group li b { display: block; font-size: 16px; }
 .group li span { display: block; color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+
+/* Conductor's wordmark: their file as shipped, with clear space of its own (see ConductorMark.astro). */
+.conductor-mark { display: inline-flex; align-items: center; flex-shrink: 0; }
+.conductor-mark img { display: block; max-width: none; height: auto; }
+.announce { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 18px; }
+.announce-mark { padding: 4px 0; }
+.page-mark { display: flex; margin: 0 0 var(--s6); padding: 6px 0; }
+.post-head .page-mark { margin: var(--s6) 0 0; }
+.tm-note { margin-top: var(--s6); font-size: 13px; color: var(--muted); }

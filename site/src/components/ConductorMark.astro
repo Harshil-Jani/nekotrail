@@ -1,0 +1,27 @@
+---
+// Conductor's own wordmark, exactly as their brand kit ships it (conductor.build/brandkit), saved in
+// public/third-party/conductor/. Rules we follow: their file untouched (no recolour, stretch or crop),
+// the light file on dark backgrounds and the dark file on light ones, its own space and never joined
+// to our mark. Not used inside the app.
+import { href } from "../lib/site";
+interface Props {
+  /** The background it sits on: "dark", "light", or "auto" (follows the page's light or dark mode). */
+  on?: "dark" | "light" | "auto";
+  /** Height in px. The file is 1750 x 269. */
+  height?: number;
+  class?: string;
+}
+const { on = "auto", height = 18, class: cls = "" } = Astro.props;
+const width = Math.round((height * 1750) / 269);
+const file = (v: "dark" | "light") => href(`third-party/conductor/conductor-wordmark-${v}.svg`);
+---
+<span class={`conductor-mark ${cls}`}>
+  {on === "auto" ? (
+    <picture>
+      <source srcset={file("light")} media="(prefers-color-scheme: dark)" />
+      <img src={file("dark")} alt="Conductor" width={width} height={height} loading="lazy" decoding="async" />
+    </picture>
+  ) : (
+    <img src={file(on === "dark" ? "light" : "dark")} alt="Conductor" width={width} height={height} decoding="async" />
+  )}
+</span>

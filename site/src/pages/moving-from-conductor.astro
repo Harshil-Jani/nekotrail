@@ -3,6 +3,7 @@
 // docs/MOVING-FROM-CONDUCTOR.md at build time, so they stay in step with the repo's full guide.
 import Base from "../layouts/Base.astro";
 import Clip from "../components/Clip.astro";
+import ConductorMark from "../components/ConductorMark.astro";
 import { SITE, href, readRepoFile } from "../lib/site";
 import { renderMarkdown } from "../lib/markdown";
 
@@ -32,7 +33,7 @@ const sections = [
   <div class="sky">
     <div class="wrap">
       <header class="page-head sky-head">
-        <span class="eyebrow" style="color:var(--accent-on-sky)">Guide</span>
+        <ConductorMark on="dark" height={22} class="page-mark" />
         <h1>Moving from Conductor</h1>
         <p class="lede">Your worktrees live in Conductor's folder. Move them out before it shuts down.</p>
         <p style="margin-top:24px"><a class="btn primary" href={href("download/")}>Download NekoTrail</a></p>
@@ -86,6 +87,7 @@ const sections = [
         <Fragment set:html={shortcuts} />
 
         <p style="margin-top:40px">Every detail, including failed moves: <a href={fullGuide} rel="noopener">the full guide</a>.</p>
+        <p class="tm-note">Conductor is a trademark of its owner. NekoTrail is not affiliated with Conductor.</p>
       </article>
     </div>
   </div>

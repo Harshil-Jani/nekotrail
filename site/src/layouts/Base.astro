@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import { SITE, href, absolute, appVersion } from "../lib/site";
+import ConductorMark from "../components/ConductorMark.astro";
 
 interface Props {
   title: string;
@@ -65,8 +66,9 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
     <a class="skip" href="#main">Skip to content</a>
     {announce && (
       <div class="announce">
-        Leaving Conductor? Bring your work over in one import.{" "}
-        <a href={href("moving-from-conductor/")}>How it works</a>
+        <ConductorMark on="dark" height={13} class="announce-mark" />
+        <span>Leaving Conductor? Bring your work over in one import.{" "}
+        <a href={href("moving-from-conductor/")}>How it works</a></span>
       </div>
     )}
     <header class="nav">
@@ -147,6 +149,7 @@ const ghMark = "M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.62
         <div class="legal">
           <span>MIT licensed. Made by {SITE.author}.</span>
           <span>NekoTrail is an independent project, not affiliated with Conductor, Anthropic, OpenAI or Google.</span>
+          <span>Conductor is a trademark of its owner. NekoTrail is not affiliated with Conductor.</span>
         </div>
       </div>
     </footer>
