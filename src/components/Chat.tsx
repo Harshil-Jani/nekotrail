@@ -21,6 +21,7 @@ import { AgentMenuItems } from "./AgentMenuItems";
 import { okFullAuto } from "../fullAuto";
 import { fuzzy, getChangesSelection, loadPrompts, type Builtins, type PromptEntry } from "../prompts";
 import { FillBar, SavePromptSheet, SlashList, usePromptFill, type SlashItem } from "./PromptMenu";
+import { currentActivity, turnClock, workingLine, type Activity } from "../activity";
 import { droppedFrom, forgetOutgoing, mergeLive, pendingRows, readOutbox, reconcileOutbox, refetchSize, restoreOutbox, reuseRows, settleOutbox, type LiveEvent, type Outgoing } from "../chatSync";
 
 /** Rank files for an @-mention: name matches beat path matches, shorter paths win ties. */
@@ -597,6 +598,32 @@ const Thread = memo(function Thread({ visible, hidden, total, current, flash, bu
   ));
 });
 
+/**
+ * The row under your message while the agent works: what it is doing now ("Reading src/auth.ts")
+ * and how long the turn has run. It ticks on its own, so only this row redraws each second. While
+ * the turn runs it keeps its height, so stepping aside for the answer never moves the chat.
+ */
+const WorkingRow = memo(function WorkingRow({ activity, clockKey, count }: { activity: Activity; clockKey: string; count: number }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const now = Date.now();
+  const { start, last } = turnClock.see(clockKey, count, now);
+  const line = workingLine(activity, now, start, last);
+  // Screen readers hear the state change once ("working", then "still working"), not every step or second.
+  const say = !line.show ? "" : line.stalled ? "Still working" : "Agent is working";
+  return (
+    <div className={`working${line.show ? "" : " is-hidden"}${line.stalled ? " stalled" : ""}`} data-testid="working">
+      <span className="working-mark" aria-hidden><i /><i /><i /></span>
+      <span className="working-label" aria-hidden>{line.label}</span>
+      <span className="working-time num" aria-hidden>· {line.time}</span>
+      <span className="sr-only" role="status" aria-live="polite">{say}</span>
+    </div>
+  );
+});
+
 const PAGE = 150; // rows rendered at a time; older rows load on demand
 const TAIL = 600; // events fetched when a chat opens
 const ALL = 1_000_000_000; // a tail that holds the whole chat
@@ -1001,7 +1028,7 @@ export function Chat({
   useEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [events.length, pending.length]);
+  }, [events.length, pending.length, busy]);
   useEffect(() => { stick.current = true; }, [active]);
 
   useEffect(() => {
@@ -1022,6 +1049,10 @@ export function Chat({
     setDraft((d) => `${d}${d && !/\s$/.test(d) ? "\n" : ""}${append.text} `);
     requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
   }, [append?.nonce]);
+
+  // What the running turn is doing, for the working row under your message.
+  const activity = useMemo(() => currentActivity(events), [events]);
+  const working = busy && !readOnly && activity.phase !== "idle" && activity.turn >= 0;
 
   // Unchanged rows keep their objects, so a streamed event only redraws the rows it changed.
   const prevRows = useRef<Row[]>([]);
@@ -1502,6 +1533,7 @@ export function Chat({
             </button>
           )}
           <Thread visible={visible} hidden={hidden} total={rows.length} current={hits[hitIdx]} flash={flash?.row ?? null} busy={busy} latestPlanIdx={latestPlanIdx} />
+          {working && active && <WorkingRow activity={activity} clockKey={`${active}:${older + activity.turn}`} count={older + events.length} />}
           {pending.length > 0 && (
             <ol className="pending" aria-label="Messages waiting to send">
               {pending.map((p) => (
