@@ -28,7 +28,7 @@ sed -i '' -E "1,/^version = /s/^version = \"[^\"]+\"/version = \"$v\"/" src-taur
 
 git add CHANGELOG.md package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -qm "Release v$v"
-git tag -a "v$v" -m "nekotrail v$v"
+git tag -a "v$v" -m "NekoTrail v$v"
 git push -q origin HEAD:main "v$v"
 
 # Create the release page now with our own gh login. Since v0.13.0 the workflow's token is refused
@@ -36,8 +36,8 @@ git push -q origin HEAD:main "v$v"
 # finds this page by its tag and only uploads the app and latest.json to it.
 notes="$(mktemp)"
 awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > "$notes"
-printf '\n### Install\nDownload the `.dmg` below, open it and drag nekotrail to Applications. The app is not notarized yet, so macOS blocks it on first launch. Run `xattr -dr com.apple.quarantine /Applications/nekotrail.app` once in Terminal, then open it as usual.\n' >> "$notes"
-gh release create "v$v" --title "nekotrail v$v" --notes-file "$notes" --verify-tag >/dev/null \
+printf '\n### Install\nDownload the `.dmg` below, open it and drag NekoTrail to Applications. The app is not notarized yet, so macOS blocks it on first launch. Run `xattr -dr com.apple.quarantine /Applications/nekotrail.app` once in Terminal, then open it as usual.\n' >> "$notes"
+gh release create "v$v" --title "NekoTrail v$v" --notes-file "$notes" --verify-tag >/dev/null \
   || echo "Couldn't create the release page; the workflow will try. Check https://github.com/Harshil-Jani/nekotrail/releases" >&2
 rm -f "$notes"
 echo "Pushed v$v. The macOS build takes about 15 minutes: https://github.com/Harshil-Jani/nekotrail/actions"

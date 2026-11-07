@@ -91,7 +91,7 @@ const js = jsPackages();
 
 console.log(`# Third-party notices
 
-nekotrail is MIT licensed (see [LICENSE](LICENSE)). The app ships with the open-source components listed
+NekoTrail is MIT licensed (see [LICENSE](LICENSE)). The app ships with the open-source components listed
 below, each under its own license. Each component's full license text and copyright notice is in its
 source package: crates.io for Rust crates and npm for JavaScript packages, at the version listed.
 
