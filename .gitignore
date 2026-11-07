@@ -44,3 +44,8 @@ dist-ssr
 
 # Packaged extension
 *.vsix
+.impeccable/mocks/
+.impeccable/*.json
+
+# Astro site build cache
+site/.astro

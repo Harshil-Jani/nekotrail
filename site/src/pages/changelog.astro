@@ -1,0 +1,42 @@
+---
+// Generated at build time from the repo's CHANGELOG.md, so a release's notes appear here on the next deploy.
+import Base from "../layouts/Base.astro";
+import { SITE, readRepoFile, formatDate } from "../lib/site";
+import { parseChangelog } from "../lib/markdown";
+
+const releases = parseChangelog(readRepoFile("CHANGELOG.md"));
+const latest = releases.find((r) => r.date);
+---
+<Base
+  title="Changelog"
+  description={`Every nekotrail release, newest first. The latest is ${latest?.version}: ${latest?.titles[0] ?? ""}.`}
+  path="changelog/"
+>
+  <div class="wrap">
+    <header class="page-head">
+      <h1>Changelog</h1>
+      <p class="lede">Every release of nekotrail, newest first. Each version is tagged on GitHub with the app attached on its <a href={SITE.allReleases} rel="noopener">release page</a>, and the app updates itself.</p>
+    </header>
+    <div class="with-toc">
+      <aside class="toc" aria-label="Releases">
+        <nav>
+          <p>Releases</p>
+          <ul>
+            {releases.map((r) => <li><a href={`#${r.id}`}>{r.date ? r.version : "Next release"}</a></li>)}
+          </ul>
+        </nav>
+      </aside>
+      <div>
+        {releases.map((r) => (
+          <section class="release" id={r.id} aria-labelledby={`${r.id}-h`}>
+            <div class="when">
+              <h2 id={`${r.id}-h`}><a href={`#${r.id}`}>{r.date ? r.version : "Next release"}</a></h2>
+              {r.date ? <time datetime={r.date}>{formatDate(new Date(r.date + "T00:00:00Z"))}</time> : <span class="pill">Not released yet</span>}
+            </div>
+            <div class="body" set:html={r.html} />
+          </section>
+        ))}
+      </div>
+    </div>
+  </div>
+</Base>

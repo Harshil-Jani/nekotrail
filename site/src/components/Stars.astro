@@ -1,0 +1,45 @@
+---
+// A field of stars for the night-sky bands, generated at build time from a fixed seed so every
+// build draws the same sky. Some twinkle; with reduced motion none do (see global.css).
+interface Props { count?: number; seed?: number; constellation?: boolean }
+const { count = 110, seed = 7, constellation = false } = Astro.props;
+let s = seed;
+const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+const stars = Array.from({ length: count }, () => {
+  const r = rand();
+  return {
+    x: +(rand() * 1000).toFixed(1),
+    y: +(rand() * 600).toFixed(1),
+    r: r > 0.93 ? 1.6 : r > 0.7 ? 1.1 : 0.7,
+    o: +(0.25 + rand() * 0.6).toFixed(2),
+    twinkle: rand() > 0.55,
+    d: +(3 + rand() * 4).toFixed(1),
+    delay: +(rand() * 5).toFixed(1),
+  };
+});
+// The Loaf, one of the app's eight cat constellations, drawn in the upper left of the hero.
+const loaf: [number, number][] = [[90, 120], [130, 70], [175, 115], [270, 120], [270, 210], [90, 210]];
+const loafLines: [number, number][] = [[1, 0], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
+const place = ([x, y]: [number, number]) => [x - 80, y - 60];
+---
+<svg class="stars" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+  {stars.map((st) => (
+    <circle
+      cx={st.x} cy={st.y} r={st.r}
+      class={st.twinkle ? "twinkle" : undefined}
+      style={`opacity:${st.o};--o:${st.o};--d:${st.d}s;--delay:${st.delay}s`}
+    />
+  ))}
+</svg>
+{constellation && (
+  <svg class="constellation" viewBox="0 0 210 170" aria-hidden="true" focusable="false">
+    <g>
+      {loafLines.map(([a, b], i) => {
+        const [x1, y1] = place(loaf[a]); const [x2, y2] = place(loaf[b]);
+        return <line x1={x1} y1={y1} x2={x2} y2={y2} style={`--delay:${0.6 + i * 0.35}s`} />;
+      })}
+      {loaf.map((p, i) => { const [cx, cy] = place(p); return <circle cx={cx} cy={cy} r="3" style={`--delay:${0.3 + i * 0.3}s`} />; })}
+    </g>
+  </svg>
+)}
+<span class="shoot" aria-hidden="true"></span>

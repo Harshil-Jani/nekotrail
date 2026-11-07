@@ -1,0 +1,27 @@
+---
+// A short muted loop of the real app, recorded from its preview harness, in a Mac window frame.
+// It plays only while on screen (Base.astro's script). Without scripts, or with reduced motion, it
+// stays on its poster with controls, so nothing moves unless you ask.
+import { href } from "../lib/site";
+interface Props { name: string; label: string; title?: string; eager?: boolean }
+const { name, label, title = "nekotrail", eager = false } = Astro.props;
+---
+<figure class="window" style="margin:0">
+  <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>{title}</span></div>
+  <video
+    data-clip
+    muted
+    loop
+    playsinline
+    controls
+    preload={eager ? "metadata" : "none"}
+    width="1200"
+    height="750"
+    poster={href(`clips/${name}.jpg`)}
+    aria-label={label}
+  >
+    <source src={href(`clips/${name}.webm`)} type="video/webm" />
+    <source src={href(`clips/${name}.mp4`)} type="video/mp4" />
+  </video>
+  <figcaption class="sr-only">{label}</figcaption>
+</figure>

@@ -1,0 +1,73 @@
+---
+import Base from "../layouts/Base.astro";
+import { SITE, href, appVersion } from "../lib/site";
+const version = appVersion();
+const xattr = "xattr -dr com.apple.quarantine /Applications/nekotrail.app";
+const deb = "sudo apt install ./nekotrail_*_amd64.deb";
+const apple = "M11.182.008C11.148-.03 9.923.023 8.857 1.18c-1.066 1.156-.902 2.482-.878 2.516.024.034 1.52.087 2.475-1.258.955-1.345.762-2.391.728-2.43Zm3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422.212-2.189 1.675-2.789 1.698-2.854.023-.065-.597-.79-1.254-1.157a3.692 3.692 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.125-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56.244.729.625 1.924 1.273 2.796.576.984 1.34 1.667 1.659 1.899.319.232 1.219.386 1.843.067.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758.347-.79.505-1.217.473-1.282Z";
+---
+<Base
+  title="Download"
+  description="Download nekotrail for Mac (one DMG for Apple silicon and Intel), or the experimental Linux AppImage and .deb. Free, open source, no account."
+  path="download/"
+>
+  <div class="wrap" style="max-width:820px">
+    <header class="page-head">
+      <h1>Download nekotrail</h1>
+      <p class="lede">Free, no account. Latest: v{version}. It updates itself.</p>
+    </header>
+
+    <section aria-labelledby="mac">
+      <h2 id="mac" class="dl-title"><svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d={apple} /></svg>Mac</h2>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Download and drag to Applications</h3>
+            <p>One .dmg for Apple silicon and Intel. macOS 13+.</p>
+            <a class="btn primary" href={SITE.releases} rel="noopener" style="margin-top:12px">Download .dmg</a>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Run this once in Terminal</h3>
+            <div class="copy-row">
+              <pre><code>{xattr}</code></pre>
+              <button class="copy-btn" type="button" data-copy={xattr}>Copy</button>
+            </div>
+            <p>Needed until the app is notarized by Apple.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Open nekotrail</h3>
+            <p>It checks your setup and offers the <a href={href("moving-from-conductor/")}>Conductor import</a>.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="linux" style="margin-top:72px">
+      <h2 id="linux" class="dl-title">Linux <span class="pill">Experimental</span></h2>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Install the .deb</h3>
+            <div class="copy-row">
+              <pre><code>{deb}</code></pre>
+              <button class="copy-btn" type="button" data-copy={deb}>Copy</button>
+            </div>
+            <p>Other distros: the <a href={SITE.releases} rel="noopener">.AppImage</a>, then <code>chmod +x</code>. Needs glibc 2.35+.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Report what breaks</h3>
+            <p>Linux is new. <a href={SITE.issues} rel="noopener">Open an issue</a>.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <p class="muted" style="margin:72px 0 96px">Prefer to build it? See the <a href={`${SITE.repo}#install`} rel="noopener">README</a>. What changed: <a href={href("changelog/")}>changelog</a>.</p>
+  </div>
+</Base>
