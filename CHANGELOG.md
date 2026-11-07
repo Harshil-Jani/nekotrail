@@ -12,6 +12,14 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - The website no longer shows Conductor's logo or the Apple logo; Conductor is named in plain text. The README and site say the agents' own CLIs, the queue respects each plan's limits, and Gemini CLI's account note follows Google's current terms.
 - CI checks Rust licences and advisories with `cargo deny`, runs `bun audit` on the app, site and extension, and fails if THIRD_PARTY_NOTICES.md is stale or a bundled JavaScript package is outside the licence policy. Dependabot opens weekly update PRs.
 
+**Fixes**
+- Opening a chat while its agent works no longer loses or repeats messages. The chat listens before it loads, and lines up what arrives by message number; if one is missing, it loads again.
+- A message you send while the agent works shows at the end of the chat right away, marked Queued, with Edit and Remove. If it never reaches the agent, it comes back into the message box with a note. A message that fails to send stays in the box with the reason.
+- The working spinner no longer sticks on, or turns off too early, when a turn ends and the next queued one starts at once. If a turn says Done but the app never hears it stop, it checks again after 10, 30 and 60 seconds.
+- A new terminal shows its first prompt instead of staying blank until you press a key. When the shell exits, fails or is slow to start, the terminal says so and offers Start a new shell; reopening a tab whose shell ended starts a fresh one.
+- Long chats stay smooth while the agent streams: new output is drawn once per frame, and only the rows that changed are redrawn.
+- The app no longer redraws everything every 5 seconds to update the memory meter; memory use is read when you point at your name.
+
 ## 0.22.2 (2026-11-07)
 
 **Fixes**
