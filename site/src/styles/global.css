@@ -500,6 +500,21 @@ p { text-wrap: pretty; }
 .data-table tr.reference td, .data-table tr.reference th { color: var(--muted); border-bottom: none; }
 .data-table tr.reference th .muted { display: block; font-weight: 400; font-size: 13px; }
 .table-note { font-size: 14px; margin: 0 0 var(--s4); }
+/* Narrow screens: the comparison scrolls sideways. Keep the tool name pinned, shade the edge that
+   has more columns behind it, and say so in words. */
+.scroll-hint { display: none; font-size: 13px; margin: 0 0 var(--s2); }
+@media (max-width: 860px) {
+  .scroll-hint { display: block; }
+  .compare-wrap {
+    background:
+      linear-gradient(to left, var(--bg) 30%, transparent) right center / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.22), transparent) right center / 14px 100% no-repeat scroll;
+  }
+  .data-table tbody th, .data-table thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg); box-shadow: inset -0.5px 0 0 var(--line); }
+  .data-table thead th:first-child { background: var(--surface); }
+  .data-table tr.ours th { background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg); }
+  .data-table tbody th { min-width: 96px; }
+}
 
 /* ---------- brand kit (/brandkit/) ---------- */
 .bk { padding-bottom: var(--s10); }
