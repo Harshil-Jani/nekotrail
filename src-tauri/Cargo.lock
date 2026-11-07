@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "nekotrail"
-version = "0.25.0"
+version = "0.25.1"
 dependencies = [
  "anyhow",
  "block2",

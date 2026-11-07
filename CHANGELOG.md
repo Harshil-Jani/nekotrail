@@ -3,12 +3,17 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## 0.25.2 (2026-11-08)
+## 0.25.1 (2026-11-08)
 
 **New workspace, tidied up**
 - Pick the repo from a list with each repo's picture. Type to filter it, then press Enter.
 - One agent button with every agent's logo in its menu, so nothing spills off the panel on a smaller window.
 - Esc in a menu now closes only that menu, and if you close the panel, what you typed is still there next time.
+
+**Quicker clean-up and setup**
+- Hover a workspace in the sidebar to archive it without opening it.
+- In the model picker, "Set as default for new chats" makes your pick the model and intelligence every new chat starts with.
+- All intelligence levels fit on one row in the model picker.
 
 ## 0.25.0 (2026-11-08)
 
