@@ -417,7 +417,12 @@ p { text-wrap: pretty; }
 .dl-title { font-size: 26px; display: flex; align-items: center; gap: 10px; margin-bottom: var(--s6); }
 .steps p { margin: 6px 0 0; color: var(--muted); }
 .steps pre { margin: var(--s3) 0 0; }
-.copy-row { position: relative; }
+/* The Copy button gets its own column inside the code box, so a long command scrolls beside it
+   instead of running under it (it did at 390px). */
+.copy-row { display: flex; align-items: center; gap: var(--s2); padding-right: var(--s2); background: var(--code-bg); border-radius: var(--r-md); box-shadow: inset 0 0 0 0.5px var(--line); }
+.steps .copy-row { margin-top: var(--s3); }
+.copy-row pre { flex: 1; min-width: 0; margin: 0; background: none; box-shadow: none; }
+.copy-row .copy-btn { position: static; flex: none; }
 .copy-btn { position: absolute; top: 8px; right: 8px; font: 600 12px var(--sans); padding: 4px 10px; border-radius: var(--r); border: none; background: var(--raised); color: var(--text); box-shadow: var(--shadow-control), 0 0 0 0.5px var(--line-strong); cursor: pointer; }
 .copy-btn:hover { background: var(--accent); color: var(--accent-ink); }
 .note { padding: var(--s4) var(--s5); border-radius: var(--r-lg); background: var(--accent-soft); font-size: 15px; }
