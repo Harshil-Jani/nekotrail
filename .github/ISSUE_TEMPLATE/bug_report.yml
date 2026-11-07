@@ -1,0 +1,96 @@
+name: Bug report
+description: Something in nekotrail doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security problems go through a private report instead: see SECURITY.md.
+        Please check the [open issues](https://github.com/Harshil-Jani/nekotrail/issues) first, and remove tokens, keys and private repo names from anything you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a workspace with Codex in Plan mode
+        2. Approve the plan
+        3. ...
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: nekotrail version
+      description: Settings shows it next to the version link at the bottom.
+      placeholder: "0.20.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Linux (.deb)
+        - Linux (.AppImage)
+        - Linux (built from source)
+        - macOS (built from source)
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "macOS 15.4, Ubuntu 24.04, ..."
+    validations:
+      required: false
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      description: Which agent was the chat using, if it matters?
+      options:
+        - Not agent specific
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - OpenCode
+        - Cursor
+        - GitHub Copilot
+        - Goose
+        - Qwen Code
+        - Kimi
+        - Auggie
+        - Grok
+        - Kiro
+        - Droid
+        - Mistral Vibe
+        - Cline
+        - Kilo
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        In nekotrail press ⌘K (Ctrl+K on Linux), run "Copy diagnostics for a bug report" and paste the result here.
+        It lists versions of nekotrail, git, gh and the agents, and counts of repos and workspaces. No paths, names or prompts.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Error text from the chat, the agent's CLI version if it isn't in the diagnostics, or how often it happens.
+    validations:
+      required: false

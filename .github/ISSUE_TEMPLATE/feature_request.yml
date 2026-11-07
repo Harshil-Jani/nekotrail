@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest something nekotrail should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please check the [roadmap](https://github.com/Harshil-Jani/nekotrail/blob/main/docs/ROADMAP.md) and the [open issues](https://github.com/Harshil-Jani/nekotrail/issues) first.
+        nekotrail stays local-first: no accounts, no cloud workspaces, and your agents run with your own logins.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: How you picture it working. Sketches and screenshots of other tools are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead
+    validations:
+      required: false
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself (see CONTRIBUTING.md).
+          required: false
