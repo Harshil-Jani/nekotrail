@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowRightLeft, RotateCcw, ShieldCheck, Square, X } from "lucide-react";
 import { api, errText, type Agent, type HandoffBrief, type Session } from "../api";
 import { AGENT_INFO, agentName } from "../agents";
+import { AgentLogo } from "./AgentLogo";
 import { briefSize, defaultTarget, handoffTargets, modeNote, reasonLine } from "../handoff";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { ModelPicker } from "./ModelPicker";
@@ -99,7 +100,7 @@ export function HandoffSheet({ session, title, multiRepo, busy, initialAgent, in
           ) : (
             <div className="seg handoff-agents" role="radiogroup" aria-label="Agent">
               {targets.map((a) => (
-                <button key={a} role="radio" aria-checked={a === agent} className={a === agent ? "on" : ""} onClick={() => pick(a)}>{AGENT_INFO[a].name}</button>
+                <button key={a} role="radio" aria-checked={a === agent} className={a === agent ? "on" : ""} onClick={() => pick(a)}><AgentLogo agent={a} size={13} />{AGENT_INFO[a].name}</button>
               ))}
             </div>
           )}

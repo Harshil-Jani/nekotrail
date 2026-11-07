@@ -3,6 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { Archive, FileText, MessageSquare, Search, SquareTerminal, User } from "lucide-react";
 import { api, errText, type Repo, type SearchGroup, type SearchHit, type SearchProgress } from "../api";
 import { agentName } from "../agents";
+import { MenuSelect } from "./MenuSelect";
+import { AgentLogo } from "./AgentLogo";
+import type { Agent } from "../api";
 import { ago, DATE_LABEL, flatten, plainSnippet, snippetParts, type DateRange, sinceFor } from "../search";
 
 type Only = "all" | "user" | "command";
@@ -133,17 +136,12 @@ export function SearchSheet({ repos, nameOf, onOpen, onClose }: {
               <button key={v} role="radio" aria-checked={only === v} className={only === v ? "on" : ""} onClick={() => setOnly(v)}>{label}</button>
             ))}
           </div>
-          <select aria-label="Repo" value={repo} onChange={(e) => setRepo(e.target.value)} className={repo ? "set" : ""}>
-            <option value="">All repos</option>
-            {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <select aria-label="Agent" value={agent} onChange={(e) => setAgent(e.target.value)} className={agent ? "set" : ""}>
-            <option value="">Any agent</option>
-            {agents.map((a) => <option key={a} value={a}>{agentName(a as never)}</option>)}
-          </select>
-          <select aria-label="Date" value={range} onChange={(e) => setRange(e.target.value as DateRange)} className={range !== "any" ? "set" : ""}>
-            {(Object.keys(DATE_LABEL) as DateRange[]).map((d) => <option key={d} value={d}>{DATE_LABEL[d]}</option>)}
-          </select>
+          <MenuSelect label="Repo" value={repo} onChange={setRepo} className={repo ? "set" : ""}
+            options={[{ value: "", label: "All repos" }, ...repos.map((r) => ({ value: r.id, label: r.name }))]} />
+          <MenuSelect label="Agent" value={agent} onChange={setAgent} className={agent ? "set" : ""}
+            options={[{ value: "", label: "Any agent" }, ...agents.map((a) => ({ value: a, label: agentName(a as never), icon: <AgentLogo agent={a as Agent} size={13} /> }))]} />
+          <MenuSelect<DateRange> label="Date" value={range} onChange={setRange} className={range !== "any" ? "set" : ""}
+            options={(Object.keys(DATE_LABEL) as DateRange[]).map((d) => ({ value: d, label: DATE_LABEL[d] }))} />
           {workspace && (
             <button className="chip gs-chip" onClick={() => setWorkspace(null)} title="Search every workspace again" aria-label={`Only in ${nameOf(workspace)}. Remove.`}>
               Only in {nameOf(workspace)} <span aria-hidden>×</span>

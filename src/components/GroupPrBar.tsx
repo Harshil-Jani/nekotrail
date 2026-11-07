@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useDismiss } from "../useDismiss";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowDown, ArrowUp, ChevronDown, CircleCheck, CircleDashed, CircleX, GitBranch, GitMerge, GitPullRequest, Upload } from "lucide-react";
 import { api, errText, prFromView, type MergeStep, type Pr, type PrView, type Repo, type Workspace } from "../api";
@@ -51,6 +52,7 @@ export function GroupPrBar({ members, repos, prs, title, refreshKey, onSay, onAr
   const [order, setOrder] = useState<string[]>(() => loadOrder(group, members.map((m) => m.id)));
   const [busy, setBusy] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  const menuRef = useDismiss<HTMLSpanElement>(menu, () => setMenu(false));
   const [steps, setSteps] = useState<MergeStep[] | null>(null);
   useEffect(() => { setOrder(loadOrder(group, members.map((m) => m.id))); setForm(null); setMerging(false); setSteps(null); }, [group, members.length]);
   useEffect(() => { members.forEach((m) => api.prRefresh(m.id).catch(() => {})); }, [group, refreshKey]);
@@ -114,12 +116,12 @@ export function GroupPrBar({ members, repos, prs, title, refreshKey, onSay, onAr
       {!allMerged && (
         <span className="git-actions">
           {primary}
-          <span className="git-menu">
+          <span className="git-menu" ref={menuRef}>
             <button className="icon-btn" aria-label="More git actions" aria-expanded={menu} onClick={() => setMenu((m) => !m)} disabled={!!busy}>
               {busy ? <span className="spinner" /> : <ChevronDown size={15} />}
             </button>
             {menu && (
-              <span className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
+              <span className="menu" role="menu">
                 <button role="menuitem" onClick={() => { setMenu(false); onSendAgent(commitPrompt(members, nameOf)); }}>
                   <Upload size={15} /><span>Ask the agent to commit in every repo</span>
                 </button>

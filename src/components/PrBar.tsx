@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDismiss } from "../useDismiss";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bot, ArrowDownToLine, ChevronDown, CircleCheck, CircleDashed, CircleX, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Layers, MessageSquare, ScanSearch, Sparkles, SquareStack, Upload } from "lucide-react";
 import { api, avatar, errText, prFromView, type Collision, type Pr, type PrView, type Repo, type StackParent, type Workspace } from "../api";
@@ -185,6 +186,7 @@ export function PrBar({
   const [form, setForm] = useState<{ title: string; body: string; draft: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  const menuRef = useDismiss<HTMLSpanElement>(menu, () => setMenu(false));
   const [renaming, setRenaming] = useState<string | null>(null);
   const [radarOpen, setRadarOpen] = useState(false);
   useEffect(() => setRadarOpen(false), [ws.id]);
@@ -515,12 +517,12 @@ export function PrBar({
               {busy ? <span className="spinner" /> : primary.icon}<span className="pb-label">{primary.label}</span>
             </button>
           )}
-          <span className="git-menu">
+          <span className="git-menu" ref={menuRef}>
             <button className="icon-btn" aria-label="More git actions" aria-expanded={menu} onClick={() => setMenu((m) => !m)} disabled={!!busy && !primary}>
               {busy && !primary ? <span className="spinner" /> : <ChevronDown size={15} />}
             </button>
             {menu && (
-              <span className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
+              <span className="menu" role="menu">
                 {Object.values(actions).filter((a) => a.id !== primary?.id && a.id !== "conflicts" && !(a.id === "mergeWhenGreen" && a.disabled)).map((a) => (
                   <button key={a.id} role="menuitem" disabled={a.disabled || !!busy} onClick={() => { setMenu(false); a.run(); }}
                     title={a.id === "merge" && mergeBlocked ? mergeBlocked : a.id === "manualPr" && noChanges ? noChanges : undefined}>

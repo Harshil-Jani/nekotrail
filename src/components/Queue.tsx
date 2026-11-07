@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, CheckCircle2, Clock, Gauge, GripVertical, Hand, ListOrdered, Pause, Play, Plus, RotateCw, Trash2, XCircle } from "lucide-react";
 import { api, errText, type Agent, type PermissionMode, type Repo } from "../api";
 import { AGENT_INFO, AGENTS, agentName } from "../agents";
+import { AgentLogo } from "./AgentLogo";
+import { MenuSelect, type MenuOption } from "./MenuSelect";
 import { useInstalledAgents } from "../useInstalledAgents";
 import { useCatalog } from "./ModelPicker";
 import { okFullAuto } from "../fullAuto";
@@ -136,7 +138,7 @@ export function Queue({ repos, initialRepo, addNonce, onOpen, onSay, onUsage }: 
         </span>
         <span className="tq-text">
           <span className="tq-title">{taskTitle(t.prompt)}</span>
-          <span className="tq-meta">{meta}</span>
+          <span className="tq-meta"><AgentLogo agent={agent} size={12} />{meta}</span>
           <span className={`tq-status ${tone}`}>{status}</span>
           {kind === "finished" && t.evidence && t.evidence.length > 0 && (
             <ul className="tq-evidence" aria-label="What NekoTrail saw">
@@ -302,45 +304,37 @@ function QueueForm({ repos, initialRepo, onCancel, onAdded, onError }: {
       setBusy(false);
     }
   };
-  const agentOptions = (except?: Agent) => (
-    <>
-      {known.filter((a) => a !== except).map((a) => <option key={a} value={a}>{AGENT_INFO[a].name}</option>)}
-      {missing.length > 0 && <optgroup label="Not installed">{missing.filter((a) => a !== except).map((a) => <option key={a} value={a}>{AGENT_INFO[a].name}</option>)}</optgroup>}
-    </>
-  );
+  const agentOptions: MenuOption<Agent>[] = [
+    ...known.map((a) => ({ value: a, label: AGENT_INFO[a].name, icon: <AgentLogo agent={a} size={13} /> })),
+    ...missing.map((a) => ({ value: a, label: AGENT_INFO[a].name, icon: <AgentLogo agent={a} size={13} />, group: "Not installed" })),
+  ];
   return (
     <form className="tq-form" onSubmit={(e) => { e.preventDefault(); submit(); }}
       onKeyDown={(e) => { if (e.key === "Enter" && mod(e)) { e.preventDefault(); submit(); } if (e.key === "Escape") onCancel(); }}>
       <textarea ref={box} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="What should the agent do?" aria-label="Task" />
       <div className="tq-form-grid">
         <label><span>Repo</span>
-          <select value={repoId} onChange={(e) => { setRepoId(e.target.value); setBase(""); }}>
-            {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+          <MenuSelect label="Repo" value={repoId} onChange={(v) => { setRepoId(v); setBase(""); }}
+            options={repos.map((r) => ({ value: r.id, label: r.name }))} />
         </label>
         <label><span>From branch</span>
           <input value={base} onChange={(e) => setBase(e.target.value)} placeholder={repo?.default_branch ?? "main"} list="queue-branches" spellCheck={false} />
           <datalist id="queue-branches">{branches.map((b) => <option key={b} value={b} />)}</datalist>
         </label>
         <label><span>Agent</span>
-          <select value={agent} onChange={(e) => { setAgent(e.target.value as Agent); setModel(""); }}>{agentOptions()}</select>
+          <MenuSelect<Agent> label="Agent" value={agent} onChange={(v) => { setAgent(v); setModel(""); }} options={agentOptions} />
         </label>
         <label><span>Model</span>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="">Your default</option>
-            {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
+          <MenuSelect label="Model" value={model} onChange={setModel}
+            options={[{ value: "", label: "Your default" }, ...models.map((m) => ({ value: m.id, label: m.label }))]} />
         </label>
         <label><span>Permissions</span>
-          <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)}>
-            {MODES.filter((m) => m !== "ask" || AGENT_INFO[agent].ask).map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
-          </select>
+          <MenuSelect<PermissionMode> label="Permissions" value={mode} onChange={setMode}
+            options={MODES.filter((m) => m !== "ask" || AGENT_INFO[agent].ask).map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </label>
         <label><span>If {AGENT_INFO[agent].name} runs out of usage</span>
-          <select value={fallback} onChange={(e) => setFallback(e.target.value as Agent | "")}>
-            <option value="">Wait for the reset</option>
-            {known.filter((a) => a !== agent).map((a) => <option key={a} value={a}>Switch to {AGENT_INFO[a].name}</option>)}
-          </select>
+          <MenuSelect<Agent | ""> label={`If ${AGENT_INFO[agent].name} runs out of usage`} value={fallback} onChange={setFallback}
+            options={[{ value: "", label: "Wait for the reset" }, ...known.filter((a) => a !== agent).map((a) => ({ value: a, label: `Switch to ${AGENT_INFO[a].name}`, icon: <AgentLogo agent={a} size={13} /> }))]} />
         </label>
       </div>
       <div className="tq-then" role="group" aria-label="When the agent is done">

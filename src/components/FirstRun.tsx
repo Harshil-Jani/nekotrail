@@ -6,6 +6,8 @@ import { IS_MAC, keyHint, mod } from "../platform";
 import { codeActions, newTerminalChats, STEPS, suggestTasks, type CodeAction, type Found, type RepoBrief, type Step } from "../onboarding";
 import { Mascot, type Mood } from "./Mascot";
 import { SetupCheck } from "./Welcome";
+import { MenuSelect } from "./MenuSelect";
+import { AgentLogo } from "./AgentLogo";
 
 /**
  * Focus the step's primary button on load, so Return goes on, without the keyboard focus ring:
@@ -199,16 +201,14 @@ function TryStep({ repos, ready, onBack, onSkip, onStart }: {
         <div className="fr-fields">
           {repos.length > 1 && (
             <label>Repo
-              <select value={repo.id} onChange={(e) => { setRepoId(e.target.value); setTyped(false); }}>
-                {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
+              <MenuSelect label="Repo" value={repo.id} onChange={(v) => { setRepoId(v); setTyped(false); }}
+                options={repos.map((r) => ({ value: r.id, label: r.name }))} />
             </label>
           )}
           {agents.length > 1 && (
             <label>Agent
-              <select value={pick} onChange={(e) => setAgent(e.target.value as Agent)}>
-                {agents.map((a) => <option key={a} value={a}>{AGENT_INFO[a].full}</option>)}
-              </select>
+              <MenuSelect<Agent> label="Agent" value={pick} onChange={setAgent}
+                options={agents.map((a) => ({ value: a, label: AGENT_INFO[a].full, icon: <AgentLogo agent={a} size={13} /> }))} />
             </label>
           )}
           <span className="chip fr-mode" title="Plan mode only reads. Switch modes later from the chat.">Plan mode, read only</span>
