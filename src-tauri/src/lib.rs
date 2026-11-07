@@ -70,7 +70,9 @@ struct Runs {
     /// session id -> context the agent must hear before the next prompt (e.g. "files were rewound")
     notes: HashMap<String, String>,
     /// stdin of interactive turns ("ask before changes"), for answering permission requests.
-    stdins: HashMap<String, std::process::ChildStdin>,
+    /// Each interactive turn's stdin. Written outside the runs lock (`write_stdin`); dropping the
+    /// entry closes it once no write is under way.
+    stdins: HashMap<String, Arc<Mutex<std::process::ChildStdin>>>,
     /// Open permission requests: request id -> (session id, tool input, CLI suggestions).
     approvals: HashMap<String, (String, Value, Value)>,
     /// Chats whose next turn should fork the agent's conversation instead of continuing it.
@@ -90,18 +92,26 @@ fn write_stdin(runs: &Arc<Ordered<Runs>>, id: &str, lines: &[String]) -> bool {
     if lines.is_empty() {
         return true;
     }
-    let mut runs = runs.lock().unwrap();
-    let Some(stdin) = runs.stdins.get_mut(id) else { return false };
+    // Not under the runs lock: an agent that stops reading would fill the pipe and hold it forever.
+    let Some(stdin) = runs.lock().unwrap().stdins.get(id).cloned() else { return false };
+    let mut stdin = stdin.lock().unwrap_or_else(|p| p.into_inner());
     lines.iter().all(|l| stdin.write_all(l.as_bytes()).is_ok()) && stdin.flush().is_ok()
 }
 
-/// Send `signal` to the turn's process after `secs`, if that same process is still running.
+/// Send `signal` to an agent turn's whole process group: the agent and every tool, shell and
+/// server it started (agents start in a group of their own, see `agent::command`).
+fn signal_group(pid: u32, signal: &str) {
+    let _ = Command::new("kill").args([signal, "--", &format!("-{pid}")]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+
+/// Send `signal` to the turn's process group after `secs`, if that same turn is still running.
 /// For agents that were asked to stop or to exit and might not.
 fn signal_later(runs: Arc<Ordered<Runs>>, id: String, pid: u32, secs: u64, signal: &'static str) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(secs));
-        if runs.lock().unwrap().running.get(&id) == Some(&pid) {
-            let _ = Command::new("kill").args([signal, &pid.to_string()]).status();
+        let still = runs.lock().unwrap().running.get(&id) == Some(&pid);
+        if still {
+            signal_group(pid, signal);
         }
     });
 }
@@ -2847,7 +2857,7 @@ fn side_turn(st: &AppState, ws: &Workspace, prompt: &str, secs: u64) -> Res<Stri
             }
             if !done.load(Ordering::Relaxed) {
                 timed_out.store(true, Ordering::Relaxed);
-                let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+                signal_group(pid, "-TERM");
             }
         });
     }
@@ -3718,13 +3728,18 @@ async fn stop(st: State<'_, AppState>, id: String) -> Res<()> {
         (runs.running.get(&id).copied(), runs.parsers.get(&id).cloned())
     };
     let Some(pid) = pid else { return Ok(()) };
-    // ACP agents are asked to cancel (and given a moment); everything else gets SIGINT.
-    match parser.and_then(|p| p.lock().unwrap().cancel()) {
-        Some(lines) if write_stdin(&st.runs, &id, &lines) => signal_later(st.runs.clone(), id, pid, 10, "-TERM"),
+    // ACP agents are asked to cancel (and given a moment); everything else gets SIGINT, the way
+    // Ctrl-C would stop it. Then TERM and KILL to the whole group, in case it doesn't stop.
+    let cancel = parser.and_then(|p| p.lock().unwrap().cancel());
+    let grace = match cancel {
+        Some(lines) if write_stdin(&st.runs, &id, &lines) => 10,
         _ => {
-            let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
+            signal_group(pid, "-INT");
+            5
         }
-    }
+    };
+    signal_later(st.runs.clone(), id.clone(), pid, grace, "-TERM");
+    signal_later(st.runs.clone(), id, pid, grace + 5, "-KILL");
     Ok(())
 }
 
@@ -4034,7 +4049,7 @@ impl TurnEnd {
         if let Ok(Some(status)) = child.try_wait() {
             return Ok(status);
         }
-        let _ = Command::new("kill").args(["-TERM", &child.id().to_string()]).status();
+        signal_group(child.id(), "-TERM");
         let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
         while std::time::Instant::now() < until {
             if let Ok(Some(status)) = child.try_wait() {
@@ -4042,6 +4057,7 @@ impl TurnEnd {
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+        signal_group(child.id(), "-KILL");
         let _ = child.kill();
         child.wait()
     }
@@ -4231,7 +4247,7 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
                 let _ = stdin.write_all(first.as_bytes());
                 let _ = stdin.flush();
             }
-            st.runs.lock().unwrap().stdins.insert(id.clone(), stdin);
+            st.runs.lock().unwrap().stdins.insert(id.clone(), Arc::new(Mutex::new(stdin)));
             // ACP: `initialize` goes first.
             let first = parser.lock().unwrap().outgoing();
             write_stdin(&st.runs, &id, &first);
@@ -4440,6 +4456,18 @@ fn start_turn_spawned(app: AppHandle, st: &AppState, id: String, text: String) -
             }
             let _ = st.db().append_event(&id, &ev);
             emit_event(&app, &id, &ev);
+        }
+        // You pressed Stop: whatever the agent started goes too. Background tools often ignore
+        // SIGINT and would outlive it. (A turn that ended by itself keeps what it started.)
+        if user_stopped {
+            signal_group(pid, "-TERM");
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                let alive = Command::new("kill").args(["-0", "--", &format!("-{pid}")]).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
+                if alive {
+                    signal_group(pid, "-KILL");
+                }
+            });
         }
         // Every agent, whatever it enforces itself: did this turn change a protected file?
         let mut guard_hit: Option<String> = None;
@@ -4926,12 +4954,13 @@ async fn busy_work(st: State<'_, AppState>) -> Res<Value> {
 /// Queued prompts are dropped so no new turn starts in between (they live in memory only).
 #[tauri::command]
 async fn stop_all_work(st: State<'_, AppState>) -> Res<()> {
-    {
+    let pids: Vec<u32> = {
         let mut runs = st.runs.lock().unwrap();
         runs.queued.clear();
-        for pid in runs.running.values() {
-            let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
-        }
+        runs.running.values().copied().collect()
+    };
+    for pid in pids {
+        signal_group(pid, "-INT");
     }
     st.ptys.close_all();
     Ok(())

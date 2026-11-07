@@ -226,7 +226,7 @@ await journey("an agent that stays alive after answering still ends the turn", a
   await until("the lingering agent to be stopped", async () => !alive(pid), 5000);
 });
 
-await journey("Stop ends a turn that never answers", async () => {
+await journey("Stop ends a turn that never answers, tools it started included", async () => {
   writeFileSync(agentLog, "");
   await $("send", { session_id: sid, text: "[hang] think forever" });
   await until("the turn to start", () => running(sid));
@@ -235,6 +235,9 @@ await journey("Stop ends a turn that never answers", async () => {
   await idle(sid, 15_000);
   const last = (await events(sid)).at(-1);
   if (!(last?.kind === "done" && last.stopped)) fail(`the chat ends with ${JSON.stringify(last)}, not a stop`);
+  const pids = agentTurns().filter((l) => l.startsWith("start") || l.startsWith("child")).map((l) => Number(l.split(" ")[1]));
+  if (pids.length < 2) fail(`the fake agent didn't log its pids: ${agentTurns().join(" / ")}`);
+  await until("the agent and the tool it started to be gone", async () => pids.every((p) => !alive(p)), 12_000);
 });
 
 await journey("the terminal answers while a turn runs", async () => {

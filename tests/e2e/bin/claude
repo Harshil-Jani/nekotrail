@@ -4,7 +4,7 @@
 # markers in the prompt:
 #   [slow]    answers after 3 s (time to send another message while it works)
 #   [linger]  stays alive after its result, holding stdout open (what stream-json input mode does)
-#   [hang]    never answers (for Stop)
+#   [hang]    never answers, and starts a child that would outlive it (for Stop)
 # Every turn is logged to $FAKE_AGENT_LOG as "start|end <pid> <prompt>".
 case "$1" in --version) echo "2.1.0 (Claude Code)"; exit 0 ;; esac
 prompt="" session="fake-$$"
@@ -18,7 +18,11 @@ done
 log() { [ -n "${FAKE_AGENT_LOG:-}" ] && printf '%s %s %s\n' "$1" "$$" "$(printf '%s' "$prompt" | tr '\n' ' ')" >> "$FAKE_AGENT_LOG"; return 0; }
 log start
 printf '{"type":"system","subtype":"init","session_id":"%s","model":"claude-opus-fake"}\n' "$session"
-case "$prompt" in *"[hang]"*) exec sleep 600 ;; esac
+case "$prompt" in *"[hang]"*)
+  # A tool it started that would outlive it, as a real agent's shell or dev server can.
+  sleep 600 & [ -n "${FAKE_AGENT_LOG:-}" ] && echo "child $! $prompt" >> "$FAKE_AGENT_LOG"
+  exec sleep 600 ;;
+esac
 case "$prompt" in *"[slow]"*) sleep 3 ;; esac
 printf '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]},"session_id":"%s"}\n' "$session"
 log end

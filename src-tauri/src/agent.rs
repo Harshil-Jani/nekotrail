@@ -636,6 +636,12 @@ pub fn command(spec: &TurnSpec) -> Command {
     c.envs(spec.env.iter().filter(|(k, _)| !own.iter().any(|o| o == k.as_str())).map(|(k, v)| (k.as_str(), v.as_str())));
     c.current_dir(spec.cwd);
     c.stdin(if interactive(spec) { std::process::Stdio::piped() } else { std::process::Stdio::null() });
+    // A process group of its own, so Stop reaches the tools, shells and servers it starts too.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        c.process_group(0);
+    }
     c
 }
 
