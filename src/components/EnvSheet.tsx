@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Eye, EyeOff, RotateCw, Settings2, Variable, X } from "lucide-react";
 import { api, errText, type EnvEntry, type EnvSection, type EnvView } from "../api";
 import { envMatches, envSourceLabel, MASK } from "../envView";
+import { keepTabInside } from "../useDismiss";
 
 /**
  * Environment: every variable this workspace's agents, terminals and scripts get, grouped by where
@@ -20,6 +21,19 @@ export function EnvSheet({ workspaceId, name, onEditRepo, onSay, onClose }: { wo
     api.workspaceEnvironment(workspaceId).then(setView).catch((e) => setError(errText(e)));
   };
   useEffect(load, [workspaceId]);
+  // Focus goes back where you were on close; opened from the ⋯ menu or ⌘K (both gone by then), to the ⋯ button.
+  useEffect(() => {
+    const back = document.activeElement as HTMLElement | null;
+    return () => {
+      const to = back?.isConnected ? back : document.querySelector<HTMLElement>("button[aria-label='More actions']");
+      to?.focus();
+    };
+  }, []);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) box.current?.querySelector<HTMLElement>(".env-error button")?.focus();
+    else if (!box.current?.contains(document.activeElement)) box.current?.focus();
+  }, [view, error]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -33,7 +47,7 @@ export function EnvSheet({ workspaceId, name, onEditRepo, onSay, onClose }: { wo
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal env-sheet" role="dialog" aria-modal="true" aria-label="Environment" onClick={(e) => e.stopPropagation()}>
+      <div ref={box} tabIndex={-1} onKeyDown={keepTabInside} className="modal env-sheet" role="dialog" aria-modal="true" aria-label="Environment" onClick={(e) => e.stopPropagation()}>
         <div className="row">
           <Variable size={16} aria-hidden />
           <h2>Environment</h2>
@@ -42,7 +56,7 @@ export function EnvSheet({ workspaceId, name, onEditRepo, onSay, onClose }: { wo
           <button className="icon" onClick={load} aria-label="Read again" title="Read again"><RotateCw size={14} /></button>
           <button className="icon" onClick={onClose} aria-label="Close"><X size={15} /></button>
         </div>
-        <p className="muted env-lede">What agents, terminals and scripts in this workspace get, and where each value comes from. When a name is set twice, the one that loses says "overridden". Nothing here is saved or sent anywhere.</p>
+        <p className="muted env-lede">What agents, terminals and scripts in this workspace get, and where each value comes from. When a name is set twice, the one that loses is struck through. Secrets and .env values stay hidden until you click the eye.</p>
         {view && total > 0 && (
           <input className="env-filter" type="search" value={q} placeholder="Filter by name, source or file" aria-label="Filter variables" onChange={(e) => setQ(e.target.value)} autoFocus />
         )}
@@ -58,13 +72,13 @@ export function EnvSheet({ workspaceId, name, onEditRepo, onSay, onClose }: { wo
         <div className="env-body">
           {error && <div className="mcp-note bad env-error"><span>{error}</span><button onClick={load}>Try again</button></div>}
           {!view && !error && <p className="muted"><span className="spinner" /> Reading this workspace's environment…</p>}
-          {view && q.trim() !== "" && matching === 0 && <p className="muted">No variable matches "{q.trim()}".</p>}
+          {view && q.trim() !== "" && matching === 0 && <p className="muted env-empty">No variable matches "{q.trim()}". <button className="link" onClick={() => setQ("")}>Clear the filter</button></p>}
           {view && sections.map((s) => (q.trim() !== "" && s.rows.length === 0 ? null : (
             <Section key={s.id} s={s} rows={s.rows} filtering={q.trim() !== ""} shown={shown} onToggle={toggle} onCopy={copy} onEditRepo={() => onEditRepo(view.repo_id)} />
           )))}
         </div>
         <div className="row env-foot">
-          <span className="muted">Values from .env files, and any that look like a secret, stay hidden until you click the eye.</span>
+          <span className="muted">Read only. Nothing here is saved or sent anywhere.</span>
           <span className="spacer" />
           <button onClick={() => view && onEditRepo(view.repo_id)} disabled={!view}><Settings2 size={13} />Edit in Repo settings</button>
         </div>
