@@ -1,7 +1,7 @@
 {
   "name": "nekotrail",
   "private": true,
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "Run many coding agents in parallel on your own machine, each in its own git worktree and branch, and ship each one as a pull request.",
   "homepage": "https://harshil-jani.github.io/nekotrail/",
   "repository": {
