@@ -219,8 +219,9 @@ already there), the Preview tab and the popover say so and show the fix for that
 
 - `src-tauri/src`: Rust backend (worktrees, agent runner, PTY terminals, SQLite store, Conductor importer). Run `cargo test` in `src-tauri`.
 - `src`: React UI. Open `http://localhost:1420/preview.html?ws=w1` (or `?view=sky`) during `bun run tauri dev` to see the UI with sample data in any browser.
-- `PRODUCT.md`: who it's for and the product principles.
-- `docs/FEATURES.md`: what's in, what's next, and what we're skipping.
+- `PRODUCT.md`: who it's for and the product principles. `DESIGN.md`: the visual system.
+- [docs/ROADMAP.md](docs/ROADMAP.md): what's next, and what we're not building.
+- [CONTRIBUTING.md](CONTRIBUTING.md): setup, the checks a PR needs, and how releases work.
 
 ## Releases
 
