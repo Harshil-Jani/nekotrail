@@ -63,8 +63,9 @@ export function inlineCat(rel: string, opts: { cls: string; reach: [number, numb
     return `<svg ${keep} class="${opts.cls}" ${a11y} data-cat data-reach="${opts.reach.join(",")}">`;
   });
   // Eye balls are the dark ellipses; glints are the small white circles on them.
-  s = s.replace(/<ellipse ([^>]*fill="#1a1006"[^>]*)>/gi, '<ellipse class="eye-ball" $1>');
-  s = s.replace(/<circle ([^>]*r="(?:1\.8|2\.4)"[^>]*fill="#fff"[^>]*)>/gi, '<circle class="eye-glint" $1>');
+  const ink = palette().find((c) => c.token === "cat-ink")?.hex ?? "";
+  s = s.replace(new RegExp(`<ellipse ([^>]*fill="${ink}"[^>]*)>`, "gi"), '<ellipse class="eye-ball" $1>');
+  s = s.replace(/<circle ([^>]*r="(?:1\.8|2\.4)"[^>]*fill="#fff(?:fff)?"[^>]*)>/gi, '<circle class="eye-glint" $1>');
   return s;
 }
 

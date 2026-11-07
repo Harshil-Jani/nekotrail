@@ -32,7 +32,7 @@ const mascotColors = colors.filter((c) => c.group === "mascot");
 const inkFor = (hex: string) => {
   const n = parseInt(hex.slice(1), 16);
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#0A0D18" : "#FFFFFF";
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#101026" : "#FFFFFF";
 };
 const facts: [string, string][] = [
   ["Name", "NekoTrail"],
@@ -90,7 +90,7 @@ const links: [string, string][] = [
 
     <section class="bk-section" aria-labelledby="colours">
       <h2 id="colours">Colours</h2>
-      <p class="bk-intro">Cat Orange is the one accent; the night sky carries the rest. Click a colour to copy its hex.</p>
+      <p class="bk-intro">Moonlight is the brand colour, lantern gold the one warm note for what needs you; the night sky carries the rest. Click a colour to copy its hex.</p>
       <ul class="bk-swatches" data-stagger>
         {brandColors.map((c) => (
           <li>

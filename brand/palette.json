@@ -1,96 +1,220 @@
 {
-  "about": "The NekoTrail palette: the one place brand colours live. Edit here, then run `bun scripts/brand.ts`. It redraws every logo, icon and card and rewrites site/src/styles/tokens.css.",
+  "about": "The NekoTrail palette, Moonlight: the one place brand colours live. Edit here, then run `bun scripts/brand.ts`. It redraws every logo, icon and card and rewrites site/src/styles/tokens.css. `colors` are the named swatches, `themes` the dark and light UI tokens (every text pair passes WCAG AA), `icon` the app icon.",
   "colors": [
     {
       "token": "accent",
-      "name": "Cat Orange",
-      "hex": "#FF9A4D",
-      "use": "The one accent. Primary buttons, the mark, lit stars.",
+      "name": "Moonlight",
+      "hex": "#CCCCFF",
+      "use": "The one brand colour. Primary buttons and focus on dark, the hero emphasis, the app icon glow.",
       "group": "brand"
     },
     {
       "token": "accent-deep",
-      "name": "Marmalade",
-      "hex": "#E5762A",
-      "use": "Fur shading, whiskers, the merge tail.",
+      "name": "Indigo",
+      "hex": "#3D3D85",
+      "use": "Primary fill on light, cat stripes, outline and tail.",
       "group": "brand"
     },
     {
       "token": "accent-text-light",
-      "name": "Ember",
-      "hex": "#B35400",
-      "use": "Orange text on light backgrounds.",
+      "name": "Indigo Text",
+      "hex": "#3D3D85",
+      "use": "Brand text on light backgrounds.",
       "group": "brand"
     },
     {
       "token": "accent-text-dark",
-      "name": "Apricot",
-      "hex": "#FFAD6E",
-      "use": "Orange text on dark backgrounds and the sky.",
+      "name": "Moonlight Text",
+      "hex": "#CCCCFF",
+      "use": "Brand text on dark backgrounds and the sky.",
+      "group": "brand"
+    },
+    {
+      "token": "lantern",
+      "name": "Lantern",
+      "hex": "#FFD27A",
+      "use": "The single warm attention colour: Needs you, unread, the cat's commit-stars, the icon star.",
+      "group": "brand"
+    },
+    {
+      "token": "lantern-deep",
+      "name": "Lantern Deep",
+      "hex": "#B07A00",
+      "use": "Lantern fills on light backgrounds, and the wordmark star on light.",
+      "group": "brand"
+    },
+    {
+      "token": "lantern-text-light",
+      "name": "Lantern Ink",
+      "hex": "#7A5500",
+      "use": "Lantern text on light backgrounds.",
       "group": "brand"
     },
     {
       "token": "night",
       "name": "Night",
-      "hex": "#0A0D18",
-      "use": "The night sky, and the wordmark on light backgrounds.",
+      "hex": "#101026",
+      "use": "App canvas on dark, and the wordmark on light backgrounds.",
       "group": "brand"
     },
     {
       "token": "dusk",
       "name": "Dusk",
-      "hex": "#1B2340",
-      "use": "The glow at the top of the night sky.",
+      "hex": "#3A3A80",
+      "use": "The glow at the bottom of the night sky.",
       "group": "brand"
     },
     {
       "token": "midnight",
       "name": "Midnight",
-      "hex": "#06070D",
-      "use": "The bottom of the night sky.",
+      "hex": "#08081A",
+      "use": "The top of the night sky, deepest backdrop.",
       "group": "brand"
     },
     {
       "token": "starlight",
       "name": "Starlight",
-      "hex": "#E8EAEE",
+      "hex": "#EEEEFF",
       "use": "Lit stars and text on the sky.",
       "group": "brand"
     },
     {
       "token": "paper",
       "name": "Paper",
-      "hex": "#FFFFFF",
+      "hex": "#FDFDFF",
       "use": "Light backgrounds, the wordmark on dark.",
       "group": "brand"
     },
     {
       "token": "mist",
       "name": "Mist",
-      "hex": "#F5F5F7",
-      "use": "Light surfaces and cards.",
+      "hex": "#F3F3FA",
+      "use": "Light surfaces and the light sidebar.",
       "group": "brand"
     },
     {
-      "token": "blush",
-      "name": "Blush",
-      "hex": "#FF6F6F",
-      "use": "Inner ears and cheeks. Mascot only.",
+      "token": "cat-fur",
+      "name": "Silver",
+      "hex": "#ECECFF",
+      "use": "The cat's fur and the icon mark. Mascot only.",
+      "group": "mascot"
+    },
+    {
+      "token": "cat-stripe",
+      "name": "Stripe",
+      "hex": "#3D3D85",
+      "use": "Tabby stripes, outline, whiskers and tail. Mascot only.",
       "group": "mascot"
     },
     {
       "token": "cat-ink",
       "name": "Cat Ink",
-      "hex": "#1A1006",
-      "use": "The cat's eyes and mouth. Mascot only.",
+      "hex": "#14143A",
+      "use": "The cat's eyes and mouth (dark eyes on a light face, so cursor-follow reads). Mascot only.",
+      "group": "mascot"
+    },
+    {
+      "token": "cat-glint",
+      "name": "Glint",
+      "hex": "#FFFFFF",
+      "use": "Eye highlight; moves with the pupil. Mascot only.",
+      "group": "mascot"
+    },
+    {
+      "token": "blush",
+      "name": "Blush",
+      "hex": "#FFB08A",
+      "use": "Inner ears and cheeks, the one warm note on the face. Mascot only.",
       "group": "mascot"
     },
     {
       "token": "cat-nose",
       "name": "Nose",
-      "hex": "#FF7A8A",
+      "hex": "#FF8FA0",
       "use": "The cat's nose. Mascot only.",
       "group": "mascot"
+    },
+    {
+      "token": "cat-paw",
+      "name": "Paw",
+      "hex": "#FFFFFF",
+      "use": "Paws. Mascot only.",
+      "group": "mascot"
+    },
+    {
+      "token": "cat-tail-star",
+      "name": "Commit Star",
+      "hex": "#FFD27A",
+      "use": "The commit dots on the merge tail (lantern). Mascot only.",
+      "group": "mascot"
     }
-  ]
+  ],
+  "themes": {
+    "dark": {
+      "bg0": "#0A0A1C",
+      "bg1": "#101026",
+      "bg2": "#161634",
+      "bg3": "#1F1F45",
+      "hover": "#272754",
+      "border": "#29295A",
+      "border-strong": "#3C3C78",
+      "text": "#F0F0FF",
+      "text2": "#BFBFE6",
+      "muted": "#9C9CCC",
+      "primary": "#CCCCFF",
+      "primary-hover": "#DCDCFF",
+      "primary-ink": "#1A1A4A",
+      "primary-text": "#CCCCFF",
+      "accent": "#FFD27A",
+      "accent-text": "#FFD98F",
+      "star": "#EEEEFF",
+      "star-glow": "#CCCCFF",
+      "success": "#5EE0A0",
+      "warning": "#FF9F5A",
+      "danger": "#FF7A8E",
+      "focus": "#CCCCFF",
+      "sky-top": "#08081A",
+      "sky-mid": "#1C1C52",
+      "sky-bottom": "#3A3A80",
+      "sky-text": "#FFFFFF",
+      "sky-text2": "#CFCFF0"
+    },
+    "light": {
+      "bg0": "#E8E8F5",
+      "bg1": "#FDFDFF",
+      "bg2": "#F3F3FA",
+      "bg3": "#FFFFFF",
+      "hover": "#EAEAF6",
+      "border": "#DCDCEE",
+      "border-strong": "#BDBDDE",
+      "text": "#14143A",
+      "text2": "#42426E",
+      "muted": "#545485",
+      "primary": "#3D3D85",
+      "primary-hover": "#2F2F70",
+      "primary-ink": "#FFFFFF",
+      "primary-text": "#3D3D85",
+      "accent": "#B07A00",
+      "accent-text": "#7A5500",
+      "star": "#F4F4FF",
+      "star-glow": "#CCCCFF",
+      "success": "#0B6A3B",
+      "warning": "#9A4A00",
+      "danger": "#B51E3B",
+      "focus": "#5C5C99",
+      "sky-top": "#292966",
+      "sky-mid": "#3F3F8A",
+      "sky-bottom": "#5151A3",
+      "sky-text": "#FFFFFF",
+      "sky-text2": "#E6E6FF"
+    }
+  },
+  "icon": {
+    "background-top": "#2E2E72",
+    "background-bottom": "#0A0A1C",
+    "glow": "#CCCCFF",
+    "mark": "#ECECFF",
+    "mark-outline": "#3D3D85",
+    "star": "#FFD27A"
+  }
 }
