@@ -634,6 +634,8 @@ pub fn command(spec: &TurnSpec) -> Command {
     // What the agent sets itself (an ACP agent's "repo config off" switch) beats the repo's env.
     let own: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_os_string()).collect();
     c.envs(spec.env.iter().filter(|(k, _)| !own.iter().any(|o| o == k.as_str())).map(|(k, v)| (k.as_str(), v.as_str())));
+    // Your login shell's env, once it has answered (loginenv.rs). The env above wins.
+    crate::loginenv::apply(&mut c);
     c.current_dir(spec.cwd);
     c.stdin(if interactive(spec) { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     // A process group of its own, so Stop reaches the tools, shells and servers it starts too.

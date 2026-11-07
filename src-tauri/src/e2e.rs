@@ -13,7 +13,7 @@ use std::sync::{LazyLock, Mutex};
 use tauri::{AppHandle, Listener, Manager};
 
 /// Events the window listens to that the journeys check.
-const RECORDED: [&str; 8] = ["running", "queue", "agent", "pty", "pty-exit", "workspaces-changed", "needs", "task-queue"];
+const RECORDED: [&str; 9] = ["running", "queue", "agent", "pty", "pty-exit", "workspaces-changed", "needs", "task-queue", "window-ready"];
 
 /// Every recorded event, oldest first: `{"n": index, "event": name, "payload": ...}`.
 static SEEN: LazyLock<Mutex<Vec<Value>>> = LazyLock::new(Default::default);

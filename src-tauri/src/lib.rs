@@ -15,6 +15,7 @@ pub mod guard;
 pub mod handoff;
 pub mod importer;
 pub mod linear;
+pub mod loginenv;
 #[cfg(unix)]
 pub mod linux;
 pub mod lockorder;
@@ -287,24 +288,6 @@ impl AppState {
     /// Waits for the startup lookup only if it hasn't finished yet (about half a second after launch).
     fn branch_prefix(&self) -> &str {
         self.branch_prefix.wait()
-    }
-}
-
-/// GUI apps on macOS start without your shell's PATH and env (CLAUDE_CONFIG_DIR, API keys...).
-/// Copy them from a login shell so `claude`, `codex`, `gh` and `git` behave like in your terminal.
-/// Linux desktop launchers have the same gap (nvm, ~/.local/bin and exports from .bashrc or .zshrc).
-fn load_login_env() {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| pty::FALLBACK_SHELL.into());
-    // With a deadline: a profile that waits on something (a prompt, the network) kept the app
-    // from opening at all. Past it, the app starts with the env it was given.
-    let Ok(out) = proc::output(Command::new(shell).args(["-ilc", "env -0"]), None, proc::LOGIN_SHELL) else { return };
-    for kv in out.stdout.split(|b| *b == 0) {
-        let kv = String::from_utf8_lossy(kv);
-        if let Some((k, v)) = kv.split_once('=')
-            && !k.is_empty() && !k.contains(char::is_whitespace) && k != "PWD" && k != "SHLVL" {
-                // SAFETY: called once at startup, before any other threads read the environment.
-                unsafe { std::env::set_var(k, v) };
-            }
     }
 }
 
@@ -1005,7 +988,7 @@ fn archive_one(st: &AppState, id: &str, force: bool) -> Res<()> {
         let repo = st.db().repo(&ws.repo_id).map_err(e)?;
         // A repo archive command the user never approved is skipped, not run (archiving can be automatic).
         if let Ok(Some(script)) = script_to_run(st, &ws, "archive") {
-            let _ = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
+            let _ = loginenv::apply(&mut Command::new(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())))
                 .args(["-lc", &script])
                 .current_dir(path)
                 .envs(env_for(st, &repo, &ws))
@@ -4087,7 +4070,7 @@ fn probe(cmd: &str, args: &[&str]) -> (bool, String) {
 /// list them first and fold the rest under "More agents".
 #[tauri::command]
 fn installed_agents() -> Vec<&'static str> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path = loginenv::var_os("PATH").unwrap_or_default();
     let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
     agent::ALL.iter().filter(|a| on_path(&dirs, a.bin())).map(|a| a.id()).collect()
 }
@@ -4404,6 +4387,10 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
         post_event(&app, st, &id, &ev)?;
         return Ok(false);
     }
+    // Right after launch the login shell may still be running: the turn waits for it (your API
+    // keys are never saved, so only it has them). The window doesn't.
+    loginenv::wait(proc::LOGIN_SHELL);
+    loginenv::apply(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(err) => {
@@ -5264,15 +5251,18 @@ fn e2e_mode() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    load_login_env();
-    // e2e: the login shell rebuilt PATH, which could put a real `claude` ahead of the fake one.
-    if e2e_mode()
-        && let Ok(path) = std::env::var("NEKOTRAIL_E2E_PATH") {
-            // SAFETY: still at startup, before any other thread reads the environment.
-            unsafe { std::env::set_var("PATH", path) };
-        }
-    let home = dirs::home_dir().expect("home dir").join("nekotrail");
+    let launched = std::time::Instant::now();
     let data = dirs::data_dir().expect("data dir").join("dev.nekotrail.app");
+    // e2e: the login shell rebuilds PATH, which could put a real `claude` ahead of the fake one.
+    let e2e_path = if e2e_mode() { std::env::var("NEKOTRAIL_E2E_PATH").ok() } else { None };
+    // Your PATH and env: last launch's at once, the login shell's in the background. The window
+    // never waits for your shell profile (it used to, up to 10 s on one that hangs).
+    loginenv::start(loginenv::cache_path(&data), e2e_path.clone());
+    if let Some(path) = e2e_path {
+        // SAFETY: still at startup, before any other thread reads the environment.
+        unsafe { std::env::set_var("PATH", path) };
+    }
+    let home = dirs::home_dir().expect("home dir").join("nekotrail");
     migrate_old_data(&data);
     let store = Store::open(&data.join("nekotrail.db")).expect("open database");
     // Chats imported before history import existed get their messages now (once; skips filled chats).
@@ -5342,6 +5332,8 @@ pub fn run() {
                     remote::on_link(app.handle(), url.as_str());
                 }
             }
+            // The window exists (or would, in an e2e run). The e2e journeys time launches by it.
+            let _ = app.emit("window-ready", json!({"ms": launched.elapsed().as_millis() as u64}));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -147,8 +147,15 @@ async function journey(name: string, body: () => Promise<void>) {
 // ---------- setup ----------
 
 mkdirSync(home, { recursive: true });
-// A login profile that hangs while ~/.hang-login exists (the slow-profile journey).
-writeFileSync(join(home, ".zprofile"), '[ -f "$HOME/.hang-login" ] && sleep 120\n');
+// A login profile that sleeps 10 s while ~/.hang-login exists (the slow-profile journey), and
+// exports one plain value and one secret-looking one (what the app may save, and what it may not).
+writeFileSync(join(home, ".zprofile"), [
+  "export NEKO_E2E_MARK=from-profile",
+  "export NEKO_E2E_API_KEY=never-on-disk",
+  '[ -f "$HOME/.hang-login" ] && sleep 10',
+  "",
+].join("\n"));
+const loginCache = join(home, "Library", "Application Support", "dev.nekotrail.app", "login-env.json");
 mkdirSync(repo, { recursive: true });
 git(repo, "init", "-q", "-b", "main");
 writeFileSync(join(repo, "README.md"), "# demo\n");
@@ -450,7 +457,13 @@ await journey("archive the workspace, and every terminal tab it had goes with it
   }, 5000);
 });
 
-await journey("the app opens even when the shell profile hangs", async () => {
+await journey("the window is ready in under 1 s while the shell profile sleeps 10 s", async () => {
+  // Found in the v0.23 QA pass: launch waited for the login shell (10 s here, about 1.5 s on a
+  // real profile). Now the last good env is saved, and the login shell runs in the background.
+  await until("the login env saved by the earlier launches", async () => existsSync(loginCache), 5000);
+  const saved = readFileSync(loginCache, "utf8");
+  if (!saved.includes("from-profile")) fail(`the saved login env lacks the profile's export: ${saved.slice(0, 200)}`);
+  if (saved.includes("never-on-disk")) fail("a secret-looking variable from the profile was written to disk");
   writeFileSync(join(home, ".hang-login"), "");
   crashing = true;
   app!.kill("SIGKILL");
@@ -458,9 +471,16 @@ await journey("the app opens even when the shell profile hangs", async () => {
   crashing = false;
   const t = Date.now();
   await launch();
+  const wall = Date.now() - t;
+  const ready = (await seenSince(0)).find((e) => e.event === "window-ready");
+  if (!ready) fail("no window-ready event");
+  if (!(ready.payload.ms < 1000)) fail(`the window was ready ${ready.payload.ms} ms after launch, over 1 s`);
+  if (wall > 5000) fail(`the app took ${(wall / 1000).toFixed(1)} s to answer`);
+  const s0 = Date.now();
+  await $("snapshot", {}, 2000);
+  if (Date.now() - s0 > 1000) fail("the app is slow to answer while the login shell sleeps");
   rmSync(join(home, ".hang-login"));
-  if (Date.now() - t > 20_000) fail(`it took ${((Date.now() - t) / 1000).toFixed(0)} s to open`);
-  spawnSync("pkill", ["-f", "sleep 120"]);
+  console.log(`      window-ready ${ready.payload.ms} ms, socket answering ${wall} ms after spawn`);
 });
 
 if (failures.length) fail(`${failures.length} journeys failed: ${failures.join("; ")}`);

@@ -21,7 +21,7 @@ pub const GIT_NETWORK: Duration = Duration::from_secs(300);
 pub const GH: Duration = Duration::from_secs(60);
 /// `<agent> --version` and similar checks.
 pub const PROBE: Duration = Duration::from_secs(10);
-/// The login shell that hands over your PATH and env at launch.
+/// The login shell that hands over your PATH and env (in the background, see loginenv.rs).
 pub const LOGIN_SHELL: Duration = Duration::from_secs(10);
 
 /// No password or account prompts: there is no terminal to answer them, so they would only wait.
@@ -38,6 +38,8 @@ pub fn git_limit(args: &[&str]) -> Duration {
 /// `cmd`'s output, like `Command::output`, but stopped (with everything it started) after
 /// `limit`, which is then an error saying so. `stdin`, if any, is fed while the output is read.
 pub fn output(cmd: &mut Command, stdin: Option<&[u8]>, limit: Duration) -> std::io::Result<Output> {
+    // Your login shell's PATH and env once it has answered (loginenv.rs); the caller's own win.
+    crate::loginenv::apply(cmd);
     cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(unix)]
     {

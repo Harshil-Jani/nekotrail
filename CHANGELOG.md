@@ -38,6 +38,7 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 - `caffeinate` no longer stays behind as a zombie process after every turn.
 - Stop on a Claude turn reads as Stopped, not "Ended with an error". Claude answers Ctrl-C with an error of its own; the app now remembers you pressed Stop, so the chat isn't flagged as needing you, no away alert goes out, and whatever the agent started is stopped too.
 - Archiving a workspace closes every terminal it had: extra tabs, the Run and Setup scripts and actions, not only the first tab. Before, each extra tab's shell kept running until you quit.
+- The window opens at once, without waiting for your shell profile (about 1.5 s on a busy one, 10 s on one that hangs). It starts with the PATH and settings saved from your last launch, and reads your login shell in the background; agents and terminals started after that get the fresh values. Values that look like secrets (keys, tokens, passwords) are never saved to disk, so a turn started in the first seconds waits for the login shell to hand them over.
 
 **Design ship-gate fixes**
 - A chat stays at its newest line when something below it grows after it is drawn (a diagram, your queued messages, the working row), so what the agent does next is never hidden under the fold.

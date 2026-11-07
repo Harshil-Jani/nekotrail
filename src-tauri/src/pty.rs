@@ -55,6 +55,7 @@ impl Ptys {
             None => { cmd.arg("-l"); }
         }
         cmd.cwd(cwd);
+        crate::loginenv::apply_pty(&mut cmd);
         cmd.env("TERM", "xterm-256color");
         for (k, v) in env {
             cmd.env(k, v);
