@@ -13,7 +13,7 @@
 <a href="https://github.com/Harshil-Jani/nekotrail/releases"><img src="https://img.shields.io/github/downloads/Harshil-Jani/nekotrail/total?style=flat-square&label=downloads&labelColor=292966&color=5C5C99" alt="Downloads"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-5C5C99?style=flat-square&labelColor=292966" alt="License: MIT"></a>
 <a href="#install"><img src="https://img.shields.io/badge/platform-macOS%2013%2B%20%7C%20Linux-5C5C99?style=flat-square&labelColor=292966" alt="Platform: macOS 13+ and Linux"></a>
-<a href="https://github.com/Harshil-Jani/nekotrail/stargazers"><img src="https://img.shields.io/github/stars/Harshil-Jani/nekotrail?style=flat-square&label=stars&labelColor=292966&color=5C5C99" alt="GitHub stars"></a>
+
 </p>
 
 <p>
