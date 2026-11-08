@@ -3,6 +3,7 @@ import Base from "../layouts/Base.astro";
 import { SITE, href, appVersion } from "../lib/site";
 import { softwareApp, breadcrumbs } from "../lib/schema";
 const version = appVersion();
+const curl = "curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh";
 const xattr = "xattr -dr com.apple.quarantine /Applications/nekotrail.app";
 const deb = "sudo apt install ./nekotrail_*_amd64.deb";
 ---
@@ -23,19 +24,12 @@ const deb = "sudo apt install ./nekotrail_*_amd64.deb";
       <ol class="steps">
         <li>
           <div>
-            <h3>Download and drag to Applications</h3>
-            <p>One .dmg for Apple silicon and Intel. macOS 13+.</p>
-            <a class="btn primary" href={SITE.releases} rel="noopener" style="margin-top:12px">Download .dmg</a>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Run this once in Terminal</h3>
+            <h3>Paste this in Terminal</h3>
             <div class="copy-row">
-              <pre><code>{xattr}</code></pre>
-              <button class="copy-btn" type="button" data-copy={xattr}>Copy</button>
+              <pre><code>{curl}</code></pre>
+              <button class="copy-btn" type="button" data-copy={curl}>Copy</button>
             </div>
-            <p>Needed until the app is notarized by Apple.</p>
+            <p>It downloads the latest release, puts NekoTrail in Applications and opens it. Apple silicon and Intel, macOS 13+. <a href={href("install.sh")}>Read the script</a> first if you like.</p>
           </div>
         </li>
         <li>
@@ -45,6 +39,14 @@ const deb = "sudo apt install ./nekotrail_*_amd64.deb";
           </div>
         </li>
       </ol>
+      <details class="dl-alt" style="margin-top:24px">
+        <summary>Prefer the .dmg?</summary>
+        <p><a href={SITE.releases} rel="noopener">Download the .dmg</a>, drag NekoTrail to Applications, then run this once, because the app isn't notarized by Apple yet:</p>
+        <div class="copy-row">
+          <pre><code>{xattr}</code></pre>
+          <button class="copy-btn" type="button" data-copy={xattr}>Copy</button>
+        </div>
+      </details>
     </section>
 
     <section aria-labelledby="linux" style="margin-top:72px">

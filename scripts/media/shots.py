@@ -1,5 +1,5 @@
-"""Every app screenshot from the preview harness, headless: docs/screenshots/<name>.png (1600x1000,
-dark unless the name says light) and the site's copy, site/public/shots/<name>.webp.
+"""Every app screenshot from the preview harness, headless: docs/screenshots/<name>.png (a 1600x1000
+window at 2x, so 3200x2000 pixels; dark unless the name says light) and the site's copy, site/public/shots/<name>.webp.
 
     python3 scripts/media/shots.py [name ...]     # all by default
 """
@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 from common import BASE, REPO, avatars
 
 W, H = 1600, 1000
+DSF = 2  # retina: sharp on a 2x screen and when GitHub or the site scales the image down
 PNG = os.path.join(REPO, "docs", "screenshots")
 WEBP = os.path.join(REPO, "site", "public", "shots")
 
@@ -43,6 +44,32 @@ def annotate(pg):
     pg.wait_for_timeout(300)
 
 
+def rail(pg):
+    """A long chat at the bottom: finished turns folded to 'Worked for ... steps', the rail open."""
+    bottom(pg)
+    b = pg.locator(".prompt-ticks").first.bounding_box()
+    pg.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] * 0.6)
+    pg.wait_for_timeout(500)
+
+
+def env_sources(pg):
+    """Scroll to where names are set in more than one place: struck-through losers, hidden secrets."""
+    pg.evaluate("""() => { const h = [...document.querySelectorAll('h3, h4, .env-section-title, [class*=section] > *')].find(e => e.textContent.trim().startsWith('Repo settings'));
+      if (h) h.scrollIntoView({ block: 'start' }); }""")
+    pg.wait_for_timeout(400)
+
+
+def search(pg):
+    box = pg.locator(".palette.gs .palette-input input").first
+    box.fill("retry")
+    pg.wait_for_timeout(900)
+
+
+def archive(pg):
+    pg.locator(".sidebar .ws").nth(1).hover()
+    pg.wait_for_timeout(400)
+
+
 # name: (preview query, action after load). The workspace shots show the working row mid-turn.
 SHOTS = {
     "workspace": ("ws=w1&thinking=edits", bottom),
@@ -52,7 +79,7 @@ SHOTS = {
     "compare": ("ws=w1&compare=p1", None),
     "mcp": ("ws=w1&mcp", None),
     "model-picker": ("ws=w1&picker", None),
-    "new-workspace": ("new=r1", new_ws),
+    "new-workspace": ("ws=w1&new=r1", new_ws),
     "night-sky": ("view=sky", None),
     "opencode": ("ws=w2&opencode", bottom),
     "palette": ("ws=w1&palette", None),
@@ -63,6 +90,10 @@ SHOTS = {
     "stacked": ("ws=w3&stackmerged", None),
     "storage": ("ws=w1&storage", None),
     "welcome": ("fresh", None),
+    "prompt-rail": ("ws=w1&prompts=7", rail),
+    "environment": ("ws=w1&env=w1", env_sources),
+    "search": ("ws=w1&search", search),
+    "archive": ("ws=w1", archive),
 }
 
 
@@ -76,7 +107,7 @@ def main(only):
             if "theme=" not in q:
                 q += "&theme=dark"
             scheme = "light" if "theme=light" in q else "dark"
-            ctx = br.new_context(viewport={"width": W, "height": H}, color_scheme=scheme, device_scale_factor=1)
+            ctx = br.new_context(viewport={"width": W, "height": H}, color_scheme=scheme, device_scale_factor=DSF)
             avatars(ctx)
             pg = ctx.new_page()
             pg.goto(f"{BASE}?{q}&zoom=1")
@@ -84,7 +115,8 @@ def main(only):
             pg.wait_for_function("Array.from(document.images).every(i => i.complete && i.naturalWidth > 0)", timeout=15000)
             if act:
                 act(pg)
-            pg.mouse.move(W - 4, H - 4)
+            if name not in ("prompt-rail", "archive"):
+                pg.mouse.move(W - 4, H - 4)
             pg.wait_for_timeout(400)
             png = os.path.join(PNG, f"{name}.png")
             pg.screenshot(path=png)

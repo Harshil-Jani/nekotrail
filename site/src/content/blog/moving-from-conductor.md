@@ -17,7 +17,7 @@ What matters is where your work lives. Conductor keeps each worktree inside its 
 
 ## The steps
 
-1. [Download NekoTrail](https://github.com/Harshil-Jani/nekotrail/releases/latest). Until it's notarized, run `xattr -dr com.apple.quarantine /Applications/nekotrail.app` once.
+1. Install NekoTrail: paste `curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh` in Terminal. It puts the latest release in Applications and opens it.
 2. Open it. It finds Conductor's data and offers **Import from Conductor** (also on Welcome and in ⌘K).
 3. Keep **Move into NekoTrail** picked and press **Import and move**.
 

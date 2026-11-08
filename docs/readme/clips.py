@@ -10,7 +10,7 @@ A drawn pointer shows where the interaction happens, since headless Chrome has n
 second fades back into the first frame, so every clip loops without a jump.
 
 Writes:
-- docs/readme/gifs/<name>.gif     : gifski, quality 96, 25 fps; the hero 1200 px wide, the rest 800 px,
+- docs/readme/gifs/<name>.gif     : gifski, quality 96, 25 fps; the hero 1600 px wide, the rest 1200 px,
                                     cropped to the feature, with the cards' rounded corners and margin
                                     (transparent, so it sits on GitHub's light and dark page alike).
 - site/public/clips/<name>.mp4/.webm/.jpg : the whole window at 1600x1000, 30 fps (the clips marked site).
@@ -28,7 +28,7 @@ WORK = os.path.join(tempfile.gettempdir(), "nekotrail-clips")
 W, H, DSF, FPS = 1200, 750, 2, 30
 GIF_FPS, GIF_Q = 25, 96
 GIF_EXTRA = os.environ.get("GIF_EXTRA", "--motion-quality 100 --lossy-quality 100").split()
-SITE_W, SITE_H = 1600, 1000
+SITE_W, SITE_H = 2400, 1500  # the whole 2x screencast, for retina screens
 
 # A macOS-style pointer, drawn into the page, that dips on click and leaves a soft ring.
 POINTER = r"""
@@ -266,23 +266,47 @@ def queue(pg, m):
     m.home(500); pg.wait_for_timeout(150)
 
 
-# Feature GIFs are 800 px wide at 16:10, about 0.76 of the app's size: the modal stories crop the
+# Feature GIFs are 1200 px wide (were 800) at 16:10, about 0.76 of the app's size: the modal stories crop the
 # middle of a 1200x750 window (a sheet needs that height), the others run in a 1056x660 window.
 # The GIFs of those hide the sidebar, which the crop would cut in half; the site's clips (site=True)
 # are recorded again with it, as the whole 1200x750 window.
+def parallel(pg, m):
+    # Mochi is mid-turn (the working row says Thinking, then what it reads and edits) while you look in
+    # on the other agents, come back to see it further on, and open the board.
+    side = pg.locator(".sidebar")
+    m.to(700, 560, 500); pg.wait_for_timeout(2300)          # Thinking, then Reading 3 files
+    m.click(side.locator(".ws", has_text="Tickets should breach").first, 800, 1500)
+    m.click(side.locator(".ws", has_text="Rate limit the tickets API").first, 700, 1500)
+    m.click(side.locator(".ws", has_text="Fix 502s after deploy").first, 700, 2600)  # back: further on
+    m.click(side.locator(".nav-row", has_text="Board").first, 800, 1400)
+    m.to(560, 210, 700); pg.wait_for_timeout(500)
+    m.to(330, 230, 700); pg.wait_for_timeout(800)
+
+
+def sky(pg, m):
+    pg.wait_for_timeout(500)
+    for name in ["Biscuit", "Dumpling", "Comet", "Pip", "Muffin"]:
+        m.at(pg.locator(".sky-star", has_text=name), 900); pg.wait_for_timeout(700)
+    m.to(300, 640, 700); pg.wait_for_timeout(600)
+
+
 MODAL_CROP = (72, 45, 1056, 660)
 CLIPS = {
     # q: preview query; vw, vh: window; crop: GIF crop in CSS px (None: the whole window); gw: GIF width
-    "hero":      dict(q="view=board", setup=hero_setup, story=hero, gw=1200),
+    "hero":      dict(q="view=board", setup=hero_setup, story=hero, gw=1600),
     "compare":   dict(q="ws=w2&compare=p1", story=compare, crop=MODAL_CROP, site=True),
     "handoff":   dict(q="ws=w1&limit", story=handoff, crop=MODAL_CROP, site=True),
-    "conductor": dict(q="rescue=import", story=conductor, crop=MODAL_CROP, site=True),
+    "conductor": dict(q="ws=w1&rescue=import", story=conductor, crop=MODAL_CROP, site=True),
     "review":    dict(q="ws=w1&tab=changes&noreview&nosidebar", story=review, vw=1056, vh=660),
     "queue":     dict(q="view=queue&ws=w2", setup=queue_setup, story=queue, vw=1056, vh=660),
+    # Site-only clips (no GIF). The live turn starts its first tool at 3s: begin while it still says Thinking.
+    "parallel":  dict(q="ws=w1&thinking", story=parallel, site=True, gif=False, wait=1000),
+    "sky":       dict(q="view=sky", story=sky, site=True, gif=False),
 }
 for c in CLIPS.values():
-    c.setdefault("setup", None); c.setdefault("crop", None); c.setdefault("gw", 800)
+    c.setdefault("setup", None); c.setdefault("crop", None); c.setdefault("gw", 1200)
     c.setdefault("vw", W); c.setdefault("vh", H); c.setdefault("site", False)
+    c.setdefault("gif", True); c.setdefault("wait", 2500)
 
 
 def spec(key):
@@ -300,7 +324,7 @@ def record(names):
     with sync_playwright() as p:
         # Without the flag the screencast sends 1x frames even at device scale 2.
         br = p.chromium.launch(headless=True, args=[f"--force-device-scale-factor={DSF}"])
-        for name in [k for n in names for k in ([n, n + "@site"] if CLIPS[n]["site"] else [n])]:
+        for name in [k for n in names for k in ([n] if CLIPS[n]["gif"] else []) + ([n + "@site"] if CLIPS[n]["site"] else [])]:
             q, setup, story, vw, vh = spec(name)
             out = os.path.join(WORK, name)
             shutil.rmtree(out, ignore_errors=True); os.makedirs(os.path.join(out, "raw"))
@@ -314,7 +338,7 @@ def record(names):
                 ctx.route("https://github.com/*.png*", serve)
             pg = ctx.new_page()
             pg.goto(f"{BASE}?{q}&theme=dark&zoom=1")
-            pg.wait_for_timeout(2500)
+            pg.wait_for_timeout(CLIPS[name.split("@")[0]]["wait"])
             try:
                 pg.wait_for_function("Array.from(document.images).every(i => i.complete)", timeout=8000)
             except Exception:
@@ -402,10 +426,13 @@ def encode(names):
     os.makedirs(os.path.join(HERE, "gifs"), exist_ok=True)
     for name in names:
         c = CLIPS[name]
+        if not c["gif"]:
+            site(name)
+            continue
         crop, gw = c["crop"], c["gw"]
         cw, ch = (crop[2], crop[3]) if crop else (c["vw"], c["vh"])
         size = (gw, round(gw * ch / cw))
-        # The same corner and margin, relative to width, as build_assets.py gives the cards (18 and 22 on 1040).
+        # The same corner and margin, relative to width, as build_assets.py gives the cards (36 and 44 on 2080).
         pad = round(22 * gw / 1040)
         tmp, n = frames_for(name, GIF_FPS, size, crop, rounded=round(18 * gw / 1040), pad=pad)
         size = (size[0] + 2 * pad, size[1] + 2 * pad)

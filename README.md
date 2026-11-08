@@ -73,7 +73,7 @@ Screenshots and clips use sample data. Light and dark follow your Mac.
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/new-workspace.png" width="100%" alt="New workspace panel with the task box, the Claude, Codex, Gemini, OpenCode and Claude + Codex picker, and sources"><br>
+<img src="docs/readme/cards/new-workspace.png" width="100%" alt="New workspace panel: the repo picker with the repo's picture, the Claude agent button, the task box, and tabs for New branch, Several repos, Issue, Linear, PR, Existing branch and On a workspace"><br>
 <b>Start a workspace.</b><br>
 Type the task, press Enter. Start from a GitHub or Linear issue, a PR, a branch or another workspace.
 </td>
@@ -126,21 +126,34 @@ Every message you send saves your files first. Rewind puts them back, and can be
 Draw on the running page and send it to the agent as a screenshot.
 </td>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/scorecard.png" width="100%" alt="Agent scorecard comparing Claude and Codex"><br>
+<img src="docs/readme/cards/scorecard.png" width="100%" alt="Agent scorecard: Claude and Codex side by side, each with the share of turns that finished cleanly, turns, errors, average turn time, API-equivalent cost and workspaces merged"><br>
 <b>See which agent works for you.</b><br>
 Clean finishes, turn time, API-equivalent cost and merged workspaces, from your own history.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/readme/cards/search.png" width="100%" alt="Search all chats for retry, with Everything, My messages and Commands, and All repos, Any agent and Any time filters: a message and a go test command match in an archived workspace"><br>
+<b>Search every chat.</b><br>
+Type in the sidebar's Search and press <kbd>↵</kbd>. Archived workspaces too. Filter by repo, agent or time.
+</td>
+<td width="50%" valign="top">
+<img src="docs/readme/cards/environment.png" width="100%" alt="Environment sheet for one workspace: a filter box, counts for NekoTrail, Repo settings, .env files and Login shell, then the Repo settings variables and the .env files, where LOG_LEVEL and STRIPE_SECRET_KEY are marked overridden and secret values show as dots with an eye button"><br>
+<b>See what your agents get.</b><br>
+Every variable agents, terminals and scripts get, and where it comes from (⋯ menu). Secrets stay hidden.
 </td>
 </tr>
 </table>
 
 <details>
-<summary><b>Nine more screens</b></summary>
+<summary><b>Eleven more screens</b></summary>
 <br>
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/model-picker.png" width="100%" alt="Model and intelligence picker in the chat box"><br>
-<b>Pick the model and how hard it thinks</b> (<kbd>⌘/</kbd>).
+<img src="docs/readme/cards/model-picker.png" width="100%" alt="Model picker open from the chat box: Claude models, an intelligence row from Auto to Max, and Set as default for new chats"><br>
+<b>Pick the model and how hard it thinks</b> (<kbd>⌘/</kbd>).<br>
+Or set it as the default for new chats.
 </td>
 <td width="50%" valign="top">
 <img src="docs/readme/cards/opencode.png" width="100%" alt="An OpenCode chat in Ask before changes mode, waiting on an edit with Deny, Allow for this chat and Allow"><br>
@@ -150,12 +163,12 @@ In Ask before changes, every edit and command waits for Allow (<kbd>↵</kbd>) o
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/stacked.png" width="100%" alt="PR bar of a stacked workspace showing On Mochi #482 merged, with a Move onto main banner"><br>
+<img src="docs/readme/cards/stacked.png" width="100%" alt="A stacked workspace whose parent PR #482 has merged, with a Move onto main button in the banner"><br>
 <b>Stack work on work.</b><br>
 Build on an unmerged workspace. When the parent merges, one click moves it onto main.
 </td>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/board.png" width="100%" alt="Kanban board of workspaces"><br>
+<img src="docs/readme/cards/board.png" width="100%" alt="Board with Backlog, In progress, In review and Done columns, each workspace a card with its branch and PR state"><br>
 <b>See everything on a board</b> (<kbd>⌘⇧K</kbd>).<br>
 Drag to change status.
 </td>
@@ -167,7 +180,7 @@ Drag to change status.
 See each workspace's size and clean ignored build folders in one click.
 </td>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/palette.png" width="100%" alt="Command palette"><br>
+<img src="docs/readme/cards/palette.png" width="100%" alt="Command palette with a recent workspace and this workspace's actions, such as Show chat, Run checks and Environment"><br>
 <b>Do anything from the keyboard.</b><br>
 <kbd>⌘K</kbd> jumps to any workspace or action.
 </td>
@@ -179,16 +192,28 @@ See each workspace's size and clean ignored build folders in one click.
 Type <code>/mcp</code> to see every agent's servers and copy one to another agent.
 </td>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/welcome.png" width="100%" alt="Welcome screen with the setup check of the agents on this Mac"><br>
+<img src="docs/readme/cards/welcome.png" width="100%" alt="Welcome screen, step 1 of 3: git, the GitHub CLI, Claude Code and GitHub Copilot CLI found, and 14 more agents you can add"><br>
 <b>First launch checks your setup.</b><br>
 It shows the command for anything missing and offers the Conductor import.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/readme/cards/night-sky.png" width="100%" alt="Night sky with constellations"><br>
+<img src="docs/readme/cards/night-sky.png" width="100%" alt="Night sky: stars for workspaces joined into cat constellations"><br>
 <b>Light up the night sky.</b><br>
 Every workspace is a star in a cat constellation. Merged PRs make it shine.
+</td>
+<td width="50%" valign="top">
+<img src="docs/readme/cards/prompt-rail.png" width="100%" alt="The Your messages list, opened from the rail of ticks on the chat's right edge, with eight numbered messages"><br>
+<b>Jump to any message.</b><br>
+Hover the rail on the chat's right edge and click one.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/readme/cards/archive.png" width="100%" alt="Sidebar with the archive button showing on the hovered workspace, Rate limit the tickets API; the open chat's finished reply folded into Worked for 41s, 5 steps"><br>
+<b>Archive in one click.</b><br>
+Hover a workspace in the sidebar. The branch is kept.
 </td>
 <td width="50%" valign="top"></td>
 </tr>
@@ -208,16 +233,24 @@ Every workspace is a star in a cat constellation. Merged PRs make it shine.
 
 ## Install
 
-**macOS 13 or later.** The app isn't notarized yet, so macOS blocks it on first launch until you clear the download quarantine flag once.
+**macOS 13 or later**, Apple silicon or Intel. Paste this in Terminal:
 
-1. Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases/latest), open it and drag NekoTrail to Applications.
-2. Run this once in Terminal:
+```sh
+curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh
+```
 
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/nekotrail.app
-   ```
+It downloads the latest release, puts NekoTrail in Applications and opens it ([read the script](site/public/install.sh)). On first launch it checks your setup and gives you the exact command for anything missing.
 
-3. Open NekoTrail as usual. It checks your setup on first launch and gives you the exact command for anything missing.
+<details>
+<summary>Prefer the .dmg?</summary>
+
+Download the `.dmg` from the [latest release](https://github.com/Harshil-Jani/nekotrail/releases/latest) and drag NekoTrail to Applications. The app isn't notarized by Apple yet, so run this once before you open it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/nekotrail.app
+```
+
+</details>
 
 **Requirements:** [`git`](https://git-scm.com), [`gh`](https://cli.github.com) signed in, and at least one agent CLI, such as [`claude`](https://docs.anthropic.com/claude-code), [`codex`](https://github.com/openai/codex), [`gemini`](https://github.com/google-gemini/gemini-cli) or [`opencode`](https://opencode.ai). Setup lists all sixteen with their install commands.
 
@@ -270,7 +303,8 @@ bun run tauri dev
 |---|---|
 | Start | Open a local repo, clone a GitHub repo, or import from Conductor. Start from a task, a GitHub or Linear issue, a PR or a branch. |
 | Workspaces | One worktree and branch per task. Archive removes the folder and keeps the branch. |
-| Chat | Any of the sixteen agents, several chats per workspace. Queue messages, `@` a file, paste a screenshot. Modes: Plan, Ask before changes, Auto-accept edits, Full auto. |
+| Chat | Any of the sixteen agents, several chats per workspace. Queue messages, `@` a file, paste a screenshot. Modes: Plan, Ask before changes, Auto-accept edits, Full auto. Finished replies fold their steps into one line, and the first message names the branch and chat. |
+| Search | Every chat in every workspace, archived ones too: your messages, replies and commands. |
 | Compare agents | Pick "Claude + Codex": same task, two workspaces. Compare files, turns, time and cost. |
 | Hand off | Another agent carries on in the same branch (+ menu, ⌘K or /handoff). You read and edit the brief first. The new chat keeps this chat's mode. |
 | Linear | Start from a Linear issue: its branch name, the issue in the first message, "Fixes ENG-123" in the PR. |
@@ -282,7 +316,8 @@ bun run tauri dev
 | Terminal | A real login shell in the workspace folder. |
 | PRs | One button for the next step: open the PR, fix failing checks, resolve conflicts, then squash and merge. |
 | Scripts | Setup, run and archive scripts per repo. Share them with a committed `nekotrail.json`. Each workspace gets its own 10 ports. |
-| Repo settings | Instructions for every chat, review and PR prompts, `.env` files copied into new workspaces. |
+| Repo settings | Instructions for every chat, review and PR prompts, environment variables, `.env` files copied into new workspaces. |
+| Environment | Every variable a workspace's agents, terminals and scripts get, by source. Read only. |
 | Night sky | 50 stars in 8 cat constellations. Merged PRs make them shine. |
 
 </details>
@@ -389,7 +424,7 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 
 ## Status
 
-Early (0.23.1). Built and used daily on macOS. Linux x86_64 builds are new and experimental. Feedback and PRs welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Early (0.26.1). Built and used daily on macOS. Linux x86_64 builds are new and experimental. Feedback and PRs welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <br>
 

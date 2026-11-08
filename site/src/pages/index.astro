@@ -19,8 +19,8 @@ const features = [
     id: "parallel", star: "Mochi", eyebrow: "Parallel workspaces",
     title: "One task, one worktree.",
     text: "Each task gets its own branch, folder, chat, diff and terminal.",
-    points: ["Your main checkout stays untouched.", "10 ports per workspace, so no fights over 3000."],
-    clip: "parallel", label: "Switching between workspaces where agents work at the same time, then the board of every workspace", window: "NekoTrail: Fix 502s after deploy",
+    points: ["Your main checkout stays untouched.", "10 ports per workspace, so no fights over 3000.", "See every variable it gets, and where it comes from."],
+    image: "environment", label: "The Environment sheet for one workspace: a filter box, counts for NekoTrail, Repo settings, .env files and Login shell, then the workspace's NEKOTRAIL_ variables and its ports, each with a copy button", window: "NekoTrail: Environment",
   },
   {
     id: "compare", star: "Biscuit", eyebrow: "Compare agents",
@@ -96,9 +96,11 @@ const groups = [
 ];
 
 const gallery = [
+  ["search", "Search every chat,", "archived ones too, by repo, agent or time."],
   ["new-workspace", "Start a workspace", "from a task, issue, PR or branch."],
   ["plan", "Approve the plan", "or split it."],
   ["rewind", "Rewind", "to before any message."],
+  ["prompt-rail", "Jump to any message", "from the rail on the chat's edge."],
   ["preview", "Annotate", "your running app for the agent."],
   ["workspace-light", "Light and dark", "follow your Mac."],
 ];

@@ -224,7 +224,7 @@ p { text-wrap: pretty; }
 .window { border-radius: var(--r-xl); overflow: hidden; background: var(--window-bg); box-shadow: var(--shadow-window), 0 0 0 0.5px rgba(204, 204, 255, 0.18); }
 .window-bar { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; background: var(--window-bar); border-bottom: 0.5px solid rgba(204, 204, 255, 0.1); }
 .window-bar i { width: 11px; height: 11px; border-radius: 50%; background: rgba(204, 204, 255, 0.2); }
-.window-bar span { flex: 1; text-align: center; font-size: 12px; color: var(--night-sky-text2); margin-right: 50px; }
+.window-bar span { flex: 1; min-width: 0; text-align: center; font-size: 12px; color: var(--night-sky-text2); margin-right: 50px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; contain: inline-size; }
 .window video, .window img { width: 100%; aspect-ratio: 1200 / 750; object-fit: cover; background: var(--window-bg); }
 .window img.still { aspect-ratio: 16 / 10; }
 
@@ -429,6 +429,14 @@ p { text-wrap: pretty; }
 .copy-row .copy-btn { position: static; flex: none; }
 .copy-btn { position: absolute; top: 8px; right: 8px; font: 600 12px var(--sans); padding: 4px 10px; border-radius: var(--r); border: none; background: var(--raised); color: var(--text); box-shadow: var(--shadow-control), 0 0 0 0.5px var(--line-strong); cursor: pointer; }
 .copy-btn:hover { background: var(--accent); color: var(--accent-ink); }
+@media (pointer: coarse) { .copy-row .copy-btn { min-height: 44px; padding: 0 14px; } }
+/* "Prefer the .dmg?": a quiet disclosure under the steps, in the steps' own type and colour. */
+.dl-alt summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; color: var(--text); }
+.dl-alt summary::-webkit-details-marker { display: none; }
+.dl-alt summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s var(--ease); }
+.dl-alt[open] summary::before { transform: rotate(45deg) translate(-2px, -2px); }
+.dl-alt p { margin: var(--s2) 0 0; color: var(--muted); }
+.dl-alt .copy-row { margin-top: var(--s3); }
 .note { padding: var(--s4) var(--s5); border-radius: var(--r-lg); background: var(--accent-soft); font-size: 15px; }
 .note p { margin: 0; }
 

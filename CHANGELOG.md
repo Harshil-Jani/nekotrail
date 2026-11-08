@@ -3,6 +3,18 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.26.1 (2026-11-08)
+
+**Install in one line**
+- New install on a Mac: `curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh`. It downloads the latest release, puts NekoTrail in Applications and opens it, with no `xattr` step. The .dmg still works as before.
+
+**Fixes**
+- Todo items not started yet sit on one line with their circle again, instead of a circle above centred text.
+- A finished reply shows its time once, on the "Worked for 41s" line. The separate "Done · 41.2s" line under it is gone (stopped and failed turns still say so).
+
+**Sharper pictures**
+- Every screenshot, GIF and clip in the README and on the website is re-shot at 2x, plus new ones of the prompt rail, Environment, chat search and archive on hover.
+
 ## 0.26.0 (2026-11-08)
 
 **See your workspace's environment**

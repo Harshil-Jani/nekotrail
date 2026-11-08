@@ -131,7 +131,7 @@ const repos = [
   const names = ["tailwag-mobile", "kibble-billing", "litterbox-infra", "whisker-design-system", "purr-notifications", "catnip-analytics", "hairball-legacy-monolith-with-a-very-long-name", "scratchpost-docs", "meow-auth", "zoomies-search", "nap-scheduler", "furball-ml", "paw-admin", "tabby-cli", "calico-edge"];
   for (let i = 2; i < n; i++) {
     const name = names[(i - 2) % names.length];
-    repos.push({ id: `r${i + 1}`, name, root_path: `/Users/sam/${i % 4 === 0 ? "work" : "code"}/${name}`, default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null } as (typeof repos)[number]);
+    repos.push({ id: `r${i + 1}`, name, root_path: `/Users/harshil/${i % 4 === 0 ? "work" : "code"}/${name}`, default_branch: "main", remote_url: null, setup_script: null, run_script: null, archive_script: null } as (typeof repos)[number]);
   }
 }
 const pairOf = (id: string) => (id === "w1" || id === "w2" ? "p1" : "");
@@ -163,7 +163,10 @@ if (opencode) planEvents.splice(planEvents.findIndex((e) => e.kind === "approval
 const workspaces = [
   // Titles come from the PR (Mochi), the first prompt (Comet, Ziggy) or the user (Dash); Pip has none yet.
   ws("w1", "r1", "mochi", "harshil/fix-502-gateway", { pinned: true, title: "Fix 502s after deploy", title_source: "pr" }),
-  ws("w2", "r1", "comet", "harshil/ticket-sla", { unread: true, title: "Tickets should breach SLA after 4 business hours…", title_source: "auto" }),
+  // ?compare: Comet is Codex's run of Mochi's task, so the two sides really share a prompt.
+  new URLSearchParams(location.search).has("compare")
+    ? ws("w2", "r1", "comet", "harshil/fix-502-gateway-codex", { unread: true, title: "Fix 502s after deploy", title_source: "auto" })
+    : ws("w2", "r1", "comet", "harshil/ticket-sla", { unread: true, title: "Tickets should breach SLA after 4 business hours…", title_source: "auto" }),
   // Dash is stacked on Mochi: it started from Mochi's branch and its PR goes there.
   ws("w3", "r1", "dash", "harshil/rate-limit", { parent_id: "w1", target_branch: "harshil/fix-502-gateway", title: "Rate limit the tickets API", title_source: "user" }),
   ws("w4", "r2", "ziggy", "harshil/pricing-page", { title: "Pricing page with an annual toggle", title_source: "auto" }),
@@ -202,7 +205,7 @@ const events = [
   { kind: "tool_result", id: "t3", output: "", is_error: false },
   { kind: "tool", id: "t4", name: "Bash", input: "go test ./internal/server/..." },
   { kind: "tool_result", id: "t4", output: "ok  \tpawprint/internal/server\t0.412s", is_error: false },
-  { kind: "text", text: "Review of the branch:\n- internal/server/http.go:22: 75s is right for the ALB, but the gRPC port sits behind an NLB with a 350s timeout. Fix: make it configurable.\n- internal/server/http_test.go:14: the test sleeps 61s. Fix: inject a clock.\n\nOtherwise ready to merge." },
+  { kind: "text", text: "Fixed: the server now keeps idle connections for 75s, longer than the load balancer's 60s, and the new test fails on the old 30s.\n\nTwo things I'd still change:\n- internal/server/http.go:22: the gRPC port sits behind an NLB with a 350s timeout, so 75s is too short there. Make it configurable.\n- internal/server/http_test.go:14: the test sleeps 61s. Inject a clock." },
   { kind: "done", is_error: false, duration_ms: 41200, cost_usd: 0.18, context_tokens: 128000, context_window: 200000 },
   { kind: "checks", results: [{ name: "test", status: "failed", passed: 41, failed: 2, regressed: true }, { name: "lint", status: "passed", passed: null, failed: 0 , regressed: false }, { name: "typecheck", status: "passed", passed: null, failed: 0, regressed: false }] },
 ];
@@ -238,15 +241,25 @@ if (guard) {
 // ?prompts=N: a chat where you sent N messages (the prompt rail on the right lists them).
 const promptsN = Number(new URLSearchParams(location.search).get("prompts") || 0);
 const PROMPT_SAMPLES = ["Why does #158's CI sit in the queue for 47 minutes?", "Check GitHub's status page for an Actions outage.", "Draft a short note to the team: CI is delayed, nothing to do on our side.", "Retry the job once the incident is resolved.", "Now raise the job timeout to 45 minutes and explain why.", "Add a test for the retry path.", "Open the PR and ask for review.", "Squash the fixup commits before merging."];
+const PROMPT_REPLIES = [
+  "The macOS runner pool was full: six jobs from main were queued ahead of #158. The workflow itself is fine. If it keeps happening, a concurrency group on the nightly job would free a slot during the day.",
+  "GitHub's status page shows a partial Actions outage since 09:12 UTC, with jobs waiting longer than usual to start. Our workflow is fine; the delay is on their side.",
+  "Here is a draft:\n\n> CI is slow today because GitHub Actions has an incident. Nothing to change on our side. Queued jobs will run once it clears.",
+  "The incident is resolved and I re-ran the job: green in 4m 12s, all 214 tests passed.",
+  "Raised `timeout-minutes` from 30 to 45 in `.github/workflows/ci.yml`. The slowest run in the last 30 days took 38 minutes, so 30 cut off real runs on busy days, and 45 still catches a stuck job.",
+  "Added `TestRetryAfterQueueTimeout` in `internal/ci/retry_test.go`. It fails on the old code and passes now.",
+  "Pushed to #482 and asked for review.",
+  "Squashed 3 fixup commits into one, \"CI: raise the job timeout to 45 minutes\". The branch is ready to merge.",
+];
 for (let i = 0; i < promptsN; i++) {
   events.push({ kind: "user", text: PROMPT_SAMPLES[i % PROMPT_SAMPLES.length] } as any);
-  events.push({ kind: "text", text: "Done. " + "Here is what changed and why, in a few lines so the chat has some height between your messages. ".repeat(3) } as any);
+  events.push({ kind: "text", text: PROMPT_REPLIES[i % PROMPT_REPLIES.length] } as any);
 }
 const thinkingQ = new URLSearchParams(location.search);
 const thinkingMode = thinkingQ.has("thinking") ? (thinkingQ.get("thinking") || "live") : null;
 if (thinkingMode) {
   const at = Date.now();
-  events.push({ kind: "user", checkpoint: "def456", text: "The 502s are gone. Now add a test that fails if the idle timeout drops below the load balancer's again." } as any);
+  events.push({ kind: "user", checkpoint: "def456", text: "The 502s are gone. Now make the test fast: inject a clock instead of sleeping 61s." } as any);
   const turnKey = `s1:${events.length - 1}`;
   const steps: Record<string, any[]> = {
     start: [],
@@ -282,6 +295,19 @@ if (thinkingMode) {
   }
 }
 // Shell commands for the "Commands the agent ran" sheet (?commands=w1): a long one, a failed one, one cut off mid-turn.
+// ?compare: Comet's own chat, Codex on the same prompt as Mochi.
+const compareMode = new URLSearchParams(location.search).has("compare");
+const compareEvents = [
+  { kind: "user", checkpoint: "cx1", text: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it." },
+  { kind: "tool", id: "x1", name: "Bash", input: "rg -n \"IdleTimeout\" --type go internal/" },
+  { kind: "tool_result", id: "x1", output: "internal/server/http.go:22:\t\tIdleTimeout: 30 * time.Second,", is_error: false },
+  { kind: "tool", id: "x2", name: "Edit", input: "internal/server/http.go" },
+  { kind: "tool_result", id: "x2", output: "", is_error: false },
+  { kind: "tool", id: "x3", name: "Bash", input: "go test ./internal/server/... -count=1" },
+  { kind: "tool_result", id: "x3", output: "ok  \tpawprint/internal/server\t0.388s", is_error: false },
+  { kind: "text", text: "The server dropped idle connections after 30s while the load balancer kept them for 60s, so the first request after a quiet minute hit a closed connection. `IdleTimeout` is 90s now, and the timeout lives in config so each listener can set its own." },
+  { kind: "done", is_error: false, duration_ms: 141000, cost_usd: 0.88 },
+];
 const codexEvents = [
   { kind: "user", checkpoint: "x1", text: "Second opinion on the idle timeout fix." },
   { kind: "tool", id: "c1", name: "Bash", input: "rg -n \"IdleTimeout|ReadHeaderTimeout|WriteTimeout\" --type go internal/ cmd/" },
@@ -296,7 +322,7 @@ const codexEvents = [
 // The values are made up in the shape of real ones.
 if (new URLSearchParams(location.search).has("export")) {
   events.splice(3, 0,
-    { kind: "tool", id: "e1", name: "Read", input: "/Users/sam/code/ws/mochi/.env" },
+    { kind: "tool", id: "e1", name: "Read", input: "/Users/harshil/code/ws/mochi/.env" },
     { kind: "tool_result", id: "e1", output: "PORT=8080\nALB_NAME=pawprint-api-prod-7781\nSENTRY_DSN=https://4f1c2a9b77e04d0f@o4504.ingest.sentry.io/45", is_error: false } as any,
   );
   codexEvents.push(
@@ -357,7 +383,7 @@ if (outOfUsage) events.push({ kind: "text", text: "You've hit your limit · rese
 if (hq.has("handedOff")) events.push({ kind: "handoff", dir: "to", agent: "codex", session_id: "s3" } as any);
 const sessionsW1 = () => [
   { id: "s2", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Second opinion", model: null, permission_mode: "plan" },
-  { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502 after deploy", model: "opus", permission_mode: hq.has("ask") ? "ask" : "acceptEdits", effort: "high" },
+  { id: "s1", workspace_id: "w1", agent: "claude", agent_session_id: "x", title: "Fix 502s after deploy", model: "opus", permission_mode: hq.has("ask") ? "ask" : "acceptEdits", effort: "high" },
   ...(handoffChat ? [handoffChat] : []),
 ];
 /** The brief the backend would build for Mochi's Claude chat (src-tauri/src/handoff.rs), in its exact layout. */
@@ -390,7 +416,7 @@ function sampleBrief(): string {
   parts.push("## Your turn\n1. Start with `git status` and `git diff` to see the work as it is now. Don't redo what's done.\n2. Carry on with what's left, and get the failing checks and commands above passing.\n3. When you finish, say what you changed and how you checked it.");
   return parts.join("\n\n");
 }
-let handoffChat: any = hq.has("handedOff") ? { id: "s3", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Fix 502 after deploy", model: "gpt-5.5", permission_mode: "acceptEdits", effort: null } : null;
+let handoffChat: any = hq.has("handedOff") ? { id: "s3", workspace_id: "w1", agent: "codex", agent_session_id: null, title: "Fix 502s after deploy", model: "gpt-5.5", permission_mode: "acceptEdits", effort: null } : null;
 const handoffEvents: any[] = hq.has("handedOff") ? [
   { kind: "handoff", dir: "from", agent: "claude", session_id: "s1", task: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", reason: "limit" },
   { kind: "user", checkpoint: "h1", text: sampleBrief() },
@@ -406,7 +432,7 @@ const corpus = (() => {
   const out: { id: number; ws: string; session: string; index: number; total: number; ev: any; at: string; agent: string; chat: string }[] = [];
   const add = (w: string, session: string, evs: any[], agent: string, chat: string, at: string) =>
     evs.forEach((ev, index) => out.push({ id: out.length + 1, ws: w, session, index, total: evs.length, ev, at, agent, chat }));
-  add("w1", "s1", events, "claude", "Fix 502 after deploy", day(0.1));
+  add("w1", "s1", events, "claude", "Fix 502s after deploy", day(0.1));
   add("w2", "s9", planEvents, "claude", "New chat", day(1.2));
   add("w9", "s7", archivedEvents, "codex", "Webhook retries", day(12));
   return out;
@@ -600,8 +626,8 @@ function envView(id: string) {
   const empty = st === "empty";
   const neko = [
     e("NEKOTRAIL_WORKSPACE_NAME", w.name, "Workspace"),
-    e("NEKOTRAIL_WORKSPACE_PATH", `/Users/sam/nekotrail/workspaces/${w.name}`, "Workspace"),
-    e("NEKOTRAIL_ROOT_PATH", "/code/pawprint-api", "Workspace"),
+    e("NEKOTRAIL_WORKSPACE_PATH", `/Users/harshil/nekotrail/workspaces/pawprint-api/${w.name}`, "Workspace"),
+    e("NEKOTRAIL_ROOT_PATH", "/Users/harshil/code/pawprint-api", "Workspace"),
     e("NEKOTRAIL_DEFAULT_BRANCH", "main", "Workspace"),
     ...Array.from({ length: 10 }, (_, i) => e(i ? `NEKOTRAIL_PORT_${i}` : "NEKOTRAIL_PORT", String(4120 + i), "Port block")),
     e("PORT", "4120", "Port block", false, empty ? null : "Repo settings"),
@@ -623,11 +649,11 @@ function envView(id: string) {
   ];
   const login = [
     e("EDITOR", "nvim", "Login shell"),
-    e("GOPATH", "/Users/sam/go", "Login shell"),
-    e("HOME", "/Users/sam", "Login shell"),
+    e("GOPATH", "/Users/harshil/go", "Login shell"),
+    e("HOME", "/Users/harshil", "Login shell"),
     e("LANG", "en_US.UTF-8", "Login shell"),
     e("LOG_LEVEL", "warn", "Login shell", false, empty ? null : "Repo settings"),
-    e("PATH", "/Users/sam/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", "Login shell"),
+    e("PATH", "/Users/harshil/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", "Login shell"),
     e("SHELL", "/bin/zsh", "Login shell"),
   ];
   return {
@@ -838,8 +864,8 @@ const linearIssues = (f: any) => {
 // with a difference to look at).
 const rescueMode = new URLSearchParams(location.search).get("rescue");
 let rescueMoved = false;
-const cw = (repo: string, name: string) => `/Users/sam/conductor/workspaces/${repo}/${name}`;
-const nw = (repo: string, name: string) => `/Users/sam/nekotrail/workspaces/${repo}/${name}`;
+const cw = (repo: string, name: string) => `/Users/harshil/conductor/workspaces/${repo}/${name}`;
+const nw = (repo: string, name: string) => `/Users/harshil/nekotrail/workspaces/${repo}/${name}`;
 const rescueItems = () => {
   const imported = rescueMode === "move" || rescueMode === "notice";
   const rows: [string, string, string, string, number, number][] = imported ? [
@@ -895,9 +921,9 @@ mockIPC(
       case "alerts_remove": return alertsReply({ config: { ...alertsState.config, destinations: alertsState.config.destinations.filter((d: any) => d.id !== args.id) } });
       case "alerts_test": return alertsReply({ status: { ...alertsState.status, [args.id]: { last_ok: Math.floor(Date.now() / 1000) } } });
       // Save dialogs answer with a path in Downloads; the saved text is kept on window for screenshots.
-      case "plugin:dialog|save": return `/Users/sam/Downloads/${args.options?.defaultPath ?? "export"}`;
+      case "plugin:dialog|save": return `/Users/harshil/Downloads/${args.options?.defaultPath ?? "export"}`;
       case "export_save": (window as any).__exported = args.text ?? args.contents ?? args; return null;
-      case "plugin:path|resolve_directory": return "/Users/sam";
+      case "plugin:path|resolve_directory": return "/Users/harshil";
       case "queue_view": return queueMode === "loading" ? new Promise(() => {}) : queueView();
       case "queue_add": {
         const t = qTask(`q${Date.now()}`, args.task.prompt, { ...args.task, state: args.task.mode === "ask" ? "waiting" : "queued", added_at: Math.floor(Date.now() / 1000) });
@@ -922,7 +948,7 @@ mockIPC(
       case "checks_output": return args.name === "test" ? checkOutput : "";
       case "checks_run": case "checks_stop": case "checks_trust": return null;
       case "snapshot": if (fresh) return { repos: [...freshRepos], workspaces: [...freshWorkspaces], running: [], running_workspaces: [], lit: [], shining: [], costs: {} };
-        return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : workspaces, running: [...(opencode ? ["s9"] : []), ...(thinkingMode ? ["s1"] : [])], running_workspaces: [...(opencode ? ["w3", "w2"] : ["w3"]), ...(thinkingMode ? ["w1"] : [])], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
+        return { repos, workspaces: args.includeArchived ? [...workspaces, archivedWs] : [...workspaces], running: [...(opencode ? ["s9"] : []), ...(thinkingMode ? ["s1"] : [])], running_workspaces: [...(opencode ? ["w3", "w2"] : ["w3"]), ...(thinkingMode ? ["w1"] : [])], lit: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "ziggy", "comet", "dash", "pip"], shining: ["mochi", "biscuit", "tofu", "dumpling", "pudding", "muffin", "comet", "dash"], costs: { w1: 4.82, w2: 1.1 } };
       case "github_profile": return { login: "Harshil-Jani", name: "Harshil Jani", avatar_url: "https://github.com/Harshil-Jani.png?size=96", html_url: "", public_repos: 80, followers: 120 };
       // Made-up org logos for the sample repos (a paw and a leaf), as the cache would hand them over; ?noavatar for the letter.
       case "repo_avatar": return new URLSearchParams(location.search).has("noavatar") || Number(String(args.id).slice(1)) % 3 === 0 ? null : sampleLogo(args.id === "r2" ? "#1f7a5c" : "#c2410c", args.id === "r2" ? "leaf" : "paw");
@@ -946,10 +972,10 @@ mockIPC(
         if (args.workspaceId === "w9") return [{ id: "s7", workspace_id: "w9", agent: "codex", agent_session_id: null, title: "Webhook retries", model: null, permission_mode: "acceptEdits" }];
         return args.workspaceId === "w1"
         ? sessionsW1()
-        : [{ id: "s9", workspace_id: args.workspaceId, agent: opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
-      case "session_events_tail": { const all = fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s3" ? handoffEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : []; return { events: all, total: all.length }; }
-      case "session_events": return fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s3" ? handoffEvents : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? planEvents : [];
-      case "queued": return args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
+        : [{ id: "s9", workspace_id: args.workspaceId, agent: compareMode && args.workspaceId === "w2" ? "codex" : opencode && args.workspaceId === "w2" ? "opencode" : "claude", agent_session_id: null, title: compareMode && args.workspaceId === "w2" ? "Fix 502s after deploy" : opencode && args.workspaceId === "w2" ? "Business-hours SLA" : "New chat", model: null, permission_mode: opencode && args.workspaceId === "w2" ? "ask" : "acceptEdits" }];
+      case "session_events_tail": { const all = fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s3" ? handoffEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? (compareMode ? compareEvents : planEvents) : []; return { events: all, total: all.length }; }
+      case "session_events": return fresh && args.id === "s9" ? [...freshEvents] : args.id === "s7" ? archivedEvents : args.id === "s1" ? events : args.id === "s3" ? handoffEvents : args.id === "s2" ? codexEvents : args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? (compareMode ? compareEvents : planEvents) : [];
+      case "queued": return !compareMode && args.id === "s9" && new URLSearchParams(location.search).get("ws") === "w2" ? ["Also add a metric for SLA breaches", "Then open the PR"] : [];
       case "pr_cache": {
         return Object.fromEntries(["w1", "w2", "w3", "w4", "w5", ...(multi !== null ? ["g1", "g2", "g3"] : [])].map((id) => [id, { workspace_id: id, pr: prFor(id) }]));
       }
@@ -1056,7 +1082,7 @@ mockIPC(
         return { text, reason: outOfUsage ? "limit" : "asked", hidden: 0, cut: longChat, max: 6000 };
       }
       case "handoff_start": {
-        handoffChat = { id: "s3", workspace_id: "w1", agent: args.agent, agent_session_id: null, title: "Fix 502 after deploy", model: args.model ?? null, permission_mode: handoffMode(hq.has("ask") ? "ask" : "acceptEdits", args.agent), effort: args.effort ?? null };
+        handoffChat = { id: "s3", workspace_id: "w1", agent: args.agent, agent_session_id: null, title: "Fix 502s after deploy", model: args.model ?? null, permission_mode: handoffMode(hq.has("ask") ? "ask" : "acceptEdits", args.agent), effort: args.effort ?? null };
         handoffEvents.splice(0, handoffEvents.length,
           { kind: "handoff", dir: "from", agent: "claude", session_id: "s1", task: "The load balancer returns 502 on /v1/tickets right after a deploy. Find out why and fix it.", reason: outOfUsage ? "limit" : "asked" },
           { kind: "user", checkpoint: "h1", text: args.text });
@@ -1157,7 +1183,7 @@ mockIPC(
         if (new URLSearchParams(location.search).get("mcp") === "stale") throw "The file changed since the preview. Look at it again before adding.";
         return { file: args.target === "opencode" ? "~/.config/opencode/opencode.json" : "~/.codex/config.toml", backup: args.target === "opencode" ? null : "~/.codex/config.toml.bak-nekotrail-20261106-142233" };
       // ?dirty: archiving asks first, as if the workspace had uncommitted changes.
-      case "archive_workspace": if (location.search.includes("dirty") && !args.force) throw "DIRTY"; return null;
+      case "archive_workspace": { if (location.search.includes("dirty") && !args.force) throw "DIRTY"; const at = workspaces.findIndex((w) => w.id === (args.id ?? args.workspaceId)); if (at >= 0) workspaces.splice(at, 1); return null; }
       case "workspace_environment": return envView(args.id);
       case "rules_overview": return rulesOverview();
       case "rules_plan": return rulesPlan(args.req);
@@ -1179,7 +1205,7 @@ mockIPC(
       case "conductor_rescue_plan": {
         const items = rescueItems();
         const fresh = !items[0].imported;
-        return { report: fresh ? { repos: 3, workspaces: 6, sessions: 14, skipped: 1, chats_with_history: 11 } : { repos: 0, workspaces: 0, sessions: 0, skipped: 3, chats_with_history: 0 }, items, root: "/Users/sam/nekotrail/workspaces" };
+        return { report: fresh ? { repos: 3, workspaces: 6, sessions: 14, skipped: 1, chats_with_history: 11 } : { repos: 0, workspaces: 0, sessions: 0, skipped: 3, chats_with_history: 0 }, items, root: "/Users/harshil/nekotrail/workspaces" };
       }
       case "import_conductor": return new Promise((r) => setTimeout(() => r({ repos: 3, workspaces: 6, sessions: 14, skipped: 1, chats_with_history: 11 }), 500));
       case "relocate_imported": {
@@ -1196,7 +1222,7 @@ mockIPC(
         { agent: "claude", turns: 212, errors: 9, duration_ms: 212 * 96000, merged: 31, cost_usd: 148.2 },
         { agent: "codex", turns: 87, errors: 6, duration_ms: 87 * 71000, merged: 11, cost_usd: 39.6 },
       ];
-      case "free_disk_mb": return 1430;
+      case "free_disk_mb": return hq.has("storage") || hq.has("lowdisk") ? 1430 : 48200;
       case "workspace_storage": if (fresh) return []; return [
         { workspace_id: "w1", total_kb: 2_400_000, cleanable_kb: 2_150_000, dirs: [{ path: ".venv", kb: 1_900_000 }, { path: "node_modules", kb: 250_000 }] },
         { workspace_id: "w2", total_kb: 940_000, cleanable_kb: 431_000, dirs: [{ path: "web/.next", kb: 431_000 }] },
@@ -1312,7 +1338,7 @@ async function fakeSnapshot(): Promise<ArrayBuffer> {
     g.fillRect(r.left + 24, r.top + 150 + i * 44, r.width - 48, 44);
     g.fillStyle = "#3a3a3c";
     g.font = "14px -apple-system, sans-serif";
-    g.fillText(`#${1040 + i}  Gateway returns 502 after deploy`, r.left + 36, r.top + 177 + i * 44);
+    g.fillText(`#${1040 + i}  ${["Gateway returns 502 after deploy", "Export to CSV drops the last row", "Reset link expires too early", "Search ignores customer email", "Dark mode loses the focus ring"][i % 5]}`, r.left + 36, r.top + 177 + i * 44);
   }
   const blob: Blob = await new Promise((res) => c.toBlob((b) => res(b!), "image/png"));
   return blob.arrayBuffer();

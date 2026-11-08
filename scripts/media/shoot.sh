@@ -31,6 +31,5 @@ if [ "$what" = all ] || [ "$what" = shots ]; then
   python3 docs/readme/build_assets.py                # cards, buttons, icons from the new screenshots
 fi
 if [ "$what" = all ] || [ "$what" = clips ]; then
-  python3 scripts/media/site_clips.py                # site clips: parallel, sky
-  python3 docs/readme/clips.py                       # GIFs, plus site clips: compare, handoff, conductor
+  python3 docs/readme/clips.py                       # GIFs, plus site clips: compare, handoff, conductor, parallel, sky
 fi

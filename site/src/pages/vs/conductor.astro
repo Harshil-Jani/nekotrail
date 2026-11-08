@@ -17,10 +17,10 @@ const rows: [string, string, string][] = [
   ["Analytics", "None. Every network connection listed", "Limited app analytics, such as crash logs and feature usage (per its privacy notice)"],
   ["Price", "Free, no paid tier", "Free and Pro plans"],
   ["New users", "Welcome", "Sign-ups and downloads closed since 4 Nov 2026"],
-  ["Status", "Early (0.25), updated often", "Joining Meta. Local app supported until early 2027"],
+  ["Status", "Early (0.26), updated often", "Joining Meta. Local app supported until early 2027"],
 ];
 const keep = [
-  "Your repos, scripts and custom prompts",
+  "Your repos, scripts, custom prompts and environment variables",
   "Active workspaces, with branch, pin and notes",
   "Claude and Codex chats, full history, same session",
   "Conductor's keyboard shortcuts",
@@ -107,6 +107,8 @@ const sections = [
 
         <h2 id="keep">What you keep</h2>
         <ol>{keep.map((k) => <li>{k}</li>)}</ol>
+        <img src={href("shots/environment.webp")} alt="NekoTrail's Environment sheet for one workspace: a filter box, counts for NekoTrail, Repo settings, .env files and Login shell, then the workspace's NEKOTRAIL_ variables and its ports, each with a copy button" width="1600" height="1000" loading="lazy" decoding="async" />
+        <p class="muted" style="font-size:14px">Check what came over in a workspace's ⋯ menu, Environment: every variable agents, terminals and scripts get, and where it comes from.</p>
 
         <h2 id="add">What you add</h2>
         <ol>{add.map(([b, t]) => <li><strong>{b}</strong> <Fragment set:html={withCode(t)} /></li>)}</ol>

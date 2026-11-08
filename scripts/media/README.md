@@ -14,10 +14,9 @@ same names and sizes as before:
 
 | Script | Writes |
 |---|---|
-| `scripts/media/shots.py [name ...]` | `docs/screenshots/*.png` (1600x1000, dark) and `site/public/shots/*.webp` |
-| `docs/readme/build_assets.py` | `docs/readme/cards/*.png` (crops of the screenshots), buttons, icons |
-| `scripts/media/site_clips.py [name ...]` | `site/public/clips/{parallel,sky}.{mp4,webm,jpg}` (1200x750, 20 fps) |
-| `docs/readme/clips.py [name ...]` | `docs/readme/gifs/*.gif` and `site/public/clips/{compare,handoff,conductor}.*` (1600x1000, 30 fps) |
+| `scripts/media/shots.py [name ...]` | `docs/screenshots/*.png` (1600x1000 window at 2x, so 3200x2000, dark) and `site/public/shots/*.webp` |
+| `docs/readme/build_assets.py` | `docs/readme/cards/*.png` (crops of the screenshots, 2x), buttons, icons |
+| `docs/readme/clips.py [name ...]` | `docs/readme/gifs/*.gif` and `site/public/clips/{compare,handoff,conductor,parallel,sky}.*` (2400x1500, 30 fps) |
 
 Needs ffmpeg, gifski and cwebp (`brew install ffmpeg gifski webp`), and Python with Playwright and
 Pillow (`pip install playwright pillow && playwright install chromium`). GitHub avatars are cached in

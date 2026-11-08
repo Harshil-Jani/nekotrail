@@ -452,18 +452,18 @@ function HandoffMark({ ev }: { ev: Extract<ChatEvent, { kind: "handoff" }> }) {
 }
 
 /** One chat row. Memoized: a new message renders only the new row, not the whole history. */
-const RowView = memo(function RowView({ r, pendingSpin, latestPlan }: { r: Row; pendingSpin: boolean; latestPlan: boolean }) {
+const RowView = memo(function RowView({ r, pendingSpin, latestPlan, noTime = false }: { r: Row; pendingSpin: boolean; latestPlan: boolean; noTime?: boolean }) {
   const { expandAll, query } = useContext(RewindCtx);
   const hit = !!query && !!findText(r)?.toLowerCase().includes(query);
-  return <div className={hit ? "row-hit" : undefined}>{rowBody(r, pendingSpin, latestPlan, expandAll)}</div>;
+  return <div className={hit ? "row-hit" : undefined}>{rowBody(r, pendingSpin, latestPlan, expandAll, noTime)}</div>;
 }, (a, b) => {
-  if (a.pendingSpin !== b.pendingSpin || a.latestPlan !== b.latestPlan) return false;
+  if (a.pendingSpin !== b.pendingSpin || a.latestPlan !== b.latestPlan || a.noTime !== b.noTime) return false;
   const x = a.r as Record<string, unknown>, y = b.r as Record<string, unknown>;
   const keys = Object.keys(x);
   return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
 });
 
-function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: boolean) {
+function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: boolean, noTime = false) {
   switch (r.type) {
     case "approval":
       return <ApprovalCard r={r} />;
@@ -585,7 +585,7 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
         <div className="msg done num" title={r.ev.cost_usd && getSettings().showCost ? "API-equivalent: what this turn would cost at API prices. On a subscription you pay a flat fee." : undefined}>
           {r.ev.stopped ? <Square size={14} /> : r.ev.is_error ? <X size={14} /> : <Check size={14} />}
           {r.ev.stopped ? "Stopped" : r.ev.is_error ? "Ended with an error" : "Done"}
-          {r.ev.duration_ms ? ` · ${(r.ev.duration_ms / 1000).toFixed(1)}s` : ""}
+          {r.ev.duration_ms && !noTime ? ` · ${(r.ev.duration_ms / 1000).toFixed(1)}s` : ""}
           {r.ev.cost_usd && getSettings().showCost ? ` · $${r.ev.cost_usd.toFixed(2)} API-equivalent` : ""}
         </div>
       );
@@ -598,10 +598,12 @@ function rowBody(r: Row, pendingSpin: boolean, latestPlan: boolean, expandAll: b
  * folds, else -1. The answer is the run of text rows that ends the turn; anything that asks something
  * of you (approvals, errors, checks, stops) never folds. A turn still running is never folded.
  */
-export function stepGroups(rows: Row[]): { group: Int32Array; steps: Map<number, number>; ms: Map<number, number> } {
+/** `timed`: Done rows whose time already shows on their turn's "Worked for" line. */
+export function stepGroups(rows: Row[]): { group: Int32Array; steps: Map<number, number>; ms: Map<number, number>; timed: Set<number> } {
   const group = new Int32Array(rows.length).fill(-1);
   const steps = new Map<number, number>();
   const ms = new Map<number, number>();
+  const timed = new Set<number>();
   let start = 0;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -617,10 +619,10 @@ export function stepGroups(rows: Row[]): { group: Int32Array; steps: Map<number,
       group[j] = first;
       n++;
     }
-    if (first >= 0) { steps.set(first, n); if (r.ev.duration_ms) ms.set(first, r.ev.duration_ms); }
+    if (first >= 0) { steps.set(first, n); if (r.ev.duration_ms) { ms.set(first, r.ev.duration_ms); timed.add(i); } }
     start = i + 1;
   }
-  return { group, steps, ms };
+  return { group, steps, ms, timed };
 }
 
 const fmtTook = (ms: number) => { const s = Math.round(ms / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
@@ -638,9 +640,13 @@ const Thread = memo(function Thread({ visible, hidden, total, current, flash, bu
   return visible.map((r, k) => {
     const i = hidden + k;
     const g = folds.group[i] ?? -1;
+    // A plain Done says nothing the "Worked for 41s" line above the answer hasn't said: drop it, or (with
+    // costs shown) keep just the cost. Stopped and errors always show.
+    const timed = r.type === "done" && folds.timed.has(i) && !r.ev.stopped && !r.ev.is_error;
+    if (timed && !(r.ev.cost_usd && getSettings().showCost)) return null;
     const row = (
       <div key={i} data-row={i} data-step={folds.group[i] >= 0 ? "" : undefined} className={[current === i ? "row-current" : "", flash === i ? "row-flash" : ""].join(" ").trim() || undefined}>
-        <RowView r={r} pendingSpin={busy && i === total - 1} latestPlan={i === latestPlanIdx} />
+        <RowView r={r} pendingSpin={busy && i === total - 1} latestPlan={i === latestPlanIdx} noTime={timed} />
       </div>
     );
     if (g < 0) return row;

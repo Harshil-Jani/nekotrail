@@ -75,6 +75,16 @@ try:
         check("A finished turn folds its steps (no step rows drawn)", pg.locator(".messages .step").count() == 0)
         pg.locator(".steps-fold").first.click(); pg.wait_for_timeout(300)
         check("Clicking 'Worked for ... steps' shows the steps", pg.locator(".messages .step").count() > 0)
+        # 2026-11-08: "Worked for 41s" and "Done · 41.2s" on one reply read as two timers. The time shows once.
+        check("A folded turn shows its time once (no 'Done · 41.2s' under it)", pg.evaluate("() => ![...document.querySelectorAll('.messages .msg.done')].some(d => /Done · \\d/.test(d.textContent))") and pg.locator(".steps-fold").count() > 0)
+
+        # 2026-11-08: a not-started todo drew its circle above centred text (the queued-messages list's .pending
+        # style leaked onto li.todo.pending). Every todo row is one line: icon left of the text.
+        pg.goto(f"http://localhost:{PORT}/preview.html?ws=w1&tab=chat&long")
+        pg.wait_for_selector(".todo.pending", timeout=20000); pg.wait_for_timeout(300)
+        flat = pg.evaluate("() => [...document.querySelectorAll('.todo')].every(li => { const i = li.querySelector('svg').getBoundingClientRect(), t = li.getBoundingClientRect(); return getComputedStyle(li).flexDirection === 'row' && i.left - t.left < 4 })")
+        check("Todo rows (done, doing, not started) all put the icon left of the text", flat)
+        pg.goto(f"http://localhost:{PORT}/preview.html?ws=w1&tab=chat"); pg.wait_for_selector("#workspace-search", timeout=20000)
 
         # 2026-11-08: the sidebar Search box reaches inside every chat (Enter opens the full search with the words typed).
         pg.fill("#workspace-search", "timeout"); pg.wait_for_timeout(200)

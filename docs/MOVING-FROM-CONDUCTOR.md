@@ -37,6 +37,7 @@ Using Conductor Cloud? Read [Conductor Cloud](#conductor-cloud) first.
 | Setup, run and archive scripts | The repo's scripts in NekoTrail (Repo settings, Scripts). |
 | Custom prompts (general, code review, create PR) | Repo settings, Agent: instructions for every chat, the review prompt and the PR prompt. |
 | Files copied into new workspaces (your `.env` globs) | Repo settings, Files and env. |
+| Environment variables | Repo settings, Files and env. A name you already set there keeps your value. |
 | Active workspaces | One NekoTrail workspace each, with its name, branch, target branch, pin and notes. |
 | Claude and Codex chats | Each chat with its message history. New messages continue the same agent session (`claude --resume`, `codex exec resume`). |
 | Keyboard shortcuts | Not imported, because they are already the same. See [Shortcuts](#shortcuts). |

@@ -4,13 +4,13 @@
     python3 docs/readme/build_assets.py --gifs     # also records and encodes every GIF (about 4 minutes)
     python3 docs/readme/build_assets.py --gifs hero review   # just these GIFs
 
-Needs Pillow. After re-shooting docs/screenshots/*.png (1600x1000, dark theme), run this and every README
+Needs Pillow. After re-shooting docs/screenshots/*.png (3200x2000, dark theme), run this and every README
 image is redrawn with the same file names. --gifs needs the preview harness running
 (`bun run dev -- --port 1441`), Playwright with Chromium, ffmpeg and gifski: see clips.py.
 
-- cards/<name>.png : each screenshot cropped to its feature, all the same size (1084x694), rounded corners,
+- cards/<name>.png : each screenshot cropped to its feature, all the same size (2168x1388, 2x), rounded corners,
   a hairline edge (so a dark card still reads on GitHub's dark page) and a soft shadow (for the light page).
-- gifs/<name>.gif  : short loops of the real UI (clips.py): the hero at 1200 px, the Tour's features at 800 px.
+- gifs/<name>.gif  : short loops of the real UI (clips.py): the hero at 1600 px, the Tour's features at 1200 px.
 - buttons/, icons/ : SVGs in a -light and a -dark variant, picked by <picture> in the README.
 """
 import os, subprocess, sys
@@ -20,14 +20,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 SHOTS = os.path.join(REPO, "docs", "screenshots")
 
-W, H = 1040, 650   # card image (16:10)
-PAD = 22           # room for the shadow, same on every side
-R = 18             # corner radius
+S = 2              # the screenshots are 2x (3200x2000); crops below are in 1600x1000 CSS px
+W, H = 2080, 1300  # card image (16:10), 2x for sharp text on retina screens
+PAD = 44           # room for the shadow, same on every side
+R = 36             # corner radius
 
 # name: (x, y, w, h) in the 1600x1000 source, all 16:10 (sidebar 264px wide)
 CROPS = {
     "new-workspace": (315, 150, 1000, 625),
-    "plan":          (390, 230, 1040, 650),
+    "plan":          (440, 400, 960, 600),
     "changes":       (260, 60, 1120, 700),
     "rewind":        (285, 110, 1000, 625),
     "preview":       (264, 0, 1120, 700),
@@ -36,12 +37,16 @@ CROPS = {
     "night-sky":     (264, 10, 1216, 760),
     "model-picker":  (245, 375, 1000, 625),
     "opencode":      (390, 225, 1040, 650),
-    "stacked":       (264, 0, 1300, 812),
+    "stacked":       (264, 0, 1336, 835),
     "board":         (264, 0, 1300, 812),
     "storage":       (285, 180, 1000, 625),
     "palette":       (265, 130, 1040, 650),
-    "mcp":           (161, 40, 1248, 780),
+    "mcp":           (352, 55, 1248, 780),
     "welcome":       (420, 60, 1040, 650),
+    "prompt-rail":   (480, 0, 1120, 700),
+    "environment":   (0, 0, 1600, 1000),
+    "search":        (285, 120, 1040, 650),
+    "archive":       (0, 0, 1000, 625),
 }
 
 # Buttons and icons. Neutral greys from GitHub's own UI, plus the brand's Moonlight for the one
@@ -77,9 +82,9 @@ def frame(img, r=R):
     w, h = img.size
     canvas = Image.new("RGBA", (w + 2 * PAD, h + 2 * PAD), (0, 0, 0, 0))
     sh = Image.new("L", canvas.size, 0)
-    ImageDraw.Draw(sh).rounded_rectangle([PAD, PAD + 6, PAD + w - 1, PAD + h - 1 + 6], r, fill=70)
+    ImageDraw.Draw(sh).rounded_rectangle([PAD, PAD + 12, PAD + w - 1, PAD + h - 1 + 12], r, fill=70)
     shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 255))
-    shadow.putalpha(sh.filter(ImageFilter.GaussianBlur(11)))
+    shadow.putalpha(sh.filter(ImageFilter.GaussianBlur(22)))
     canvas = Image.alpha_composite(canvas, shadow)
     mask = Image.new("L", (w, h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], r, fill=255)
@@ -88,7 +93,7 @@ def frame(img, r=R):
     canvas.alpha_composite(card, (PAD, PAD))
     edge = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     ImageDraw.Draw(edge).rounded_rectangle([PAD, PAD, PAD + w - 1, PAD + h - 1], r,
-                                           outline=(255, 255, 255, 34), width=2)
+                                           outline=(255, 255, 255, 34), width=3)
     return Image.alpha_composite(canvas, edge)
 
 
@@ -96,7 +101,7 @@ def cards():
     os.makedirs(os.path.join(HERE, "cards"), exist_ok=True)
     for name, (x, y, w, h) in CROPS.items():
         im = Image.open(os.path.join(SHOTS, name + ".png")).convert("RGB")
-        im = im.crop((x, y, x + w, y + h)).resize((W, H), Image.LANCZOS)
+        im = im.crop((x * S, y * S, (x + w) * S, (y + h) * S)).resize((W, H), Image.LANCZOS)
         out = os.path.join(HERE, "cards", name + ".png")
         frame(im).save(out, optimize=True)
         print(f"cards/{name}.png {os.path.getsize(out) // 1024} KB")
