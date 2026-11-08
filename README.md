@@ -23,6 +23,10 @@
 </p>
 
 <p>
+<a href="https://www.producthunt.com/products/nekotrail?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-nekotrail"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/buttons/product-hunt-dark.svg"><img src="docs/readme/buttons/product-hunt-light.svg" height="40" alt="NekoTrail on Product Hunt"></picture></a>
+</p>
+
+<p>
 <a href="https://github.com/sponsors/Harshil-Jani"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/buttons/sponsor-dark.svg"><img src="docs/sponsor/github-sponsors.svg" height="30" alt="Sponsor on GitHub"></picture></a>&nbsp;
 <a href="https://buymeacoffee.com/harshiljani"><img src="docs/sponsor/buy-me-a-coffee.svg" height="30" alt="Buy me a coffee"></a>
 </p>

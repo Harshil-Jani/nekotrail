@@ -216,6 +216,9 @@ p { text-wrap: pretty; }
 .hero .ctas { display: flex; flex-wrap: wrap; gap: var(--s3); justify-content: center; margin-top: var(--s7); }
 .hero .fine { font-size: 13.5px; color: var(--sky-muted); margin: var(--s4) 0 0; }
 .hero .fine a { color: var(--accent-on-sky); }
+.hero .ph-badge { display: block; width: fit-content; margin: var(--s4) auto 0; line-height: 0; border-radius: var(--r-md); transition: opacity .15s var(--ease); }
+.hero .ph-badge:hover { opacity: .85; }
+.hero .ph-badge:focus-visible { outline: 2px solid var(--accent-on-sky); outline-offset: 3px; }
 .hero-shot { position: relative; margin-top: var(--s8); padding-bottom: 0; }
 .hero-shot::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
 .hero-shot .window { position: relative; z-index: 1; margin: 0 auto; max-width: 1080px; }
