@@ -20,7 +20,7 @@ jobs:
     runs-on: macos-latest
     steps:
       # Actions are pinned to commit SHAs so a moved tag can't change what builds the release.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The write token is for tauri-action only, not for every install script in git config.
           persist-credentials: false
@@ -93,7 +93,7 @@ jobs:
     # The oldest supported runner, so the .deb runs on distros with this glibc or newer.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: WebKitGTK and the other Tauri build dependencies
