@@ -3,6 +3,12 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.26.2 (2026-11-11)
+
+**New model**
+- Fable 5.2 is in the Claude model picker, at the top with a New badge.
+- If you also have Conductor installed, new models still show up even before Conductor refreshes its own list.
+
 ## 0.26.1 (2026-11-08)
 
 **Install in one line**

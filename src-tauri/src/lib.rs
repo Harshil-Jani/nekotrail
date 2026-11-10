@@ -2409,12 +2409,21 @@ fn model_catalog() -> Value {
                 .collect();
             if !models.is_empty() {
                 let def = cfg["models"].as_array().into_iter().flatten().find(|m| m["id"] == cfg["defaultModel"]).map(|m| m["wireName"].clone());
-                cat[agent]["models"] = json!(models);
+                cat[agent]["models"] = json!(merge_builtin_models(&cat[agent]["models"], models));
                 if let Some(d) = def { cat[agent]["default_model"] = d; }
             }
         }
     }
     cat
+}
+
+/// Conductor's cache only refreshes when Conductor runs, so a model we ship before it has seen
+/// one would vanish. Our new models it doesn't list go first; older ones it dropped stay dropped.
+fn merge_builtin_models(builtin: &Value, fresh: Vec<Value>) -> Vec<Value> {
+    let mut out: Vec<Value> = builtin.as_array().into_iter().flatten()
+        .filter(|b| b["new"] == true && !fresh.iter().any(|f| f["id"] == b["id"])).cloned().collect();
+    out.extend(fresh);
+    out
 }
 
 /// MCP servers the agent can use here, as the CLI reports them (`claude mcp list` / `codex mcp list`).
@@ -5552,6 +5561,16 @@ fn context() -> tauri::Context<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_conductor_catalog_keeps_our_new_models() {
+        let builtin = json!([{"id": "fable-new", "new": true}, {"id": "fable-old", "new": false}, {"id": "opus", "new": true}]);
+        let fresh = vec![json!({"id": "opus", "label": "Opus"}), json!({"id": "sonnet"})];
+        let ids: Vec<String> = merge_builtin_models(&builtin, fresh).iter().map(|m| m["id"].as_str().unwrap().to_string()).collect();
+        assert_eq!(ids, ["fable-new", "opus", "sonnet"]);
+        let shipped: Value = serde_json::from_str(include_str!("models.json")).unwrap();
+        assert_eq!(shipped["claude"]["models"][0]["id"], "claude-fable-5-2");
+    }
 
     #[test]
     fn repo_brief_reads_readme_package_and_top_level_names() {
