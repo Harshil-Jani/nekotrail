@@ -17,7 +17,7 @@ REPO="Harshil-Jani/nekotrail"
 APP="/Applications/nekotrail.app"
 
 if [ "$(uname -s)" = "Linux" ]; then
-  FROM_SOURCE="https://github.com/$REPO#build-it-yourself"
+  FROM_SOURCE="https://github.com/$REPO#install"
   [ "$(uname -m)" = "x86_64" ] || { echo "The Linux build is x86_64 only for now. Build NekoTrail from source: $FROM_SOURCE"; exit 1; }
   command -v apt-get >/dev/null 2>&1 || { echo "This installer needs apt (Debian, Ubuntu and similar). On other distros, build NekoTrail from source: $FROM_SOURCE"; exit 1; }
 
