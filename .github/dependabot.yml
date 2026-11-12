@@ -11,6 +11,11 @@ updates:
       # Tauri and its plugins move together.
       tauri:
         patterns: ["tauri", "tauri-*"]
+    ignore:
+      # cairo-rs stays on the gtk-rs line that webkit2gtk (through wry and tauri) uses, or preview.rs gets two
+      # incompatible cairo types (#6, #14). It moves when tauri moves.
+      - dependency-name: cairo-rs
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: bun
     directory: /
