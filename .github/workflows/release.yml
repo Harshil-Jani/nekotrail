@@ -236,13 +236,13 @@ jobs:
           # Up to 3 tries: distro mirrors go down now and then (openSUSE's aarch64 one did during #30).
           run() {
             rc=1
-            for try in 1 2 3; do
+            for try in $(seq "${TRIES:-3}"); do
               echo "::group::$1 (try $try)"
               rc=0; docker run --rm -v "$PWD/out:/pk:ro" "$1" sh -euc "$2" || rc=$?
               echo "::endgroup::"
               [ "$rc" -eq 0 ] && return 0
               echo "$1: exit $rc"
-              [ "$try" -eq 3 ] || sleep 20
+              [ "$try" -eq "${TRIES:-3}" ] || sleep 20
             done
             return "$rc"
           }
@@ -250,12 +250,12 @@ jobs:
           run debian:12 "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pk/$deb >/dev/null && $libs"
           run fedora:latest "dnf install -y -q /pk/$rpm && $libs"
           run opensuse/tumbleweed "zypper -n -q --no-gpg-checks install --allow-unsigned-rpm /pk/$rpm && $libs"
-          # RHEL and its rebuilds: reported, not required. 10 works; 9 has no WebKitGTK
-          # 4.1, so the .rpm can't install there (README). A change here is a warning, not a failed release.
-          for img in almalinux:9 almalinux:10; do
-            run "$img" "dnf install -y -q /pk/$rpm && $libs" \
-              || echo "::warning::$img: the .rpm did not install or run there"
-          done
+          # RHEL and its rebuilds: reported, not required, one try each. 10 needs EPEL for WebKitGTK 4.1
+          # (as the README says); 9 has no WebKitGTK 4.1 even with EPEL, so the .rpm can't install there.
+          TRIES=1 run almalinux:10 "dnf install -y -q epel-release && dnf install -y -q /pk/$rpm && $libs" \
+            || echo "::warning::almalinux:10 with EPEL: the .rpm did not install or run there"
+          TRIES=1 run almalinux:9 "dnf install -y -q epel-release && dnf install -y -q /pk/$rpm && $libs" \
+            && echo "::notice::almalinux:9 now installs the .rpm; the README can say so"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.arch }}
