@@ -354,10 +354,10 @@ through rusqlite's `bundled` feature and is in the public domain.
 | tokio-util | 0.7.20 | MIT |
 | toml | 1.2.0+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_datetime | 0.6.3 | MIT OR Apache-2.0 |
-| toml_datetime | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_datetime | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_edit | 0.19.15 | MIT OR Apache-2.0 |
 | toml_edit | 0.20.2 | MIT OR Apache-2.0 |
-| toml_edit | 0.25.18+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_edit | 0.25.19+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_parser | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_writer | 1.2.0+spec-1.1.0 | MIT OR Apache-2.0 |
 | tower | 0.5.3 | MIT |
@@ -554,7 +554,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | layout-base | 2.0.1 | MIT |
 | lodash-es | 4.18.1 | MIT |
 | longest-streak | 3.1.0 | MIT |
-| lucide-react | 1.69.0 | ISC |
+| lucide-react | 1.72.0 | ISC |
 | markdown-table | 3.1.0 | MIT |
 | marked | 16.4.2 | MIT |
 | mdast-util-find-and-replace | 3.0.4 | MIT |
