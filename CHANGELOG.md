@@ -3,6 +3,16 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## Unreleased
+
+**Install on Linux in one line**
+- The one-line installer works on Debian, Ubuntu and similar too: `curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh` downloads the latest `.deb` and installs it with apt. On other distros and architectures it says so and points to building from source.
+
+**Fixes**
+- On Linux, Checks run even when NekoTrail starts without `$SHELL` set. They used to try zsh, which most Linux installs don't have, while the terminal already used bash.
+- On Linux, a turn's checkpoint now sees an edit that keeps the file the same size, so rewinding restores the right content.
+- The bundled SQLite is updated to a release with the latest security fix.
+
 ## 0.26.2 (2026-11-11)
 
 **New model**
