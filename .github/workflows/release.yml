@@ -125,7 +125,20 @@ jobs:
       - name: WebKitGTK and the other Tauri build dependencies, and the package checking tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm cpio minisign
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm cpio
+      # minisign checks the updater signatures. Ubuntu 22.04 doesn't package it, so the upstream release,
+      # pinned by checksum (the tarball also verifies against its author's minisign key).
+      - name: Install minisign
+        env:
+          MINISIGN_VERSION: "0.12"
+          MINISIGN_SHA256: 9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73
+        run: |
+          f="minisign-${MINISIGN_VERSION}-linux.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/$f"
+          echo "${MINISIGN_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP"
+          sudo install -m 0755 "$RUNNER_TEMP/minisign-linux/$(uname -m)/minisign" /usr/local/bin/minisign
+          minisign -v
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
