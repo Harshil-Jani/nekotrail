@@ -39,7 +39,7 @@ jobs:
       contents: write
     steps:
       # Actions are pinned to commit SHAs so a moved tag can't change what builds the release.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The write token is for tauri-action only, not for every install script in git config.
           persist-credentials: false
@@ -119,13 +119,13 @@ jobs:
             deb_arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: WebKitGTK and the other Tauri build dependencies, and the package checking tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm cpio
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm libarchive-tools
       # minisign checks the updater signatures. Ubuntu 22.04 doesn't package it, so the upstream release,
       # pinned by checksum (the tarball also verifies against its author's minisign key).
       - name: Install minisign
@@ -147,6 +147,8 @@ jobs:
         with:
           workspaces: src-tauri
           key: ${{ matrix.arch }}
+          # The compile is most of the job; keep it even when a package check after it fails.
+          cache-on-failure: true
       - run: bun install --frozen-lockfile
       # The bundle targets (deb, rpm) and the rpm's dependencies come from tauri.linux.conf.json.
       - name: Build the .deb and the .rpm, signed for the updater
@@ -174,6 +176,7 @@ jobs:
           DEB_ARCH: ${{ matrix.deb_arch }}
         run: |
           set -euo pipefail
+          trap 'echo "::error::line $LINENO failed: $BASH_COMMAND"' ERR
           v="$(jq -r .version src-tauri/tauri.conf.json)"
           b=src-tauri/target/release/bundle
           deb="$b/deb/nekotrail_${v}_${DEB_ARCH}.deb"
@@ -208,8 +211,8 @@ jobs:
           # Each binary knows which package it came from, so the updater fetches the same kind
           # (linux-<arch>-deb or linux-<arch>-rpm in latest.json).
           dpkg-deb -x "$deb" x/deb
-          (cd x/rpm && rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idm --quiet)
-          count() { grep -ao "__TAURI_BUNDLE_TYPE_VAR_$2" "$1" | wc -l; }
+          bsdtar -xf "$rpm" -C x/rpm
+          count() { { grep -ao "__TAURI_BUNDLE_TYPE_VAR_$2" "$1" || true; } | wc -l; }
           [ "$(count x/deb/usr/bin/nekotrail DEB)" -eq 2 ] && [ "$(count x/deb/usr/bin/nekotrail UNK)" -eq 0 ] \
             || fail "the .deb's binary is not marked as a deb install"
           [ "$(count x/rpm/usr/bin/nekotrail RPM)" -eq 2 ] && [ "$(count x/rpm/usr/bin/nekotrail UNK)" -eq 0 ] \
@@ -246,7 +249,7 @@ jobs:
             run "$img" "dnf install -y -q epel-release >/dev/null 2>&1 || true; dnf install -y -q /pk/$rpm && $libs" \
               || echo "::warning::$img: the .rpm did not install or run there"
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.arch }}
           path: out/
@@ -260,18 +263,18 @@ jobs:
       run:
         working-directory: extensions/vscode
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       # vsce needs Node 22 or newer.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - run: bun install --frozen-lockfile
       - run: bun test test/
       - run: bun run package
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vsix
           path: extensions/vscode/nekotrail.vsix
@@ -285,10 +288,10 @@ jobs:
     needs: linux
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: linux-*
           merge-multiple: true
@@ -311,15 +314,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: linux-*
           merge-multiple: true
           path: pk
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: vsix
           path: vsix
