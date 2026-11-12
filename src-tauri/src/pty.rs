@@ -177,11 +177,15 @@ impl Ptys {
         let map = self.0.lock().unwrap();
         map.values()
             .filter(|p| {
-                p.scripted
-                    || match (p.master.process_group_leader(), p.child.process_id()) {
-                        (Some(fg), Some(shell)) => fg as u32 != shell,
-                        _ => false,
-                    }
+                #[cfg(unix)]
+                let foreground = match (p.master.process_group_leader(), p.child.process_id()) {
+                    (Some(fg), Some(shell)) => fg as u32 != shell,
+                    _ => false,
+                };
+                // The pty can't name its foreground process on Windows (#13).
+                #[cfg(not(unix))]
+                let foreground = false;
+                p.scripted || foreground
             })
             .count()
     }
@@ -313,6 +317,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn close_prefix_closes_every_tab_of_one_workspace_and_no_other() {
         let d = tempfile::tempdir().unwrap();
         let cwd = d.path().to_str().unwrap();

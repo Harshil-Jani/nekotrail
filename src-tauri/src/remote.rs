@@ -7,6 +7,9 @@
 //! come from any web page, so a link may focus a workspace but never start work on its own: it
 //! parks the task here and the app asks you first (`Pending`, `link_confirm`).
 
+// The socket side is Unix-only for now (#13), so on Windows its helpers go unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
@@ -913,6 +916,26 @@ mod server {
 }
 
 #[cfg(unix)]
+pub use server::{confirm, on_link, serve};
+
+/// Windows has no socket for the command yet, so links and the command don't reach the app (#13).
+#[cfg(not(unix))]
+mod server {
+    use std::path::PathBuf;
+    use tauri::AppHandle;
+
+    pub fn serve(_app: AppHandle, _data: PathBuf) {}
+
+    pub fn on_link(_app: &AppHandle, url: &str) {
+        eprintln!("nekotrail: links aren't on Windows yet; ignored {url}");
+    }
+
+    pub fn confirm(_app: &AppHandle, _token: &str, _ok: bool) -> Result<(), String> {
+        Err("Links aren't on Windows yet.".into())
+    }
+}
+
+#[cfg(not(unix))]
 pub use server::{confirm, on_link, serve};
 
 #[cfg(test)]

@@ -348,12 +348,19 @@ fn hash_files(ws: &Path, files: &[String], write: bool) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+#[cfg(unix)]
 fn mode_of(ws: &Path, rel: &str) -> &'static str {
     use std::os::unix::fs::PermissionsExt;
     match std::fs::metadata(ws.join(rel)) {
         Ok(m) if m.permissions().mode() & 0o111 != 0 => "100755",
         _ => "100644",
     }
+}
+
+/// Windows files have no executable bit.
+#[cfg(not(unix))]
+fn mode_of(_ws: &Path, _rel: &str) -> &'static str {
+    "100644"
 }
 
 /// Ignored protected files as path -> blob id, right now.

@@ -2,6 +2,9 @@
 //! small script that Settings, General installs. It parses the arguments, starts the app if it
 //! isn't running, and asks it over the Unix socket in `remote`.
 
+// The socket side is Unix-only for now (#13), so on Windows its helpers go unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use crate::remote::{self, QueueTask, Request, Task};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -651,6 +654,12 @@ pub fn install() -> Result<Value, String> {
     }
 }
 
+/// Windows: there is no command line tool yet (#13).
+#[cfg(not(unix))]
+pub fn install() -> Result<Value, String> {
+    Err("The nekotrail command isn't on Windows yet.".into())
+}
+
 /// Where the command is installed, if it is.
 pub fn status() -> Value {
     let link = remote::data_dir().and_then(|d| installed_link(&script_path(&d), &link_dirs()));
@@ -667,6 +676,9 @@ pub fn refresh_script() {
         let _ = write_script(&script, &exe);
     }
 }
+
+#[cfg(not(unix))]
+pub fn refresh_script() {}
 
 #[cfg(test)]
 mod tests {

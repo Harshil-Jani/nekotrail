@@ -1010,6 +1010,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn stop_detection() {
         use std::os::unix::process::ExitStatusExt;
         let exit = |code: i32| ExitStatus::from_raw(code << 8);

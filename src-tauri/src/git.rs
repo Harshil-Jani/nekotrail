@@ -453,20 +453,32 @@ pub fn checkpoint_preview(ws: &Path, checkpoint: &str) -> Result<(usize, usize)>
     Ok((files, commits))
 }
 
+/// A path as git wrote it (raw bytes, with -z). Unix takes any bytes; on Windows git writes UTF-8,
+/// and a path that isn't is skipped.
+#[cfg(unix)]
+fn git_path(bytes: &[u8]) -> Option<&Path> {
+    use std::os::unix::ffi::OsStrExt;
+    Some(Path::new(std::ffi::OsStr::from_bytes(bytes)))
+}
+
+#[cfg(not(unix))]
+fn git_path(bytes: &[u8]) -> Option<&Path> {
+    std::str::from_utf8(bytes).ok().map(Path::new)
+}
+
 /// Put the worktree back exactly as it was at `checkpoint`: same files, same staging area, same
 /// HEAD. First saves a fresh checkpoint of the current state under `prefix`, so the rewind can
 /// itself be undone; if that fails, nothing is touched. Only files that differ are written, so
 /// editors and file watchers see the smallest change. Ignored files are never read or touched.
 /// Returns (undo checkpoint, files changed).
 pub fn rewind(ws: &Path, prefix: &str, to: &str) -> Result<(String, usize)> {
-    use std::os::unix::ffi::OsStrExt;
     let undo = checkpoint(ws, prefix).context("couldn't save the current files first, so nothing was changed")?;
     let _ = prune_checkpoints(ws, prefix, CHECKPOINT_KEEP);
     let target = format!("{to}^{{tree}}");
     let changes = tree_changes(ws, &format!("{undo}^{{tree}}"), &target, false)?;
     let mut write: Vec<u8> = vec![];
     for (status, path) in &changes {
-        let rel = Path::new(std::ffi::OsStr::from_bytes(path));
+        let Some(rel) = git_path(path) else { continue };
         if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             continue;
         }
