@@ -231,22 +231,23 @@ jobs:
           rpm="nekotrail-${v}-1.${ARCH}.rpm"
           # Expands inside each container, hence the single quotes.
           # shellcheck disable=SC2016
-          libs='m="$(ldd /usr/bin/nekotrail | grep "not found" || true)"; [ -z "$m" ] || { echo "$m"; exit 1; }; echo "all libraries found"'
+          # One group, so a failed install before `&& $libs` skips all of it and fails the run.
+          libs='{ m="$(ldd /usr/bin/nekotrail | grep "not found" || true)"; [ -z "$m" ] || { echo "$m"; exit 1; }; echo "all libraries found"; }'
           run() {
             echo "::group::$1"
             rc=0; docker run --rm -v "$PWD/out:/pk:ro" "$1" sh -euc "$2" || rc=$?
             echo "::endgroup::"
-            [ "$rc" -eq 0 ] || echo "::error::$1: exit $rc"
+            [ "$rc" -eq 0 ] || echo "$1: exit $rc"
             return "$rc"
           }
           run ubuntu:22.04 "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pk/$deb >/dev/null && $libs"
           run debian:12 "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pk/$deb >/dev/null && $libs"
           run fedora:latest "dnf install -y -q /pk/$rpm && $libs"
           run opensuse/tumbleweed "zypper -n -q --no-gpg-checks install --allow-unsigned-rpm /pk/$rpm && $libs"
-          # RHEL and its rebuilds: reported, not required. Whether they carry WebKitGTK 4.1 (and EPEL's
-          # copy) varies by release, so a miss here is a warning for the README, not a failed release.
+          # RHEL and its rebuilds: reported, not required. 10 works; 9 has no WebKitGTK
+          # 4.1, so the .rpm can't install there (README). A change here is a warning, not a failed release.
           for img in almalinux:9 almalinux:10; do
-            run "$img" "dnf install -y -q epel-release >/dev/null 2>&1 || true; dnf install -y -q /pk/$rpm && $libs" \
+            run "$img" "dnf install -y -q /pk/$rpm && $libs" \
               || echo "::warning::$img: the .rpm did not install or run there"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -354,7 +355,7 @@ jobs:
             {
               echo ""
               echo "### Linux (experimental)"
-              echo "x86_64 and arm64. Debian or Ubuntu: download the \`.deb\` for your machine (\`amd64\` or \`arm64\`) and run \`sudo apt install ./nekotrail_*.deb\`. Fedora or RHEL: \`sudo dnf install ./nekotrail-*.rpm\` (\`x86_64\` or \`aarch64\`). openSUSE: \`sudo zypper install --allow-unsigned-rpm ./nekotrail-*.rpm\`. Both update themselves from inside the app. The \`.AppImage\` is paused for now; if you use it, switch to a package or build from source."
+              echo "x86_64 and arm64. Debian or Ubuntu: download the \`.deb\` for your machine (\`amd64\` or \`arm64\`) and run \`sudo apt install ./nekotrail_*.deb\`. Fedora, or RHEL 10 and its rebuilds: \`sudo dnf install ./nekotrail-*.rpm\` (\`x86_64\` or \`aarch64\`). openSUSE: \`sudo zypper install --allow-unsigned-rpm ./nekotrail-*.rpm\`. Both update themselves from inside the app. The \`.AppImage\` is paused for now; if you use it, switch to a package or build from source."
               echo ""
               echo "### VS Code and Cursor extension"
               echo "Download \`nekotrail.vsix\` and run \`code --install-extension nekotrail.vsix\` (or \`cursor --install-extension nekotrail.vsix\`)."
