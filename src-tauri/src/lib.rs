@@ -1443,7 +1443,7 @@ fn open_in_targets() -> Vec<Value> {
 }
 
 /// Linux: open the workspace with an editor or terminal from PATH, or "finder" in the file manager.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[tauri::command]
 async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
     let ws = st.db().workspace(&id).map_err(e)?;
@@ -1451,10 +1451,26 @@ async fn open_in(st: State<'_, AppState>, id: String, app: String) -> Res<()> {
 }
 
 /// Linux: the editors and terminals found on PATH, plus the file manager (id "finder").
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[tauri::command]
 fn open_in_targets() -> Vec<Value> {
     linux::open_in_targets()
+}
+
+/// Windows: not yet (#13).
+#[cfg(windows)]
+#[tauri::command]
+async fn open_in(id: String, app: String) -> Res<()> {
+    // Named as the window sends them, so the call still reaches here.
+    let _ = (id, app);
+    Err("Open in isn't on Windows yet.".into())
+}
+
+/// Windows: nothing to open in yet (#13).
+#[cfg(windows)]
+#[tauri::command]
+fn open_in_targets() -> Vec<Value> {
+    Vec::new()
 }
 
 // ---------- reviewing other people's PRs ----------
@@ -4157,9 +4173,17 @@ fn installed_agents() -> Vec<&'static str> {
 }
 
 /// An executable file called `bin` in one of `dirs`.
+#[cfg(unix)]
 fn on_path(dirs: &[PathBuf], bin: &str) -> bool {
     use std::os::unix::fs::PermissionsExt;
     dirs.iter().any(|d| std::fs::metadata(d.join(bin)).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0))
+}
+
+/// Windows: `bin` with one of the extensions it runs (npm installs agent CLIs as `.cmd` shims).
+#[cfg(windows)]
+fn on_path(dirs: &[PathBuf], bin: &str) -> bool {
+    let exts = ["exe", "cmd", "bat"];
+    dirs.iter().any(|d| exts.iter().any(|x| d.join(format!("{bin}.{x}")).is_file()))
 }
 
 /// First-run check: git, GitHub CLI login, and the agent CLIs.
@@ -4600,8 +4624,8 @@ fn start_turn_claimed(app: AppHandle, st: &AppState, id: String, text: String, c
             });
         }
     }
-    // Linux: the same through systemd-inhibit, where there is one.
-    #[cfg(not(target_os = "macos"))]
+    // Linux: the same through systemd-inhibit, where there is one. Windows doesn't keep awake yet (#13).
+    #[cfg(target_os = "linux")]
     if st.db().setting("caffeinate").ok().flatten().as_deref() != Some("off") {
         linux::keep_awake_while(child.id());
     }
@@ -5779,6 +5803,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn installed_means_an_executable_on_path() {
         use std::os::unix::fs::PermissionsExt;
         let d = tempfile::tempdir().unwrap();
@@ -5791,6 +5816,24 @@ mod tests {
         let dirs = [d.path().join("missing"), bin];
         assert!(on_path(&dirs, "cursor-agent"));
         assert!(!on_path(&dirs, "goose"), "not executable");
+        assert!(!on_path(&dirs, "qwen"), "a folder");
+        assert!(!on_path(&dirs, "kimi"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn installed_means_a_runnable_file_on_path() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = d.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(bin.join("claude.cmd"), "@echo off\r\n").unwrap();
+        std::fs::write(bin.join("codex.exe"), "").unwrap();
+        std::fs::write(bin.join("goose"), "no extension").unwrap();
+        std::fs::create_dir(bin.join("qwen.exe")).unwrap();
+        let dirs = [d.path().join("missing"), bin];
+        assert!(on_path(&dirs, "claude"), "npm's .cmd shim");
+        assert!(on_path(&dirs, "codex"));
+        assert!(!on_path(&dirs, "goose"), "Windows won't run it");
         assert!(!on_path(&dirs, "qwen"), "a folder");
         assert!(!on_path(&dirs, "kimi"));
     }
