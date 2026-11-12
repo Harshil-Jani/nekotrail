@@ -233,11 +233,17 @@ jobs:
           # shellcheck disable=SC2016
           # One group, so a failed install before `&& $libs` skips all of it and fails the run.
           libs='{ m="$(ldd /usr/bin/nekotrail | grep "not found" || true)"; [ -z "$m" ] || { echo "$m"; exit 1; }; echo "all libraries found"; }'
+          # Up to 3 tries: distro mirrors go down now and then (openSUSE's aarch64 one did during #30).
           run() {
-            echo "::group::$1"
-            rc=0; docker run --rm -v "$PWD/out:/pk:ro" "$1" sh -euc "$2" || rc=$?
-            echo "::endgroup::"
-            [ "$rc" -eq 0 ] || echo "$1: exit $rc"
+            rc=1
+            for try in 1 2 3; do
+              echo "::group::$1 (try $try)"
+              rc=0; docker run --rm -v "$PWD/out:/pk:ro" "$1" sh -euc "$2" || rc=$?
+              echo "::endgroup::"
+              [ "$rc" -eq 0 ] && return 0
+              echo "$1: exit $rc"
+              [ "$try" -eq 3 ] || sleep 20
+            done
             return "$rc"
           }
           run ubuntu:22.04 "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pk/$deb >/dev/null && $libs"
