@@ -25,9 +25,9 @@ On Linux, the app links at run time to system libraries such as WebKitGTK and GT
 The `.deb` uses the copies your distribution installs; NekoTrail does not ship them. SQLite is compiled in
 through rusqlite's `bundled` feature and is in the public domain.
 
-## Rust crates (379)
+## Rust crates (372)
 
-168 × MIT OR Apache-2.0, 96 × MIT, 44 × Apache-2.0 OR MIT, 15 × Unicode-3.0, 11 × MIT/Apache-2.0, 7 × Zlib OR Apache-2.0 OR MIT, 4 × MPL-2.0, 3 × Apache-2.0 OR ISC OR MIT, 3 × BSD-3-Clause, 3 × Unlicense OR MIT, 2 × Apache-2.0, 2 × Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT, 2 × Apache-2.0/MIT, 2 × ISC, 2 × MIT OR Zlib OR Apache-2.0, 2 × Unlicense/MIT, 1 × (MIT OR Apache-2.0) AND Unicode-3.0, 1 × 0BSD OR MIT OR Apache-2.0, 1 × Apache-2.0 / MIT, 1 × Apache-2.0 AND ISC, 1 × Apache-2.0 AND MIT, 1 × BSD-2-Clause OR Apache-2.0, 1 × BSD-2-Clause OR Apache-2.0 OR MIT, 1 × BSD-3-Clause AND MIT, 1 × BSD-3-Clause/MIT, 1 × CC0-1.0, 1 × CC0-1.0 OR MIT-0 OR Apache-2.0, 1 × MIT OR Apache-2.0 OR Zlib, 1 × Zlib
+162 × MIT OR Apache-2.0, 96 × MIT, 44 × Apache-2.0 OR MIT, 15 × Unicode-3.0, 11 × MIT/Apache-2.0, 7 × Zlib OR Apache-2.0 OR MIT, 4 × MPL-2.0, 3 × Apache-2.0 OR ISC OR MIT, 3 × BSD-3-Clause, 3 × Unlicense OR MIT, 2 × Apache-2.0, 2 × Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT, 2 × Apache-2.0/MIT, 2 × ISC, 2 × MIT OR Zlib OR Apache-2.0, 2 × Unlicense/MIT, 1 × (MIT OR Apache-2.0) AND Unicode-3.0, 1 × 0BSD OR MIT OR Apache-2.0, 1 × Apache-2.0 / MIT, 1 × Apache-2.0 AND ISC, 1 × Apache-2.0 AND MIT, 1 × BSD-2-Clause OR Apache-2.0, 1 × BSD-3-Clause AND MIT, 1 × BSD-3-Clause/MIT, 1 × CC0-1.0, 1 × CC0-1.0 OR MIT-0 OR Apache-2.0, 1 × MIT OR Apache-2.0 OR Zlib, 1 × Zlib
 
 | Component | Version | License |
 |---|---|---|
@@ -97,7 +97,6 @@ through rusqlite's `bundled` feature and is in the public domain.
 | deranged | 0.5.9 | MIT OR Apache-2.0 |
 | derive_more | 2.1.1 | MIT |
 | digest | 0.10.7 | MIT OR Apache-2.0 |
-| dirs | 6.0.0 | MIT OR Apache-2.0 |
 | dirs | 7.0.0 | MIT OR Apache-2.0 |
 | dirs-sys | 0.5.0 | MIT OR Apache-2.0 |
 | dispatch2 | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
@@ -262,7 +261,6 @@ through rusqlite's `bundled` feature and is in the public domain.
 | portable-pty | 0.9.0 | MIT |
 | potential_utf | 0.1.6 | Unicode-3.0 |
 | powerfmt | 0.2.1 | MIT OR Apache-2.0 |
-| ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 |
 | precomputed-hash | 0.1.1 | MIT |
 | proc-macro-crate | 1.3.1 | MIT OR Apache-2.0 |
 | proc-macro-crate | 2.0.2 | MIT OR Apache-2.0 |
@@ -272,10 +270,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | quick-xml | 0.42.0 | MIT |
 | quote | 1.0.47 | MIT OR Apache-2.0 |
 | rand | 0.10.3 | MIT OR Apache-2.0 |
-| rand | 0.9.5 | MIT OR Apache-2.0 |
-| rand_chacha | 0.9.0 | MIT OR Apache-2.0 |
 | rand_core | 0.10.1 | MIT OR Apache-2.0 |
-| rand_core | 0.9.5 | MIT OR Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | regex | 1.13.1 | MIT OR Apache-2.0 |
 | regex-automata | 0.4.18 | MIT OR Apache-2.0 |
@@ -357,13 +352,12 @@ through rusqlite's `bundled` feature and is in the public domain.
 | tokio | 1.54.1 | MIT |
 | tokio-rustls | 0.26.6 | MIT OR Apache-2.0 |
 | tokio-util | 0.7.20 | MIT |
-| toml | 0.8.2 | MIT OR Apache-2.0 |
 | toml | 1.2.0+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_datetime | 0.6.3 | MIT OR Apache-2.0 |
-| toml_datetime | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_datetime | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_edit | 0.19.15 | MIT OR Apache-2.0 |
 | toml_edit | 0.20.2 | MIT OR Apache-2.0 |
-| toml_edit | 0.25.18+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_edit | 0.25.19+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_parser | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_writer | 1.2.0+spec-1.1.0 | MIT OR Apache-2.0 |
 | tower | 0.5.3 | MIT |
@@ -402,7 +396,6 @@ through rusqlite's `bundled` feature and is in the public domain.
 | zbus | 5.19.0 | MIT |
 | zbus_names | 4.3.5 | MIT |
 | zcheapstr | 1.2.0 | MIT |
-| zerocopy | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | zerofrom | 0.1.8 | Unicode-3.0 |
 | zeroize | 1.9.1 | Apache-2.0 OR MIT |
 | zerotrie | 0.2.5 | Unicode-3.0 |
@@ -561,7 +554,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | layout-base | 2.0.1 | MIT |
 | lodash-es | 4.18.1 | MIT |
 | longest-streak | 3.1.0 | MIT |
-| lucide-react | 1.69.0 | ISC |
+| lucide-react | 1.72.0 | ISC |
 | markdown-table | 3.1.0 | MIT |
 | marked | 16.4.2 | MIT |
 | mdast-util-find-and-replace | 3.0.4 | MIT |

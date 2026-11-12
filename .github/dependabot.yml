@@ -37,6 +37,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      # Pinned to engines.vscode (^1.86.0): vsce refuses to package when @types/vscode is newer, and raising
+      # it drops users on older VS Code and Cursor builds. Move both together, by hand.
+      - dependency-name: "@types/vscode"
+      # The types follow the Node that the oldest supported VS Code runs, not the newest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

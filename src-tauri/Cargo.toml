@@ -38,12 +38,12 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 portable-pty = "0.9"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-dirs = "6"
+dirs = "7"
 anyhow = "1"
 libc = "0.2"
-rand = "0.9"
+rand = "0.10"
 sha2 = "0.10"
-toml = "0.8"
+toml = "1.2"
 toml_edit = "0.25"
 trash = "5"
 regex = "1"
