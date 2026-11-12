@@ -27,7 +27,14 @@ jobs:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
       # THIRD_PARTY_NOTICES.md matches the dependencies, and every bundled component has a licence text.
-      - run: bun scripts/third-party-notices.ts --check
+      # On Dependabot's own PRs a stale table only warns (Dependabot can't run `bun run licenses`), so the
+      # build, tests and clippy below still show whether the bump itself works. The licence policy and the
+      # licence texts are enforced there too. A push to main is strict, and scripts/release.sh won't tag
+      # while the committed file is stale, so a release never ships stale notices.
+      - name: Third-party notices
+        env:
+          ALLOW_STALE: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' && '--allow-stale' || '' }}
+        run: bun scripts/third-party-notices.ts --check $ALLOW_STALE
       - run: bunx tsc --noEmit
       - run: bun run build
       - run: bun test tests/

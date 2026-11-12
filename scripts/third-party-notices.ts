@@ -1,6 +1,8 @@
 // Third-party licences: every component that ships inside the app, with its license.
 //   bun scripts/third-party-notices.ts           writes both files below
 //   bun scripts/third-party-notices.ts --check   fails if THIRD_PARTY_NOTICES.md is out of date (CI)
+//   ... --check --allow-stale                    a stale file only warns; the licence policy and the
+//                                                licence texts are still enforced (Dependabot PRs in CI)
 // Outputs:
 //   THIRD_PARTY_NOTICES.md                         the summary table, committed to the repo
 //   src-tauri/resources/THIRD_PARTY_LICENSES.txt   the full licence texts, bundled into the app as a
@@ -236,13 +238,20 @@ if (outside.length) {
 }
 
 if (process.argv.includes("--check")) {
+  licensesTxt(rust, js); // fails if a component has no licence text, stale or not
   const now = existsSync(NOTICES) ? readFileSync(NOTICES, "utf8") : "";
   if (now !== md) {
-    console.error("THIRD_PARTY_NOTICES.md is out of date. Run `bun run licenses` and commit it.");
-    process.exit(1);
+    const msg = "THIRD_PARTY_NOTICES.md is out of date. Run `bun run licenses` and commit it.";
+    if (!process.argv.includes("--allow-stale")) {
+      console.error(msg);
+      process.exit(1);
+    }
+    // Dependabot can't run `bun run licenses`, so on its PRs a stale table is a warning (a GitHub annotation in
+    // CI). main stays strict, and scripts/release.sh refuses to tag while the committed file is stale.
+    console.log(`::warning title=THIRD_PARTY_NOTICES.md is out of date::${msg} Regenerate it before merging.`);
+  } else {
+    console.log(`THIRD_PARTY_NOTICES.md is current: ${rust.size} crates, ${js.size} JS packages.`);
   }
-  licensesTxt(rust, js); // still fails if a component has no licence text
-  console.log(`THIRD_PARTY_NOTICES.md is current: ${rust.size} crates, ${js.size} JS packages.`);
 } else {
   writeFileSync(NOTICES, md);
   mkdirSync(dirname(LICENSES), { recursive: true });

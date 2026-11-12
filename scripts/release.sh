@@ -18,6 +18,8 @@ bun run build >/dev/null || { echo "The build or type check failed. Nothing was 
 rm -rf dist
 echo "Checking: licence texts (the release build runs this first, with CI's coloured cargo output)..."
 CARGO_TERM_COLOR=always bun run licenses >/dev/null || { echo "The licence script failed. Nothing was tagged." >&2; exit 1; }
+# Dependabot PRs may merge with a stale table (CI only warns there), so regenerating must change nothing.
+git diff --quiet -- THIRD_PARTY_NOTICES.md || { echo "THIRD_PARTY_NOTICES.md was out of date and is now regenerated. Commit it, then run this again. Nothing was tagged." >&2; exit 1; }
 echo "Checking: clippy (CI runs it with -D warnings)..."
 (cd src-tauri && cargo clippy -q --all-targets -- -D warnings >/dev/null 2>&1) || { echo "Clippy found problems (run: cd src-tauri && cargo clippy --all-targets -- -D warnings). Nothing was tagged." >&2; exit 1; }
 echo "Checking: Rust tests..."
