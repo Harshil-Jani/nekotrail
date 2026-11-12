@@ -266,14 +266,17 @@ xattr -dr com.apple.quarantine /Applications/nekotrail.app
 <summary><b>Linux (new, experimental)</b></summary>
 <br>
 
-Each release also carries an x86_64 `.deb`. This is new and has not been tested on real Linux machines yet, so expect rough edges and please [report them](https://github.com/Harshil-Jani/nekotrail/issues/new/choose).
+Each release also carries a `.deb` and an `.rpm`, for x86_64 and for arm64 (aarch64). The `.rpm` and the arm64 builds start with the release after v0.26.2. This is new and has not been tested on real Linux machines yet, so expect rough edges and please [report them](https://github.com/Harshil-Jani/nekotrail/issues/new/choose).
 
-- **Debian, Ubuntu and similar:** the same one-liner works, `curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh`, and installs the latest `.deb` with apt. Or download the `.deb` and run `sudo apt install ./nekotrail_*_amd64.deb`. It needs glibc 2.35 or newer (Ubuntu 22.04 era).
-- **Other distros:** build from source for now (see **Build it yourself** below). The `.AppImage` is paused: it would bundle LGPL libraries (WebKitGTK, GTK), and it comes back once their matching source ships with each release. If you installed an earlier AppImage, switch to the `.deb` or a source build; the AppImage no longer gets updates.
-- The `.deb` updates itself from inside the app. An update asks for your password, since it installs with `pkexec`.
+- **Debian, Ubuntu and similar:** download the `.deb` for your machine and run `sudo apt install ./nekotrail_*_amd64.deb` (or `_arm64.deb`). On x86_64 the one-liner also works, `curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh`, and installs the latest `.deb` with apt.
+- **Fedora, RHEL and similar:** download the `.rpm` and run `sudo dnf install ./nekotrail-*.x86_64.rpm` (or `.aarch64.rpm`).
+- **openSUSE:** `sudo zypper install --allow-unsigned-rpm ./nekotrail-*.x86_64.rpm` (or `.aarch64.rpm`). The package carries NekoTrail's own update signature, not a GPG one, hence the flag.
+- Both need glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or Fedora 36 and newer) and pull in the distribution's own WebKitGTK and GTK.
+- **Other distros:** build from source for now (see **Build it yourself** below). The `.AppImage` is paused: it would bundle LGPL libraries (WebKitGTK, GTK), and it comes back once their matching source ships with each release. The `.deb` and `.rpm` don't have that problem, since they use your distribution's copies. If you installed an earlier AppImage, switch to a package or a source build; the AppImage no longer gets updates.
+- The `.deb` and the `.rpm` update themselves from inside the app, each with its own kind of package. An update asks for your password, since it installs with `pkexec`.
 - Shortcuts use Ctrl where the Mac uses ⌘. Two moves: switching workspace is Alt+1 to Alt+9 (Ctrl+1 to Ctrl+4 switch tabs), and Open in editor is Ctrl+Shift+O (Ctrl+O shows tool output). In the terminal, Ctrl keys go to your shell; copy and paste are Ctrl+Shift+C and Ctrl+Shift+V. Settings, Shortcuts lists them all.
 - Not on Linux yet: the Conductor import (Conductor is Mac-only), vibrancy, and the Dock badge (most Linux desktops don't show one). Annotate in Preview uses WebKitGTK's own snapshot and is the least tested part.
-- Requirements as above, plus WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, pulled in by the `.deb`).
+- Requirements as above, plus WebKitGTK 4.1 (`libwebkit2gtk-4.1-0` on Debian and Ubuntu, `webkit2gtk4.1` on Fedora), pulled in by the package.
 
 </details>
 
@@ -428,7 +431,7 @@ Every batch of work ships as a numbered version. See [CHANGELOG.md](CHANGELOG.md
 
 ## Status
 
-Early (0.26.1). Built and used daily on macOS. Linux x86_64 builds are new and experimental. Feedback and PRs welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Early (0.26.1). Built and used daily on macOS. Linux builds (x86_64 and arm64) are new and experimental. Feedback and PRs welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <br>
 

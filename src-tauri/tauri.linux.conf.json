@@ -15,11 +15,15 @@
     ]
   },
   "bundle": {
-    "targets": ["deb"],
+    "targets": ["deb", "rpm"],
     "category": "DeveloperTool",
     "shortDescription": "Run many coding agents in parallel, each in its own git worktree.",
     "linux": {
       "deb": {
+        "recommends": ["git", "xdg-utils"]
+      },
+      "rpm": {
+        "depends": ["libwebkit2gtk-4.1.so.0()(64bit)", "libgtk-3.so.0()(64bit)"],
         "recommends": ["git", "xdg-utils"]
       }
     }

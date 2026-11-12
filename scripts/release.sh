@@ -2,7 +2,8 @@
 # Release a new version: ./scripts/release.sh 0.2.1
 # 1. Write the "## 0.2.1 (date)" section in CHANGELOG.md first.
 # 2. This bumps the version everywhere, commits, tags v0.2.1 and pushes.
-# 3. GitHub Actions then builds the macOS app and publishes the release with those notes.
+# 3. GitHub Actions then builds the macOS app, the Linux packages and the VS Code extension, and
+#    publishes the release with those notes (.github/workflows/release.yml).
 set -eu
 v="${1:?usage: scripts/release.sh <version, e.g. 0.2.1>}"
 cd "$(dirname "$0")/.."

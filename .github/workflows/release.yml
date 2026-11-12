@@ -1,23 +1,42 @@
-# Push a tag like v0.2.0 (scripts/release.sh does it) to build the macOS app and publish a GitHub
-# release whose notes are that version's section of CHANGELOG.md.
-# The build is signed with the updater key (repo secrets TAURI_SIGNING_PRIVATE_KEY and
-# TAURI_SIGNING_PRIVATE_KEY_PASSWORD), so the release also carries nekotrail.app.tar.gz, its .sig
-# and latest.json. Installed apps read latest.json from the latest release to offer the update.
+# Push a tag like v0.2.0 (scripts/release.sh does it) to build the app and publish a GitHub release
+# whose notes are that version's section of CHANGELOG.md. The release carries:
+#   macOS: the universal .dmg, plus nekotrail.app.tar.gz and its .sig for the updater
+#   Linux: a .deb and an .rpm for x86_64 and for arm64 (aarch64), each with its .sig
+#   nekotrail.vsix, the VS Code / Cursor extension
+#   latest.json, which installed apps read from the latest release to offer the update
+# The updater files are signed with the updater key (repo secrets TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD).
+#
+# Dry run: on a pull request that touches the release build, or when started by hand on a branch, the
+# Linux packages and the .vsix are built and checked the same way, and latest.json is assembled against
+# the current release's copy, but nothing is published. The packages are kept as workflow artifacts.
+# Dry runs never get the updater key; they sign with a throwaway key made in the job.
 name: release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/linux-latest-json.sh
+      - src-tauri/tauri.conf.json
+      - src-tauri/tauri.linux.conf.json
+      - extensions/vscode/package.json
 
+# Read-only by default: the dry run builds code from pull requests. Only the jobs that publish, which
+# run for version tags only, get write access.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   macos:
     # Releases come from version tags only, also when started by hand.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       # Actions are pinned to commit SHAs so a moved tag can't change what builds the release.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -80,26 +99,33 @@ jobs:
           gh release upload "$tag" latest.json --clobber
           jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json
 
-  # Linux x86_64 (new, experimental): the .deb only, signed for the updater. The AppImage is held back:
-  # it would bundle LGPL WebKitGTK and GTK, and it returns once the matching library sources ship with
-  # each release (docs/ROADMAP.md). The .deb uses the distribution's own copies.
-  # Runs after the macOS job on purpose. tauri-action downloads the release's existing latest.json,
-  # keeps its platforms and adds linux-x86_64 and linux-x86_64-deb before re-uploading it
-  # (src/upload-version-json.ts in tauri-action). Two jobs doing that at the same time would race,
-  # and the last upload would drop the other's platforms.
+  # Linux (experimental): a .deb and an .rpm per architecture, built natively on each runner (GitHub's
+  # arm64 runners are free for public repositories), so no cross-compiling. The AppImage is held back: it
+  # would bundle LGPL WebKitGTK and GTK, and it returns once the matching library sources ship with each
+  # release (docs/ROADMAP.md). The .deb and the .rpm use the distribution's own copies, which the checks
+  # below hold them to.
+  # This job only builds and checks. Publishing is the publish job's, after the macOS job, so only one job
+  # ever rewrites latest.json.
   linux:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: macos
-    # The oldest supported runner, so the .deb runs on distros with this glibc or newer.
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          # 22.04, the oldest supported runner, so the packages run on distros with glibc 2.35 or newer.
+          - runner: ubuntu-22.04
+            arch: x86_64
+            deb_arch: amd64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+            deb_arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: WebKitGTK and the other Tauri build dependencies
+      - name: WebKitGTK and the other Tauri build dependencies, and the package checking tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm cpio minisign
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -107,57 +133,215 @@ jobs:
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.arch }}
       - run: bun install --frozen-lockfile
-      - name: Release notes from CHANGELOG.md
-        run: |
-          v="${GITHUB_REF_NAME#v}"
-          awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-      # The release already exists (the macOS job made it), so tauri-action only adds the Linux
-      # assets and merges latest.json. The bundle target (deb) comes from tauri.linux.conf.json.
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+      # The bundle targets (deb, rpm) and the rpm's dependencies come from tauri.linux.conf.json.
+      - name: Build the .deb and the .rpm, signed for the updater
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: NekoTrail ${{ github.ref_name }}
-          releaseDraft: false
-          includeUpdaterJson: true
-      - name: latest.json keeps macOS, gains the .deb, and its notes are the changelog section only
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: |
-          tag="${GITHUB_REF_NAME}"
-          gh release download "$tag" -p latest.json -O latest.json --clobber
-          # With only a .deb built, tauri-action also points the generic linux-x86_64 key at it. An older
-          # AppImage install falls back to that key and would write the .deb over itself, so only the
-          # bundle-specific linux-x86_64-deb key is kept. AppImage installs then find no update and keep running.
-          jq --rawfile notes notes.md '.notes = ($notes | sub("\\s+$"; ""))
-            | del(.platforms["linux-x86_64"], .platforms["linux-x86_64-appimage"])' latest.json > latest.next.json
-          for p in darwin-aarch64 darwin-x86_64 linux-x86_64-deb; do
-            jq -e --arg p "$p" '.platforms[$p].url and (.platforms[$p].signature | length > 0)' latest.next.json >/dev/null \
-              || { echo "latest.json has no signed $p entry" >&2; cat latest.next.json; exit 1; }
+          if [ "$IS_RELEASE" = true ]; then
+            [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "No updater key for a release build" >&2; exit 1; }
+            # Signatures are checked against the key the installed apps trust.
+            jq -r .plugins.updater.pubkey src-tauri/tauri.conf.json > "$RUNNER_TEMP/updater.pub"
+          else
+            # Dry run: a throwaway key, so the .sig files are made and checked without the real key.
+            bun tauri signer generate --ci -f -w "$RUNNER_TEMP/dry-run.key" >/dev/null
+            TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/dry-run.key")"
+            TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+            export TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            cp "$RUNNER_TEMP/dry-run.key.pub" "$RUNNER_TEMP/updater.pub"
+          fi
+          bun tauri build --ci
+      - name: Check the packages
+        env:
+          ARCH: ${{ matrix.arch }}
+          DEB_ARCH: ${{ matrix.deb_arch }}
+        run: |
+          set -euo pipefail
+          v="$(jq -r .version src-tauri/tauri.conf.json)"
+          b=src-tauri/target/release/bundle
+          deb="$b/deb/nekotrail_${v}_${DEB_ARCH}.deb"
+          rpm="$b/rpm/nekotrail-${v}-1.${ARCH}.rpm"
+          fail() { echo "::error::$*"; exit 1; }
+          mkdir -p out x/deb x/rpm
+
+          # Every package has an updater signature that the trusted key accepts.
+          base64 -d "$RUNNER_TEMP/updater.pub" > "$RUNNER_TEMP/updater.minisign.pub"
+          for f in "$deb" "$rpm"; do
+            [ -s "$f" ] && [ -s "$f.sig" ] || { find "$b" -maxdepth 2 -type f; fail "missing $f or its .sig"; }
+            base64 -d "$f.sig" > "$RUNNER_TEMP/pkg.minisig"
+            minisign -Vm "$f" -p "$RUNNER_TEMP/updater.minisign.pub" -x "$RUNNER_TEMP/pkg.minisig" || fail "bad signature on $f"
+            cp "$f" "$f.sig" out/
           done
-          jq -e '(.platforms["linux-x86_64-deb"].url | endswith(".deb"))
-                 and ([.platforms | keys[] | select(startswith("linux"))] == ["linux-x86_64-deb"])' latest.next.json >/dev/null \
-            || { echo "latest.json points Linux at the wrong files" >&2; cat latest.next.json; exit 1; }
-          jq -e --arg v "${tag#v}" '.version == $v or .version == ("v" + $v)' latest.next.json >/dev/null \
-            || { echo "latest.json version does not match $tag" >&2; exit 1; }
-          mv latest.next.json latest.json
-          gh release upload "$tag" latest.json --clobber
-          jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json
-      - name: Linux install note in the release body
+
+          # Built for this runner's architecture.
+          [ "$(dpkg-deb -f "$deb" Architecture)" = "$DEB_ARCH" ] || fail "the .deb is not $DEB_ARCH"
+          [ "$(rpm -qp --qf '%{ARCH}' "$rpm")" = "$ARCH" ] || fail "the .rpm is not $ARCH"
+          echo "deb:"; dpkg-deb -f "$deb" Package Version Architecture Depends Recommends
+          echo "rpm requires:"; rpm -qpR "$rpm"
+          echo "rpm recommends:"; rpm -qp --recommends "$rpm"
+          rpm -qp --requires "$rpm" | grep -qF 'libwebkit2gtk-4.1.so.0()(64bit)' || fail "the .rpm does not require WebKitGTK 4.1"
+
+          # LGPL: neither package may carry a shared library of its own (WebKitGTK, GTK and the rest come
+          # from the distribution). That is what keeps them free of the AppImage's source-offer duty.
+          echo "deb files:"; dpkg-deb -c "$deb"
+          echo "rpm files:"; rpm -qlp "$rpm"
+          if dpkg-deb -c "$deb" | grep -E '\.so(\.[0-9]+)*$'; then fail "the .deb bundles a shared library"; fi
+          if rpm -qlp "$rpm" | grep -E '\.so(\.[0-9]+)*$'; then fail "the .rpm bundles a shared library"; fi
+
+          # Each binary knows which package it came from, so the updater fetches the same kind
+          # (linux-<arch>-deb or linux-<arch>-rpm in latest.json).
+          dpkg-deb -x "$deb" x/deb
+          (cd x/rpm && rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idm --quiet)
+          count() { grep -ao "__TAURI_BUNDLE_TYPE_VAR_$2" "$1" | wc -l; }
+          [ "$(count x/deb/usr/bin/nekotrail DEB)" -eq 2 ] && [ "$(count x/deb/usr/bin/nekotrail UNK)" -eq 0 ] \
+            || fail "the .deb's binary is not marked as a deb install"
+          [ "$(count x/rpm/usr/bin/nekotrail RPM)" -eq 2 ] && [ "$(count x/rpm/usr/bin/nekotrail UNK)" -eq 0 ] \
+            || fail "the .rpm's binary is not marked as an rpm install"
+          ls -l out
+      # Each package installs on a clean distribution with its own package manager, and every library the
+      # app links against is then present.
+      - name: Install the packages on clean distributions
+        env:
+          ARCH: ${{ matrix.arch }}
+          DEB_ARCH: ${{ matrix.deb_arch }}
+        run: |
+          set -euo pipefail
+          v="$(jq -r .version src-tauri/tauri.conf.json)"
+          deb="nekotrail_${v}_${DEB_ARCH}.deb"
+          rpm="nekotrail-${v}-1.${ARCH}.rpm"
+          # Expands inside each container, hence the single quotes.
+          # shellcheck disable=SC2016
+          libs='m="$(ldd /usr/bin/nekotrail | grep "not found" || true)"; [ -z "$m" ] || { echo "$m"; exit 1; }; echo "all libraries found"'
+          run() {
+            echo "::group::$1"
+            rc=0; docker run --rm -v "$PWD/out:/pk:ro" "$1" sh -euc "$2" || rc=$?
+            echo "::endgroup::"
+            [ "$rc" -eq 0 ] || echo "::error::$1: exit $rc"
+            return "$rc"
+          }
+          run ubuntu:22.04 "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pk/$deb >/dev/null && $libs"
+          run debian:12 "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pk/$deb >/dev/null && $libs"
+          run fedora:latest "dnf install -y -q /pk/$rpm && $libs"
+          run opensuse/tumbleweed "zypper -n -q --no-gpg-checks install --allow-unsigned-rpm /pk/$rpm && $libs"
+          # RHEL and its rebuilds: reported, not required. Whether they carry WebKitGTK 4.1 (and EPEL's
+          # copy) varies by release, so a miss here is a warning for the README, not a failed release.
+          for img in almalinux:9 almalinux:10; do
+            run "$img" "dnf install -y -q epel-release >/dev/null 2>&1 || true; dnf install -y -q /pk/$rpm && $libs" \
+              || echo "::warning::$img: the .rpm did not install or run there"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  # The VS Code / Cursor extension, built as in ci.yml, attached to the release as nekotrail.vsix.
+  vscode-extension:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: extensions/vscode
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      # vsce needs Node 22 or newer.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun test test/
+      - run: bun run package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vsix
+          path: extensions/vscode/nekotrail.vsix
+          if-no-files-found: error
+          retention-days: 7
+
+  # Dry run of the publish job's latest.json step: the current release's latest.json stands in for the one
+  # the macOS job would have written, and the Linux entries are added and checked. Nothing is uploaded.
+  latest-json-dry-run:
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    needs: linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: linux-*
+          merge-multiple: true
+          path: pk
+      - run: |
+          v="$(jq -r .version src-tauri/tauri.conf.json)"
+          curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/latest.json" \
+            | jq --arg v "$v" '.version = $v' > latest.json
+          awk -v v="$v" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          scripts/linux-latest-json.sh latest.json notes.md "v$v" pk > latest.next.json
+          jq '{version, platforms: (.platforms | map_values(.url))}' latest.next.json
+
+  # Publishes the Linux packages and the .vsix to the release the macOS job filled, then adds the Linux
+  # entries to latest.json. After the macOS job on purpose: its tauri-action rewrites latest.json too, and
+  # two jobs doing that at once would race, the last upload dropping the other's platforms.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux, vscode-extension]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: linux-*
+          merge-multiple: true
+          path: pk
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: vsix
+          path: vsix
+      # The packages go up before latest.json points at them.
+      - name: Upload the Linux packages and nekotrail.vsix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l pk vsix
+          gh release upload "$GITHUB_REF_NAME" pk/* vsix/nekotrail.vsix --clobber -R "$GITHUB_REPOSITORY"
+      - name: latest.json keeps macOS, gains the Linux packages, and its notes are the changelog section only
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF_NAME}"
-          gh release view "$tag" --json body --jq .body > body.md
+          awk -v v="${tag#v}" '$0 ~ "^## "v" " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          gh release download "$tag" -p latest.json -O latest.json --clobber -R "$GITHUB_REPOSITORY"
+          scripts/linux-latest-json.sh latest.json notes.md "$tag" pk > latest.next.json
+          mv latest.next.json latest.json
+          gh release upload "$tag" latest.json --clobber -R "$GITHUB_REPOSITORY"
+          jq '{version, pub_date, platforms: (.platforms | keys)}' latest.json
+      - name: Linux and VS Code install notes in the release body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" --json body --jq .body -R "$GITHUB_REPOSITORY" > body.md
           if ! grep -q '^### Linux (experimental)' body.md; then
             {
               echo ""
               echo "### Linux (experimental)"
-              echo "x86_64 only. Debian or Ubuntu: download the \`.deb\` and run \`sudo apt install ./nekotrail_*_amd64.deb\`. It updates itself from inside the app. The \`.AppImage\` is paused for now; if you use it, switch to the \`.deb\` or build from source."
+              echo "x86_64 and arm64. Debian or Ubuntu: download the \`.deb\` for your machine (\`amd64\` or \`arm64\`) and run \`sudo apt install ./nekotrail_*.deb\`. Fedora or RHEL: \`sudo dnf install ./nekotrail-*.rpm\` (\`x86_64\` or \`aarch64\`). openSUSE: \`sudo zypper install --allow-unsigned-rpm ./nekotrail-*.rpm\`. Both update themselves from inside the app. The \`.AppImage\` is paused for now; if you use it, switch to a package or build from source."
+              echo ""
+              echo "### VS Code and Cursor extension"
+              echo "Download \`nekotrail.vsix\` and run \`code --install-extension nekotrail.vsix\` (or \`cursor --install-extension nekotrail.vsix\`)."
             } >> body.md
-            gh release edit "$tag" --notes-file body.md
+            gh release edit "$tag" --notes-file body.md -R "$GITHUB_REPOSITORY"
           fi
