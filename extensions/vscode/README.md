@@ -32,7 +32,9 @@ never starts an agent by itself: a new task always waits for you to press Start 
 
 ## Install
 
-The extension isn't on the VS Code Marketplace or Open VSX yet. Install the `.vsix` file:
+The extension isn't on the VS Code Marketplace or Open VSX yet. Download `nekotrail.vsix` from the
+[latest release](https://github.com/Harshil-Jani/nekotrail/releases/latest) (attached from the release
+after v0.26.2) and install it:
 
 - **VS Code:** Extensions view, `...` menu, Install from VSIX..., pick `nekotrail.vsix`.
   Or in a terminal: `code --install-extension nekotrail.vsix`
