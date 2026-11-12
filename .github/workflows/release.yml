@@ -254,8 +254,9 @@ jobs:
           # (as the README says); 9 has no WebKitGTK 4.1 even with EPEL, so the .rpm can't install there.
           TRIES=1 run almalinux:10 "dnf install -y -q epel-release && dnf install -y -q /pk/$rpm && $libs" \
             || echo "::warning::almalinux:10 with EPEL: the .rpm did not install or run there"
-          TRIES=1 run almalinux:9 "dnf install -y -q epel-release && dnf install -y -q /pk/$rpm && $libs" \
-            && echo "::notice::almalinux:9 now installs the .rpm; the README can say so"
+          if TRIES=1 run almalinux:9 "dnf install -y -q epel-release && dnf install -y -q /pk/$rpm && $libs"; then
+            echo "::notice::almalinux:9 now installs the .rpm; the README can say so"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.arch }}
