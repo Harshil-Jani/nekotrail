@@ -283,7 +283,16 @@ fn snapshot(ws: &Path) -> Result<(String, Option<String>, String)> {
     // which is what keeps this fast in large repos.
     let staged = if std::fs::copy(&real, &idx.0).is_ok() {
         // Fails while a merge has conflicts; then there is no single staged tree to keep.
-        git_idx(ws, &idx.0, &["write-tree"]).ok().filter(|t| *t != head_tree)
+        let staged = git_idx(ws, &idx.0, &["write-tree"]).ok().filter(|t| *t != head_tree);
+        // The stat cache is only safe with the real index's own mtime: git re-reads any file
+        // changed in the same second the index was written ("racily clean"), and it tells those
+        // apart by that mtime. fs::copy keeps it on macOS but not on Linux, where a fresh mtime made
+        // git trust the cache and miss a same-size edit (a checkpoint kept the old file).
+        if !same_mtime(Path::new(&real), &idx.0) {
+            // No usable cache then: start from the staged tree, so `add -A` hashes every file.
+            git_idx(ws, &idx.0, &["read-tree", staged.as_deref().unwrap_or(&head_tree)])?;
+        }
+        staged
     } else {
         git_idx(ws, &idx.0, &["read-tree", "HEAD"])?;
         None
@@ -291,6 +300,12 @@ fn snapshot(ws: &Path) -> Result<(String, Option<String>, String)> {
     git_idx(ws, &idx.0, &["add", "-A", "."])?;
     let tree = git_idx(ws, &idx.0, &["write-tree"])?;
     Ok((tree, staged, head))
+}
+
+/// Give `copy` the mtime of `orig`. True when they now match.
+fn same_mtime(orig: &Path, copy: &Path) -> bool {
+    let Ok(t) = std::fs::metadata(orig).and_then(|m| m.modified()) else { return false };
+    std::fs::File::options().write(true).open(copy).and_then(|f| f.set_modified(t)).is_ok()
 }
 
 /// The tree of every tracked and untracked (not ignored) file as it is right now, without
@@ -691,6 +706,37 @@ pub mod tests {
         git(p, &["add", "."]).unwrap();
         git(p, &["commit", "-qm", "init"]).unwrap();
         d
+    }
+
+    /// A file edited in the same second git last wrote its index, to the same size, looks
+    /// unchanged by its stat; git only re-reads it because the index is no older than the file.
+    /// The snapshot's copy of the index must keep that mtime. On Linux fs::copy gave the copy a
+    /// fresh one, and checkpoints kept the old file (CI's check-linux caught it).
+    /// Times are pinned to 2020 so this needs no luck with the clock. ctime is left out with
+    /// core.trustctime, as the write moves it and the test can't put it back.
+    #[test]
+    fn a_same_size_edit_in_the_second_the_index_was_written_is_seen() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        git(r, &["init", "-q", "-b", "main"]).unwrap();
+        for (k, v) in [("user.email", "t@example.com"), ("user.name", "T"), ("core.trustctime", "false")] {
+            git(r, &["config", k, v]).unwrap();
+        }
+        let then = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_577_836_800);
+        let pin = |p: &Path| std::fs::File::options().write(true).open(p).unwrap().set_modified(then).unwrap();
+        let file = r.join("a.txt");
+        std::fs::write(&file, "one\n").unwrap();
+        pin(&file);
+        git(r, &["add", "."]).unwrap();
+        git(r, &["commit", "-qm", "init"]).unwrap();
+        std::fs::write(&file, "two\n").unwrap();
+        pin(&file);
+        pin(&r.join(".git/index"));
+        let want = git(r, &["hash-object", "a.txt"]).unwrap();
+        let tree = worktree_tree(r).unwrap();
+        assert_eq!(git(r, &["rev-parse", &format!("{tree}:a.txt")]).unwrap(), want);
+        let cp = checkpoint(r, &checkpoint_prefix("ws-racy")).unwrap();
+        assert_eq!(git(r, &["rev-parse", &format!("{cp}:a.txt")]).unwrap(), want);
     }
 
     #[test]
