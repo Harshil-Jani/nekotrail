@@ -299,7 +299,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | serde_derive_internals | 0.29.1 | MIT OR Apache-2.0 |
 | serde_json | 1.0.154 | MIT OR Apache-2.0 |
 | serde_spanned | 0.6.9 | MIT OR Apache-2.0 |
-| serde_spanned | 1.1.2 | MIT OR Apache-2.0 |
+| serde_spanned | 1.1.3 | MIT OR Apache-2.0 |
 | serde_with | 3.24.0 | MIT OR Apache-2.0 |
 | serde-untagged | 0.1.9 | MIT OR Apache-2.0 |
 | serial2 | 0.2.39 | BSD-2-Clause OR Apache-2.0 |
@@ -352,7 +352,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | tokio | 1.54.1 | MIT |
 | tokio-rustls | 0.26.6 | MIT OR Apache-2.0 |
 | tokio-util | 0.7.20 | MIT |
-| toml | 1.2.0+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml | 1.2.1+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_datetime | 0.6.3 | MIT OR Apache-2.0 |
 | toml_datetime | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_edit | 0.19.15 | MIT OR Apache-2.0 |
@@ -377,7 +377,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | urlpattern | 0.6.0 | MIT |
 | utf_types | 1.0.0 | Apache-2.0 OR MIT |
 | utf8_iter | 1.1.0 | Apache-2.0 OR MIT |
-| uuid | 1.29.0 | Apache-2.0 OR MIT |
+| uuid | 1.29.2 | Apache-2.0 OR MIT |
 | walkdir | 2.5.0 | Unlicense/MIT |
 | want | 0.3.2 | MIT |
 | web_atoms | 0.2.6 | MIT OR Apache-2.0 |
