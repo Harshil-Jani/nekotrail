@@ -425,7 +425,7 @@ pub fn exec(cmd: &str, cwd: &Path, env: &[(String, String)], stop: &AtomicBool, 
             return ex;
         }
     };
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| crate::pty::FALLBACK_SHELL.into());
     let mut c = Command::new(shell);
     crate::loginenv::apply(&mut c);
     c.args(["-lc", cmd]).current_dir(cwd).stdin(Stdio::null()).process_group(0);
