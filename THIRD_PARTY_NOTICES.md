@@ -25,9 +25,9 @@ On Linux, the app links at run time to system libraries such as WebKitGTK and GT
 The `.deb` uses the copies your distribution installs; NekoTrail does not ship them. SQLite is compiled in
 through rusqlite's `bundled` feature and is in the public domain.
 
-## Rust crates (381)
+## Rust crates (379)
 
-169 × MIT OR Apache-2.0, 96 × MIT, 44 × Apache-2.0 OR MIT, 15 × Unicode-3.0, 11 × MIT/Apache-2.0, 7 × Zlib OR Apache-2.0 OR MIT, 4 × MPL-2.0, 3 × Apache-2.0 OR ISC OR MIT, 3 × BSD-3-Clause, 3 × Unlicense OR MIT, 2 × Apache-2.0, 2 × Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT, 2 × Apache-2.0/MIT, 2 × ISC, 2 × MIT OR Zlib OR Apache-2.0, 2 × Unlicense/MIT, 2 × Zlib, 1 × (MIT OR Apache-2.0) AND Unicode-3.0, 1 × 0BSD OR MIT OR Apache-2.0, 1 × Apache-2.0 / MIT, 1 × Apache-2.0 AND ISC, 1 × Apache-2.0 AND MIT, 1 × BSD-2-Clause OR Apache-2.0, 1 × BSD-2-Clause OR Apache-2.0 OR MIT, 1 × BSD-3-Clause AND MIT, 1 × BSD-3-Clause/MIT, 1 × CC0-1.0, 1 × CC0-1.0 OR MIT-0 OR Apache-2.0, 1 × MIT OR Apache-2.0 OR Zlib
+168 × MIT OR Apache-2.0, 96 × MIT, 44 × Apache-2.0 OR MIT, 15 × Unicode-3.0, 11 × MIT/Apache-2.0, 7 × Zlib OR Apache-2.0 OR MIT, 4 × MPL-2.0, 3 × Apache-2.0 OR ISC OR MIT, 3 × BSD-3-Clause, 3 × Unlicense OR MIT, 2 × Apache-2.0, 2 × Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT, 2 × Apache-2.0/MIT, 2 × ISC, 2 × MIT OR Zlib OR Apache-2.0, 2 × Unlicense/MIT, 1 × (MIT OR Apache-2.0) AND Unicode-3.0, 1 × 0BSD OR MIT OR Apache-2.0, 1 × Apache-2.0 / MIT, 1 × Apache-2.0 AND ISC, 1 × Apache-2.0 AND MIT, 1 × BSD-2-Clause OR Apache-2.0, 1 × BSD-2-Clause OR Apache-2.0 OR MIT, 1 × BSD-3-Clause AND MIT, 1 × BSD-3-Clause/MIT, 1 × CC0-1.0, 1 × CC0-1.0 OR MIT-0 OR Apache-2.0, 1 × MIT OR Apache-2.0 OR Zlib, 1 × Zlib
 
 | Component | Version | License |
 |---|---|---|
@@ -127,7 +127,6 @@ through rusqlite's `bundled` feature and is in the public domain.
 | filetime | 0.2.29 | MIT/Apache-2.0 |
 | flate2 | 1.1.10 | MIT OR Apache-2.0 |
 | fnv | 1.0.7 | Apache-2.0 / MIT |
-| foldhash | 0.1.5 | Zlib |
 | foldhash | 0.2.0 | Zlib |
 | foreign-types | 0.5.0 | MIT/Apache-2.0 |
 | foreign-types-shared | 0.3.1 | MIT/Apache-2.0 |
@@ -161,9 +160,8 @@ through rusqlite's `bundled` feature and is in the public domain.
 | gtk-sys | 0.18.2 | MIT |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 |
 | hashbrown | 0.14.5 | MIT OR Apache-2.0 |
-| hashbrown | 0.15.5 | MIT OR Apache-2.0 |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 |
-| hashlink | 0.10.0 | MIT OR Apache-2.0 |
+| hashlink | 0.12.2 | MIT OR Apache-2.0 |
 | heck | 0.4.1 | MIT OR Apache-2.0 |
 | heck | 0.5.0 | MIT OR Apache-2.0 |
 | hex | 0.4.3 | MIT OR Apache-2.0 |
@@ -205,7 +203,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | keyring | 3.6.3 | MIT OR Apache-2.0 |
 | libc | 0.2.191 | MIT OR Apache-2.0 |
 | libdbus-sys | 0.2.7 | Apache-2.0/MIT |
-| libsqlite3-sys | 0.35.0 | MIT |
+| libsqlite3-sys | 0.39.1 | MIT |
 | linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | litemap | 0.8.3 | Unicode-3.0 |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 |
@@ -285,7 +283,7 @@ through rusqlite's `bundled` feature and is in the public domain.
 | reqwest | 0.13.5 | MIT OR Apache-2.0 |
 | rfd | 0.17.2 | MIT |
 | ring | 0.17.14 | Apache-2.0 AND ISC |
-| rusqlite | 0.37.0 | MIT |
+| rusqlite | 0.41.1 | MIT |
 | rust-ini | 0.21.3 | MIT |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
 | rustix | 1.1.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
