@@ -5,6 +5,14 @@ to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
 ## Unreleased
 
+**Themes**
+- 13 themes in Settings, Appearance: Dracula, Tokyo Night, Catppuccin Mocha and Latte, Nord, Gruvbox Dark and Light, One Dark, Rosé Pine, Solarized Dark and Light, GitHub Dark and Light. Moonlight stays the default.
+- The terminal takes the theme's colours too.
+- Make your own: change any colour and NekoTrail works out the rest. Text always stays readable.
+- Share one: Copy theme puts it on your clipboard, Paste theme uses one someone sent you.
+- Ask an agent: `nekotrail theme` shows the format, and `nekotrail theme mytheme.json` sets it. `nekotrail theme nord` picks a preset.
+- In ⌘K, type "theme" or a name to switch.
+
 **Install on Linux in one line**
 - The one-line installer works on Debian, Ubuntu and similar too: `curl -fsSL https://harshil-jani.github.io/nekotrail/install.sh | sh` downloads the latest `.deb` and installs it with apt. On other distros and architectures it says so and points to building from source.
 
