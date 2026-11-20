@@ -1,6 +1,6 @@
 // Run with `bun test tests/`.
 import { describe, expect, test } from "bun:test";
-import { contrast, mix, parseTheme, PRESET_ORDER, PRESETS, readable, resolvePalette, terminalColors, themeJson, themeVars, xtermTheme, type AppTheme } from "../src/themes";
+import { contrast, mix, parseTheme, themeFromRemote, PRESET_ORDER, PRESETS, readable, resolvePalette, terminalColors, themeJson, themeVars, xtermTheme, type AppTheme } from "../src/themes";
 
 const solid = (v: string) => v.startsWith("#");
 
@@ -117,5 +117,23 @@ describe("which theme is on", () => {
     expect(resolvePalette("custom", null)).toBeNull();
     expect(resolvePalette("dracula", null)).toBe(PRESETS.dracula);
     expect(resolvePalette("gone", null)).toBeNull();
+  });
+});
+
+describe("nekotrail theme (the command agents use)", () => {
+  test("the Rust side knows the same presets, in the same order", () => {
+    const rs = require("fs").readFileSync(require("path").join(import.meta.dir, "../src-tauri/src/theme.rs"), "utf8") as string;
+    const ids = [...rs.matchAll(/\("([a-z-]+)", "([^"]+)"\)/g)].map((m) => [m[1], m[2]]);
+    expect(ids).toEqual(Object.entries(PRESETS).map(([id, t]) => [id, t.name]));
+  });
+
+  test("a preset, moonlight, or a whole theme becomes settings", () => {
+    expect(themeFromRemote("Nord")).toEqual({ palette: "nord", name: "Nord" });
+    expect(themeFromRemote("moonlight")).toEqual({ palette: "", name: "Moonlight" });
+    expect(themeFromRemote("nope")).toEqual({ error: 'There\'s no theme called "nope".' });
+    const r = themeFromRemote({ name: "Mint", colors: { background: "#0f1419", text: "#ffffff", accent: "#5ccfe6" } });
+    expect("palette" in r && r.palette).toBe("custom");
+    expect("custom" in r && r.custom?.name).toBe("Mint");
+    expect("error" in themeFromRemote({ colors: { background: "#000" } })).toBe(true);
   });
 });

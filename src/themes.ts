@@ -338,3 +338,14 @@ export function resolvePalette(id: string, custom: AppTheme | null): AppTheme | 
   if (id === "custom") return custom;
   return PRESETS[id] ?? null;
 }
+
+/** What `nekotrail theme` sent, as settings: a preset id, "moonlight" (back to default), or a theme. */
+export function themeFromRemote(v: unknown): { palette: string; custom?: AppTheme; name: string } | { error: string } {
+  if (typeof v === "string") {
+    const id = v.trim().toLowerCase();
+    if (id === "moonlight") return { palette: "", name: "Moonlight" };
+    return PRESETS[id] ? { palette: id, name: PRESETS[id].name } : { error: `There's no theme called "${id}".` };
+  }
+  const r = parseTheme(v);
+  return "error" in r ? r : { palette: "custom", custom: r.theme, name: r.theme.name };
+}

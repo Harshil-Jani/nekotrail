@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 /// 2 added `hello`, `propose`, `draft` and `changes` (the editor extension), and `path` and
 /// `target_branch` on each workspace row. 3 added `handoff`. A request carries the lowest version
 /// that has its command, so a new command still reaches an older app for anything that app knows.
-pub const PROTOCOL: u32 = 3;
+pub const PROTOCOL: u32 = 4;
 /// The oldest request version the app still answers.
 pub const MIN_PROTOCOL: u32 = 1;
 /// A request is one JSON line. Prompts can be long, but not this long.
@@ -82,6 +82,9 @@ pub enum Request {
     /// one `cwd` is in. Without `now` the hand-off opens in the app with its brief, and nothing is
     /// sent until you press Hand off there.
     Handoff { cwd: String, workspace: String, to: String, model: Option<String>, now: bool },
+    /// (v4) Change the app's colour theme: a preset id (or "moonlight"), or a theme object
+    /// (see `theme::HELP`). It applies right away and doesn't bring the window forward.
+    Theme { theme: Value },
 }
 
 impl Request {
@@ -90,6 +93,7 @@ impl Request {
         match self {
             Request::Hello | Request::Propose { .. } | Request::Draft { .. } | Request::Changes { .. } => 2,
             Request::Handoff { .. } => 3,
+            Request::Theme { .. } => 4,
             _ => 1,
         }
     }
@@ -365,6 +369,8 @@ pub enum Job {
     Draft { workspace_id: String, text: String },
     /// `nekotrail handoff`: open the hand-off of this chat to `agent`, with its brief to read first.
     Handoff { workspace_id: String, session_id: String, agent: String, model: Option<String> },
+    /// `nekotrail theme`: use this theme (a preset id, "moonlight", or a theme object).
+    Theme { theme: Value },
     /// A link nekotrail couldn't use.
     Error { text: String },
 }
@@ -718,6 +724,13 @@ mod server {
                 Ok(json!({"workspace": w.name, "path": w.path, "target_branch": w.target_branch, "base": base, "files": files}))
             }
             Request::Handoff { cwd, workspace, to, model, now } => handoff(app, &st, &cwd, &workspace, &to, model, now),
+            Request::Theme { theme } => {
+                let name = crate::theme::validate(&theme)?;
+                // A theme changes how the app looks, not what you're doing: no focus steal.
+                st.inbox.push(Job::Theme { theme });
+                let _ = app.emit("remote", ());
+                Ok(json!({"name": name}))
+            }
         }
     }
 
@@ -951,7 +964,7 @@ mod tests {
         // A v2 command sent as v1 is refused by name, not misread.
         assert!(decode(r#"{"v":1,"cmd":"hello"}"#).unwrap_err().contains("\"hello\" needs protocol 2"));
         assert!(decode(r#"{"v":0,"cmd":"status"}"#).unwrap_err().contains("different versions"));
-        assert!(decode(r#"{"v":4,"cmd":"hello"}"#).unwrap_err().contains("different versions"));
+        assert!(decode(r#"{"v":5,"cmd":"hello"}"#).unwrap_err().contains("different versions"));
         assert!(decode(r#"{"v":2,"cmd":"draft","workspace":"x"}"#).is_err());
         // v3: handoff. An app on v2 says the versions differ; a v2 line naming it is refused by name.
         let h = Request::Handoff { cwd: "/code/ws/mochi".into(), workspace: ".".into(), to: "codex".into(), model: None, now: false };
@@ -960,6 +973,12 @@ mod tests {
         assert_eq!(decode(&line).unwrap(), h);
         assert!(decode(r#"{"v":2,"cmd":"handoff","cwd":"/","workspace":"x","to":"codex","model":null,"now":true}"#).unwrap_err().contains("\"handoff\" needs protocol 3"));
         assert_eq!(decode(r#"{"v":3,"cmd":"hello"}"#).unwrap(), Request::Hello, "older commands still answer at v3");
+        // v4: theme. It round-trips, and a v3 line naming it is refused by name.
+        let t = Request::Theme { theme: json!({"name": "Mint", "colors": {"background": "#000", "text": "#fff", "accent": "#0ff"}}) };
+        let line = encode(&t);
+        assert!(line.contains("\"v\":4") && line.contains("\"cmd\":\"theme\""), "{line}");
+        assert_eq!(decode(&line).unwrap(), t);
+        assert!(decode(r#"{"v":3,"cmd":"theme","theme":"nord"}"#).unwrap_err().contains("\"theme\" needs protocol 4"));
         // The exact lines the editor extension writes (extensions/vscode/src/protocol.ts).
         assert_eq!(
             decode(r#"{"v":2,"cmd":"propose","cwd":"/r/src","task":{"prompt":"fix it","agent":null}}"#).unwrap(),

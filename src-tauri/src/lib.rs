@@ -46,6 +46,7 @@ pub mod stage;
 pub mod store;
 pub mod terminal;
 pub mod testparse;
+pub mod theme;
 pub mod title;
 pub mod usage;
 

@@ -48,6 +48,8 @@ import { useDismiss } from "./useDismiss";
 import { ask, ConfirmHost } from "./components/Confirm";
 import { PortsPopover } from "./components/PortsPopover";
 import { chime, getSettings, saveSettings, ting } from "./settings";
+import { PRESET_ORDER, PRESETS, themeFromRemote } from "./themes";
+import { Palette as PaletteIcon } from "lucide-react";
 import { getZoom, setZoom, stepZoom } from "./appearance";
 import { IS_MAC, isOpenIn, isWorkspaceDigit, keyHint, mod } from "./platform";
 import { AGENTS, agentName } from "./agents";
@@ -1129,6 +1131,14 @@ export default function App() {
         setTab("chat");
         setHandoffReq({ workspaceId: job.workspace_id, nonce: Date.now(), sessionId: job.session_id, agent: job.agent, model: job.model });
         return;
+      case "theme": {
+        // `nekotrail theme`, often run by an agent: a preset, moonlight, or a whole theme.
+        const r = themeFromRemote(job.theme);
+        if ("error" in r) { say(r.error, true); return; }
+        saveSettings({ ...getSettings(), palette: r.palette, ...(r.custom ? { customTheme: r.custom } : {}) });
+        say(`Theme: ${r.name}. Change it any time in Settings, Appearance.`);
+        return;
+      }
       case "draft":
         // From the editor extension: the text waits in the message box until you press Send.
         await refresh();
@@ -1396,6 +1406,13 @@ export default function App() {
       { id: "doctor", group: "App", label: "Check setup (git, gh, Claude, Codex, Gemini, OpenCode)", keywords: "doctor install login", icon: <Gear size={15} />, run: () => { setSelected(null); setView("workspace"); } },
       { id: "add-repo", group: "Create", label: "Add local repo", icon: <FolderOpen size={15} />, run: addRepo },
     );
+    // Themes: "theme dracula", "nord", "light"... switch without opening Settings.
+    const pickTheme = (id: string, name: string) => () => { saveSettings({ ...getSettings(), palette: id }); say(`Theme: ${name}.`); };
+    c.push({ id: "theme-moonlight", group: "Theme", queryOnly: true, label: "Theme: Moonlight", keywords: "theme colors default appearance", icon: <PaletteIcon size={15} />, run: pickTheme("", "Moonlight") });
+    for (const id of PRESET_ORDER) {
+      const t = PRESETS[id];
+      c.push({ id: `theme-${id}`, group: "Theme", queryOnly: true, label: `Theme: ${t.name}`, keywords: `theme colors appearance ${t.mode}`, icon: <PaletteIcon size={15} />, run: pickTheme(id, t.name) });
+    }
     for (const r of reviewRequests) {
       const open = reviewWorkspaceFor(r, workspaces);
       const rn = repos.find((x) => x.id === r.repo_id)?.name ?? "";

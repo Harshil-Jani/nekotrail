@@ -38,6 +38,8 @@ Usage:
                                  was done. <name> is a name, branch or title; . is the one you're in
       --model <id>               Model for the new agent. Default: your default for it
       --now                      Send the brief right away. Default: NekoTrail shows it to you first
+  nekotrail theme <name|file|->  Change the colours: a preset (nekotrail theme lists them), or a
+                                 theme JSON from a file or standard input. Agents can write one
   nekotrail --help | --version
 
 NekoTrail starts if it isn't running. For a folder named new, ls, open or status, write ./new.
@@ -57,6 +59,10 @@ pub enum Action {
     QueueAdd { repo: Option<String>, task: QueueTask },
     QueueLs { json: bool },
     Handoff { workspace: String, to: String, model: Option<String>, now: bool },
+    /// `nekotrail theme` with nothing after it: the format and the presets.
+    ThemeHelp,
+    /// A preset id or a theme object, already read from the file or standard input.
+    Theme { theme: Value },
 }
 
 /// Parse the arguments after `nekotrail`. Pure, so every form is tested.
@@ -99,6 +105,7 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
             Some(other) => Err(format!("nekotrail queue doesn't know \"{other}\". Try nekotrail queue add \"<task>\".")),
         },
         "handoff" | "hand-off" => parse_handoff(rest),
+        "theme" | "themes" => parse_theme(rest, &mut std::io::stdin().lock()),
         "open" => {
             let words: Vec<&str> = rest.iter().map(String::as_str).filter(|w| *w != "--").collect();
             if words.is_empty() {
@@ -114,6 +121,41 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
             Ok(Action::Add { path: path.to_string() })
         }
     }
+}
+
+/// `nekotrail theme <preset | file.json | ->`. A file or standard input is read here, so a bad
+/// theme fails in the terminal before the app is asked.
+pub fn parse_theme(args: &[String], stdin: &mut dyn std::io::Read) -> Result<Action, String> {
+    use std::io::Read;
+    let arg = match args {
+        [] => return Ok(Action::ThemeHelp),
+        [a] if matches!(a.as_str(), "-h" | "--help" | "help" | "--list" | "ls" | "list") => return Ok(Action::ThemeHelp),
+        [a] => a.as_str(),
+        _ => return Err("nekotrail theme takes one preset, file or -. Run nekotrail theme.".into()),
+    };
+    let text = if arg == "-" {
+        let mut buf = String::new();
+        stdin.take(crate::theme::MAX_BYTES as u64 + 1).read_to_string(&mut buf).map_err(|e| format!("Couldn't read standard input: {e}"))?;
+        Some(buf)
+    } else if arg.ends_with(".json") || Path::new(arg).is_file() {
+        let meta = std::fs::metadata(arg).map_err(|_| format!("There's no file {arg}."))?;
+        if meta.len() as usize > crate::theme::MAX_BYTES {
+            return Err("That theme is too big. A theme is a few colours.".into());
+        }
+        Some(std::fs::read_to_string(arg).map_err(|e| format!("Couldn't read {arg}: {e}"))?)
+    } else {
+        None
+    };
+    let theme = match text {
+        Some(t) => {
+            // Agents often wrap JSON in a code fence; take what's inside.
+            let t = t.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+            serde_json::from_str::<Value>(t).map_err(|e| format!("That isn't valid JSON ({e}). Run nekotrail theme for the format."))?
+        }
+        None => Value::String(arg.trim().to_ascii_lowercase()),
+    };
+    crate::theme::validate(&theme)?;
+    Ok(Action::Theme { theme })
 }
 
 fn parse_handoff(args: &[String]) -> Result<Action, String> {
@@ -248,7 +290,8 @@ pub fn absolute(path: &str, cwd: &Path, home: Option<&Path>) -> PathBuf {
 pub fn request(action: &Action, cwd: &Path, home: Option<&Path>) -> Option<Request> {
     let here = Some(cwd.to_string_lossy().to_string());
     Some(match action {
-        Action::Help | Action::Version => return None,
+        Action::Help | Action::Version | Action::ThemeHelp => return None,
+        Action::Theme { theme } => Request::Theme { theme: theme.clone() },
         Action::Show => Request::Show,
         Action::Add { path } => Request::Add { path: absolute(path, cwd, home).to_string_lossy().to_string() },
         Action::New { task } => Request::New { cwd: cwd.to_string_lossy().to_string(), task: task.clone() },
@@ -421,6 +464,7 @@ fn format_done(action: &Action, data: &Value) -> String {
         Action::Handoff { .. } => format_handoff(data),
         Action::Ls { .. } => format_ls(data),
         Action::Status { .. } => format_status(data),
+        Action::Theme { .. } => format!("NekoTrail is now using {}.\n", s("name")),
         _ => String::new(),
     }
 }
@@ -508,6 +552,10 @@ pub fn main(args: Vec<String>) -> i32 {
             println!("nekotrail {}", env!("CARGO_PKG_VERSION"));
             return 0;
         }
+        Action::ThemeHelp => {
+            print!("{}", crate::theme::help());
+            return 0;
+        }
         _ => {}
     }
     let Ok(cwd) = std::env::current_dir() else {
@@ -516,7 +564,7 @@ pub fn main(args: Vec<String>) -> i32 {
     };
     let Some(req) = request(&action, &cwd, dirs::home_dir().as_deref()) else { return 0 };
     // Reading, or lining up work for later: nekotrail stays behind your terminal.
-    let background = matches!(action, Action::Ls { .. } | Action::Status { .. } | Action::QueueAdd { .. } | Action::QueueLs { .. });
+    let background = matches!(action, Action::Ls { .. } | Action::Status { .. } | Action::QueueAdd { .. } | Action::QueueLs { .. } | Action::Theme { .. });
     match ask(&req, background) {
         Ok(data) => {
             print!("{}", format_done(&action, &data));
@@ -670,6 +718,44 @@ pub fn refresh_script() {
 
 #[cfg(test)]
 mod tests {
+    fn theme_args(a: &[&str]) -> Vec<String> { a.iter().map(|s| s.to_string()).collect() }
+
+    #[test]
+    fn theme_lists_presets_or_sets_one() {
+        let mut none: &[u8] = b"";
+        assert_eq!(parse_theme(&[], &mut none), Ok(Action::ThemeHelp));
+        assert_eq!(parse_theme(&theme_args(&["--list"]), &mut none), Ok(Action::ThemeHelp));
+        assert_eq!(parse_theme(&theme_args(&["Dracula"]), &mut none), Ok(Action::Theme { theme: json!("dracula") }));
+        assert_eq!(parse_theme(&theme_args(&["moonlight"]), &mut none), Ok(Action::Theme { theme: json!("moonlight") }));
+        assert!(parse_theme(&theme_args(&["vaporwave"]), &mut none).unwrap_err().contains("no theme called"));
+        assert!(parse_theme(&theme_args(&["a", "b"]), &mut none).is_err());
+    }
+
+    #[test]
+    fn theme_from_stdin_and_file_even_inside_a_code_fence() {
+        let mut input: &[u8] = b"```json\n{\"name\":\"Mint\",\"colors\":{\"background\":\"#0f1419\",\"text\":\"#ffffff\",\"accent\":\"#5ccfe6\"}}\n```";
+        let Ok(Action::Theme { theme }) = parse_theme(&theme_args(&["-"]), &mut input) else { panic!("stdin theme") };
+        assert_eq!(theme["name"], "Mint");
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("t.json");
+        std::fs::write(&f, r##"{"bg":"#000","fg":"#fff","primary":"#f80"}"##).unwrap();
+        let mut none: &[u8] = b"";
+        assert!(matches!(parse_theme(&[f.to_string_lossy().to_string()], &mut none), Ok(Action::Theme { .. })));
+        std::fs::write(&f, "{not json").unwrap();
+        assert!(parse_theme(&[f.to_string_lossy().to_string()], &mut none).unwrap_err().contains("isn't valid JSON"));
+        assert!(parse_theme(&theme_args(&["missing.json"]), &mut none).unwrap_err().contains("no file"));
+    }
+
+    #[test]
+    fn theme_goes_to_the_app_as_a_v4_request_and_says_what_it_set() {
+        let a = Action::Theme { theme: json!("nord") };
+        let req = request(&a, Path::new("/tmp"), None).unwrap();
+        assert_eq!(req, Request::Theme { theme: json!("nord") });
+        assert_eq!(req.since(), 4);
+        assert_eq!(format_done(&a, &json!({"name": "Nord"})), "NekoTrail is now using Nord.\n");
+        assert_eq!(request(&Action::ThemeHelp, Path::new("/tmp"), None), None);
+    }
+
     use super::*;
 
     fn p(args: &[&str]) -> Result<Action, String> {

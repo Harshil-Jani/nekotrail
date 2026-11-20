@@ -404,6 +404,7 @@ export type RemoteJob =
   | { kind: "confirm"; token: string; from?: "link" | "editor"; repo: string; repo_path: string; adds_repo: boolean; prompt: string; agent: string; base: string | null; plan: boolean }
   | { kind: "draft"; workspace_id: string; text: string }
   | { kind: "handoff"; workspace_id: string; session_id: string; agent: Agent; model: string | null }
+  | { kind: "theme"; theme: unknown }
   | { kind: "error"; text: string };
 
 export const api = {

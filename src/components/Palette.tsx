@@ -10,6 +10,8 @@ export type Command = {
   hint?: string;
   icon?: React.ReactNode;
   run: () => void;
+  /** Only shown once you type (long lists like themes stay out of the opening list). */
+  queryOnly?: boolean;
   /** Only listed before you type (the Recent group), so search results have no duplicates. */
   emptyOnly?: boolean;
 };
@@ -36,7 +38,7 @@ export function Palette({ commands, onClose, placeholder = "Jump to a workspace 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
     return commands
-      .filter((c) => !query || !c.emptyOnly)
+      .filter((c) => (!query || !c.emptyOnly) && (query || !c.queryOnly))
       .map((c, i) => ({ c, s: score(c, query), i }))
       .filter((x) => x.s >= 0)
       .sort((a, b) => a.s - b.s || a.i - b.i)

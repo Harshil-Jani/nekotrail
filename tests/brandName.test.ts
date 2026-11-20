@@ -8,7 +8,7 @@ import { join } from "node:path";
 const ROOT = join(import.meta.dir, "..", "src");
 
 /** A lowercase nekotrail that reads as the product name, not as an identifier. */
-const PROSE = /(?<![\w./\-@$\\'])nekotrail(?![\w\-/_:@]|\.\w| (?:\.|new|--|queue|handoff|ls|open|status|<))/;
+const PROSE = /(?<![\w./\-@$\\'])nekotrail(?![\w\-/_:@]|\.\w| (?:\.|new|--|queue|handoff|ls|open|status|theme|<))/;
 
 /** Lines that keep the lowercase name on purpose, with the reason. */
 const KEPT: [file: string, snippet: string, why: string][] = [
@@ -39,6 +39,6 @@ describe("brand name", () => {
 
   test("the rule tells the product name from identifiers", () => {
     for (const s of ["Welcome to nekotrail.", "nekotrail can't read it", "in nekotrail's folder", "Made with nekotrail", "`nekotrail ${v} is here`"]) expect(PROSE.test(s)).toBe(true);
-    for (const s of ["nekotrail.json", "nekotrail://open", "\"nekotrail.zoom\"", "nekotrail-theme", "nekotrail new \"fix it\"", "nekotrail --help", "nekotrail queue add", "/usr/local/bin/nekotrail", "dev.nekotrail.app", "Made with NekoTrail"]) expect(PROSE.test(s)).toBe(false);
+    for (const s of ["nekotrail.json", "nekotrail://open", "\"nekotrail.zoom\"", "nekotrail-theme", "nekotrail new \"fix it\"", "nekotrail --help", "nekotrail queue add", "nekotrail theme dracula", "/usr/local/bin/nekotrail", "dev.nekotrail.app", "Made with NekoTrail"]) expect(PROSE.test(s)).toBe(false);
   });
 });
