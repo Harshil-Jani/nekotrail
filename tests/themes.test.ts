@@ -17,8 +17,18 @@ describe("every preset reads well", () => {
     });
     test(`${t.name}: button text reads on the accent, Merge and Delete fills`, () => {
       expect(contrast(v["--accent-ink"], v["--accent"])).toBeGreaterThanOrEqual(4.5);
-      expect(contrast("#ffffff", v["--good-fill"])).toBeGreaterThanOrEqual(4.5);
-      expect(contrast("#ffffff", v["--bad-fill"])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v["--good-ink"], v["--good-fill"])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v["--bad-ink"], v["--bad-fill"])).toBeGreaterThanOrEqual(4.5);
+    });
+    test(`${t.name}: small text also reads on the sidebar, a selected row and soft accent chips`, () => {
+      const dark = t.mode === "dark";
+      const selectedRow = mix(v["--sidebar"], v["--text"], dark ? 0.11 : 0.09);
+      const chip = mix(v["--bg"], t.colors.accent, dark ? 0.16 : 0.12);
+      for (const k of ["--muted", "--lantern-text", "--good-text", "--bad-text"]) {
+        for (const surface of [v["--sidebar"], v["--surface"], selectedRow]) expect(contrast(v[k], surface)).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(v["--accent-chip-text"], chip)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v["--accent-text"], chip)).toBeGreaterThanOrEqual(4.5);
     });
     test(`${t.name}: a full terminal palette`, () => {
       const x = terminalColors(t);

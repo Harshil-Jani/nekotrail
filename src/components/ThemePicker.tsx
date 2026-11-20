@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Check, ClipboardCopy, ClipboardPaste, Palette as PaletteIcon, RotateCcw } from "lucide-react";
-import { type AppTheme, type ThemeColors, luminance, parseTheme, PRESET_ORDER, PRESETS, resolvePalette, themeJson } from "../themes";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, ClipboardCopy, ClipboardPaste, Palette as PaletteIcon, RotateCcw } from "lucide-react";
+import { type AppTheme, type ThemeColors, isHex, luminance, parseTheme, PRESET_ORDER, PRESETS, resolvePalette, themeJson } from "../themes";
 import type { Settings as S } from "../settings";
 
 /** Moonlight's base colours, so "Copy theme" and "Customize" work from the default too. */
@@ -74,17 +74,37 @@ export function ThemePicker({ s, set, dark }: { s: S; set: <K extends keyof S>(k
     ...PRESET_ORDER.map((id) => [id, PRESETS[id]] as [string, AppTheme]),
     ...(s.customTheme ? [["custom", s.customTheme] as [string, AppTheme]] : []),
   ];
+  const selected = Math.max(0, choices.findIndex(([id]) => id === s.palette));
+  const grid = useRef<HTMLDivElement>(null);
+  /** Radio group keys: arrows move and pick, like the system's own radio buttons. One Tab stop. */
+  const onKey = (e: React.KeyboardEvent) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const next = (selected + step + choices.length) % choices.length;
+    pick(choices[next][0]);
+    requestAnimationFrame(() => grid.current?.querySelectorAll<HTMLButtonElement>(".theme-card")[next]?.focus());
+  };
 
   return (
     <section>
-      <h3>Theme</h3>
-      <div className="theme-grid" role="radiogroup" aria-label="Theme">
-        {choices.map(([id, t]) => {
-          const on = s.palette === id;
+      <div className="theme-head">
+        <h3>Theme</h3>
+        {!s.palette && (
+          <div className="seg" role="radiogroup" aria-label="Moonlight light or dark">
+            {([["system", "Follow system"], ["light", "Light"], ["dark", "Dark"]] as const).map(([id, name]) => (
+              <button key={id} role="radio" aria-checked={s.theme === id} className={s.theme === id ? "on" : ""} onClick={() => set("theme", id)}>{name}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="theme-grid" role="radiogroup" aria-label="Theme" ref={grid} onKeyDown={onKey}>
+        {choices.map(([id, t], i) => {
+          const on = i === selected;
           return (
-            <button key={id || "moonlight"} role="radio" aria-checked={on} className={"theme-card" + (on ? " on" : "")} onClick={() => pick(id)} title={id === "custom" ? "Your theme" : t.name}>
+            <button key={id || "moonlight"} role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className={"theme-card" + (on ? " on" : "")} onClick={() => pick(id)} title={t.name}>
               <Swatch t={t} />
-              <span className="theme-name">{on && <Check size={11} strokeWidth={3} />}{id === "custom" ? t.name || "Custom" : t.name}</span>
+              <span className="theme-name">{t.name || "Custom"}</span>
             </button>
           );
         })}
@@ -98,17 +118,17 @@ export function ThemePicker({ s, set, dark }: { s: S; set: <K extends keyof S>(k
       </div>
 
       <details className="theme-edit">
-        <summary><PaletteIcon size={13} /> Make your own</summary>
+        <summary><ChevronRight size={12} className="theme-chevron" /><PaletteIcon size={13} /> Make your own</summary>
         <p className="muted setting-note">Change any colour. NekoTrail works out the rest and keeps text readable.</p>
         <div className="theme-colors">
           {EDITABLE.map(([k, label]) => {
             const v = (custom ?? current).colors[k] ?? "";
             return (
-              <label key={k} className="theme-color">
-                <input type="color" value={v || "#888888"} onChange={(e) => editColor(k, e.target.value)} aria-label={label} />
+              <div key={k} className="theme-color">
+                <input type="color" value={v || "#888888"} onChange={(e) => editColor(k, e.target.value)} aria-label={`${label} colour`} />
                 <span>{label}</span>
-                <code>{v || "auto"}</code>
-              </label>
+                <HexInput value={v} label={label} onChange={(x) => editColor(k, x)} />
+              </div>
             );
           })}
         </div>
@@ -121,5 +141,20 @@ export function ThemePicker({ s, set, dark }: { s: S; set: <K extends keyof S>(k
       </details>
       <p className="muted setting-note">Or ask any agent for one. It can run <code>nekotrail theme</code> to see the format and set it.</p>
     </section>
+  );
+}
+
+/** A hex field you can type or paste into. A bad value goes back to the last good one when you leave it. */
+function HexInput({ value, label, onChange }: { value: string; label: string; onChange: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = () => {
+    const t = text.trim().startsWith("#") ? text.trim() : `#${text.trim()}`;
+    if (isHex(t)) { if (t.toLowerCase() !== value) onChange(t.toLowerCase()); }
+    else setText(value);
+  };
+  return (
+    <input className="theme-hex" value={text} placeholder="auto" spellCheck={false} aria-label={`${label} hex`}
+      onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
   );
 }

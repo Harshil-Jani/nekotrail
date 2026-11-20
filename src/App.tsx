@@ -1408,10 +1408,11 @@ export default function App() {
     );
     // Themes: "theme dracula", "nord", "light"... switch without opening Settings.
     const pickTheme = (id: string, name: string) => () => { saveSettings({ ...getSettings(), palette: id }); say(`Theme: ${name}.`); };
-    c.push({ id: "theme-moonlight", group: "Theme", queryOnly: true, label: "Theme: Moonlight", keywords: "theme colors default appearance", icon: <PaletteIcon size={15} />, run: pickTheme("", "Moonlight") });
+    const nowTheme = getSettings().palette;
+    c.push({ id: "theme-moonlight", group: "Theme", queryOnly: true, hint: nowTheme === "" ? "Current" : "Default", label: "Theme: Moonlight", keywords: "theme colors default appearance", icon: <PaletteIcon size={15} />, run: pickTheme("", "Moonlight") });
     for (const id of PRESET_ORDER) {
       const t = PRESETS[id];
-      c.push({ id: `theme-${id}`, group: "Theme", queryOnly: true, label: `Theme: ${t.name}`, keywords: `theme colors appearance ${t.mode}`, icon: <PaletteIcon size={15} />, run: pickTheme(id, t.name) });
+      c.push({ id: `theme-${id}`, group: "Theme", queryOnly: true, hint: nowTheme === id ? "Current" : t.mode === "dark" ? "Dark" : "Light", label: `Theme: ${t.name}`, keywords: `theme colors appearance ${t.mode}`, icon: <PaletteIcon size={15} />, run: pickTheme(id, t.name) });
     }
     for (const r of reviewRequests) {
       const open = reviewWorkspaceFor(r, workspaces);

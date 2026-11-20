@@ -60,6 +60,8 @@
   --bad: light-dark(#b51e3b, #ff7a8e);
   --bad-soft: light-dark(rgba(181, 30, 59, 0.08), rgba(255, 122, 142, 0.14));
   --bad-fill: #b51e3b;
+  --good-ink: #fff;                                   /* text on the Merge and Delete fills; a theme may set dark ink */
+  --bad-ink: #fff;
   /* Warning: amber-orange, kept apart from the lantern gold. */
   --wait: light-dark(#9a4a00, #ff9f5a);
   --wait-soft: light-dark(rgba(154, 74, 0, 0.1), rgba(255, 159, 90, 0.13));
@@ -461,7 +463,7 @@ ol.pending { list-style: none; margin: 0; padding: 0; display: flex; flex-direct
 .confirm-backdrop { z-index: 60; }
 .modal.confirm { width: min(420px, calc(100vw - 48px)); }
 .modal.confirm p { margin: 0; line-height: 1.5; }
-button.danger-fill { background: var(--bad-fill); color: #fff; box-shadow: var(--shadow-control); font-weight: 600; }
+button.danger-fill { background: var(--bad-fill); color: var(--bad-ink); box-shadow: var(--shadow-control); font-weight: 600; }
 button.danger-fill:hover { background: color-mix(in srgb, var(--bad-fill) 88%, white); }
 .field { display: flex; flex-direction: column; gap: var(--s1); font-size: 14px; font-weight: 600; }
 .field textarea { font-family: var(--mono); font-size: 13px; font-weight: 400; }
@@ -560,7 +562,7 @@ button.branch:hover { color: var(--text); }
 .git-menu { position: relative; display: inline-flex; }
 .icon-btn { padding: 4px 6px; }
 .git-actions > .git-menu:first-child .icon-btn { border-left: 0.5px solid var(--line-strong); }
-button.good-btn { background: var(--good-fill); border-color: var(--good-fill); color: #fff; }
+button.good-btn { background: var(--good-fill); border-color: var(--good-fill); color: var(--good-ink); }
 button.good-btn:hover { background: var(--good); }
 .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px; background: var(--surface); border: 0.5px solid var(--line-strong); box-shadow: 0 16px 40px light-dark(rgba(0, 0, 0, 0.18), light-dark(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.4))); padding: var(--s1) 0; display: flex; flex-direction: column; }
 .menu button { border: none; justify-content: flex-start; padding: 7px var(--s3); font-weight: 500; width: 100%; }
@@ -820,7 +822,7 @@ button.branch:hover { background: var(--hover); color: var(--text); }
 .git-actions > button:only-child { border-radius: var(--r); }
 .git-actions .git-menu .icon-btn { height: 26px; width: 24px; padding: 0; justify-content: center; border-radius: 0 var(--r) var(--r) 0; margin-left: 1px; }
 .git-actions > .git-menu:first-child .icon-btn { border-radius: var(--r); }
-button.good-btn { background: var(--good-fill); color: #fff; box-shadow: var(--shadow-control); font-weight: 600; }
+button.good-btn { background: var(--good-fill); color: var(--good-ink); box-shadow: var(--shadow-control); font-weight: 600; }
 button.good-btn:hover { background: color-mix(in srgb, var(--good) 88%, white); }
 
 /* Menus, popovers, palette, sheets: vibrant material with a soft shadow */
@@ -1219,7 +1221,7 @@ html.native .repo-actions { background: none; }
 .prbar button.link.num:hover { color: var(--text); }
 .prbar button.branch, .prbar .git-actions > button, .prbar .icon-btn { height: 24px; }
 /* 3. Merge is calmer; autopilot is neutral. */
-button.good-btn { background: var(--good-fill); color: #fff; }
+button.good-btn { background: var(--good-fill); color: var(--good-ink); }
 button.good-btn:hover { background: color-mix(in srgb, var(--good-fill) 88%, white); }
 .pill.autopilot { background: var(--hover) !important; color: var(--muted) !important; }
 /* 4. Less accent: user bubble neutral, plan title in text colour, agent labels muted. */
@@ -1842,8 +1844,8 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .pick-line:hover { border-color: var(--accent-text); }
 .pick-line[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .dl.picked { box-shadow: inset 3px 0 0 var(--accent); }
-.dl.add.picked { background: light-dark(rgba(11, 106, 59, 0.2), rgba(94, 224, 160, 0.22)); }
-.dl.del.picked { background: light-dark(rgba(181, 30, 59, 0.16), rgba(255, 122, 142, 0.24)); }
+.dl.add.picked { background: color-mix(in srgb, var(--good) 22%, transparent); }
+.dl.del.picked { background: color-mix(in srgb, var(--bad) 20%, transparent); }
 
 .modal.split-sheet { width: min(720px, calc(100vw - 48px)); max-height: 86vh; overflow: hidden; gap: var(--s3); }
 .split-sheet > .row { flex-shrink: 0; }
@@ -1855,7 +1857,7 @@ html.linux .app.no-sidebar .ws-header, html.linux .app.no-sidebar .board-head, h
 .split-group.done { opacity: 0.75; }
 .split-group-head { display: flex; align-items: flex-start; gap: var(--s2); }
 .split-num { flex: 0 0 22px; height: 22px; margin-top: 3px; border-radius: 50%; background: var(--raised); box-shadow: var(--shadow-control); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
-.split-group.done .split-num { background: var(--good-fill); color: #fff; }
+.split-group.done .split-num { background: var(--good-fill); color: var(--good-ink); }
 .split-group-head textarea { flex: 1; resize: vertical; min-height: 28px; padding: 4px var(--s2); border-radius: var(--r); border: 0.5px solid var(--line-strong); background: var(--field); font: inherit; font-size: 13px; color: var(--text); }
 .split-group-head textarea:focus { outline: none; box-shadow: var(--ring); border-color: transparent; }
 .split-group > .subject-hint { padding-left: 30px; }
@@ -1914,6 +1916,8 @@ button.link.split-hunk-name { font-weight: 400; }
 .env-jump button .muted { font-variant-numeric: tabular-nums; }
 .env-foot { font-size: 12px; flex-wrap: wrap; }
 .env-foot > .muted { flex: 1 1 auto; min-width: 0; }
+/* A dialog that takes focus to trap Tab isn't a control: no focus ring around the whole sheet. */
+.modal:focus, .modal:focus-visible, .nw-panel:focus-visible { outline: none; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3), 0 0 0 0.5px var(--line-strong) !important; }
 .modal.env-sheet:focus, .modal.env-sheet:focus-visible { outline: none; box-shadow: 0 8px 32px light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.4)) !important; }
 /* Short windows (900x560): the list gets the height, not the margins. */
 @media (max-height: 680px) {
@@ -2708,12 +2712,18 @@ button.mselect-btn:hover { background: var(--btn-hover); color: var(--text); }
 .theme-card { height: auto; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border-radius: var(--r-md); background: transparent; box-shadow: 0 0 0 0.5px var(--line); }
 .theme-card:hover { background: var(--hover); }
 .theme-card.on { box-shadow: 0 0 0 1.5px var(--accent-text); }
-.theme-swatch { display: flex; height: 52px; border-radius: var(--r); overflow: hidden; box-shadow: inset 0 0 0 0.5px rgba(127, 127, 127, 0.3); }
-.theme-swatch-side { width: 30%; display: flex; flex-direction: column; gap: 4px; padding: 6px 5px; }
-.theme-swatch-main { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 7px; }
+.theme-card:focus-visible { box-shadow: none !important; outline: 2px solid var(--text); outline-offset: 2px; }
+.theme-card.on:focus-visible { box-shadow: 0 0 0 1.5px var(--accent-text) !important; }
+.theme-swatch { position: relative; }
+.theme-card.on .theme-swatch::after { content: ""; position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent-text) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 9px no-repeat; box-shadow: 0 0 0 1.5px var(--bg); }
+.theme-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s2); }
+.theme-head h3 { margin: 0; }
+.theme-swatch { display: flex; height: 40px; border-radius: var(--r); overflow: hidden; box-shadow: inset 0 0 0 0.5px rgba(127, 127, 127, 0.3); }
+.theme-swatch-side { width: 30%; display: flex; flex-direction: column; gap: 3px; padding: 5px; }
+.theme-swatch-main { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 6px 7px; }
 .theme-swatch i { display: block; height: 4px; border-radius: 2px; }
 .theme-swatch b { display: block; width: 26px; height: 9px; border-radius: 3px; margin-top: auto; align-self: flex-end; }
-.theme-name { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 11.5px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.theme-name { display: block; text-align: center; font-size: 11.5px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .theme-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); padding: var(--s1) 0; }
 .theme-msg { font-size: 12px; margin-left: var(--s1); }
 .theme-msg.ok { color: var(--good-text); }
@@ -2724,5 +2734,8 @@ button.mselect-btn:hover { background: var(--btn-hover); color: var(--text); }
 .theme-colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px var(--s3); padding: var(--s1) 0; }
 .theme-color { display: flex; align-items: center; gap: var(--s2); font-size: 12.5px; padding: 3px 0; }
 .theme-color input[type="color"] { width: 26px; height: 20px; padding: 0; border: none; border-radius: var(--r-xs); background: none; box-shadow: 0 0 0 0.5px var(--line-strong); }
-.theme-color code { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.theme-hex { margin-left: auto; width: 72px; height: 22px; padding: 0 6px; font-family: var(--mono); font-size: 11px; color: var(--text2); }
+.theme-chevron { transition: transform 0.15s var(--ease); }
+.theme-edit[open] .theme-chevron { transform: rotate(90deg); }
 .theme-name-input { width: 200px; }
+html.themed .toast.error { background: var(--bad-fill); color: var(--bad-ink); }

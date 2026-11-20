@@ -99,7 +99,7 @@ export function Palette({ commands, onClose, placeholder = "Jump to a workspace 
                 >
                   <span className="palette-icon">{c.icon}</span>
                   <span className="palette-label">{c.label}</span>
-                  {q.trim() ? <span className="palette-hint">{c.group}</span> : c.hint && <span className="palette-hint">{c.hint}</span>}
+                  {q.trim() && !(c.queryOnly && c.hint) ? <span className="palette-hint">{c.group}</span> : c.hint && <span className="palette-hint">{c.hint}</span>}
                 </button>
               </div>
             );

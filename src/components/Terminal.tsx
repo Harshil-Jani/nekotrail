@@ -34,6 +34,8 @@ export function Terminal({ ptyId, cwd, mode = "shell", nonce = 0 }: { ptyId: str
       scrollback: 5000,
       // The active theme's terminal colours; Moonlight keeps its own (each ANSI colour passes 4.5:1).
       theme: xtermTheme(activePalette()),
+      // Each cell is nudged until it reads (4.5:1) on the background, keeping the theme's hue.
+      minimumContrastRatio: 4.5,
     });
     const fit = new FitAddon();
     t.loadAddon(fit);

@@ -89,19 +89,23 @@ export function readable(fg: string, bg: string, ratio = 4.5): string {
   return to;
 }
 
+/** Like readable, but against every surface the text sits on: it must pass on the worst one. */
+export function readableOn(fg: string, bgs: string[], ratio = 4.5): string {
+  const worst = (c: string) => Math.min(...bgs.map((b) => contrast(c, b)));
+  if (worst(fg) >= ratio) return fg;
+  const first = bgs[0];
+  const to = contrast("#000000", first) >= contrast("#ffffff", first) ? "#000000" : "#ffffff";
+  for (let t = 0.05; t <= 1.0001; t += 0.05) {
+    const c = mix(fg, to, t);
+    if (worst(c) >= ratio) return c;
+  }
+  return to;
+}
+
 /** Ink for text on a filled accent button: the background colour or white/near-black, whichever reads best. */
 const inkOn = (fill: string, bg: string) => {
   const cands = [bg, "#ffffff", "#111111"];
   return cands.reduce((best, c) => (contrast(c, fill) > contrast(best, fill) ? c : best), cands[0]);
-};
-
-/** A fill dark (or light) enough that white text on it passes AA. Used for Merge and Delete buttons. */
-const fillForWhite = (c: string) => {
-  for (let t = 0; t <= 1.0001; t += 0.05) {
-    const f = mix(c, "#000000", t);
-    if (contrast("#ffffff", f) >= 4.5) return f;
-  }
-  return "#000000";
 };
 
 // ---------- presets ----------
@@ -243,16 +247,21 @@ export function themeVars(t: AppTheme): Record<string, string> {
   const surface = c.surface ?? sidebar;
   const raised = dark ? mix(surface, text, 0.08) : mix(bg, "#ffffff", 0.7);
   const border = c.border ?? mix(bg, text, dark ? 0.14 : 0.13);
-  const muted = readable(c.muted ?? mix(text, bg, 0.4), bg, 4.5);
+  const tone0 = dark ? "#ffffff" : "#000000";
+  const [h, p, s] = dark ? [0.08, 0.12, 0.11] : [0.06, 0.1, 0.09];
+  // The surfaces text actually sits on: the page, the sidebar, cards, and a selected sidebar row.
+  const selectedRow = mix(sidebar, text, s);
+  const surfaces = [bg, sidebar, surface, selectedRow];
+  const muted = readableOn(c.muted ?? mix(text, bg, 0.4), surfaces, 4.5);
   const accent = c.accent;
-  const accentText = readable(accent, bg, 4.5);
+  const accentSoft = mix(bg, accent, dark ? 0.16 : 0.12);
+  const accentText = readableOn(accent, [bg, sidebar, surface, accentSoft], 4.5);
   const green = c.green ?? (dark ? "#5ee0a0" : "#0b6a3b");
   const red = c.red ?? (dark ? "#ff7a8e" : "#b51e3b");
   const yellow = c.yellow ?? (dark ? "#ffd27a" : "#b07a00");
   const orange = c.orange ?? (dark ? "#ff9f5a" : "#9a4a00");
   const purple = c.purple ?? (dark ? "#d3a6ff" : "#7a3fa8");
-  const tone = dark ? "#ffffff" : "#000000";
-  const [h, p, s] = dark ? [0.08, 0.12, 0.11] : [0.06, 0.1, 0.09];
+  const tone = tone0;
   return {
     "--bg": bg,
     "--sidebar": sidebar,
@@ -269,7 +278,7 @@ export function themeVars(t: AppTheme): Record<string, string> {
     "--material": alpha(surface, 0.94),
     "--material-solid": alpha(surface, 0.98),
     "--text": text,
-    "--text2": readable(mix(text, bg, 0.2), bg, 7),
+    "--text2": readableOn(mix(text, bg, 0.2), [bg, sidebar], 7),
     "--muted": muted,
     "--faint": alpha(text, 0.3),
     "--accent": accent,
@@ -279,19 +288,21 @@ export function themeVars(t: AppTheme): Record<string, string> {
     "--accent-ink": inkOn(accent, bg),
     "--accent-soft": alpha(accent, dark ? 0.16 : 0.12),
     "--accent-ring": alpha(accent, 0.5),
-    "--accent-chip-text": readable(mix(accent, tone, 0.12), bg, 4.5),
+    "--accent-chip-text": readableOn(mix(accent, tone, 0.12), [bg, accentSoft, sidebar], 4.5),
     "--lantern": yellow,
-    "--lantern-text": readable(yellow, bg, 4.5),
+    "--lantern-text": readableOn(yellow, surfaces, 4.5),
     "--lantern-soft": alpha(yellow, 0.12),
     "--lantern-ring": alpha(yellow, 0.45),
     "--good": readable(green, bg, 3),
     "--good-soft": alpha(green, 0.13),
-    "--good-fill": fillForWhite(green),
-    "--good-text": readable(green, bg, 4.5),
+    "--good-fill": green,
+    "--good-ink": inkOn(green, bg),
+    "--good-text": readableOn(green, surfaces, 4.5),
     "--bad": readable(red, bg, 3),
     "--bad-soft": alpha(red, 0.12),
-    "--bad-fill": fillForWhite(red),
-    "--bad-text": readable(red, bg, 4.5),
+    "--bad-fill": red,
+    "--bad-ink": inkOn(red, bg),
+    "--bad-text": readableOn(red, surfaces, 4.5),
     "--wait": readable(orange, bg, 3),
     "--wait-soft": alpha(orange, 0.13),
     "--purple": readable(purple, bg, 3),

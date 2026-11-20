@@ -86,16 +86,6 @@ function AppearancePane({ s, set }: { s: S; set: <K extends keyof S>(k: K, v: S[
     <section>
       <h3>Look</h3>
       <div className="setting">
-        <span id="theme-label">Appearance</span>
-        {s.palette ? <span className="muted">Set by the theme</span> : (
-          <div className="seg" role="radiogroup" aria-labelledby="theme-label">
-            {([["system", "Follow system"], ["light", "Light"], ["dark", "Dark"]] as const).map(([id, name]) => (
-              <button key={id} role="radio" aria-checked={s.theme === id} className={s.theme === id ? "on" : ""} onClick={() => set("theme", id)}>{name}</button>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="setting">
         <span id="zoom-label">Zoom</span>
         <span className="zoom-control">
           <button className="icon" aria-label="Zoom out" title={keyHint("Zoom out (⌘-)")} disabled={zoom <= ZOOM_MIN} onClick={() => setZoom(stepZoom(zoom, -1))}><Minus size={14} /></button>
