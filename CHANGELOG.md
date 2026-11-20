@@ -3,7 +3,7 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
-## Unreleased
+## 0.27.0 (2026-11-20)
 
 **Themes**
 - 13 themes in Settings, Appearance: Dracula, Tokyo Night, Catppuccin Mocha and Latte, Nord, Gruvbox Dark and Light, One Dark, Rosé Pine, Solarized Dark and Light, GitHub Dark and Light. Moonlight stays the default.
