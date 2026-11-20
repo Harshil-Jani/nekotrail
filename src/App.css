@@ -2708,7 +2708,7 @@ button.mselect-btn:hover { background: var(--btn-hover); color: var(--text); }
 .gs-filters .mselect.set .mselect-btn { color: var(--accent-text); font-weight: 600; }
 
 /* ---------- Settings, Appearance: themes ---------- */
-.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--s2); padding: 2px 0 var(--s2); }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--s2); padding: 2px 2px var(--s2); }
 .theme-card { height: auto; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border-radius: var(--r-md); background: transparent; box-shadow: 0 0 0 0.5px var(--line); }
 .theme-card:hover { background: var(--hover); }
 .theme-card.on { box-shadow: 0 0 0 1.5px var(--accent-text); }

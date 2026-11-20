@@ -219,7 +219,11 @@ Hover the rail on the chat's right edge and click one.
 <b>Archive in one click.</b><br>
 Hover a workspace in the sidebar. The branch is kept.
 </td>
-<td width="50%" valign="top"></td>
+<td width="50%" valign="top">
+<img src="docs/readme/cards/themes.png" width="100%" alt="Settings, Appearance: a grid of themes, Moonlight, Catppuccin, Dracula, GitHub, Gruvbox, Nord, One Dark, Rosé Pine, Solarized and Tokyo Night, with Tokyo Night picked"><br>
+<b>Pick a theme, or make one.</b><br>
+13 themes. Share yours by copy and paste, or ask an agent: <code>nekotrail theme</code>.
+</td>
 </tr>
 </table>
 </details>
