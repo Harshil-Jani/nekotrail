@@ -3,6 +3,11 @@
 Every release of NekoTrail, newest first. Each version is tagged on GitHub, and its macOS app is attached
 to the [release page](https://github.com/Harshil-Jani/nekotrail/releases).
 
+## 0.27.1 (2026-11-20)
+
+**Linux**
+- The .deb, .rpm and arm64 packages for the themes release are here. The 0.27.0 build stopped on an over-strict package check.
+
 ## 0.27.0 (2026-11-20)
 
 **Themes**
