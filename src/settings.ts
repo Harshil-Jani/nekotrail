@@ -1,4 +1,5 @@
 import { isQuiet } from "./notice";
+import type { AppTheme } from "./themes";
 /** App preferences, kept in localStorage. Read with `getSettings()`, change with `saveSettings()`. */
 export type Settings = {
   /** When to send a system notification after an agent finishes. */
@@ -25,6 +26,10 @@ export type Settings = {
   collapsed: string[];
   /** Light, dark, or follow the system. */
   theme: "system" | "light" | "dark";
+  /** A colour theme over Moonlight: a preset id (dracula, nord...), "custom", or "" for Moonlight. */
+  palette: string;
+  /** Your own theme: pasted, edited in Appearance, or written by an agent with `nekotrail theme`. */
+  customTheme: AppTheme | null;
   /** Font for diffs and code in chat ("" is SF Mono) and its size in px. */
   codeFont: string;
   codeSize: number;
@@ -44,7 +49,7 @@ const DEFAULTS: Settings = { notify: "away", sound: false, editor: "cursor", sen
     { name: "tests", text: "Write tests for what you just changed. Cover the edge cases, run them, and fix anything that fails." },
     { name: "tidy", text: "Before I review: remove debug code and dead code, make names clear, and keep the diff as small as it can be." },
   ], repoFilter: [], collapsed: [],
-  theme: "system", codeFont: "", codeSize: 12, termFont: "", termSize: 13, exportFooter: true, showCost: false };
+  theme: "system", palette: "", customTheme: null, codeFont: "", codeSize: 12, termFont: "", termSize: 13, exportFooter: true, showCost: false };
 
 export function getSettings(): Settings {
   try {

@@ -4,6 +4,7 @@
  * only runs when the Appearance pane opens.
  */
 import { useEffect, useState } from "react";
+import { type AppTheme, resolvePalette, themeVars } from "./themes";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -122,6 +123,47 @@ export function useDark() {
   return dark;
 }
 
+// ---------- palette (Dracula, Nord, your own...) ----------
+
+let currentPalette: AppTheme | null = null;
+let paletteKeys: string[] = [];
+
+/** The theme the app shows now, or null for Moonlight. */
+export const activePalette = () => currentPalette;
+
+/**
+ * Paint a theme over Moonlight: its colours go on the root as CSS variables, and light or dark
+ * follows the theme. null goes back to Moonlight and the Appearance setting.
+ */
+export function applyPalette(t: AppTheme | null, theme: Theme) {
+  const root = document.documentElement;
+  for (const k of paletteKeys) root.style.removeProperty(k);
+  paletteKeys = [];
+  currentPalette = t;
+  if (t) {
+    const vars = themeVars(t);
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    paletteKeys = Object.keys(vars);
+    root.classList.add("themed");
+    applyTheme(t.mode);
+  } else {
+    root.classList.remove("themed");
+    applyTheme(theme);
+  }
+  window.dispatchEvent(new Event("nekotrail-palette"));
+}
+
+/** The active theme, kept current when it changes (for the terminal and Mermaid). */
+export function usePalette() {
+  const [t, setT] = useState(activePalette);
+  useEffect(() => {
+    const on = () => setT(activePalette());
+    window.addEventListener("nekotrail-palette", on);
+    return () => window.removeEventListener("nekotrail-palette", on);
+  }, []);
+  return t;
+}
+
 // ---------- fonts ----------
 
 /** Code font and size go into CSS variables used by diffs, chat code blocks and tool output. */
@@ -155,10 +197,13 @@ export function availableMonoFonts(): string[] {
 // ---------- all together ----------
 
 /** Apply the saved appearance now and again whenever settings change. Call once at startup. */
-export function startAppearance(read: () => { theme: Theme; codeFont: string; codeSize: number }) {
+export function startAppearance(read: () => { theme: Theme; palette: string; customTheme: AppTheme | null; codeFont: string; codeSize: number }) {
+  let last = "";
   const apply = () => {
     const s = read();
-    applyTheme(s.theme);
+    const t = resolvePalette(s.palette, s.customTheme);
+    const key = JSON.stringify([s.theme, t]);
+    if (key !== last) { last = key; applyPalette(t, s.theme); }
     applyCodeFont(s.codeFont, s.codeSize);
   };
   apply();

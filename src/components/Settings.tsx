@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { keepTabInside } from "../useDismiss";
 import { Coffee, Heart, Minus, Plus, Volume2, X } from "lucide-react";
-import { availableMonoFonts, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
+import { availableMonoFonts, useDark, CODE_SIZE, CODE_STACK, fontStack, setZoom, stepZoom, TERM_SIZE, TERM_STACK, useZoom, ZOOM_LEVELS, ZOOM_MAX, ZOOM_MIN } from "../appearance";
 import { api, type AppSettings } from "../api";
 import { IS_MAC, keyHint } from "../platform";
 import { AGENTS, AGENT_INFO } from "../agents";
@@ -12,6 +12,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import pkg from "../../package.json";
 import type { UpdatePhase } from "../useUpdater";
 import { PromptsPane } from "./PromptsPane";
+import { ThemePicker } from "./ThemePicker";
 import { AwayAlerts } from "./AwayAlerts";
 import { bannerText, showBanner } from "../notice";
 import { LinearSettings } from "./LinearSettings";
@@ -74,21 +75,25 @@ function FontPicker({ label, fonts, font, size, defaultSize, onFont, onSize }: {
   );
 }
 
-/** Appearance pane: light or dark, zoom, and the code and terminal fonts. Font detection runs only here. */
+/** Appearance pane: theme, light or dark, zoom, and the code and terminal fonts. Font detection runs only here. */
 function AppearancePane({ s, set }: { s: S; set: <K extends keyof S>(k: K, v: S[K]) => void }) {
   const zoom = useZoom();
   const [fonts] = useState(availableMonoFonts);
   const pct = (z: number) => `${Math.round(z * 100)}%`;
+  const dark = useDark();
   return <>
+    <ThemePicker s={s} set={set} dark={dark} />
     <section>
       <h3>Look</h3>
       <div className="setting">
         <span id="theme-label">Appearance</span>
-        <div className="seg" role="radiogroup" aria-labelledby="theme-label">
-          {([["system", "Follow system"], ["light", "Light"], ["dark", "Dark"]] as const).map(([id, name]) => (
-            <button key={id} role="radio" aria-checked={s.theme === id} className={s.theme === id ? "on" : ""} onClick={() => set("theme", id)}>{name}</button>
-          ))}
-        </div>
+        {s.palette ? <span className="muted">Set by the theme</span> : (
+          <div className="seg" role="radiogroup" aria-labelledby="theme-label">
+            {([["system", "Follow system"], ["light", "Light"], ["dark", "Dark"]] as const).map(([id, name]) => (
+              <button key={id} role="radio" aria-checked={s.theme === id} className={s.theme === id ? "on" : ""} onClick={() => set("theme", id)}>{name}</button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="setting">
         <span id="zoom-label">Zoom</span>
@@ -267,7 +272,8 @@ export function Settings({ onClose, home, update, onCheckUpdates, workspaceId, r
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   const set = <K extends keyof S>(k: K, v: S[K]) => {
-    const next = { ...s, [k]: v };
+    // From what's saved, not this render's copy, so two changes in a row both stick.
+    const next = { ...getSettings(), [k]: v };
     setS(next);
     saveSettings(next);
   };
