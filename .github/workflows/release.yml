@@ -208,14 +208,16 @@ jobs:
           if dpkg-deb -c "$deb" | grep -E '\.so(\.[0-9]+)*$'; then fail "the .deb bundles a shared library"; fi
           if rpm -qlp "$rpm" | grep -E '\.so(\.[0-9]+)*$'; then fail "the .rpm bundles a shared library"; fi
 
+          # How many copies of the marker the linker keeps varies by toolchain and arch (arm64 keeps
+          # one since v0.27.0); what matters is at least one, and no unknown marker left.
           # Each binary knows which package it came from, so the updater fetches the same kind
           # (linux-<arch>-deb or linux-<arch>-rpm in latest.json).
           dpkg-deb -x "$deb" x/deb
           bsdtar -xf "$rpm" -C x/rpm
           count() { { grep -ao "__TAURI_BUNDLE_TYPE_VAR_$2" "$1" || true; } | wc -l; }
-          [ "$(count x/deb/usr/bin/nekotrail DEB)" -eq 2 ] && [ "$(count x/deb/usr/bin/nekotrail UNK)" -eq 0 ] \
+          [ "$(count x/deb/usr/bin/nekotrail DEB)" -ge 1 ] && [ "$(count x/deb/usr/bin/nekotrail UNK)" -eq 0 ] \
             || fail "the .deb's binary is not marked as a deb install"
-          [ "$(count x/rpm/usr/bin/nekotrail RPM)" -eq 2 ] && [ "$(count x/rpm/usr/bin/nekotrail UNK)" -eq 0 ] \
+          [ "$(count x/rpm/usr/bin/nekotrail RPM)" -ge 1 ] && [ "$(count x/rpm/usr/bin/nekotrail UNK)" -eq 0 ] \
             || fail "the .rpm's binary is not marked as an rpm install"
           ls -l out
       # Each package installs on a clean distribution with its own package manager, and every library the
