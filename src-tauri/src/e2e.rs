@@ -7,6 +7,9 @@
 //! Every event the app emits to the window is recorded too, so a test can check what the window
 //! would have seen (`seen`). Release builds don't contain this module.
 
+// Reached over the Unix socket only, so on Windows it goes unused for now (#13).
+#![cfg_attr(not(unix), allow(dead_code))]
+
 use crate::{AppState, Res};
 use serde_json::{json, Value};
 use std::sync::{LazyLock, Mutex};

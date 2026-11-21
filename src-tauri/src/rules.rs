@@ -941,7 +941,11 @@ fn swap_in(full: &Path, what: Result<&[u8], &str>) -> Result<(), String> {
                 let _ = std::fs::set_permissions(&tmp, m.permissions());
             }
         }
+        #[cfg(unix)]
         Err(link) => std::os::unix::fs::symlink(link, &tmp).map_err(|e| format!("Couldn't link {name}: {e}"))?,
+        // Symlinks need Developer Mode on Windows (#13).
+        #[cfg(not(unix))]
+        Err(_) => return Err(format!("Linking {name} isn't on Windows yet.")),
     }
     std::fs::rename(&tmp, full).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
@@ -1306,6 +1310,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn never_writes_through_a_folder_link_out_of_the_repo() {
         let d = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
@@ -1337,10 +1342,13 @@ mod tests {
         let o = open(r, "AGENTS.md").unwrap();
         save(r, "AGENTS.md", "mine\n", &o.hash, b.path()).unwrap();
         assert_eq!(read(b.path(), "AGENTS.md"), "agent edit\n");
-        std::os::unix::fs::symlink("AGENTS.md", r.join("CLAUDE.md")).unwrap();
-        let o = open(r, "CLAUDE.md").unwrap();
-        assert_eq!(o.link.as_deref(), Some("AGENTS.md"));
-        assert!(save(r, "CLAUDE.md", "x", &o.hash, b.path()).unwrap_err().contains("Edit that file instead"));
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("AGENTS.md", r.join("CLAUDE.md")).unwrap();
+            let o = open(r, "CLAUDE.md").unwrap();
+            assert_eq!(o.link.as_deref(), Some("AGENTS.md"));
+            assert!(save(r, "CLAUDE.md", "x", &o.hash, b.path()).unwrap_err().contains("Edit that file instead"));
+        }
     }
 
     #[test]

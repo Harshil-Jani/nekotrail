@@ -415,6 +415,7 @@ fn junit_reports(dir: &Path, since: SystemTime) -> Vec<String> {
 /// Run `cmd` in a login shell in `cwd`, output and errors together, until it ends, `stop` is
 /// set, or `timeout` passes. `on_pid` gets the process id (its process group, for Stop).
 pub fn exec(cmd: &str, cwd: &Path, env: &[(String, String)], stop: &AtomicBool, timeout: Duration, on_pid: impl FnOnce(u32)) -> Exec {
+    #[cfg(unix)]
     use std::os::unix::process::CommandExt;
     let t0 = Instant::now();
     let mut ex = Exec { started: Some(SystemTime::now()), ..Default::default() };
@@ -428,7 +429,10 @@ pub fn exec(cmd: &str, cwd: &Path, env: &[(String, String)], stop: &AtomicBool, 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| crate::pty::FALLBACK_SHELL.into());
     let mut c = Command::new(shell);
     crate::loginenv::apply(&mut c);
-    c.args(["-lc", cmd]).current_dir(cwd).stdin(Stdio::null()).process_group(0);
+    c.args(["-lc", cmd]).current_dir(cwd).stdin(Stdio::null());
+    // Its own process group, so Stop ends everything it started. Windows needs a Job Object (#13).
+    #[cfg(unix)]
+    c.process_group(0);
     for (k, v) in env {
         c.env(k, v);
     }
@@ -840,6 +844,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn paths_through_a_symlinked_folder() {
         let d = dir_with(&[("src/a.ts", "x\n")]);
         let link = tempfile::tempdir().unwrap();

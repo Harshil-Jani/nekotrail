@@ -87,6 +87,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn confine_refuses_escapes_and_symlinks_out() {
         let ws = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -109,6 +110,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn only_real_folders_inside_can_be_deleted() {
         let ws = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();

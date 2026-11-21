@@ -1509,6 +1509,8 @@ pub fn apply(h: &Homes, ws: Option<&Path>, name: &str, target: AgentId, choices:
     };
     let tmp = real.with_file_name(format!(".{}.nekotrail-tmp", real.file_name().unwrap_or_default().to_string_lossy()));
     std::fs::write(&tmp, &new).map_err(|e| format!("Couldn't write {}: {e}", h.tilde(&path)))?;
+    // Keep the file's permissions, or owner-only for a new one. Windows ACLs come later (#13).
+    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::metadata(&real).map(|m| m.permissions()).unwrap_or_else(|_| std::fs::Permissions::from_mode(0o600));
@@ -1679,7 +1681,12 @@ pub fn share_skill(h: &Homes, name: &str, target: &str) -> Result<String, String
     let from = real_path(&from.ok_or_else(|| format!("No skill called {name} any more."))?);
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let link = dir.join(name);
+    #[cfg(unix)]
     std::os::unix::fs::symlink(&from, &link).map_err(|e| format!("Couldn't link {}: {e}", h.tilde(&link)))?;
+    // Symlinks need Developer Mode on Windows; a junction or a copy comes later (#13).
+    #[cfg(not(unix))]
+    return Err(format!("Couldn't link {} to {}: not on Windows yet.", h.tilde(&link), h.tilde(&from)));
+    #[cfg(unix)]
     Ok(h.tilde(&link))
 }
 
@@ -1819,8 +1826,11 @@ mod tests {
         apply(&h, None, "ctx", Gemini, &none, &p.token, "s").unwrap();
         let g: Value = serde_json::from_str(&std::fs::read_to_string(&h.gemini_settings).unwrap()).unwrap();
         assert_eq!(g["mcpServers"]["ctx"], json!({"command": "npx", "args": ["-y", "@upstash/context7-mcp"], "cwd": "/tmp", "env": {"MY_ENV_VAR": "MY_ENV_VALUE", "LOCAL_TOKEN": "${LOCAL_TOKEN}"}}));
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&h.gemini_settings).unwrap().permissions().mode() & 0o777, 0o600, "a new config is private");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&h.gemini_settings).unwrap().permissions().mode() & 0o777, 0o600, "a new config is private");
+        }
         let round = to_toml(&from_json(Gemini, &g["mcpServers"]["ctx"]).unwrap());
         let t: toml::Table = toml_snippet("ctx", round).parse().unwrap();
         assert_eq!(t["mcp_servers"]["ctx"], orig["mcp_servers"]["ctx"]);
@@ -1980,6 +1990,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn skills_are_linked_not_copied() {
         let (_d, h) = homes();
         put(&h.claude_skills.join("review/SKILL.md"), "---\nname: review\ndescription: Review a diff\n---\nBody");
@@ -2019,6 +2030,7 @@ mod tests {
 
     const OPENCODE: &str = "{\n  // my opencode\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"theme\": \"tokyonight\", /* keep */\n  \"mcp\": {\n    \"docs\": { \"type\": \"remote\", \"url\": \"https://docs.dev/mcp\" }, // old one\n  },\n}\n";
 
+    #[cfg(unix)]
     fn mode(p: &Path) -> u32 {
         use std::os::unix::fs::PermissionsExt;
         std::fs::metadata(p).unwrap().permissions().mode() & 0o777
@@ -2026,12 +2038,15 @@ mod tests {
 
     #[test]
     fn claude_to_opencode_and_back() {
-        use std::os::unix::fs::PermissionsExt;
         let (_d, h) = homes();
         put(&h.claude_json, CLAUDE);
         let file = h.opencode_dir.join("opencode.jsonc");
         put(&file, OPENCODE);
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        }
         let o = overview(&h, None);
         let docs = o.servers.iter().find(|r| r.name == "docs").unwrap();
         assert_eq!(docs.has, [Has { agent: OpenCode, scope: "user", file: "~/.config/opencode/opencode.jsonc".into() }]);
@@ -2055,6 +2070,7 @@ mod tests {
         let new = std::fs::read_to_string(&file).unwrap();
         assert_eq!(std::fs::read_to_string(h.opencode_dir.join("opencode.jsonc.bak-nekotrail-t1")).unwrap(), OPENCODE);
         assert!(new.contains("// my opencode") && new.contains("/* keep */") && new.contains("// old one"), "comments kept:\n{new}");
+        #[cfg(unix)]
         assert_eq!(mode(&file), 0o640, "permissions kept");
         let v: Value = serde_json::from_str(&blank_jsonc(&new)).unwrap();
         assert_eq!(v["theme"], "tokyonight");
@@ -2180,6 +2196,7 @@ mod tests {
         assert_eq!(p.snippet, text.trim_end(), "the preview is exactly the new file");
         assert!(text.starts_with("{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"mcp\": {"), "{text}");
         assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["mcp"]["tpl"]["environment"]["P"], "{env:A}:{env:B}");
+        #[cfg(unix)]
         assert_eq!(mode(&file), 0o600);
 
         let p = preview(&h, None, "gpath", OpenCode, &none, "n").unwrap();

@@ -442,6 +442,7 @@ const SESSION_COLS: &str =
 /// The database holds repo environment variables (often API keys) and every chat, so only you may
 /// read it: the folder 0700, the database and its WAL files 0600 (SQLite gives new WAL files the
 /// database's mode).
+#[cfg(unix)]
 fn private_files(db: &Path) {
     use std::os::unix::fs::PermissionsExt;
     if let Some(dir) = db.parent() {
@@ -453,6 +454,10 @@ fn private_files(db: &Path) {
         let _ = std::fs::set_permissions(Path::new(&p), std::fs::Permissions::from_mode(0o600));
     }
 }
+
+/// Windows: an owner-only ACL comes later (#13).
+#[cfg(not(unix))]
+fn private_files(_db: &Path) {}
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
@@ -1209,6 +1214,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn database_is_private_to_the_user() {
         use std::os::unix::fs::PermissionsExt;
         let d = tempfile::tempdir().unwrap();

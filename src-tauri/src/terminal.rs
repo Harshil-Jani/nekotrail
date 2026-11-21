@@ -1592,6 +1592,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn roots_read_each_folder_once() {
         let tmp = tempfile::tempdir().unwrap();
         let a = tmp.path().join("a");
